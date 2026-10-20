@@ -435,3 +435,42 @@ An optional minimum policy digest detects rollback before that checkpoint.
 Signatures alone cannot detect a whole-directory rollback to an otherwise valid
 prefix when no external checkpoint survives. Key custody/rotation and payload
 erasure are separate contracts, not effects of grant removal.
+
+### Encryption epochs and independent recovery (2026-10-20 implementation contract)
+
+The owner chooses a pinned key-history directory, exact proof binding, signing
+identity and separate X25519 recovery public key. Epoch changes are immutable,
+owner-signed, previous-digest-linked records. Each new random recipient private
+key is HPKE-wrapped to the recovery recipient with a separate wrapping-domain
+context bound to the full archive/profile/scope/issuer identity; neither
+blind storage, capture nor browser responses receive unwrapped private keys.
+An owner preview shows the new public recipient, previous checkpoint and effect;
+apply uses an exact digest and compare-and-swap. Old epochs remain retained.
+This is rotation, not erasure, and cannot recall previously distributed keys.
+
+Epoch-aware capture verifies the current history once per new attempt and holds
+that public recipient through completion. In-flight and spooled requests never
+get re-encrypted on retry. A runtime history failure produces the normal visible
+recording gap while inference continues. Proof readers explicitly configure the
+wrapped history and a separately held recovery credential, reload epochs when
+reading, and continue to check current storage grants. Existing single-key scopes
+remain supported; historical explicit keys provide a migration path. A missing
+matching epoch is `key-unavailable`, retaining provenance and ciphertext
+availability separately from missing/corrupt source material. Import validation
+binds to the actual recipient of the selected frames, not whichever epoch is new.
+
+The human owner surface shares inspect, preview/apply rotation, wrapped package
+export and preview/restore with the owner CLI/API. Packages include the complete
+signed wrapped-key chain and tip, never the recovery private credential. Restore
+accepts only an identical existing prefix in a separately configured initialized
+private directory and never activates service configurations. A separately kept
+minimum digest detects rollback; absent such a witness, valid-prefix truncation
+cannot be detected. The current format admits at most 64 epochs / 128 KiB of key
+history, with explicit capacity failure and no automatic deletion. Increasing
+that format limit is separate from evidence retention/capture capacity.
+
+Archive ciphertext, access-policy history, encrypted reader/owner workspaces and
+independent credentials are separate backup dependencies. A key-package export
+alone is not a complete instance backup. Recovery credential rotation, delegated
+per-reader wrapping, selective payload erasure and the full clean-host drill
+remain separately required; this first epoch format does not claim them.

@@ -54,23 +54,10 @@ pub fn seal(recipient: &[u8; 32], scope: &[u8; 32], plaintext: &[u8]) -> Result<
 }
 /// Returns plaintext only after header, recipient, scope and AEAD authentication.
 pub fn open(private: &[u8; 32], scope: &[u8; 32], frame: &[u8]) -> Result<Vec<u8>, Error> {
-    if frame.len() < HEADER + 16
-        || frame.len() > crate::evidence_service::MAX_PAYLOAD
-        || !frame.starts_with(PREFIX)
-    {
-        return Err(Error::Invalid);
-    }
-    let length = u32::from_be_bytes(
-        frame[HEADER - 4..HEADER]
-            .try_into()
-            .map_err(|_| Error::Invalid)?,
-    ) as usize;
-    if length != frame.len() - HEADER {
-        return Err(Error::Invalid);
-    }
+    let recipient = recipient_id(frame)?;
     let key = <K as Kem>::PrivateKey::from_bytes(private).map_err(|_| Error::Authentication)?;
     let public = K::sk_to_pk(&key).to_bytes();
-    if Sha256::digest(public).as_slice() != &frame[11..43] {
+    if Sha256::digest(public).as_slice() != recipient {
         return Err(Error::Authentication);
     }
     let enc =
@@ -85,6 +72,25 @@ pub fn open(private: &[u8; 32], scope: &[u8; 32], frame: &[u8]) -> Result<Vec<u8
     context
         .open(&frame[HEADER..], &frame[..HEADER])
         .map_err(|_| Error::Authentication)
+}
+/// Inspect bounded framing for key selection. This identifier is authenticated
+/// only after `open` succeeds; it never grants access by itself.
+pub fn recipient_id(frame: &[u8]) -> Result<&[u8], Error> {
+    if frame.len() < HEADER + 16
+        || frame.len() > crate::evidence_service::MAX_PAYLOAD
+        || !frame.starts_with(PREFIX)
+    {
+        return Err(Error::Invalid);
+    }
+    let length = u32::from_be_bytes(
+        frame[HEADER - 4..HEADER]
+            .try_into()
+            .map_err(|_| Error::Invalid)?,
+    ) as usize;
+    if length != frame.len() - HEADER {
+        return Err(Error::Invalid);
+    }
+    Ok(&frame[11..43])
 }
 /// Derive public recipient bytes for a caller-supplied key; no key persistence.
 pub fn public_key(private: &[u8; 32]) -> Result<[u8; 32], Error> {

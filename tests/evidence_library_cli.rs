@@ -271,3 +271,78 @@ fn owner_cli_initializes_and_applies_the_same_previewed_access_policy() {
         1
     );
 }
+
+#[test]
+fn owner_cli_initializes_rotates_and_exports_wrapped_epoch_history() {
+    use serde_json::{json, Value};
+    let dir = tempfile::tempdir().unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(dir.path(), std::fs::Permissions::from_mode(0o700)).unwrap();
+    }
+    let policy_dir = dir.path().join("policy");
+    std::fs::create_dir(&policy_dir).unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&policy_dir, std::fs::Permissions::from_mode(0o700)).unwrap();
+    }
+    let signer = Identity::generate();
+    let key = dir.path().join("owner.identity");
+    signer.save(&key).unwrap();
+    let binding = json!({"profile":"admitted","archive":svc::hex(&[1;32]),"scope":svc::hex(&[2;32]),"issuer":Identity::generate().did().as_str()});
+    let policy = json!({"directory":policy_dir,"binding":binding,"owner":signer.did().as_str(),"recovery_recipient":svc::hex(&crypto::public_key(&[91;32]).unwrap())});
+    let write = |name: &str, bytes: Vec<u8>| {
+        let path = dir.path().join(name);
+        std::fs::write(&path, bytes).unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).unwrap();
+        }
+        path
+    };
+    let policy_config = write("policy.json", serde_json::to_vec(&policy).unwrap());
+    let initialized = Process::new(env!("CARGO_BIN_EXE_kan-v2"))
+        .args(["init-key-history", policy_config.to_str().unwrap()])
+        .output()
+        .unwrap();
+    assert!(
+        initialized.status.success(),
+        "{}",
+        String::from_utf8_lossy(&initialized.stderr)
+    );
+    let recipient = write("journal.key", vec![91; 32]);
+    let config=write("owner.json",serde_json::to_vec(&json!({"journal":dir.path().join("owner.sqlite"),"signing_key":key,"recipient_key":recipient,"authority":{"token":"synthetic-cli-policy-owner-token-1234","max_jobs":10,"targets":[{"kind":"key-history","id":"keys","history":policy,"signing_key":key,"recovery_key":recipient}]}})).unwrap());
+    let call = |request: Value| -> Value {
+        let path = write("request.json", serde_json::to_vec(&request).unwrap());
+        let out = Process::new(env!("CARGO_BIN_EXE_kan-v2"))
+            .args([
+                "owner",
+                "--config",
+                config.to_str().unwrap(),
+                "--request",
+                path.to_str().unwrap(),
+            ])
+            .output()
+            .unwrap();
+        assert!(
+            out.status.success(),
+            "{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        serde_json::from_slice(&out.stdout).unwrap()
+    };
+    let preview = call(json!({"action":"preview-key-rotation","target":"keys"}));
+    let apply = json!({"action":"apply-key-rotation","target":"keys","change":preview["change"],"preview":preview["digest"]});
+    assert_eq!(call(apply.clone())["state"], "applied");
+    assert_eq!(call(apply)["state"], "already-applied");
+    let package = call(json!({"action":"export-keys","target":"keys"}));
+    assert_eq!(package["package"]["version"], "kan-key-recovery/1");
+    assert_eq!(package["package"]["records"].as_array().unwrap().len(), 1);
+    assert_eq!(
+        call(json!({"action":"keys","target":"keys"}))["snapshot"]["epochs"],
+        1
+    );
+}

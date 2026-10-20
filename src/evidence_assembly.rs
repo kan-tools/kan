@@ -22,6 +22,7 @@ pub enum Unavailable {
     Missing,
     Corrupt,
     Withheld,
+    KeyUnavailable,
 }
 #[derive(Clone, Copy)]
 pub enum Payload<'a> {

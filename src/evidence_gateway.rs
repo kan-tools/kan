@@ -42,11 +42,29 @@ pub struct Config {
     pub spool: PathBuf,
     pub signer: Identity,
     pub recipient: [u8; 32],
+    pub key_history: Option<crate::evidence_keys::Access>,
     pub io_budget: Duration,
     pub report: HealthReporter,
 }
 impl Config {
+    pub fn recipient_for_attempt(&self) -> io::Result<[u8; 32]> {
+        match &self.key_history {
+            None => Ok(self.recipient),
+            Some(history) => crate::evidence_service::unhex(
+                &history
+                    .read()
+                    .map_err(|_| invalid())?
+                    .current()
+                    .map_err(|_| invalid())?,
+                32,
+            )
+            .map_err(|_| invalid())?
+            .try_into()
+            .map_err(|_| invalid()),
+        }
+    }
     pub fn validate(&self) -> io::Result<()> {
+        self.recipient_for_attempt()?;
         if self.profile == Profile::Anthropic
             && (!self.route.is_origin()
                 || self.observer == capture::Observer::Gateway
@@ -70,7 +88,12 @@ impl Config {
         }
         if let Ok(mut spool) = Spool::open_for_capture(&self.spool) {
             if let Ok(status) = spool.status() {
-                if status.writer != self.signer.did().as_str() {
+                if status.writer != self.signer.did().as_str()
+                    || self
+                        .key_history
+                        .as_ref()
+                        .is_some_and(|h| h.binding.scope != status.scope)
+                {
                     return Err(invalid());
                 }
             }
@@ -384,10 +407,27 @@ async fn handle(
             head: Some(tx),
         };
         let mut spool = Spool::open_for_capture(&config.spool).ok();
+        // Resolve once per attempt. A damaged/contended epoch history disables
+        // capture for this attempt, producing the normal visible recording gap.
+        let mut recipient = config.recipient_for_attempt().ok();
+        if let Some(history) = &config.key_history {
+            if spool.as_mut().is_none_or(|s| {
+                s.status().map_or(true, |status| {
+                    status.scope != history.binding.scope
+                        || status.writer != config.signer.did().as_str()
+                })
+            }) {
+                recipient = None;
+            }
+        }
         let mut sink = capture::EncryptedSpool {
-            spool: spool.as_mut(),
+            spool: if recipient.is_some() {
+                spool.as_mut()
+            } else {
+                None
+            },
             signer: &config.signer,
-            recipient: config.recipient,
+            recipient: recipient.unwrap_or([0; 32]),
         };
         let mut headers = outgoing;
         if config.observer == capture::Observer::Collector {

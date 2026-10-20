@@ -26,6 +26,9 @@ struct ProxyCapture {
     key: PathBuf,
     #[arg(long)]
     recipient: String,
+    /// Signed epoch history; overrides the fixed recipient for each new attempt.
+    #[arg(long)]
+    key_history: Option<PathBuf>,
     /// Cumulative awaited I/O budget, excluding synchronous capture work.
     #[arg(long, default_value_t=300, value_parser=clap::value_parser!(u32).range(1..=86400))]
     deadline_seconds: u32,
@@ -363,6 +366,9 @@ enum Command {
     /// Initialize the lease in a pre-provisioned private access-policy directory.
     #[cfg(feature = "v2-service")]
     InitAccessPolicy { config: PathBuf },
+    /// Initialize an empty independently recoverable archive key history.
+    #[cfg(feature = "v2-crypto")]
+    InitKeyHistory { config: PathBuf },
     /// Serve an existing opaque partition on loopback; payload encryption is external.
     #[cfg(feature = "v2-service")]
     Serve {
@@ -664,6 +670,10 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 issuer: String,
                 private_key_file: PathBuf,
                 #[serde(default)]
+                historical_key_files: Vec<PathBuf>,
+                #[serde(default)]
+                epoch_keys: Option<kan::evidence_keys::ReaderAccess>,
+                #[serde(default)]
                 protocol: Option<String>,
                 #[serde(default)]
                 profile: Option<kan::evidence_proof_service::Profile>,
@@ -685,9 +695,23 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     return Err("reader key paths must be absolute".into());
                 }
                 match entry.protocol.as_deref().unwrap_or("legacy") {
-                    "legacy" if entry.profile.is_none() && entry.archive.is_none() => {}
+                    "legacy"
+                        if entry.profile.is_none()
+                            && entry.archive.is_none()
+                            && entry.historical_key_files.is_empty()
+                            && entry.epoch_keys.is_none() => {}
                     kan::evidence_proof_service::PROTOCOL => {
-                        proofs.push(kan::evidence_reader::proof::Reader::new(
+                        if entry.historical_key_files.len() > 64
+                            || entry.historical_key_files.iter().any(|p| !p.is_absolute())
+                        {
+                            return Err("invalid historical key selection".into());
+                        }
+                        let keys = entry
+                            .historical_key_files
+                            .iter()
+                            .map(|p| recipient_private(p))
+                            .collect::<Result<Vec<_>, _>>()?;
+                        let mut reader = kan::evidence_reader::proof::Reader::new(
                             service_identity(&signing_key)?,
                             kan::evidence_reader::proof::Access {
                                 binding: kan::evidence_proof_service::Binding {
@@ -703,7 +727,12 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                                 endpoint: entry.endpoint,
                                 private_key: recipient_private(&entry.private_key_file)?,
                             },
-                        )?);
+                        )?
+                        .with_historical_keys(keys)?;
+                        if let Some(epochs) = entry.epoch_keys {
+                            reader = reader.with_epochs(epochs)?;
+                        }
+                        proofs.push(reader);
                         continue;
                     }
                     _ => return Err("unsupported or inconsistent reader protocol".into()),
@@ -1038,6 +1067,13 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 kan::evidence_delivery::decrypt_request(&request, &private, &scope, &writer)?;
             use std::io::Write;
             std::io::stdout().lock().write_all(&plaintext)?;
+        }
+        #[cfg(feature = "v2-crypto")]
+        Command::InitKeyHistory { config } => {
+            let history: kan::evidence_keys::Access =
+                serde_json::from_slice(&bounded_read(std::fs::File::open(config)?, 65536)?)?;
+            history.initialize()?;
+            print_json(&serde_json::json!({"initialized":true,"epochs":0}))?;
         }
         #[cfg(feature = "v2-service")]
         Command::InitAccessPolicy { config } => {
@@ -1579,6 +1615,16 @@ fn run_proxy(
         spool: capture.spool,
         signer,
         recipient: fixed_hex::<32>(&capture.recipient)?,
+        key_history: capture
+            .key_history
+            .map(
+                |p| -> Result<kan::evidence_keys::Access, Box<dyn std::error::Error>> {
+                    Ok(serde_json::from_slice(
+                        &kan::evidence_gateway::secret_file(&p)?,
+                    )?)
+                },
+            )
+            .transpose()?,
         io_budget: std::time::Duration::from_secs(u64::from(capture.deadline_seconds)),
         report,
     };

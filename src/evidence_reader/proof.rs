@@ -22,6 +22,8 @@ pub struct Access {
 pub struct Reader {
     signer: Identity,
     access: Access,
+    historical_keys: Vec<[u8; 32]>,
+    epochs: Option<crate::evidence_keys::ReaderAccess>,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -94,11 +96,17 @@ pub struct Page {
     pub next: Option<Token>,
 }
 pub enum Source {
+    KeyUnavailable {
+        record: Occurrence,
+        writer: String,
+        recipient: String,
+    },
     Available {
         record: Occurrence,
         writer: String,
         plaintext: Vec<u8>,
         operation: String,
+        recipient: String,
     },
     Missing {
         record: Occurrence,
@@ -121,10 +129,30 @@ fn token_preimage(body: &TokenBody) -> Result<Vec<u8>> {
     Ok(bytes)
 }
 impl Reader {
-    pub(crate) fn recipient_public(&self) -> Result<String> {
-        crate::evidence_crypto::public_key(&self.access.private_key)
-            .map(|key| service::hex(&key))
-            .map_err(|_| Failure::Invalid)
+    /// Add explicitly held historical recipient keys; never replaces current grants.
+    pub fn with_historical_keys(mut self, keys: Vec<[u8; 32]>) -> Result<Self> {
+        if keys.len() > 64 {
+            return Err(Failure::Invalid);
+        }
+        self.historical_keys = keys;
+        Ok(self)
+    }
+    /// Read independently wrapped epochs afresh, so rotation requires no restart.
+    pub fn with_epochs(mut self, epochs: crate::evidence_keys::ReaderAccess) -> Result<Self> {
+        if epochs.history.binding != self.access.binding {
+            return Err(Failure::Invalid);
+        }
+        epochs.keys()?;
+        self.epochs = Some(epochs);
+        Ok(self)
+    }
+    fn keys(&self) -> Result<Vec<[u8; 32]>> {
+        let mut keys = vec![self.access.private_key];
+        keys.extend_from_slice(&self.historical_keys);
+        if let Some(epochs) = &self.epochs {
+            keys.extend(epochs.keys()?);
+        }
+        Ok(keys)
     }
     pub fn binding(&self) -> &wire::Binding {
         &self.access.binding
@@ -134,7 +162,12 @@ impl Reader {
         if signer.did().as_str() == access.binding.issuer {
             return Err(Failure::Invalid);
         }
-        Ok(Self { signer, access })
+        Ok(Self {
+            signer,
+            access,
+            historical_keys: Vec::new(),
+            epochs: None,
+        })
     }
     async fn call(&self, command: wire::Command) -> Result<(Vec<u8>, wire::SignedReply)> {
         let bytes = wire::SignedRequest::sign(
@@ -530,7 +563,8 @@ impl Reader {
         let record = match value {
             Source::Available { record, .. }
             | Source::Missing { record }
-            | Source::Corrupt { record } => record,
+            | Source::Corrupt { record }
+            | Source::KeyUnavailable { record, .. } => record,
         };
         if record.receipt != reference.receipt {
             return Err(Failure::Corrupt);
@@ -645,14 +679,31 @@ impl Reader {
                 };
                 let ciphertext = service::unhex(&ciphertext, service::MAX_PAYLOAD)?;
                 let binding = self.access.binding.owner_binding()?;
-                let plaintext =
-                    evidence_crypto::open(&self.access.private_key, &binding.scope, &ciphertext)
-                        .map_err(|_| Failure::Corrupt)?;
+                let recipient_id =
+                    evidence_crypto::recipient_id(&ciphertext).map_err(|_| Failure::Corrupt)?;
+                let mut selected = None;
+                for key in self.keys()? {
+                    let public = evidence_crypto::public_key(&key).map_err(|_| Failure::Corrupt)?;
+                    if Sha256::digest(public).as_slice() == recipient_id {
+                        selected = Some((key, public));
+                        break;
+                    }
+                }
+                let Some((key, public)) = selected else {
+                    return Ok(Source::KeyUnavailable {
+                        record: occurrence,
+                        writer,
+                        recipient: service::hex(recipient_id),
+                    });
+                };
+                let plaintext = evidence_crypto::open(&key, &binding.scope, &ciphertext)
+                    .map_err(|_| Failure::Corrupt)?;
                 Ok(Source::Available {
                     record: occurrence,
                     writer,
                     plaintext,
                     operation: id,
+                    recipient: service::hex(&public),
                 })
             }
             _ => Err(Failure::Corrupt),

@@ -391,7 +391,7 @@ async fn proof_reader_pins_and_tokens_never_replace_current_permission_or_decryp
     .unwrap();
     assert!(matches!(
         wrong.source(&pin, &page.records[0].selection).await,
-        Err(service::Failure::Corrupt)
+        Ok(client::Source::KeyUnavailable { .. })
     ));
     server
         .service
@@ -612,4 +612,63 @@ async fn proof_batch_byte_limit_returns_a_resumable_prefix() {
         Err(Failure::Invalid)
     ));
     server.stop().await;
+}
+
+#[tokio::test]
+async fn historical_recipient_keys_read_multiple_epochs_and_missing_keys_keep_provenance() {
+    for profile in [Profile::Admitted, Profile::Copied] {
+        let dir = tempfile::tempdir().unwrap();
+        let f = fixture_requests(dir.path(), profile, |n, audience, previous| {
+            let mut req = service::SignedRequest::decode(&request(n, audience, previous))
+                .unwrap()
+                .request;
+            let service::Command::Append { ciphertext, .. } = &mut req.command else {
+                unreachable!()
+            };
+            let private = if n == 1 { [72; 32] } else { PRIVATE };
+            *ciphertext = service::hex(
+                &kan::evidence_crypto::seal(
+                    &kan::evidence_crypto::public_key(&private).unwrap(),
+                    &[1; 32],
+                    RAW,
+                )
+                .unwrap(),
+            );
+            service::SignedRequest::sign(req, &identity(6))
+                .unwrap()
+                .bytes()
+                .unwrap()
+        });
+        let server = Server::start(&f).await;
+        let reader = server.client(&f);
+        let pin = reader.snapshot().await.unwrap();
+        let page = reader.page(&pin, None, 3).await.unwrap();
+        let selections = page
+            .records
+            .iter()
+            .map(|r| r.selection.clone())
+            .collect::<Vec<_>>();
+        let values = reader.sources_prefix(&pin, &selections).await.unwrap();
+        assert!(
+            matches!(&values[1],client::Source::KeyUnavailable{record,writer,recipient} if record.sequence=="2" && writer==identity(6).did().as_str() && recipient.len()==64)
+        );
+        let complete = server
+            .client(&f)
+            .with_historical_keys(vec![[72; 32]])
+            .unwrap();
+        for value in complete.sources_prefix(&pin, &selections).await.unwrap() {
+            assert!(matches!(value,client::Source::Available{plaintext,..} if plaintext==RAW));
+        }
+        server
+            .service
+            .lock()
+            .unwrap()
+            .replace_grants(vec![])
+            .unwrap();
+        assert!(matches!(
+            complete.sources_prefix(&pin, &selections).await,
+            Err(Failure::AccessLimited)
+        ));
+        server.stop().await;
+    }
 }

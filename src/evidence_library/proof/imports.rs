@@ -87,6 +87,7 @@ impl Readers {
             let mut total = 0usize;
             let mut offset = 0;
             let mut writer = None;
+            let mut recipient = None;
             let mut seen = std::collections::BTreeSet::new();
             while offset < selections.len() {
                 let end = (offset + crate::evidence_proof_service::READ_BATCH_LIMIT)
@@ -100,6 +101,7 @@ impl Readers {
                             writer: author,
                             plaintext,
                             operation: op,
+                            recipient: epoch,
                         } => {
                             if !seen.insert(record.sequence.clone()) {
                                 return Err(invalid());
@@ -115,10 +117,12 @@ impl Readers {
                             if header.plan != plan_id
                                 || operation(plan_id, header.ordinal) != op
                                 || writer.as_ref().is_some_and(|w| w != &author)
+                                || recipient.as_ref().is_some_and(|r| r != &epoch)
                             {
                                 return Err(invalid());
                             }
                             writer = Some(author);
+                            recipient = Some(epoch);
                             let ordinal = header.ordinal;
                             if frames
                                 .insert(
@@ -135,7 +139,9 @@ impl Readers {
                                 return Err(invalid());
                             }
                         }
-                        Source::Missing { record } | Source::Corrupt { record } => {
+                        Source::KeyUnavailable { record, .. }
+                        | Source::Missing { record }
+                        | Source::Corrupt { record } => {
                             if !seen.insert(record.sequence.clone()) {
                                 return Err(invalid());
                             }
@@ -145,7 +151,7 @@ impl Readers {
                 }
             }
             let scope = reader.binding().scope.clone();
-            let recipient = reader.recipient_public()?;
+            let recipient = recipient.unwrap_or_default();
             let id = plan_id.to_owned();
             let mut value = tokio::task::spawn_blocking(move || {
                 let _permit = _permit;

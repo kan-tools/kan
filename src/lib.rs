@@ -98,3 +98,6 @@ pub mod evidence_workspace;
 
 #[cfg(feature = "v2-storage")]
 pub mod evidence_policy;
+
+#[cfg(feature = "v2-crypto")]
+pub mod evidence_keys;

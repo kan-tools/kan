@@ -41,6 +41,7 @@ pub(super) async fn page(
                     }
                     (record, Some(writer), describe(&plaintext))
                 }
+                Source::KeyUnavailable { record, writer, recipient } => (record, Some(writer), json!({"kind":"key-unavailable","recipient":recipient})),
                 Source::Missing { record } => (record, None, json!({"kind":"missing"})),
                 Source::Corrupt { record } => (record, None, json!({"kind":"corrupt"})),
             };

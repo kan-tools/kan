@@ -97,6 +97,7 @@ fn config(
             spool,
             signer,
             recipient: crypto::public_key(&PRIVATE).unwrap(),
+            key_history: None,
             io_budget: Duration::from_secs(5),
             report: Arc::new(move |s| h.lock().unwrap().push(s.clone())),
         },
@@ -1532,4 +1533,136 @@ async fn distinct_peer_can_authenticate_while_other_peer_saturates_pending_slots
         .expect("another peer retains handshake capacity");
     assert_eq!(r.bytes().await.unwrap(), "ok");
     assert_eq!(calls.load(Ordering::SeqCst), 1);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn epoch_rotation_changes_new_capture_and_history_failure_forwards_with_visible_gap() {
+    use kan::{
+        evidence_keys::{Access, Record},
+        evidence_proof_service::{Binding, Profile},
+    };
+    let (p, calls, _provider) =
+        provider(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok".to_vec())
+            .await;
+    let dir = tempfile::tempdir().unwrap();
+    let key_dir = tempfile::tempdir().unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(key_dir.path(), std::fs::Permissions::from_mode(0o700)).unwrap();
+    }
+    let owner = Identity::generate();
+    let history = Access {
+        directory: key_dir.path().to_owned(),
+        binding: Binding {
+            profile: Profile::Admitted,
+            archive: hex(&[1; 32]),
+            scope: hex(&SCOPE),
+            issuer: owner.did().to_string(),
+        },
+        owner: owner.did().to_string(),
+        recovery_recipient: hex(&crypto::public_key(&[92; 32]).unwrap()),
+        minimum: None,
+    };
+    history.initialize().unwrap();
+    let first = history.preview(hex(&[1; 32])).unwrap();
+    history
+        .append(Record::sign(first.clone(), &owner).unwrap())
+        .unwrap();
+    let (mut cfg, health, writer) =
+        config(Route::new(&p).unwrap(), Observer::Gateway, dir.path(), true);
+    cfg.key_history = Some(history.clone());
+    let (url, _gateway) = start(ListenerAuth::LoopbackToken(TOKEN.into()), cfg).await;
+    let client = reqwest::Client::new();
+    assert_eq!(
+        client
+            .post(&url)
+            .bearer_auth(TOKEN)
+            .body("before rotation")
+            .send()
+            .await
+            .unwrap()
+            .text()
+            .await
+            .unwrap(),
+        "ok"
+    );
+    let second = history.preview(hex(&[2; 32])).unwrap();
+    history
+        .append(Record::sign(second.clone(), &owner).unwrap())
+        .unwrap();
+    assert_eq!(
+        client
+            .post(&url)
+            .bearer_auth(TOKEN)
+            .body("after rotation")
+            .send()
+            .await
+            .unwrap()
+            .text()
+            .await
+            .unwrap(),
+        "ok"
+    );
+    let count = {
+        let c = rusqlite::Connection::open(dir.path().join("spool")).unwrap();
+        let mut st = c
+            .prepare("SELECT request FROM pending ORDER BY position")
+            .unwrap();
+        let rows = st
+            .query_map([], |r| r.get::<_, Vec<u8>>(0))
+            .unwrap()
+            .map(Result::unwrap)
+            .collect::<Vec<_>>();
+        let first_key = first.unlock(&[92; 32]).unwrap();
+        let second_key = second.unlock(&[92; 32]).unwrap();
+        let mut before = 0;
+        let mut after = 0;
+        for raw in &rows {
+            let a = kan::evidence_delivery::decrypt_request(raw, &first_key, &SCOPE, &writer);
+            let b = kan::evidence_delivery::decrypt_request(raw, &second_key, &SCOPE, &writer);
+            assert_ne!(a.is_ok(), b.is_ok());
+            before += usize::from(a.is_ok());
+            after += usize::from(b.is_ok());
+        }
+        assert!(before > 0 && after > 0);
+        rows.len()
+    };
+    // A published but invalid generation is never replaced by the old recipient.
+    std::fs::write(key_dir.path().join("unexpected"), b"damaged history").unwrap();
+    assert_eq!(
+        client
+            .post(&url)
+            .bearer_auth(TOKEN)
+            .body("capture gap")
+            .send()
+            .await
+            .unwrap()
+            .text()
+            .await
+            .unwrap(),
+        "ok"
+    );
+    assert_eq!(calls.load(Ordering::SeqCst), 3);
+    tokio::time::timeout(Duration::from_secs(2), async {
+        loop {
+            if health
+                .lock()
+                .unwrap()
+                .last()
+                .is_some_and(|h| h.recording_gap && h.outcome == Some(Outcome::Completed))
+            {
+                break;
+            }
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
+    let c = rusqlite::Connection::open(dir.path().join("spool")).unwrap();
+    assert_eq!(
+        c.query_row("SELECT count(*) FROM pending", [], |r| r.get::<_, usize>(0))
+            .unwrap(),
+        count
+    );
 }

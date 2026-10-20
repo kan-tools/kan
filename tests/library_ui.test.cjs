@@ -748,3 +748,20 @@ test('owner access controls preview an exact grant set and clear pending changes
  u.node('access-add').click();const input=walk(u.node('access-grants')).find(n=>n.attrs['aria-label']==='Principal DID');input.value='did:key:new';u.node('access-preview').click();await tick();input.events.input();await u.respond({target:'policy',digest:'late',change,effect:'late'});assert.equal(u.node('access-apply').disabled,true);
  u.node('owner-lock').click();assert.equal(u.node('access-grants').children.length,0);assert.equal(u.node('access-history').children.length,0);assert.equal(u.node('access-plan').textContent,'');
 });
+test('owner key controls show retained epochs, apply exact previews, and invalidate restore on edits and lock',async()=>{
+ const u=ui();await u.login();await u.respond({...proofCatalog,scopes:[proofEntry('archive-A')]});await u.respond(proofPage);u.node('owner-token').value='owner-credential';u.node('owner-connect').events.submit({preventDefault(){}});await tick();
+ await u.respond({owner:'owner',targets:[{kind:'key-history',id:'keys'}],jobs:[],limits:{jobs:10}});assert.equal(u.node('key-controls').hidden,false);assert.equal(u.node('owner-maintenance-preview').disabled,true);
+ u.node('key-preview').click();await tick();assert.deepEqual(JSON.parse(u.pending[0].opts.body),{action:'preview-key-rotation',target:'keys'});
+ const change={sequence:'0',previous:null,recipient:'public-epoch',recorded_at:'100'};await u.respond({target:'keys',digest:'digest',change,effect:'Keep old epochs.'});assert.match(u.node('key-plan').textContent,/Keep old epochs/);
+ u.node('key-apply').click();await tick();assert.deepEqual(JSON.parse(u.pending[0].opts.body),{action:'apply-key-rotation',target:'keys',change,preview:'digest'});
+ await u.respond({target:'keys',state:'applied'});await u.respond({target:'keys',snapshot:{epochs:1,current_recipient:'public-epoch',tip:'checkpoint',history:[{change}]},custody:'Credential verified'});assert.match(u.node('key-status').textContent,/1 retained epochs/);
+ u.node('key-export').click();await tick();const pkg={version:'kan-key-recovery/1',records:[{change}],tip:'checkpoint'};await u.respond({target:'keys',package:pkg,custody:'Wrapped keys only.'});assert.deepEqual(JSON.parse(u.node('key-package').value),pkg);assert.equal(u.node('key-download').disabled,false);
+ u.node('key-restore-preview').click();await tick();assert.deepEqual(JSON.parse(u.pending[0].opts.body),{action:'restore-keys',target:'keys',package:pkg,preview:null});await u.respond({target:'keys',digest:'restore-digest',tip:'checkpoint',epochs:1,effect:'Restore wrapped history.'});assert.equal(u.node('key-restore-apply').disabled,false);
+ u.node('key-package').events.input();assert.equal(u.node('key-restore-apply').disabled,true);assert.equal(u.node('key-download').disabled,true);
+ u.node('key-preview').click();await tick();u.node('owner-lock').click();await u.respond({target:'keys',digest:'late',change,effect:'late'});assert.equal(u.node('key-apply').disabled,true);assert.equal(u.node('key-package').value,'');assert.equal(u.node('key-history').children.length,0);
+});
+test('missing decryption epoch keeps provenance but disables source download and analysis',async()=>{
+ const u=ui();await u.login();await u.respond({...proofCatalog,scopes:[proofEntry('archive-A')]});await u.respond(proofPage);u.node('rows').children[0].click();await tick();
+ await u.respond({scope:'s',archive:'archive-A',profile:'admitted',record:proofPage.records[0],availability:'key-unavailable',writer:'verified-writer',content_trust:'Untrusted capture',signature:'Verified writer',admission:'Retained',service_issuer:'issuer'});
+ assert.equal(u.node('download').disabled,true);assert.equal(u.node('analyze-source').hidden,true);assert.match(u.node('source').textContent,/key-unavailable/);assert.equal(u.node('provenance-tab').disabled,false);
+});

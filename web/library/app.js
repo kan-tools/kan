@@ -1,7 +1,7 @@
 (() => {
   'use strict';
   const $ = id => document.getElementById(id);
-  let policyRows=[],policyPreview=null;
+  let policyRows=[],policyPreview=null,keyPreview=null,keyRestore=null;
   let ownerToken='',ownerEpoch=0,ownerController,ownerTargets=[],ownerPreview=null,ownerRetry=null;
   let token = '', epoch = 0, controller, scopes = [], pin, after = 0, next = null, history = [], selected = null, source = null, hexadecimal = false;
   const selections = new Map();
@@ -86,8 +86,8 @@
     $('encoding').disabled = source.utf8 === null;
   }
   function showSource(value) {
-    $('annotate-source').hidden=!annotationsEnabled || !isProof();$('analyze-source').hidden=!analysisEnabled || !isProof() || value.availability==='missing' || value.availability==='corrupt';
-    const unavailable = value.availability === 'missing' || value.availability === 'corrupt';
+    $('annotate-source').hidden=!annotationsEnabled || !isProof();$('analyze-source').hidden=!analysisEnabled || !isProof() || ['missing','corrupt','key-unavailable'].includes(value.availability);
+    const unavailable = ['missing','corrupt','key-unavailable'].includes(value.availability);
     source = unavailable ? null : value; $('download').disabled = unavailable; $('source-tab').disabled = false; $('provenance-tab').disabled = false; $('inspection').hidden = false; $('close-inspector').hidden = false;
     $('selection').textContent = `Occurrence ${value.record.sequence}`;
     $('source-hint').textContent = value.content_trust;
@@ -405,7 +405,7 @@
   function validateDiscovery(value) {
       if (value.version !== 'kan-discovery/1' || !Array.isArray(value.records) || value.records.length > 20) throw new Error('Invalid discovery response.');
       for (const item of value.records) {
-        if (!item?.record?.selection || typeof item.record.sequence !== 'string' || !item.description || !['capture','import','opaque','unsupported','malformed','missing','corrupt'].includes(item.description.kind)) throw new Error('Invalid discovery record.');
+        if (!item?.record?.selection || typeof item.record.sequence !== 'string' || !item.description || !['capture','import','opaque','unsupported','malformed','missing','corrupt','key-unavailable'].includes(item.description.kind)) throw new Error('Invalid discovery record.');
         if (item.description.kind === 'import' && (typeof item.writer!=='string' || !/^[a-f0-9]{64}$/.test(item.description.plan) || !/^(0|[1-9][0-9]*)$/.test(item.description.ordinal))) throw new Error('Invalid import identity.');
         if (item.description.kind === 'capture' && (typeof item.writer !== 'string' || !/^(0|[1-9][0-9]*)$/.test(item.description.ordinal) || typeof item.description.attempt !== 'string' || !item.description.event)) throw new Error('Invalid capture identity.');
       }
@@ -618,7 +618,7 @@
   }
 
   function lockOwner(){
-    clearPolicy();
+    clearPolicy();clearKeys();
     ownerEpoch++;if(ownerController)ownerController.abort();ownerToken='';ownerTargets=[];ownerPreview=null;ownerRetry=null;
     $('owner-token').value='';$('owner-controls').hidden=true;$('owner-connect').hidden=false;$('owner-maintenance').hidden=true;$('owner-lock').disabled=true;$('owner-submit').disabled=true;
     for(const id of ['owner-target','owner-operation','owner-jobs','owner-detail'])$(id).replaceChildren();$('owner-preview').textContent='';$('owner-status').textContent='Owner access locked. Running maintenance is not cancelled.';
@@ -626,7 +626,7 @@
   async function ownerRpc(body){
     const current=++ownerEpoch;if(ownerController)ownerController.abort();ownerController=new AbortController();
     try{const response=await fetch('/api/owner',{method:'POST',headers:{Authorization:`Bearer ${ownerToken}`,'Content-Type':'application/json'},body:JSON.stringify(body),credentials:'omit',cache:'no-store',signal:ownerController.signal});
-      if(current!==ownerEpoch)return null;if(!response.ok){if(response.status===409){invalidatePolicy();throw new Error('The target changed since preview. Refresh it and review a new preview.');}if(response.status===401||response.status===403){lockOwner();$('owner-maintenance').hidden=false;$('owner-status').textContent='Owner access refused. Reader access has not changed.';return null;}throw new Error('Owner request failed. Refresh jobs before retrying; retained outputs are not removed.');}
+      if(current!==ownerEpoch)return null;if(!response.ok){if(response.status===409){invalidatePolicy();invalidateKeys();throw new Error('The target changed since preview. Refresh it and review a new preview.');}if(response.status===401||response.status===403){lockOwner();$('owner-maintenance').hidden=false;$('owner-status').textContent='Owner access refused. Reader access has not changed.';return null;}throw new Error('Owner request failed. Refresh jobs before retrying; retained outputs are not removed.');}
       const value=await response.json();return current===ownerEpoch?value:null;
     }catch(error){if(current!==ownerEpoch||error.name==='AbortError')return null;throw error;}
   }
@@ -634,8 +634,8 @@
   function ownerOperations(){
     ownerPreview=null;$('owner-submit').disabled=true;$('owner-preview').textContent='';$('owner-operation').replaceChildren();
     const target=ownerTargets.find(t=>t.id===$('owner-target').value);
-    clearPolicy();$('access-controls').hidden=target?.kind!=='access-policy';$('owner-maintenance-preview').disabled=target?.kind==='access-policy';$('owner-operation').disabled=target?.kind==='access-policy';
-    const operations=target?.kind==='access-policy'?[]:target?.kind==='workspace-recovery'?['recover']:target?.kind==='import-recovery'?['restore-import']:target?.kind==='migration'?(target.recovered?['import','reconcile-import']:['import']):target?.kind==='operations'?['rotate']:['backup','recover'];
+    clearPolicy();clearKeys();$('key-controls').hidden=target?.kind!=='key-history';$('access-controls').hidden=target?.kind!=='access-policy';$('owner-maintenance-preview').disabled=['access-policy','key-history'].includes(target?.kind);$('owner-operation').disabled=['access-policy','key-history'].includes(target?.kind);
+    const operations=['access-policy','key-history'].includes(target?.kind)?[]:target?.kind==='workspace-recovery'?['recover']:target?.kind==='import-recovery'?['restore-import']:target?.kind==='migration'?(target.recovered?['import','reconcile-import']:['import']):target?.kind==='operations'?['rotate']:['backup','recover'];
     for(const operation of operations){const option=textNode('option',operation);option.value=operation;$('owner-operation').append(option);}
     $('owner-operation').value=operations[0]||'';
   }
@@ -674,6 +674,42 @@
   }));
   $('owner-lock').addEventListener('click',()=>{lockOwner();$('owner-maintenance').hidden=false;});
 
+  function invalidateKeys(){keyPreview=null;keyRestore=null;$('key-apply').disabled=true;$('key-restore-apply').disabled=true;$('key-plan').textContent='';}
+  function clearKeys(){invalidateKeys();$('key-controls').hidden=true;$('key-status').textContent='';$('key-history').replaceChildren();$('key-package').value='';$('key-download').disabled=true;}
+  async function loadKeys(){
+    invalidateKeys();const target=$('owner-target').value,value=await ownerRpc({action:'keys',target});if(!value)return;
+    if(value.target!==target||!value.snapshot||!Array.isArray(value.snapshot.history))throw new Error('Invalid key history.');
+    $('key-status').textContent=`${value.snapshot.epochs} retained epochs · current recipient ${value.snapshot.current_recipient||'none'} · checkpoint ${value.snapshot.tip||'none'} · ${value.custody}`;
+    $('key-history').replaceChildren();for(const record of value.snapshot.history){const c=record.change,article=document.createElement('article');article.append(textNode('h4',`Epoch ${c.sequence} · Unix ${c.recorded_at}`));article.append(textNode('p',`Recipient ${c.recipient}`));article.append(textNode('p',`Previous ${c.previous||'initial epoch'}`));$('key-history').append(article);}
+  }
+  $('key-load').addEventListener('click',()=>ownerRun(loadKeys));
+  $('key-preview').addEventListener('click',()=>ownerRun(async()=>{
+    invalidateKeys();const target=$('owner-target').value,value=await ownerRpc({action:'preview-key-rotation',target});if(!value)return;
+    if(value.target!==target||!value.change||typeof value.digest!=='string')throw new Error('Invalid key rotation preview.');keyPreview=value;
+    $('key-plan').textContent=`${value.effect}\nEpoch ${value.change.sequence} · recipient ${value.change.recipient}\nReplaces ${value.change.previous||'no earlier epoch'}`;$('key-apply').disabled=false;
+  }));
+  $('key-apply').addEventListener('click',()=>ownerRun(async()=>{
+    if(!keyPreview)return;const p=keyPreview;$('key-apply').disabled=true;
+    const value=await ownerRpc({action:'apply-key-rotation',target:p.target,change:p.change,preview:p.digest});if(!value)return;
+    if(!['applied','already-applied'].includes(value.state))throw new Error('Invalid key rotation result.');await loadKeys();$('owner-status').textContent='Epoch activated; previous evidence and keys retained. Export the updated wrapped recovery package.';
+  }));
+  $('key-export').addEventListener('click',()=>ownerRun(async()=>{
+    const target=$('owner-target').value,value=await ownerRpc({action:'export-keys',target});if(!value)return;
+    if(value.target!==target||value.package?.version!=='kan-key-recovery/1')throw new Error('Invalid wrapped recovery package.');
+    invalidateKeys();$('key-package').value=JSON.stringify(value.package);$('key-download').disabled=false;$('key-status').textContent=value.custody;
+  }));
+  $('key-package').addEventListener('input',()=>{ownerEpoch++;if(ownerController)ownerController.abort();invalidateKeys();$('key-download').disabled=true;});
+  $('key-download').addEventListener('click',()=>{
+    const url=URL.createObjectURL(new Blob([$('key-package').value],{type:'application/json'}));const link=document.createElement('a');link.href=url;link.download='kan-wrapped-key-recovery.json';link.click();URL.revokeObjectURL(url);
+  });
+  $('key-restore-preview').addEventListener('click',()=>ownerRun(async()=>{
+    invalidateKeys();const target=$('owner-target').value,packageValue=JSON.parse($('key-package').value),value=await ownerRpc({action:'restore-keys',target,package:packageValue,preview:null});if(!value)return;
+    if(value.target!==target||typeof value.digest!=='string')throw new Error('Invalid key restore preview.');keyRestore={target,package:packageValue,digest:value.digest};$('key-plan').textContent=`${value.effect}\n${value.epochs} epochs · checkpoint ${value.tip}`;$('key-restore-apply').disabled=false;
+  }));
+  $('key-restore-apply').addEventListener('click',()=>ownerRun(async()=>{
+    if(!keyRestore)return;const p=keyRestore;$('key-restore-apply').disabled=true;const value=await ownerRpc({action:'restore-keys',target:p.target,package:p.package,preview:p.digest});if(!value)return;
+    if(value.state!=='restored')throw new Error('Invalid key restore result.');await loadKeys();$('owner-status').textContent='Wrapped history restored. Reader and capture configurations remain explicitly selected.';
+  }));
   function invalidatePolicy(){policyPreview=null;$('access-apply').disabled=true;$('access-plan').textContent='';}
   function clearPolicy(){invalidatePolicy();policyRows=[];$('access-grants').replaceChildren();$('access-history').replaceChildren();$('access-status').textContent='';$('access-editor').hidden=true;$('access-controls').hidden=true;}
   function policyEdited(){ownerEpoch++;if(ownerController)ownerController.abort();invalidatePolicy();}
@@ -1158,7 +1194,7 @@
     // Export rechecks authorization; the displayed range is not an offline grant.
     const request = sourceRequest(sequence,offset); clearInspector(); selected = sequence;
     const value = await rpc(request); if (!value) return;
-    showSource(value); if (value.availability === 'missing' || value.availability === 'corrupt') return;
+    showSource(value); if (['missing','corrupt','key-unavailable'].includes(value.availability)) return;
     const bytes = new Uint8Array(value.bytes_hex.match(/../g)?.map(x => parseInt(x,16)) || []);
     const url = URL.createObjectURL(new Blob([bytes],{type:'application/octet-stream'}));
     // Keep the URL alive for navigation to begin; lock/pagehide release it early.

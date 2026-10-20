@@ -14,6 +14,7 @@ use sha2::{Digest, Sha256};
 
 const CATALOG: &str = include_str!("fixtures/read-write-surface.tsv");
 const RULE_EVIDENCE: &[(&str, &str)] = &[
+    ("wrapped-key-epochs", "tests/evidence_keys.rs"),
     (
         "signed-owner-policy",
         "tests/support/proof_service_tests.rs",
@@ -116,6 +117,18 @@ const RULE_EVIDENCE: &[(&str, &str)] = &[
     ("connection-config", ".design/medium-architecture.md"),
 ];
 const PERSISTENCE_PATH_EXPRESSIONS: &[(&str, &str, &str)] = &[
+    ("src/evidence_keys.rs", "\"LOCK\"", "wrapped-epoch-path"),
+    ("src/evidence_keys.rs", "&name", "wrapped-epoch-path"),
+    (
+        "src/evidence_keys.rs",
+        "format!( \".pending-{}\", service::hex(&rand::random::<[u8; 32]>()) )",
+        "wrapped-epoch-path",
+    ),
+    (
+        "src/evidence_keys.rs",
+        "format!(\"epoch-{:020}-{id}.json\", snapshot.history.len())",
+        "wrapped-epoch-path",
+    ),
     ("src/evidence_policy.rs", "\"LOCK\"", "signed-policy-path"),
     ("src/evidence_policy.rs", "&name", "signed-policy-path"),
     (
@@ -467,6 +480,7 @@ const PERSISTENCE_PATH_EXPRESSIONS: &[(&str, &str, &str)] = &[
     ("src/workspace.rs", "\"; \"", "not a path"),
 ];
 const PERSISTENCE_MODULES: &[&str] = &[
+    "src/evidence_keys.rs",
     "src/evidence_policy.rs",
     "src/evidence_workspace.rs",
     "src/evidence_operations_collection.rs",
@@ -487,6 +501,13 @@ const PERSISTENCE_MODULES: &[&str] = &[
     "src/workspace.rs",
 ];
 const PERSISTENCE_MUTATION_SITES: &[(&str, &str, &str, usize)] = &[
+    (
+        "src/evidence_keys.rs",
+        "write_new_owner_only",
+        "EvidenceKeys",
+        2,
+    ),
+    ("src/evidence_keys.rs", "rename", "EvidenceKeys", 1),
     (
         "src/evidence_policy.rs",
         "write_new_owner_only",
@@ -1399,7 +1420,7 @@ fn every_persistence_facade_call_is_independently_inventoried() {
         if module == "src/persistence.rs" {
             assert_eq!(
                 format!("{:x}", Sha256::digest(source.as_bytes())),
-                "64e09e101e0f3513ccc537b43833bb993ce44119cdab4c22fc59eee5f25fe196",
+                "8ac0564e6a4a26fc6610fee7e70d62ee538163a61e1b9cc7abb04692d8c91ecb",
                 "the raw-mutation facade changed; review and update its committed implementation digest together with facade-call negative controls"
             );
             assert!(

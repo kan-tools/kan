@@ -498,13 +498,16 @@ fn source_value(
             plaintext,
             ..
         } => (record, Some(writer), Some(plaintext), "available"),
+        proof::Source::KeyUnavailable { record, writer, .. } => {
+            (record, Some(writer), None, "key-unavailable")
+        }
         proof::Source::Missing { record } => (record, None, None, "missing"),
         proof::Source::Corrupt { record } => (record, None, None, "corrupt"),
     };
     let reference = proof::Reference::new(binding, &record);
     let mut result = json!({"reference":reference,"scope":binding.scope,"archive":binding.archive,"profile":binding.profile,
         "record":record,"writer":writer,"service_issuer":binding.issuer,"availability":availability,
-        "signature":if plaintext.is_some() {"Retained writer signature verified on this read"} else {"Writer signature cannot be rechecked without valid retained source"},
+        "signature":if plaintext.is_some() || availability=="key-unavailable" {"Retained writer signature verified on this read"} else {"Writer signature cannot be rechecked without valid retained source"},
         "admission":"Issuer-attested metadata; proof purpose shown separately",
         "content_trust":"Untrusted retained content; speaker and outcome claims are not authenticated facts"});
     if let Some(bytes) = plaintext {

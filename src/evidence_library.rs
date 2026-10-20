@@ -366,7 +366,7 @@ async fn handle(
         }
         let body = match tokio::time::timeout(
             Duration::from_secs(3),
-            Limited::new(r.into_body(), 131072).collect(),
+            Limited::new(r.into_body(), 262144).collect(),
         )
         .await
         {

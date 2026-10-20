@@ -17,6 +17,12 @@ use std::{
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
 pub enum Target {
+    KeyHistory {
+        id: String,
+        history: crate::evidence_keys::Access,
+        signing_key: PathBuf,
+        recovery_key: PathBuf,
+    },
     AccessPolicy {
         id: String,
         policy: crate::evidence_policy::Access,
@@ -65,7 +71,8 @@ pub enum Target {
 impl Target {
     fn id(&self) -> &str {
         match self {
-            Self::AccessPolicy { id, .. }
+            Self::KeyHistory { id, .. }
+            | Self::AccessPolicy { id, .. }
             | Self::WorkspaceRecovery { id, .. }
             | Self::Archive { id, .. }
             | Self::Operations { id, .. }
@@ -94,6 +101,25 @@ pub struct Config {
 #[derive(Deserialize)]
 #[serde(tag = "action", rename_all = "kebab-case", deny_unknown_fields)]
 pub enum Request {
+    Keys {
+        target: String,
+    },
+    PreviewKeyRotation {
+        target: String,
+    },
+    ApplyKeyRotation {
+        target: String,
+        change: Box<crate::evidence_keys::Change>,
+        preview: String,
+    },
+    ExportKeys {
+        target: String,
+    },
+    RestoreKeys {
+        target: String,
+        package: Box<crate::evidence_keys::RecoveryPackage>,
+        preview: Option<String>,
+    },
     Access {
         target: String,
         #[serde(default)]
@@ -126,6 +152,13 @@ pub enum Request {
     Job {
         id: String,
     },
+}
+enum KeyAction {
+    Read,
+    Preview,
+    Apply(Box<crate::evidence_keys::Change>, String),
+    Export,
+    Restore(Box<crate::evidence_keys::RecoveryPackage>, Option<String>),
 }
 enum PolicyAction {
     Read(usize),
@@ -176,6 +209,32 @@ impl Owner {
                 return Err(Failure::Invalid);
             }
             match &target {
+                Target::KeyHistory {
+                    history,
+                    signing_key,
+                    recovery_key,
+                    ..
+                } => {
+                    history.validate()?;
+                    if !signing_key.is_absolute()
+                        || !recovery_key.is_absolute()
+                        || crate::sign::Identity::load_existing(signing_key)
+                            .map_err(|_| Failure::Invalid)?
+                            .did()
+                            .as_str()
+                            != history.owner
+                    {
+                        return Err(Failure::Invalid);
+                    }
+                    let key = crate::evidence_crypto::read_private_key(recovery_key)
+                        .map_err(|_| Failure::Invalid)?;
+                    if service::hex(
+                        &crate::evidence_crypto::public_key(&key).map_err(|_| Failure::Invalid)?,
+                    ) != history.recovery_recipient
+                    {
+                        return Err(Failure::Invalid);
+                    }
+                }
                 Target::AccessPolicy {
                     policy,
                     signing_key,
@@ -443,8 +502,86 @@ impl Owner {
             }
         }).await.map_err(|_|Failure::Unavailable)?
     }
+    async fn key_action(&self, target: String, action: KeyAction) -> Result<Value, Failure> {
+        let Target::KeyHistory {
+            history,
+            signing_key,
+            recovery_key,
+            ..
+        } = self
+            .targets
+            .get(&target)
+            .ok_or(Failure::AccessLimited)?
+            .clone()
+        else {
+            return Err(Failure::Invalid);
+        };
+        let permit = self
+            .preparation
+            .clone()
+            .try_acquire_owned()
+            .map_err(|_| Failure::Unavailable)?;
+        tokio::task::spawn_blocking(move || {
+            let _permit=permit;
+            let private=crate::evidence_crypto::read_private_key(&recovery_key).map_err(|_|Failure::AccessLimited)?;
+            if service::hex(&crate::evidence_crypto::public_key(&private).map_err(|_|Failure::Invalid)?)!=history.recovery_recipient {return Err(Failure::AccessLimited);}
+            match action {
+                KeyAction::Read => {
+                    let snapshot=history.read()?;
+                    snapshot.unlock(&private)?;
+                    Ok(json!({"target":target,"binding":history.binding,"recovery_recipient":history.recovery_recipient,"minimum":history.minimum,"snapshot":snapshot.value(),"custody":"Recovery key verified; no private key material returned."}))
+                }
+                KeyAction::Preview => {
+                    let change=history.preview(service::hex(&rand::random::<[u8;32]>()))?;
+                    change.unlock(&private)?;
+                    Ok(json!({"target":target,"digest":change.digest()?,"change":change,"effect":"Append a fresh encryption epoch. Epoch-aware capture uses it for subsequent attempts; existing attempts and spooled retries keep their original epoch. Retain all previous keys and evidence. Export the updated wrapped package and keep the independent recovery credential separately."}))
+                }
+                KeyAction::Apply(change,preview) => {
+                    if change.digest()?!=preview || change.binding!=history.binding || change.owner!=history.owner {return Err(Failure::Invalid);}
+                    change.unlock(&private)?;
+                    let signer=crate::sign::Identity::load_existing(&signing_key).map_err(|_|Failure::Unavailable)?;
+                    let mut result=history.append(crate::evidence_keys::Record::sign(*change,&signer)?)?;
+                    result["target"]=json!(target);Ok(result)
+                }
+                KeyAction::Export => Ok(json!({"target":target,"package":history.export()?,"custody":"Wrapped keys only. Store independently from the recovery private credential. This does not include archive ciphertext, reader workspace, or service grants."})),
+                KeyAction::Restore(package,preview) => {
+                    history.verify_package(&package)?;
+                    for record in &package.records {record.change.unlock(&private)?;}
+                    let contract=json!({"target":target,"history":history,"package":package});
+                    let digest=Self::hash(&contract)?;
+                    if let Some(expected)=preview {
+                        if expected!=digest {return Err(Failure::Invalid);}
+                        let mut result=history.restore(&package)?;result["target"]=json!(target);Ok(result)
+                    } else {
+                        Ok(json!({"target":target,"digest":digest,"tip":package.tip,"epochs":package.records.len(),"effect":"Restore this signed wrapped history to the configured key directory. Accept only an identical existing prefix; never replace keys or activate a reader/capture configuration."}))
+                    }
+                }
+            }
+        }).await.map_err(|_|Failure::Unavailable)?
+    }
     pub async fn execute(self: &Arc<Self>, request: Request) -> Result<Value, Failure> {
         match request {
+            Request::Keys { target } => self.key_action(target, KeyAction::Read).await,
+            Request::PreviewKeyRotation { target } => {
+                self.key_action(target, KeyAction::Preview).await
+            }
+            Request::ApplyKeyRotation {
+                target,
+                change,
+                preview,
+            } => {
+                self.key_action(target, KeyAction::Apply(change, preview))
+                    .await
+            }
+            Request::ExportKeys { target } => self.key_action(target, KeyAction::Export).await,
+            Request::RestoreKeys {
+                target,
+                package,
+                preview,
+            } => {
+                self.key_action(target, KeyAction::Restore(package, preview))
+                    .await
+            }
             Request::Access { target, after } => {
                 self.policy_action(target, PolicyAction::Read(after)).await
             }
@@ -576,7 +713,7 @@ fn perform(
 ) -> Result<Value, String> {
     let work = || -> Result<Value, Box<dyn std::error::Error + Send + Sync>> {
         match target {
-            Target::AccessPolicy { .. } => {
+            Target::KeyHistory { .. } | Target::AccessPolicy { .. } => {
                 Err("access policies use their dedicated preview/apply API".into())
             }
             Target::WorkspaceRecovery {

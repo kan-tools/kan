@@ -745,3 +745,61 @@ plaintext or keys. Current bounds are 256 principals per policy, 1,024 changes a
 16 MiB total history; capacity fails explicitly and never deletes earlier policy.
 Pending files from interrupted writes are not policy authority and are retained
 for owner inspection. Key rotation and payload erasure remain separate operations.
+
+
+### Encryption epoch rotation and wrapped key recovery
+
+A `key-history` owner target manages a separate signed, append-only key directory.
+Provision an existing absolute directory with mode 0700 and an independent,
+32-byte recovery credential file with mode 0600. Pin its public recipient in an
+access configuration:
+
+```json
+{
+  "directory": "/absolute/instance/keys",
+  "binding": {"profile":"admitted","archive":"<64 hex>","scope":"<64 hex>","issuer":"<storage did:key>"},
+  "owner": "<owner signing did:key>",
+  "recovery_recipient": "<64 hex public X25519 recipient>",
+  "minimum": null
+}
+```
+
+Initialize it with `kan-v2 init-key-history /absolute/keys.json`. Add an owner
+target containing `kind: "key-history"`, `id`, `history` (the object above),
+`signing_key` and `recovery_key` (absolute existing private files). In Owner
+maintenance, inspect the history, preview a new epoch, then activate that exact
+preview. Prior epochs and all evidence remain retained. The API/owner CLI actions
+are `keys`, `preview-key-rotation`, `apply-key-rotation` (`change` and `preview`),
+`export-keys`, and `restore-keys` (`package`, `preview: null` to preview, then its
+digest to apply). All name the configured `target`.
+
+Add `--key-history /absolute/keys.json` to an existing collector/gateway command
+to select the latest signed recipient at each new attempt. Its fixed `--recipient`
+remains the compatibility setting and is not a fallback if the configured history
+fails. An unreadable history produces a visible recording gap while inference
+continues. Existing attempts and queued ciphertext retain their original epoch.
+
+Proof Library scope entries may add `epoch_keys` containing `history` and
+`recovery_key`. The reader reloads the verified key history when reading and
+checks current inventory grants independently. Existing `private_key_file`
+remains the original compatibility credential; `historical_key_files` optionally
+lists up to 64 additional absolute existing recipient key files. Neither list
+changes read authorization. Missing matching keys show `key-unavailable` while
+the attested occurrence remains browsable. Imports validate their own actual
+recipient; selecting a newer epoch does not change the imported plan.
+
+Export the wrapped recovery package after rotation and keep it independently
+from the recovery private credential. The browser can display/download this
+wrapped JSON; no unwrapped private key is returned. For a clean-host restore,
+initialize a new private key directory, configure a separate owner target with
+the same binding/owner/recovery recipient, paste the package and preview/restore.
+An identical partial prefix can resume; a divergent history is refused. A
+separately retained `minimum` record digest detects truncated histories. No
+reader or capture routing is activated automatically.
+
+The format retains at most 64 epochs / 128 KiB of signed history and reports
+capacity rather than deleting keys. Rotation cannot recall already distributed
+keys or plaintext. Archive ciphertext, policy history, encrypted workspaces and
+independent credentials must also be backed up; this package alone is not an
+instance backup. Delegated per-reader wrapping, recovery-credential replacement
+and payload erasure remain distinct lifecycle work.

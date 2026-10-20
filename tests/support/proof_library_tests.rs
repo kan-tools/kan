@@ -3065,3 +3065,101 @@ async fn owner_access_policy_previews_preserve_history_and_reject_reader_authori
     ui.stop().await;
     server.stop().await;
 }
+
+#[tokio::test]
+async fn owner_key_epochs_require_owner_preview_and_restore_wrapped_history_after_restart() {
+    const OWNER: &str = "synthetic-key-owner-token-123456789";
+    let dir = private_workspace_directory();
+    let local = private_workspace_directory();
+    let key_dir = private_workspace_directory();
+    let restored_dir = private_workspace_directory();
+    let f = fixture_requests(dir.path(), Profile::Admitted, encrypted);
+    let server = Server::start(&f).await;
+    let history:kan::evidence_keys::Access=serde_json::from_value(json!({"directory":key_dir.path(),"binding":{"profile":"admitted","archive":service::hex(&f.binding.archive),"scope":service::hex(&f.binding.scope),"issuer":f.binding.issuer},"owner":identity(9).did().as_str(),"recovery_recipient":service::hex(&kan::evidence_crypto::public_key(&[83;32]).unwrap())})).unwrap();
+    history.initialize().unwrap();
+    let mut restored = history.clone();
+    restored.directory = restored_dir.path().to_owned();
+    restored.initialize().unwrap();
+    let signing_key = local.path().join("owner.key");
+    let recovery_key = local.path().join("recovery.key");
+    for (path, key) in [(&signing_key, [9; 32]), (&recovery_key, [83; 32])] {
+        std::fs::write(path, key).unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600)).unwrap();
+        }
+    }
+    let state = local.path().join("owner.sqlite");
+    let readers = || {
+        let workspace =
+            kan::evidence_workspace::Workspace::open(&state, identity(9), [84; 32]).unwrap();
+        let owner=kan::evidence_library::Owner::new(serde_json::from_value(json!({"token":OWNER,"max_jobs":10,"targets":[{"kind":"key-history","id":"keys","history":history,"signing_key":signing_key,"recovery_key":recovery_key},{"kind":"key-history","id":"restored","history":restored,"signing_key":signing_key,"recovery_key":recovery_key}]})).unwrap(),workspace).unwrap();
+        kan::evidence_library::Readers::new(None, vec![server.client(&f)])
+            .unwrap()
+            .with_owner(owner)
+    };
+    let ui = Ui::start(readers()).await;
+    owner_call(&ui, TOKEN, json!({"action":"keys","target":"keys"}), 401).await;
+    let preview = owner_call(
+        &ui,
+        OWNER,
+        json!({"action":"preview-key-rotation","target":"keys"}),
+        200,
+    )
+    .await;
+    assert_eq!(history.read().unwrap().history.len(), 0);
+    let mut apply = json!({"action":"apply-key-rotation","target":"keys","change":preview["change"],"preview":"wrong"});
+    owner_call(&ui, OWNER, apply.clone(), 400).await;
+    apply["preview"] = preview["digest"].clone();
+    assert_eq!(
+        owner_call(&ui, OWNER, apply.clone(), 200).await["state"],
+        "applied"
+    );
+    assert_eq!(
+        owner_call(&ui, OWNER, apply, 200).await["state"],
+        "already-applied"
+    );
+    let export = owner_call(
+        &ui,
+        OWNER,
+        json!({"action":"export-keys","target":"keys"}),
+        200,
+    )
+    .await;
+    assert_eq!(export["package"]["records"].as_array().unwrap().len(), 1);
+    let package = export["package"].clone();
+    let preview = owner_call(
+        &ui,
+        OWNER,
+        json!({"action":"restore-keys","target":"restored","package":package,"preview":null}),
+        200,
+    )
+    .await;
+    assert!(restored.read().unwrap().history.is_empty());
+    owner_call(
+        &ui,
+        OWNER,
+        json!({"action":"restore-keys","target":"restored","package":package,"preview":"wrong"}),
+        400,
+    )
+    .await;
+    assert_eq!(owner_call(&ui,OWNER,json!({"action":"restore-keys","target":"restored","package":package,"preview":preview["digest"]}),200).await["state"],"restored");
+    ui.stop().await;
+    let ui = Ui::start(readers()).await;
+    let state = owner_call(
+        &ui,
+        OWNER,
+        json!({"action":"keys","target":"restored"}),
+        200,
+    )
+    .await;
+    assert_eq!(state["snapshot"]["epochs"], 1);
+    assert_eq!(state["snapshot"]["tip"], export["package"]["tip"]);
+    assert_eq!(
+        restored.read().unwrap().unlock(&[83; 32]).unwrap(),
+        history.read().unwrap().unlock(&[83; 32]).unwrap()
+    );
+    ui.stop().await;
+    server.stop().await;
+}
