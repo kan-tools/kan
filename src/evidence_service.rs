@@ -449,6 +449,7 @@ fn view(record: &Committed) -> RecordView {
 /// Explicit profile-2 ingest. Read operations use the separate proof endpoint;
 /// the durable delivery request/reply format remains compatible with the spool.
 pub struct AdmittingService {
+    erasure_history: Option<crate::evidence_erasure_history::Access>,
     policy: Option<crate::evidence_policy::Access>,
     archive: crate::evidence_store::attested::Archive,
     signer: Identity,
@@ -465,6 +466,7 @@ impl AdmittingService {
         }
         archive.verify()?;
         let mut service = Self {
+            erasure_history: None,
             policy: None,
             archive,
             signer,
@@ -472,6 +474,21 @@ impl AdmittingService {
         };
         service.replace_grants(grants)?;
         Ok(service)
+    }
+    pub fn with_erasure_history(
+        mut self,
+        history: crate::evidence_erasure_history::Access,
+    ) -> Result<Self> {
+        if history.binding.profile != crate::evidence_proof_service::Profile::Admitted
+            || history.binding.owner_binding()? != *self.archive.binding()
+        {
+            return Err(Failure::Invalid);
+        }
+        history
+            .current()?
+            .check_package(&self.archive.erasure_history()?)?;
+        self.erasure_history = Some(history);
+        Ok(self)
     }
     pub fn with_policy(mut self, policy: crate::evidence_policy::Access) -> Result<Self> {
         let binding = self.archive.binding();
@@ -501,6 +518,14 @@ impl AdmittingService {
     pub fn dispatch(&mut self, bytes: &[u8], now: u64) -> Result<SignedReply> {
         if bytes.len() > MAX_REQUEST {
             return Err(Failure::Invalid);
+        }
+        let custody = self
+            .erasure_history
+            .as_ref()
+            .map(crate::evidence_erasure_history::Access::current)
+            .transpose()?;
+        if let Some(current) = &custody {
+            current.check_package(&self.archive.erasure_history()?)?;
         }
         // Keep the shared policy lease through admission, so revocation commits
         // after earlier authorized work and before later work can authorize.

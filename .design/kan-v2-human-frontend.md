@@ -687,3 +687,28 @@ Remote all-target compilation passed at 3ad781e; the default test gate found thr
 surface-registration omissions (rule registration, independently enumerated values,
 and mutation-facade digest). Those inventories are corrected with the existing
 facade-call controls retained. Runtime storage/reader qualification is still pending.
+
+Independent owner custody now has a separate append-only signed history, with an
+explicit empty genesis and an owner key distinct from the storage issuer. Each
+subsequent owner record authorizes one exact issuer-signed storage erasure plan.
+Storage issuer attestations alone do not prove human authorization. The UI therefore
+says “Payload erased”; the coordinated owner workflow must establish the stronger
+claim. Custody is published before storage reconciliation: an interrupted transition
+leaves enrolled reads and ingestion blocked, rather than serving stale content.
+
+Both services can enroll using an owner-pinned history configuration. They hold a
+shared custody lease throughout each operation and require exact agreement between
+current owner-authorized and local storage history. Owner publication takes an
+exclusive lease. Startup and ongoing requests refuse missing custody, lagging
+restores or extra issuer-only erasures. A current owner checkpoint can reconcile an
+older archive before it is enrolled. Genesis and history must live outside the
+archive backup lifecycle; an independently retained minimum checkpoint detects
+rollback below that checkpoint, but cannot detect rollback of both custody and
+its pin together. This trusts the configured owner-controlled custody service/file
+system as the current source; it is not a cryptographic freshness oracle.
+
+Enrollment remains explicit for existing experimental configurations. Starting a
+legacy service without `--erasure-history` does not acquire these managed restore
+guarantees. The full owner coordinator must enroll every managed read/ingest/restore
+path and keep custody current before it reports managed erasure complete. Coordinated
+spool, outbox, workspace, replica and backup cleanup and owner job/UI still remain.

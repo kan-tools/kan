@@ -52,6 +52,7 @@ pub enum SurfaceWrite {
     EvidenceRestore,
     EvidenceWorkspace,
     EvidenceWorkspaceRecovery,
+    EvidenceErasureHistory,
     EvidencePolicy,
     EvidenceKeys,
     Count,
@@ -98,6 +99,7 @@ impl SurfaceWrite {
         Self::EvidenceRestore,
         Self::EvidenceWorkspace,
         Self::EvidenceWorkspaceRecovery,
+        Self::EvidenceErasureHistory,
         Self::EvidencePolicy,
         Self::EvidenceKeys,
     ];
@@ -251,6 +253,11 @@ impl SurfaceWrite {
                 "evidence-keys:LOCK",
                 "evidence-keys:.pending-*",
                 "evidence-keys:epoch-*.json",
+            ],
+            Self::EvidenceErasureHistory => &[
+                "evidence-erasure-history:LOCK",
+                "evidence-erasure-history:.pending-*",
+                "evidence-erasure-history:erasure-*.json",
             ],
             Self::EvidencePolicy => &[
                 "evidence-policy:LOCK",

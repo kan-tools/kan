@@ -1021,3 +1021,32 @@ status. Old backups with old recovery keys may still recover the content outside
 managed restore; epoch rotation does not provide selective cryptographic erasure.
 Do not delete SQLite objects manually to simulate this feature: current archive
 verification correctly treats that as missing evidence, not an authorized erasure.
+
+### Independent erasure custody (experimental storage integration)
+
+`kan-v2 init-erasure-history CONFIG --signing-key OWNER_KEY` initializes an empty,
+pre-provisioned private directory and publishes an owner-signed empty genesis. The
+input config contains `directory` (absolute path), the archive's `binding`, `owner`
+(DID of the owner key) and `minimum: null`. The output's `config` contains the pinned
+genesis. Save that configuration independently of archive backups, and supply it to
+**both** `serve-proof` and `serve-admitted` with `--erasure-history CONFIG`.
+Use a directory outside the archive backup tree and retain its complete signed
+history independently. The owner key may differ from the storage issuer key.
+
+Before starting services on a restored archive, run
+`kan-v2 reconcile-erasure ARCHIVE --erasure-history CONFIG` using independently
+current custody. This reconciles storage history and reports other cleanup and
+activation as not performed; it does not claim whole-instance erasure completion.
+
+Enrolled services check current custody on every operation and refuse stale archives
+or missing history. The library custody API publishes exact owner authorization
+before the storage API reconciles the archive; interruption between those steps
+blocks access until reconciliation finishes. A newer independently retained
+`minimum` checkpoint detects rollback below that point. Restoring old custody and
+its old pin together cannot prove freshness. Existing services without enrollment
+retain their experimental behavior and must not be represented as managed erasure.
+
+This initializes custody, not a complete erase workflow. Coordinated source/spool/
+replica/workspace removal, owner preview/apply/status, backup purge reporting and
+managed deployment enrollment remain under development. No historical offline
+backup or old key is made cryptographically irrecoverable by these operations.

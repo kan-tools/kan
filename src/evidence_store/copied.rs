@@ -22,6 +22,7 @@ PRAGMA user_version=3;
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct Status {
     pub original_objects: u64,
+    pub erased_original_objects: u64,
     pub copied_records: u64,
     pub planned_records: u64,
     pub source_copy_complete: bool,
@@ -174,6 +175,7 @@ fn audit_state(
     frame(&mut hash, b"objects");
     hash.update(original_objects.to_be_bytes());
     let erasures = erasure::load(conn)?;
+    let mut erased_original_objects = 0;
     let mut stmt = conn.prepare("SELECT cid,length FROM upgrade_objects ORDER BY cid")?;
     let mut rows = stmt.query([])?;
     while let Some(row) = rows.next()? {
@@ -184,6 +186,7 @@ fn audit_state(
             return Err(corrupt("original object coordinate"));
         }
         if let Some(erased) = erasures.objects.get(&text) {
+            erased_original_objects += 1;
             if erased.length as i64 != length {
                 return Err(corrupt("erased copy length"));
             }
@@ -213,6 +216,7 @@ fn audit_state(
     }
     Ok(Status {
         original_objects,
+        erased_original_objects,
         copied_records,
         planned_records: plan.source().through,
         source_copy_complete: complete,

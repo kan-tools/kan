@@ -96,7 +96,9 @@ pub enum Boundary {
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct Verification {
+    /// Object identities include authorized erasure markers.
     pub objects: u64,
+    pub erased_objects: u64,
     pub commits: u64,
     pub bytes: u64,
     pub snapshot: Snapshot,
@@ -1121,7 +1123,7 @@ impl Ledger {
         }
         let snapshot = self.snapshot()?;
         let erasures = erasure::load(tx)?;
-        let (mut objects, mut bytes, mut commits) = (0, 0, 0);
+        let (mut objects, mut bytes, mut commits, mut erased_objects) = (0, 0, 0, 0);
         let mut stmt = tx.prepare("SELECT cid,bytes FROM objects ORDER BY cid")?;
         let mut rows = stmt.query([])?;
         while let Some(row) = rows.next()? {
@@ -1132,6 +1134,7 @@ impl Ledger {
                     return Err(Error::Corrupt("erased object retains bytes".into()));
                 }
                 objects += 1;
+                erased_objects += 1;
                 continue;
             }
             if payload.is_empty()
@@ -1221,6 +1224,7 @@ impl Ledger {
         drop(stmt);
         Ok(Verification {
             objects,
+            erased_objects,
             commits,
             bytes,
             snapshot,

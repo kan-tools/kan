@@ -97,7 +97,7 @@
     $('selection').textContent = `Occurrence ${value.record.sequence}`;
     $('source-hint').textContent = value.content_trust;
     if (unavailable) {
-      $('source').textContent = value.availability==='erased' ? 'Erased by owner. Minimal issuer-attested provenance remains; this is not a semantic retraction.' : `Retained source is ${value.availability}. Issuer-attested metadata remains available.`;
+      $('source').textContent = value.availability==='erased' ? 'Payload erased. Minimal issuer-attested provenance remains; this is not a semantic retraction.' : `Retained source is ${value.availability}. Issuer-attested metadata remains available.`;
       $('range').textContent = 'No source bytes available'; $('encoding').disabled = true; $('more').disabled = true;
     } else {
     hexadecimal = value.utf8 === null || /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069]/.test(value.utf8);

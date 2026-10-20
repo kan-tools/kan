@@ -1021,3 +1021,169 @@ fn capture_erasure_scans_the_complete_archive_and_refuses_active_or_unknown_memb
         2
     );
 }
+
+#[test]
+fn independent_owner_erasure_custody_gates_live_services_and_older_restores() {
+    use kan::{
+        evidence_erasure_history as custody, evidence_proof_service as wire,
+        evidence_service::AdmittingService,
+        evidence_store::{erasure, inventory},
+    };
+    let root = tempfile::tempdir().unwrap();
+    let older = tempfile::tempdir().unwrap();
+    let history_dir = tempfile::tempdir().unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(history_dir.path(), std::fs::Permissions::from_mode(0o700))
+            .unwrap();
+    }
+    let owner = identity(4); // deliberately not the storage issuer
+    let wire_binding = wire::Binding {
+        profile: wire::Profile::Admitted,
+        archive: hex(&binding().archive),
+        scope: hex(&binding().scope),
+        issuer: binding().issuer,
+    };
+    let mut history = custody::Access {
+        directory: history_dir.path().to_path_buf(),
+        binding: wire_binding.clone(),
+        owner: owner.did().to_string(),
+        minimum: None,
+    };
+    history.initialize().unwrap();
+    assert!(history.current().is_err());
+    let genesis = history.preview(None, hex(&[1; 32])).unwrap();
+    assert!(custody::Record::sign(genesis.clone(), &identity(7)).is_err());
+    let genesis = custody::Record::sign(genesis, &owner).unwrap();
+    let genesis_id = genesis.id().unwrap();
+    history.append(genesis).unwrap();
+    history.minimum = Some(genesis_id);
+    assert!(
+        history.preview(None, hex(&[2; 32])).is_err(),
+        "no second empty genesis"
+    );
+
+    let mut archive = Archive::create(root.path(), binding()).unwrap();
+    let first = request(0, None);
+    archive.admit(&first, &identity(7), &grant(), 100).unwrap();
+    archive
+        .backup(&older.path().join("archive.sqlite"))
+        .unwrap();
+    let plan = archive.preview_erasure(&[1], hex(&[3; 32]), 101).unwrap();
+    let erasure = erasure::Record::sign(plan, &identity(7)).unwrap();
+    let read_grant = Grant {
+        inventory: true,
+        ..grant()
+    };
+    let make_reader = |root: &Path| {
+        wire::Service::new(
+            root.join("archive.sqlite"),
+            wire_binding.clone(),
+            identity(7),
+            vec![read_grant.clone()],
+            inventory::Budget {
+                items: 100,
+                metadata_bytes: 1024 * 1024,
+                duration: std::time::Duration::from_secs(10),
+                cancelled: Default::default(),
+            },
+        )
+        .unwrap()
+    };
+    let reader = make_reader(root.path())
+        .with_erasure_history(history.clone())
+        .unwrap();
+    let mut ingest = AdmittingService::new(
+        Archive::open(root.path(), binding()).unwrap(),
+        identity(7),
+        vec![grant()],
+    )
+    .unwrap()
+    .with_erasure_history(history.clone())
+    .unwrap();
+    let query = wire::SignedRequest::sign(
+        wire::Request {
+            version: 2,
+            binding: wire_binding.clone(),
+            principal: identity(6).did().to_string(),
+            expires: 200,
+            command: wire::Command::Snapshot,
+        },
+        &identity(6),
+    )
+    .unwrap()
+    .bytes()
+    .unwrap();
+    assert!(reader.dispatch(&query, 101).unwrap().reply.result.is_ok());
+    assert!(ingest.dispatch(&first, 101).unwrap().reply.result.is_ok());
+    let change = history
+        .preview(Some(erasure.clone()), hex(&[4; 32]))
+        .unwrap();
+    let authorized = custody::Record::sign(change, &owner).unwrap();
+    // Publication cannot pass a read or admission already holding the custody lease.
+    let held = history.current().unwrap();
+    assert_eq!(
+        history.append(authorized.clone()).unwrap_err(),
+        Failure::Unavailable
+    );
+    drop(held);
+    history.append(authorized.clone()).unwrap();
+    history.append(authorized.clone()).unwrap(); // lost acknowledgement retry
+                                                 // Crash boundary: owner intent is durable before archive mutation. Live services stop.
+    assert!(matches!(
+        reader.dispatch(&query, 102),
+        Err(Failure::AccessLimited)
+    ));
+    assert!(matches!(
+        ingest.dispatch(&first, 102),
+        Err(Failure::AccessLimited)
+    ));
+    assert!(make_reader(older.path())
+        .with_erasure_history(history.clone())
+        .is_err());
+    let current = history.current().unwrap();
+    let package = current.package().unwrap();
+    archive
+        .reconcile_erasure(&package, package.tip.as_ref().unwrap())
+        .unwrap();
+    assert!(reader.dispatch(&query, 103).unwrap().reply.result.is_ok());
+    assert_eq!(
+        ingest
+            .dispatch(&first, 103)
+            .unwrap()
+            .reply
+            .result
+            .unwrap_err(),
+        Failure::AccessLimited
+    );
+    // Reconciliation of the old checkpoint is necessary before enrollment succeeds.
+    let reconciled = history.reconcile_archive(older.path()).unwrap();
+    assert_eq!(reconciled["state"], "storage-history-reconciled");
+    assert_eq!(reconciled["activation"], "not-performed");
+    assert!(make_reader(older.path())
+        .with_erasure_history(history.clone())
+        .is_ok());
+    drop(current);
+    // A separately retained new pin catches deletion of the latest custody record.
+    history.minimum = Some(authorized.id().unwrap());
+    let path = history.directory.join(format!(
+        "erasure-{:020}-{}.json",
+        1,
+        authorized.id().unwrap()
+    ));
+    let bytes = std::fs::read(&path).unwrap();
+    std::fs::remove_file(&path).unwrap();
+    assert!(history.current().is_err());
+    // Restoring a canonical but forged owner signature must not authorize service startup.
+    let mut forged: custody::Record = serde_json::from_slice(&bytes).unwrap();
+    forged.signature = hex(&[0; 64]);
+    std::fs::write(&path, serde_json::to_vec(&forged).unwrap()).unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).unwrap();
+    }
+    assert!(history.current().is_err());
+    assert!(reader.dispatch(&query, 104).is_err());
+}

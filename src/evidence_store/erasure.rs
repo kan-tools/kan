@@ -92,7 +92,11 @@ impl Record {
     pub fn id(&self) -> Result<String> {
         hash(self)
     }
-    fn validate(&self, binding: &attested::Binding, previous: &Option<String>) -> Result<()> {
+    pub(crate) fn validate(
+        &self,
+        binding: &attested::Binding,
+        previous: &Option<String>,
+    ) -> Result<()> {
         let p = &self.plan;
         if p.version != 1
             || p.archive != service::hex(&binding.archive)
@@ -100,6 +104,8 @@ impl Record {
             || p.issuer != binding.issuer
             || &p.previous != previous
             || p.through == 0
+            || p.through > evidence::MAX_SAFE_INTEGER as u64
+            || p.recorded_at > evidence::MAX_SAFE_INTEGER as u64
             || p.targets.is_empty()
             || p.targets.len() > MAX_TARGETS
             || p.nonce.len() != 64
@@ -691,7 +697,10 @@ impl attested::Archive {
         if !started || found.keys().next_back().copied() != Some(terminal) {
             return Err(Error::Invalid("capture closure unavailable"));
         }
-        gap |= found.len() as u64 != terminal + 1;
+        gap |= found.len() as u64
+            != terminal
+                .checked_add(1)
+                .ok_or(Error::Invalid("capture ordinal overflow"))?;
         let sequences: Vec<_> = found.into_values().collect();
         tx.commit()?;
         let plan = self.preview_erasure(&sequences, nonce, now)?;
@@ -702,4 +711,17 @@ impl attested::Archive {
         }
         Ok(CapturePreview {capture,plan,recording_gap:gap,coverage:"All retained records of this closed writer/observer/attempt in the pinned archive. Recording gaps remain disclosed. Other archives, spools, derivatives and backups require coordinated cleanup; this is a storage plan only.".into()})
     }
+}
+
+/// Read current signed erasure metadata without requiring payload availability.
+/// The caller supplies the owner-pinned profile and archive identity.
+pub fn read_history(
+    path: &Path,
+    profile: inventory::Profile,
+    expected: attested::Binding,
+) -> Result<Package> {
+    expected.validate()?;
+    let reader = RecoveryReader::open_profile(path, profile.number())?;
+    attested::check_binding(&reader.ledger.conn, &expected)?;
+    Ok(load(&reader.ledger.conn)?.package())
 }

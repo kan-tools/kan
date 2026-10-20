@@ -375,6 +375,22 @@ enum Command {
     /// Initialize the lease in a pre-provisioned private access-policy directory.
     #[cfg(feature = "v2-service")]
     InitAccessPolicy { config: PathBuf },
+    /// Establish independently retained owner-signed erasure genesis. Outputs the
+    /// pinned configuration to use with --erasure-history on BOTH services.
+    #[cfg(feature = "v2-service")]
+    InitErasureHistory {
+        config: PathBuf,
+        #[arg(long)]
+        signing_key: PathBuf,
+    },
+    /// Apply independently current erasure custody to an inactive restored archive.
+    /// Does not activate services or purge derivatives, spools or backups.
+    #[cfg(feature = "v2-service")]
+    ReconcileErasure {
+        archive: PathBuf,
+        #[arg(long)]
+        erasure_history: PathBuf,
+    },
     /// Initialize an empty independently recoverable archive key history.
     #[cfg(feature = "v2-crypto")]
     InitKeyHistory { config: PathBuf },
@@ -408,6 +424,10 @@ enum Command {
         /// Owner-pinned live policy config, replacing a static grants file.
         #[arg(long)]
         access_policy: Option<PathBuf>,
+        /// Independently retained owner history; missing or stale custody blocks
+        /// service requests, including when an older archive is restored.
+        #[arg(long)]
+        erasure_history: Option<PathBuf>,
         #[arg(long, default_value = "127.0.0.1:7282")]
         listen: std::net::SocketAddr,
     },
@@ -428,6 +448,10 @@ enum Command {
         grants: Option<PathBuf>,
         #[arg(long)]
         access_policy: Option<PathBuf>,
+        /// Independently retained owner history; missing or stale custody blocks
+        /// service requests, including when an older archive is restored.
+        #[arg(long)]
+        erasure_history: Option<PathBuf>,
         #[arg(long, default_value = "127.0.0.1:7283")]
         listen: std::net::SocketAddr,
         #[arg(long, default_value_t = 100000)]
@@ -1103,6 +1127,40 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             )?;
         }
         #[cfg(feature = "v2-service")]
+        Command::InitErasureHistory {
+            config,
+            signing_key,
+        } => {
+            let mut history: kan::evidence_erasure_history::Access =
+                serde_json::from_slice(&bounded_read(std::fs::File::open(config)?, 65536)?)?;
+            let signer = service_identity(&signing_key)?;
+            if history.owner != signer.did().as_str() || history.minimum.is_some() {
+                return Err("initialization needs the configured owner and no existing pin".into());
+            }
+            history.initialize()?;
+            let change = history.preview(
+                None,
+                kan::evidence_service::hex(&rand::random::<[u8; 32]>()),
+            )?;
+            let record = kan::evidence_erasure_history::Record::sign(change, &signer)?;
+            let id = record.id()?;
+            history.append(record)?;
+            history.minimum = Some(id);
+            print_json(
+                &serde_json::json!({"initialized":true,"config":history,"backups":"Keep this history independently of archive backups; a retained pin is a rollback floor, not a remote freshness oracle.","erasure_workflow":"Coordinated payload, spool, derivative and backup cleanup remains separate."}),
+            )?;
+        }
+        #[cfg(feature = "v2-service")]
+        Command::ReconcileErasure {
+            archive,
+            erasure_history,
+        } => {
+            let history: kan::evidence_erasure_history::Access = serde_json::from_slice(
+                &bounded_read(std::fs::File::open(erasure_history)?, 65536)?,
+            )?;
+            print_json(&history.reconcile_archive(&archive)?)?;
+        }
+        #[cfg(feature = "v2-service")]
         Command::Serve {
             archive,
             scope,
@@ -1136,6 +1194,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             signing_key,
             grants,
             access_policy,
+            erasure_history,
             listen,
         } => {
             let binding: kan::evidence_proof_service::Binding =
@@ -1160,6 +1219,12 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 )?)?)?,
                 None => service,
             };
+            let service = match erasure_history {
+                Some(path) => service.with_erasure_history(serde_json::from_slice(
+                    &bounded_read(std::fs::File::open(path)?, 65536)?,
+                )?)?,
+                None => service,
+            };
             tokio::runtime::Runtime::new()?.block_on(async {
                 let listener=kan::evidence_http::bind(listen).await?;
                 eprintln!("proof ingest http://{}/v1/rpc",listener.local_addr()?);
@@ -1176,6 +1241,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             signing_key,
             grants,
             access_policy,
+            erasure_history,
             listen,
             items,
             metadata_bytes,
@@ -1208,6 +1274,12 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     std::fs::File::open(path)?,
                     65536,
                 )?)?)?,
+                None => service,
+            };
+            let service = match erasure_history {
+                Some(path) => service.with_erasure_history(serde_json::from_slice(
+                    &bounded_read(std::fs::File::open(path)?, 65536)?,
+                )?)?,
                 None => service,
             };
             tokio::runtime::Runtime::new()?.block_on(async {
@@ -1398,7 +1470,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             };
             println!(
                 "{}",
-                serde_json::json!({"copy":copy,"objects":report.objects,"commits":report.commits,"bytes":report.bytes,"through":report.snapshot.through,"tip":report.snapshot.tip.map(|c|c.to_string()),"verification":if attested {"payloads-writer-requests-and-issuer-proofs"} else {"structural-closure"},"writable_admission":"not-checked","cryptographic_admission":if attested {"proof-purpose-dependent"} else {"not-verified"},"historical_completeness":"not-verified"})
+                serde_json::json!({"copy":copy,"objects":report.objects,"erased_objects":report.erased_objects,"commits":report.commits,"bytes":report.bytes,"through":report.snapshot.through,"tip":report.snapshot.tip.map(|c|c.to_string()),"verification":if report.erased_objects>0 {"retained-payloads-issuer-proofs-and-erasure-authorizations"} else if attested {"payloads-writer-requests-and-issuer-proofs"} else {"structural-closure"},"writable_admission":"not-checked","cryptographic_admission":if attested {"proof-purpose-dependent"} else {"not-verified"},"historical_completeness":"not-verified"})
             );
         }
         Command::Backup {
@@ -1436,7 +1508,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             })?;
             println!(
                 "{}",
-                serde_json::json!({"copy":copy,"backup":destination_text,"objects":report.objects,"commits":report.commits,"bytes":report.bytes,"independent_backup":false,"issuer_proofs":if attested {"verified-preserved"} else {"not-present"}})
+                serde_json::json!({"copy":copy,"backup":destination_text,"objects":report.objects,"erased_objects":report.erased_objects,"commits":report.commits,"bytes":report.bytes,"independent_backup":false,"issuer_proofs":if attested {"verified-preserved"} else {"not-present"}})
             );
         }
         Command::ReadRecord { database, sequence } => {
@@ -1524,9 +1596,9 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             println!(
                 "{}",
                 serde_json::json!({"copy":copy,
-                    "source":source_text, "recovered":destination_text, "objects":report.objects,
+                    "source":source_text, "recovered":destination_text, "objects":report.objects,"erased_objects":report.erased_objects,
                     "commits":report.commits, "bytes":report.bytes, "through":report.snapshot.through,
-                    "tip":report.snapshot.tip.map(|c|c.to_string()), "verification":if attested {"payloads-writer-requests-and-issuer-proofs"} else {"structural-closure"},
+                    "tip":report.snapshot.tip.map(|c|c.to_string()), "verification":if report.erased_objects>0 {"retained-payloads-issuer-proofs-and-erasure-authorizations"} else if attested {"payloads-writer-requests-and-issuer-proofs"} else {"structural-closure"},
                     "cryptographic_admission":if attested {"proof-purpose-dependent"} else {"not-verified"}, "historical_completeness":"not-verified",
                     "independent_backup":false, "promoted":false
                 })

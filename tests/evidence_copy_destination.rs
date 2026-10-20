@@ -1607,7 +1607,10 @@ fn copied_archive_erasure_retains_original_membership_and_recovery_authority() {
         .unwrap();
     let after = archive.verify().unwrap();
     assert_eq!(before.contents.snapshot, after.contents.snapshot);
-    assert_eq!(before.copy, after.copy);
+    assert_eq!(before.copy.original_objects, after.copy.original_objects);
+    assert!(after.copy.source_copy_complete);
+    assert_eq!(after.copy.erased_original_objects, 1);
+    assert_eq!(after.contents.erased_objects, 1);
     let backup = dir.path().join("erased-backup.sqlite");
     assert!(archive.backup(&backup).unwrap().copy.source_copy_complete);
     let recovered = dir.path().join("recovered.sqlite");

@@ -869,7 +869,7 @@ fn perform(
                     _ => return Err("invalid archive job".into()),
                 };
                 Ok(
-                    json!({"destination":output,"objects":report.objects,"commits":report.commits,"bytes":report.bytes,"activation":"not-performed","independent_backup":false}),
+                    json!({"destination":output,"objects":report.objects,"erased_objects":report.erased_objects,"commits":report.commits,"bytes":report.bytes,"activation":"not-performed","independent_backup":false}),
                 )
             }
         }

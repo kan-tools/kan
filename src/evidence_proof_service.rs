@@ -371,6 +371,7 @@ impl SignedReply {
 
 /// Owner configuration, never populated from a remote request. No append API.
 pub struct Service {
+    erasure_history: Option<crate::evidence_erasure_history::Access>,
     policy: Option<crate::evidence_policy::Access>,
     path: PathBuf,
     binding: Binding,
@@ -398,6 +399,7 @@ impl Service {
             budget.clone(),
         )?;
         Ok(Self {
+            erasure_history: None,
             policy: None,
             path,
             binding,
@@ -405,6 +407,21 @@ impl Service {
             grants,
             budget,
         })
+    }
+    /// Enroll in independently owner-authenticated erasure custody. Every read
+    /// fails closed until the local archive matches the current history.
+    pub fn with_erasure_history(
+        mut self,
+        history: crate::evidence_erasure_history::Access,
+    ) -> Result<Self> {
+        if history.binding != self.binding {
+            return Err(Failure::Invalid);
+        }
+        history
+            .current()?
+            .check_archive(&self.path, &self.binding)?;
+        self.erasure_history = Some(history);
+        Ok(self)
     }
     pub fn with_policy(mut self, policy: crate::evidence_policy::Access) -> Result<Self> {
         if policy.binding != self.binding {
@@ -432,6 +449,16 @@ impl Service {
     pub fn dispatch(&self, bytes: &[u8], now: u64) -> Result<SignedReply> {
         if bytes.len() > MAX_REQUEST {
             return Err(Failure::Invalid);
+        }
+        // Hold the custody lease through reply signing. Owner publication waits
+        // for earlier reads; later reads cannot expose an unreconciled backup.
+        let custody = self
+            .erasure_history
+            .as_ref()
+            .map(crate::evidence_erasure_history::Access::current)
+            .transpose()?;
+        if let Some(current) = &custody {
+            current.check_archive(&self.path, &self.binding)?;
         }
         let policy = self
             .policy
