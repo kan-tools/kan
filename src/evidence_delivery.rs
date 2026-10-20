@@ -38,6 +38,19 @@ pub fn queue(
     operation: &[u8; 16],
     plaintext: &[u8],
 ) -> Result<Queued, Error> {
+    queue_bound(spool, signer, recipient, operation, plaintext, |_| Ok(()))
+}
+/// Persist an authenticated source binding before the signed request commits
+/// to the spool. A failed queue commit may leave an unused binding, never an
+/// unbound request implicitly authorized for managed publication.
+pub(crate) fn queue_bound(
+    spool: &mut Spool,
+    signer: &Identity,
+    recipient: &[u8; 32],
+    operation: &[u8; 16],
+    plaintext: &[u8],
+    bind: impl FnOnce(&Queued) -> Result<(), Error>,
+) -> Result<Queued, Error> {
     let operation = service::hex(operation);
     let result = spool.enqueue_generated(&operation, |st| {
         if signer.did().as_str() != st.writer {
@@ -65,14 +78,13 @@ pub fn queue(
         )?
         .bytes()?;
         let manifest = service::append_manifest(&request)?.cid().to_string();
-        Ok((
-            request,
-            Queued {
-                operation: operation.clone(),
-                position: st.next,
-                manifest,
-            },
-        ))
+        let queued = Queued {
+            operation: operation.clone(),
+            position: st.next,
+            manifest,
+        };
+        bind(&queued)?;
+        Ok((request, queued))
     });
     match result {
         Err(Error::Spool(crate::evidence_spool::Error::ReusedOperation)) => {
@@ -85,7 +97,16 @@ pub fn queue(
 /// Sends only a durably queued request. No key, resealing, skipping or frontier guessing.
 /// Cancellation/transport failure can leave the remote committed; retry the same head.
 pub async fn deliver_one(spool: &mut Spool, endpoint: &str) -> Result<Option<Queued>, Error> {
-    deliver_checked(spool, endpoint, None).await
+    deliver_checked(spool, endpoint, None, None).await
+}
+/// Explicit standalone annotation sender enrollment. Source custody remains
+/// held through HTTP delivery and acknowledgement, including after restores.
+pub async fn deliver_with_workspace(
+    spool: &mut Spool,
+    endpoint: &str,
+    workspace: &crate::evidence_workspace::Workspace,
+) -> Result<Option<Queued>, Error> {
+    deliver_checked(spool, endpoint, None, Some(workspace)).await
 }
 /// Deliver only the exact head whose source access the caller already checked.
 /// A competing drainer cannot cause that authorization to cover its successor.
@@ -94,12 +115,13 @@ pub async fn deliver_expected(
     endpoint: &str,
     expected: &[u8],
 ) -> Result<Option<Queued>, Error> {
-    deliver_checked(spool, endpoint, Some(expected)).await
+    deliver_checked(spool, endpoint, Some(expected), None).await
 }
 async fn deliver_checked(
     spool: &mut Spool,
     endpoint: &str,
     expected: Option<&[u8]>,
+    workspace: Option<&crate::evidence_workspace::Workspace>,
 ) -> Result<Option<Queued>, Error> {
     let _custody = spool.erasure_lease()?;
     spool.reconcile_managed_erasure()?;
@@ -109,6 +131,9 @@ async fn deliver_checked(
     if expected.is_some_and(|old| old != request) {
         return Err(crate::evidence_spool::Error::Conflict.into());
     }
+    let _sources = workspace
+        .map(|w| w.authorize_publication(&request))
+        .transpose()?;
     let signed = SignedRequest::decode(&request)?;
     let Command::Append { id, position, .. } = &signed.request.command else {
         return Err(service::Failure::Invalid.into());

@@ -41,6 +41,7 @@ pub const EVIDENCE_VALUES: &[SurfaceValue] = &[
     SurfaceValue::new("evidence-workspace:search-page", "*"),
     SurfaceValue::new("evidence-workspace:view", "*"),
     SurfaceValue::new("evidence-workspace:annotation", "*"),
+    SurfaceValue::new("evidence-workspace:annotation-publication", "*"),
     SurfaceValue::new("evidence-analysis:job", "*"),
     SurfaceValue::new("evidence-analysis:input", "*"),
     SurfaceValue::new("evidence-analysis:result", "*"),

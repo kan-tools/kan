@@ -84,3 +84,35 @@ Page reclamation, offline backup purge, unpublished cancellation and published
 derivative cleanup have separate statuses. A reconciled admitted queue alone is
 not evidence of complete cross-store erasure. Retain any backup until its owner
 explicitly authorizes deletion; do not activate it through an unenrolled sender.
+
+## Annotation source guards
+
+An annotation sender also needs the current custody of its **sources**, which
+may be different archives from its publication destination. Supply
+`--publication-guard GUARD.json` to `spool-head`, `spool-drain` or `spool-watch`.
+The configuration contains absolute `database`, `signing_key` and `recipient_key`
+paths for its encrypted reader workspace, plus `sources`: the independently
+pinned erasure Access objects covering every source citation and known ancestor.
+Keep this configuration independent of workspace and queue backups.
+
+```sh
+kan-v2 spool-drain "$QUEUE" --endpoint "$ENDPOINT" \
+  --erasure-history "$DESTINATION_CUSTODY" \
+  --publication-guard "$SOURCE_GUARD" --limit 128
+```
+
+Library annotation queueing records an authenticated binding from the exact
+signed request to its annotation before the queue commit. The binding is
+encrypted in the workspace and joins source-dependent erasure cleanup. Managed
+senders check that binding, the retained annotation and correction/analysis
+ancestors, and hold current source custody through delivery and acknowledgment.
+They need the workspace key, not the destination's decryption key.
+
+A missing binding, missing ancestor, uncovered source, erased dependency or stale
+restored workspace refuses publication. An old operation ID alone cannot
+authorize substituted ciphertext. Old queues without bindings require explicit
+reconciliation; enabling the guard does not invent their source provenance.
+Guarded head export also refuses before writing request bytes. The traversal is
+bounded to 4,096 ancestors, 8 MiB of declarations and five seconds per attempt;
+refusal leaves the original queue intact. Ordinary capture/import queues use
+their destination custody and are not annotation publication queues.

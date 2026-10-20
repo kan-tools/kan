@@ -963,6 +963,16 @@ pub async fn drain_with_erasure_history(
     endpoint: &str,
     history: Option<crate::evidence_erasure_history::Access>,
 ) -> Result<()> {
+    drain_with_publication(spool_path, journal_path, endpoint, history, None).await
+}
+/// Independently configured source custody for a standalone annotation worker.
+pub async fn drain_with_publication(
+    spool_path: &Path,
+    journal_path: &Path,
+    endpoint: &str,
+    history: Option<crate::evidence_erasure_history::Access>,
+    publication: Option<Arc<crate::evidence_workspace::Workspace>>,
+) -> Result<()> {
     let mut spool = Spool::open(spool_path)?;
     if let Some(history) = history {
         spool = spool.with_erasure_history(history)?;
@@ -1024,7 +1034,13 @@ pub async fn drain_with_erasure_history(
             &load_journal,
             &mut next_open,
         );
-        match evidence_delivery::deliver_one(&mut spool, endpoint).await {
+        let delivery = match publication.as_deref() {
+            Some(workspace) => {
+                evidence_delivery::deliver_with_workspace(&mut spool, endpoint, workspace).await
+            }
+            None => evidence_delivery::deliver_one(&mut spool, endpoint).await,
+        };
+        match delivery {
             Ok(Some(ack)) => {
                 status.last_ack_at = Some(now());
                 status.last_ack_position = Some(ack.position);

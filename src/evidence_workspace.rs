@@ -11,6 +11,7 @@ use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::{io::Read, path::Path, sync::Mutex};
 pub mod erasure;
+pub mod publication;
 
 type Result<T> = std::result::Result<T, Failure>;
 const MAX: usize = 12 * 1024 * 1024;
@@ -409,8 +410,40 @@ impl Workspace {
             &serde_json::json!({"format":"kan-annotation/1","declaration":declaration}),
         )
         .map_err(invalid)?;
-        match crate::evidence_delivery::queue(spool, &self.signer, recipient, operation, &bytes) {
-            Ok(_) | Err(crate::evidence_delivery::Error::ReusedOperation) => Ok(()),
+        match crate::evidence_delivery::queue_bound(
+            spool,
+            &self.signer,
+            recipient,
+            operation,
+            &bytes,
+            |queued| {
+                self.put(
+                    "annotation-publication",
+                    &queued.manifest,
+                    serde_json::json!({
+                        "version":1,"annotation":id,"manifest":queued.manifest,
+                    }),
+                )?;
+                Ok(())
+            },
+        ) {
+            Ok(_) => Ok(()),
+            Err(crate::evidence_delivery::Error::ReusedOperation) => {
+                let retained = spool
+                    .operation(&evidence_service::hex(operation))
+                    .map_err(invalid)?
+                    .ok_or(Failure::AccessLimited)?;
+                let binding = self
+                    .get("annotation-publication", &retained.manifest)?
+                    .ok_or(Failure::AccessLimited)?;
+                if binding["version"] != 1
+                    || binding["annotation"] != id
+                    || binding["manifest"] != retained.manifest
+                {
+                    return Err(Failure::AccessLimited);
+                }
+                Ok(())
+            }
             Err(_) => Err(Failure::Unavailable),
         }
     }
@@ -517,6 +550,7 @@ impl Workspace {
                 | "search-page"
                 | "view"
                 | "annotation"
+                | "annotation-publication"
                 | "analysis-job"
                 | "analysis-input"
                 | "analysis-result"
@@ -531,6 +565,7 @@ impl Workspace {
             kind,
             "view"
                 | "annotation"
+                | "annotation-publication"
                 | "analysis-job"
                 | "analysis-event"
                 | "analysis-trigger"

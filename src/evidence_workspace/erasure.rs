@@ -42,6 +42,7 @@ fn allowed(kind: &str) -> bool {
         "search-page"
             | "view"
             | "annotation"
+            | "annotation-publication"
             | "analysis-job"
             | "analysis-input"
             | "analysis-result"

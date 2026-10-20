@@ -321,6 +321,18 @@ impl Workspace {
             }
         }
         for e in &entries {
+            if e.kind == "annotation-publication" {
+                let manifest = text(&e.value, "manifest")?;
+                let annotation = text(&e.value, "annotation")?;
+                if e.value["version"] != 1 || e.id != Self::id("annotation-publication", manifest) {
+                    return Err(Failure::Corrupt);
+                }
+                if annotations.contains(annotation)
+                    || markers.contains(&("annotation".into(), Self::id("annotation", annotation)))
+                {
+                    selected.insert((e.kind.clone(), e.id.clone()));
+                }
+            }
             if e.kind == "analysis-trigger" && annotations.contains(text(&e.value, "annotation")?) {
                 selected.insert((e.kind.clone(), e.id.clone()));
             }

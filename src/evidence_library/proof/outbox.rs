@@ -169,23 +169,8 @@ impl Readers {
             .map_err(|_| Failure::Unavailable)?;
         let checked = spool.head().map_err(|_| Failure::AccessLimited)?;
         if let Some(raw) = &checked {
-            let signed = evidence_service::SignedRequest::decode(raw)?;
-            let evidence_service::Command::Append { id: operation, .. } = signed.request.command
-            else {
-                return Err(Failure::Corrupt.into());
-            };
-            let mut selected = None;
-            for annotation in workspace.annotations()? {
-                let id = annotation["id"].as_str().ok_or(Failure::Corrupt)?;
-                if evidence_service::hex(&AnnotationOutbox::operation(id)?) == operation {
-                    selected = Some(id.to_owned());
-                    break;
-                }
-            }
-            // A missing/cleaned declaration or an unrelated queue head cannot
-            // be implicitly published by the annotation action.
-            self.annotation_delivery(&selected.ok_or(Failure::AccessLimited)?)
-                .await?;
+            let id = workspace.publication_annotation(raw)?;
+            self.annotation_delivery(&id).await?;
         }
         let _permit = self
             .workers

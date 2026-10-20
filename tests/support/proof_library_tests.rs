@@ -1386,6 +1386,18 @@ async fn annotation_publication_is_explicit_destination_bound_and_exactly_retrie
     let remote = tempfile::tempdir().unwrap();
     let f = fixture_requests(dir.path(), Profile::Admitted, encrypted);
     let server = Server::start(&f).await;
+    let custody = private_workspace_directory();
+    let mut history:kan::evidence_erasure_history::Access=serde_json::from_value(json!({"directory":custody.path(),"binding":{"profile":"admitted","archive":service::hex(&f.binding.archive),"scope":service::hex(&f.binding.scope),"issuer":f.binding.issuer},"owner":identity(9).did().as_str()})).unwrap();
+    history.initialize().unwrap();
+    let genesis = kan::evidence_erasure_history::Record::sign(
+        history.preview(None, "a".repeat(64)).unwrap(),
+        &identity(9),
+    )
+    .unwrap();
+    let minimum = genesis.id().unwrap();
+    history.append(genesis).unwrap();
+    history.minimum = Some(minimum);
+
     let binding = attested::Binding {
         archive: [81; 32],
         scope: [82; 32],
@@ -1430,8 +1442,12 @@ async fn annotation_publication_is_explicit_destination_bound_and_exactly_retrie
             .unwrap(),
         )
         .with_annotation_outbox(
-            kan::evidence_library::AnnotationOutbox::new(spool.clone(), endpoint, recipient)
-                .unwrap(),
+            kan::evidence_library::AnnotationOutbox::new(
+                spool.clone(),
+                endpoint.clone(),
+                recipient,
+            )
+            .unwrap(),
         )
         .unwrap();
     let ui = Ui::start(readers).await;
@@ -1473,6 +1489,39 @@ async fn annotation_publication_is_explicit_destination_bound_and_exactly_retrie
         .head()
         .unwrap()
         .unwrap();
+    let guard = kan::evidence_workspace::Workspace::open(
+        &local.path().join("workspace.sqlite"),
+        identity(6),
+        [97; 32],
+    )
+    .unwrap()
+    .with_erasure_histories(vec![history.clone()])
+    .unwrap();
+    assert!(guard.authorize_publication(&before).is_ok());
+    let mut substituted = service::SignedRequest::decode(&before).unwrap().request;
+    let service::Command::Append { ciphertext, .. } = &mut substituted.command else {
+        unreachable!()
+    };
+    *ciphertext = service::hex(b"same operation, different signed ciphertext");
+    let substituted = service::SignedRequest::sign(substituted, &identity(6))
+        .unwrap()
+        .bytes()
+        .unwrap();
+    assert!(
+        guard.authorize_publication(&substituted).is_err(),
+        "operation IDs cannot authorize a substituted request"
+    );
+    assert!(
+        kan::evidence_workspace::Workspace::open(
+            &local.path().join("workspace.sqlite"),
+            identity(6),
+            [97; 32]
+        )
+        .unwrap()
+        .authorize_publication(&before)
+        .is_err(),
+        "standalone publication requires independent source enrollment"
+    );
     let plain = kan::evidence_delivery::decrypt_request(
         &before,
         &private,
@@ -1492,6 +1541,20 @@ async fn annotation_publication_is_explicit_destination_bound_and_exactly_retrie
             .unwrap()
             .unwrap()
     );
+    let initial_queue = local.path().join("initial-queue.sqlite");
+    std::fs::copy(&spool, &initial_queue).unwrap();
+    {
+        let mut sender = kan::evidence_spool::Spool::open(&spool).unwrap();
+        assert!(
+            kan::evidence_delivery::deliver_with_workspace(&mut sender, &endpoint, &guard)
+                .await
+                .unwrap()
+                .is_some()
+        );
+    }
+    // A pre-ACK restored queue may retry the identical authorized request;
+    // the Library also uses the authenticated exact-request source binding.
+    std::fs::copy(&initial_queue, &spool).unwrap();
     let delivered = ui
         .call(
             json!({"action":"annotation-drain","destination":status["destination_digest"]}),
@@ -1533,6 +1596,10 @@ async fn annotation_publication_is_explicit_destination_bound_and_exactly_retrie
         .head()
         .unwrap()
         .unwrap();
+    let old_workspace = local.path().join("workspace-before.sqlite");
+    std::fs::copy(local.path().join("workspace.sqlite"), &old_workspace).unwrap();
+    let old_queue = local.path().join("queue-before.sqlite");
+    std::fs::copy(&spool, &old_queue).unwrap();
     let mut source = attested::Archive::open(&f.root, f.binding.clone()).unwrap();
     let sequence = page["records"][0]["sequence"]
         .as_str()
@@ -1542,9 +1609,57 @@ async fn annotation_publication_is_explicit_destination_bound_and_exactly_retrie
     let plan = source
         .preview_erasure(&[sequence], service::hex(&[74; 32]), 2000)
         .unwrap();
-    source
-        .apply_erasure(store::erasure::Record::sign(plan, &identity(8)).unwrap())
-        .unwrap();
+    let erasure = store::erasure::Record::sign(plan, &identity(8)).unwrap();
+    let authorization = kan::evidence_erasure_history::Record::sign(
+        history
+            .preview(Some(erasure.clone()), "b".repeat(64))
+            .unwrap(),
+        &identity(9),
+    )
+    .unwrap();
+    history.append(authorization.clone()).unwrap();
+    // Independent custody fences the standalone sender before physical deletion.
+    let mut sender = kan::evidence_spool::Spool::open(&spool).unwrap();
+    assert!(
+        kan::evidence_delivery::deliver_with_workspace(&mut sender, &endpoint, &guard)
+            .await
+            .is_err()
+    );
+    assert_eq!(sender.head().unwrap().as_ref(), Some(&retained));
+    drop(sender);
+    let signing = local.path().join("sender.key");
+    let recipient_key = local.path().join("workspace.key");
+    for (path, key) in [(&signing, [6; 32]), (&recipient_key, [97; 32])] {
+        std::fs::write(path, key).unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600)).unwrap();
+        }
+    }
+    let config = local.path().join("publication-guard.json");
+    std::fs::write(&config,serde_json::to_vec(&json!({"database":old_workspace,"signing_key":signing,"recipient_key":recipient_key,"sources":[history]})).unwrap()).unwrap();
+    for action in ["spool-head", "spool-drain"] {
+        let mut command = std::process::Command::new(env!("CARGO_BIN_EXE_kan-v2"));
+        command
+            .arg(action)
+            .arg(&old_queue)
+            .arg("--publication-guard")
+            .arg(&config);
+        if action == "spool-drain" {
+            command.arg("--endpoint").arg(&endpoint);
+        }
+        let output = command.output().unwrap();
+        assert!(
+            !output.status.success(),
+            "old workspace/queue restore cannot publish erased sources"
+        );
+        assert!(
+            output.stdout.is_empty(),
+            "raw request must not leak through guarded export"
+        );
+    }
+    source.apply_erasure(erasure.clone()).unwrap();
     ui.call(
         json!({"action":"annotation-drain","destination":status["destination_digest"]}),
         403,
@@ -1567,6 +1682,56 @@ async fn annotation_publication_is_explicit_destination_bound_and_exactly_retrie
         "erased derivative was not published"
     );
     ui.stop().await;
+    drop(guard);
+    {
+        let clean = kan::evidence_workspace::Workspace::open_for_erasure(
+            &local.path().join("workspace.sqlite"),
+            identity(6),
+            [97; 32],
+        )
+        .unwrap();
+        let plan = clean
+            .preview_source_erasure(&history.binding, &erasure, authorization.id().unwrap())
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            plan.targets
+                .iter()
+                .filter(|t| t.kind == "annotation-publication")
+                .count(),
+            2,
+            "publication bindings join source dependency cleanup"
+        );
+        clean.apply_erasure(&plan).unwrap();
+        clean.reclaim_erased_pages().unwrap();
+    }
+    let clean = kan::evidence_workspace::Workspace::open(
+        &local.path().join("workspace.sqlite"),
+        identity(6),
+        [97; 32],
+    )
+    .unwrap()
+    .with_erasure_histories(vec![history.clone()])
+    .unwrap();
+    let manifest = service::append_manifest(&retained)
+        .unwrap()
+        .cid()
+        .to_string();
+    assert!(clean
+        .get("annotation-publication", &manifest)
+        .unwrap()
+        .is_none());
+    assert!(
+        clean
+            .put(
+                "annotation-publication",
+                &manifest,
+                json!({"version":1,"annotation":saved["id"],"manifest":manifest})
+            )
+            .is_err(),
+        "removed sender binding cannot be reintroduced"
+    );
+    assert!(clean.authorize_publication(&retained).is_err());
     server.stop().await;
     task.abort();
     let _ = task.await;

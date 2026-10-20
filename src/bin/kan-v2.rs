@@ -148,6 +148,9 @@ enum Command {
         /// Independently current owner erasure custody for this sender.
         #[arg(long)]
         erasure_history: Option<PathBuf>,
+        /// Independent encrypted annotation workspace and source-custody config.
+        #[arg(long)]
+        publication_guard: Option<PathBuf>,
         #[arg(long)]
         journal: PathBuf,
         #[arg(long)]
@@ -350,6 +353,9 @@ enum Command {
         spool: PathBuf,
         #[arg(long)]
         erasure_history: Option<PathBuf>,
+        /// Independent encrypted annotation workspace and source-custody config.
+        #[arg(long)]
+        publication_guard: Option<PathBuf>,
     },
     /// Encrypt bounded raw stdin and durably queue it; performs no network request.
     #[cfg(feature = "v2-crypto")]
@@ -374,6 +380,9 @@ enum Command {
         /// Independently current owner erasure custody for this sender.
         #[arg(long)]
         erasure_history: Option<PathBuf>,
+        /// Independent encrypted annotation workspace and source-custody config.
+        #[arg(long)]
+        publication_guard: Option<PathBuf>,
         #[arg(long)]
         endpoint: String,
         #[arg(long, default_value_t = 128, value_parser = clap::value_parser!(u16).range(1..=1024))]
@@ -603,6 +612,18 @@ fn read_erasure_history(
     })
     .transpose()
 }
+#[cfg(feature = "v2-crypto")]
+fn read_publication_guard(
+    path: Option<PathBuf>,
+) -> Result<Option<std::sync::Arc<kan::evidence_workspace::Workspace>>, Box<dyn std::error::Error>>
+{
+    path.map(|path| {
+        let config: kan::evidence_workspace::publication::Config =
+            serde_json::from_slice(&bounded_read(std::fs::File::open(path)?, 65536)?)?;
+        Ok(config.open()?)
+    })
+    .transpose()
+}
 fn open_spool(
     path: &std::path::Path,
     history: Option<PathBuf>,
@@ -680,13 +701,15 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         Command::SpoolWatch {
             spool,
             erasure_history,
+            publication_guard,
             journal,
             endpoint,
         } => {
             let history = read_erasure_history(erasure_history)?;
+            let publication = read_publication_guard(publication_guard)?;
             tokio::runtime::Runtime::new()?.block_on(async {
                 tokio::select! {
-                    result=kan::evidence_operations::drain_with_erasure_history(&spool,&journal,&endpoint,history)=>result.map_err(|_|"archive worker failed; inspect queue and journal"),
+                    result=kan::evidence_operations::drain_with_publication(&spool,&journal,&endpoint,history,publication)=>result.map_err(|_|"archive worker failed; inspect queue and journal"),
                     _=shutdown()=>Ok(())
                 }
             })?;
@@ -1127,9 +1150,21 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         Command::SpoolHead {
             spool,
             erasure_history,
+            publication_guard,
         } => {
             let queue = open_spool(&spool, erasure_history)?;
             let bytes = queue.head()?.ok_or("queue is empty")?;
+            #[cfg(feature = "v2-crypto")]
+            let publication = read_publication_guard(publication_guard)?;
+            #[cfg(feature = "v2-crypto")]
+            let _custody = publication
+                .as_ref()
+                .map(|w| w.authorize_publication(&bytes))
+                .transpose()?;
+            #[cfg(not(feature = "v2-crypto"))]
+            if publication_guard.is_some() {
+                return Err("publication guard requires v2-crypto".into());
+            }
             use std::io::Write;
             std::io::stdout().lock().write_all(&bytes)?;
         }
@@ -1158,15 +1193,24 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         Command::SpoolDrain {
             spool,
             erasure_history,
+            publication_guard,
             endpoint,
             limit,
         } => {
             let mut queue = open_spool(&spool, erasure_history)?;
+            let publication = read_publication_guard(publication_guard)?;
             tokio::runtime::Runtime::new()?.block_on(async {
                 for _ in 0..limit {
-                    let Some(delivered) =
-                        kan::evidence_delivery::deliver_one(&mut queue, &endpoint).await?
-                    else {
+                    let delivered = match publication.as_deref() {
+                        Some(workspace) => {
+                            kan::evidence_delivery::deliver_with_workspace(
+                                &mut queue, &endpoint, workspace,
+                            )
+                            .await?
+                        }
+                        None => kan::evidence_delivery::deliver_one(&mut queue, &endpoint).await?,
+                    };
+                    let Some(delivered) = delivered else {
                         break;
                     };
                     print_json(&serde_json::json!({"acknowledged": delivered}))?;
