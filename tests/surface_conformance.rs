@@ -119,6 +119,11 @@ const RULE_EVIDENCE: &[(&str, &str)] = &[
     ("connection-config", ".design/medium-architecture.md"),
 ];
 const PERSISTENCE_PATH_EXPRESSIONS: &[(&str, &str, &str)] = &[
+    (
+        "src/evidence_erasure_history.rs",
+        "\"archive.sqlite\"",
+        "owner-selected-archive-reconciliation",
+    ),
     ("src/evidence_keys.rs", "\"LOCK\"", "wrapped-epoch-path"),
     ("src/evidence_keys.rs", "&name", "wrapped-epoch-path"),
     (

@@ -684,7 +684,8 @@ impl attested::Archive {
                     started = true;
                 }
                 Event::Terminal { .. } => {
-                    if terminal.replace(frame.header.ordinal).is_some() {
+                    let previous_terminal = terminal.replace(frame.header.ordinal);
+                    if previous_terminal.is_some() {
                         return Err(Error::Invalid("capture terminal"));
                     }
                 }

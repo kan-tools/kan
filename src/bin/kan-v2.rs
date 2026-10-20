@@ -1137,15 +1137,25 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             if history.owner != signer.did().as_str() || history.minimum.is_some() {
                 return Err("initialization needs the configured owner and no existing pin".into());
             }
-            history.initialize()?;
-            let change = history.preview(
-                None,
-                kan::evidence_service::hex(&rand::random::<[u8; 32]>()),
-            )?;
-            let record = kan::evidence_erasure_history::Record::sign(change, &signer)?;
-            let id = record.id()?;
-            history.append(record)?;
-            history.minimum = Some(id);
+            match history.initialize() {
+                Ok(()) | Err(kan::evidence_service::Failure::Conflict) => {}
+                Err(error) => return Err(error.into()),
+            }
+            // Validate any interrupted/existing history against this exact owner
+            // and binding. Never replace a record to finish initialization.
+            let existing_tip = history.read()?.tip;
+            history.minimum = Some(if let Some(id) = existing_tip {
+                id
+            } else {
+                let change = history.preview(
+                    None,
+                    kan::evidence_service::hex(&rand::random::<[u8; 32]>()),
+                )?;
+                let record = kan::evidence_erasure_history::Record::sign(change, &signer)?;
+                let id = record.id()?;
+                history.append(record)?;
+                id
+            });
             print_json(
                 &serde_json::json!({"initialized":true,"config":history,"backups":"Keep this history independently of archive backups; a retained pin is a rollback floor, not a remote freshness oracle.","erasure_workflow":"Coordinated payload, spool, derivative and backup cleanup remains separate."}),
             )?;

@@ -1129,8 +1129,9 @@ fn independent_owner_erasure_custody_gates_live_services_and_older_restores() {
     );
     drop(held);
     history.append(authorized.clone()).unwrap();
-    history.append(authorized.clone()).unwrap(); // lost acknowledgement retry
-                                                 // Crash boundary: owner intent is durable before archive mutation. Live services stop.
+    // Lost acknowledgement retry.
+    history.append(authorized.clone()).unwrap();
+    // Crash boundary: owner intent is durable before archive mutation. Live services stop.
     assert!(matches!(
         reader.dispatch(&query, 102),
         Err(Failure::AccessLimited)
@@ -1186,4 +1187,89 @@ fn independent_owner_erasure_custody_gates_live_services_and_older_restores() {
     }
     assert!(history.current().is_err());
     assert!(reader.dispatch(&query, 104).is_err());
+}
+
+#[test]
+#[cfg(feature = "v2-service")]
+fn erasure_custody_cli_initializes_pinned_genesis_and_reconciles_without_activation() {
+    use kan::{evidence_erasure_history as custody, evidence_proof_service as wire};
+    let directory = tempfile::tempdir().unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(directory.path(), std::fs::Permissions::from_mode(0o700)).unwrap();
+    }
+    let mut key = tempfile::NamedTempFile::new().unwrap();
+    key.write_all(&[4; 32]).unwrap();
+    let history = custody::Access {
+        directory: directory.path().to_path_buf(),
+        binding: wire::Binding {
+            profile: wire::Profile::Admitted,
+            archive: hex(&binding().archive),
+            scope: hex(&binding().scope),
+            issuer: binding().issuer,
+        },
+        owner: identity(4).did().to_string(),
+        minimum: None,
+    };
+    let mut config = tempfile::NamedTempFile::new().unwrap();
+    config
+        .write_all(&serde_json::to_vec(&history).unwrap())
+        .unwrap();
+    let initialized = Command::new(env!("CARGO_BIN_EXE_kan-v2"))
+        .arg("init-erasure-history")
+        .arg(config.path())
+        .arg("--signing-key")
+        .arg(key.path())
+        .output()
+        .unwrap();
+    assert!(
+        initialized.status.success(),
+        "{}",
+        String::from_utf8_lossy(&initialized.stderr)
+    );
+    let output: serde_json::Value = serde_json::from_slice(&initialized.stdout).unwrap();
+    let pinned: custody::Access = serde_json::from_value(output["config"].clone()).unwrap();
+    assert!(pinned.minimum.is_some());
+    assert!(pinned
+        .current()
+        .unwrap()
+        .package()
+        .unwrap()
+        .records
+        .is_empty());
+    let retry = Command::new(env!("CARGO_BIN_EXE_kan-v2"))
+        .arg("init-erasure-history")
+        .arg(config.path())
+        .arg("--signing-key")
+        .arg(key.path())
+        .output()
+        .unwrap();
+    assert!(
+        retry.status.success(),
+        "{}",
+        String::from_utf8_lossy(&retry.stderr)
+    );
+    let retried: serde_json::Value = serde_json::from_slice(&retry.stdout).unwrap();
+    assert_eq!(retried["config"]["minimum"], output["config"]["minimum"]);
+    std::fs::write(config.path(), serde_json::to_vec(&pinned).unwrap()).unwrap();
+    let root = tempfile::tempdir().unwrap();
+    let archive = Archive::create(root.path(), binding()).unwrap();
+    let result = Command::new(env!("CARGO_BIN_EXE_kan-v2"))
+        .arg("reconcile-erasure")
+        .arg(root.path())
+        .arg("--erasure-history")
+        .arg(config.path())
+        .output()
+        .unwrap();
+    assert!(
+        result.status.success(),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    let result: serde_json::Value = serde_json::from_slice(&result.stdout).unwrap();
+    assert_eq!(result["state"], "storage-history-reconciled");
+    assert_eq!(result["activation"], "not-performed");
+    assert_eq!(result["managed_cleanup"], "pending-coordination");
+    assert_eq!(archive.verify().unwrap().through, 0);
 }
