@@ -1,4 +1,5 @@
-//! Durable exact-byte send queue. No plaintext, keys, inferred remote state or erasure.
+//! Durable exact-byte send queue. No plaintext, keys or inferred remote admission.
+pub(crate) mod erasure;
 use crate::evidence_service::{self as service, Command, SignedReply, SignedRequest, MAX_REQUEST};
 use rusqlite::{params, Connection, OpenFlags, OptionalExtension, TransactionBehavior};
 use std::{path::Path, time::Duration};
@@ -25,6 +26,8 @@ pub enum Error {
     Full,
     #[error("operation identifier already retained")]
     ReusedOperation,
+    #[error("operation was explicitly erased after admission")]
+    Erased,
     #[error("spool frontier conflict")]
     Conflict,
     #[error("service proof rejected: {0}")]
@@ -79,6 +82,7 @@ pub struct Operation {
     pub position: u64,
     pub manifest: String,
     pub pending: bool,
+    pub erased: bool,
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Boundary {
@@ -202,10 +206,14 @@ impl Spool {
         if service::unhex(id, 16)?.len() != 16 {
             return Err(Error::Invalid("operation identifier"));
         }
-        Ok(self.conn.query_row(
+        let mut operation=self.conn.query_row(
             "SELECT o.position,o.manifest,p.position IS NOT NULL FROM operations o LEFT JOIN pending p ON p.position=o.position WHERE o.operation=?", [id],
-            |r| Ok(Operation { position: unsigned(r, 0)?, manifest: r.get(1)?, pending: r.get(2)? }),
-        ).optional()?)
+            |r| Ok(Operation { position: unsigned(r, 0)?, manifest: r.get(1)?, pending: r.get(2)?, erased:false }),
+        ).optional()?;
+        if let Some(op) = &mut operation {
+            op.erased = erasure::contains(&self.conn, op.position)?;
+        }
+        Ok(operation)
     }
     /// New namespace only. Interrupted initialization is retained for explicit recovery.
     pub fn create(
@@ -319,8 +327,12 @@ impl Spool {
         let mut conn = connection(path, wait)?;
         let expected = Connection::open_in_memory()?;
         expected.execute_batch(SCHEMA)?;
+        let profile = conn.query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0))?;
+        if profile == 3 {
+            expected.execute_batch(erasure::SCHEMA)?;
+        }
         if conn.query_row("PRAGMA application_id", [], |r| r.get::<_, i64>(0))? != PROFILE
-            || conn.query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0))? != 2
+            || !matches!(profile, 2 | 3)
             || schema(&conn)? != schema(&expected)?
         {
             return Err(Error::Invalid("unrecognized schema"));
@@ -347,14 +359,20 @@ impl Spool {
         )?)
     }
     pub fn head(&self) -> Result<Option<Vec<u8>>> {
-        Ok(self
+        let row: Option<(u64, Vec<u8>)> = self
             .conn
             .query_row(
-                "SELECT request FROM pending ORDER BY position LIMIT 1",
+                "SELECT position,request FROM pending ORDER BY position LIMIT 1",
                 [],
-                |r| r.get(0),
+                |r| Ok((unsigned(r, 0)?, r.get(1)?)),
             )
-            .optional()?)
+            .optional()?;
+        if let Some((position, _)) = &row {
+            if erasure::contains(&self.conn, *position)? {
+                return Err(Error::Erased);
+            }
+        }
+        Ok(row.map(|(_, bytes)| bytes))
     }
     /// Distinguishes new, pending and acknowledged exact retries; never regenerates bytes.
     pub fn enqueue(&mut self, bytes: &[u8]) -> Result<Enqueue> {
@@ -402,6 +420,16 @@ impl Spool {
             )
             .map_err(Error::from)?;
         if exists {
+            let position = tx
+                .query_row(
+                    "SELECT position FROM operations WHERE operation=?",
+                    [operation],
+                    |r| unsigned(r, 0),
+                )
+                .map_err(Error::from)?;
+            if erasure::contains(&tx, position)? {
+                return Err(Error::Erased.into());
+            }
             return Err(Error::ReusedOperation.into());
         }
         let (pending, pending_bytes) = tx
@@ -457,6 +485,9 @@ impl Spool {
             .optional()?
             .ok_or(Error::Invalid("empty queue"))?;
         let (position, _, _, _) = coordinates(&request, &st)?;
+        if erasure::contains(&tx, position)? {
+            return Err(Error::Erased);
+        }
         service::admitted_manifest(&request, &signed, &st.audience)?;
         tx.execute(
             "UPDATE state SET acknowledged_request=?,acknowledged_reply=? WHERE singleton=1",
@@ -490,6 +521,9 @@ fn enqueue_in(
         )
         .optional()?;
     if let Some((old_position, old_cid)) = old {
+        if erasure::contains(tx, old_position)? {
+            return Err(Error::Erased);
+        }
         if old_position != position || old_cid != cid {
             return Err(Error::Conflict);
         }
@@ -511,6 +545,9 @@ fn enqueue_in(
             if coordinates(acknowledged, &st)?.0 >= position {
                 return Ok(Enqueue::AlreadyAcknowledged);
             }
+        }
+        if erasure::frontier(tx, &st)?.is_some_and(|(p, _)| p >= position) {
+            return Ok(Enqueue::AlreadyAcknowledged);
         }
         return Err(Error::Invalid(
             "operation lacks pending bytes or acknowledgment",
@@ -601,6 +638,17 @@ fn audit(conn: &Connection) -> Result<()> {
         }
         _ => return Err(Error::Invalid("partial acknowledgment")),
     };
+    if let Some((position, cid)) = erasure::frontier(conn, &st)? {
+        if position + 1 > next {
+            next = position + 1;
+            previous = Some(cid);
+        }
+    }
+    if let Some(request) = &st.request {
+        if erasure::contains(conn, coordinates(request, &st)?.0)? {
+            return Err(Error::Invalid("erased acknowledgment payload reintroduced"));
+        }
+    }
     let mut used = 0u64;
     let mut stmt =
         conn.prepare("SELECT p.position,p.operation,p.manifest,p.request,o.operation,o.manifest FROM pending p LEFT JOIN operations o ON o.position=p.position ORDER BY p.position")?;
@@ -608,6 +656,9 @@ fn audit(conn: &Connection) -> Result<()> {
     while let Some(row) = rows.next()? {
         let bytes: Vec<u8> = row.get(3)?;
         let (position, prev, id, cid) = coordinates(&bytes, &st)?;
+        if erasure::contains(conn, position)? {
+            return Err(Error::Invalid("erased pending payload reintroduced"));
+        }
         if position != next
             || prev != previous
             || position != unsigned(row, 0)?

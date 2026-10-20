@@ -779,3 +779,23 @@ closed; a backup cannot choose its own acceptable history or assert that cleanup
 finished. Enrollment is explicit in independent Library configuration; unenrolled
 legacy API clients remain outside this guarantee. No new durable checkpoint or
 workspace schema is required for the freshness gate.
+
+### Spool retirement of admitted erased records
+
+An erased admitted request can leave raw ciphertext in the sender's last ACK or
+lost-ACK head. Spool profile 3 retains normalized owner authorizations and exact
+canonical append manifests: their CIDs are bound by the issuer's signed erasure
+plan, and the manifests preserve writer/scope/operation/position/previous and
+object commitment without payload bytes. Historical operation markers may omit
+the manifest body when a later verified ACK already covers their position; they
+cannot advance a cursor. Only fully verified manifest retirements or normal
+signed ACKs anchor the sender cursor. Pending erasure may remove only a contiguous
+head prefix; other selected pending requests remain explicitly deferred until
+preceding operations are resolved. A request with no safe progress refuses. Operations and the queued writer frontier remain immutable.
+
+All erasure metadata and raw-row removals commit atomically; exact retries retain
+one authorization and refuse replay of retired operations. The new exact schema
+refuses older reopens. Current-code handles opened before cleanup refuse late ACKs
+and duplicate enqueue of retired operations; legacy binaries are not qualified. SQLite reclamation is separate and reports busy
+readers. This mechanism covers actually admitted evidence only: unpublished
+annotation cancellation and transitive publication cleanup remain distinct work.

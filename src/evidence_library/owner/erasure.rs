@@ -32,6 +32,7 @@ struct Configured<'a> {
     keys: &'a [PathBuf],
     replicas: &'a [PathBuf],
     workspaces: &'a [WorkspaceTarget],
+    spools: &'a [PathBuf],
 }
 fn configured(target: &Target) -> Result<Configured<'_>, Failure> {
     match target {
@@ -43,6 +44,7 @@ fn configured(target: &Target) -> Result<Configured<'_>, Failure> {
             private_keys,
             replicas,
             workspaces,
+            spools,
             ..
         } => Ok(Configured {
             root,
@@ -52,6 +54,7 @@ fn configured(target: &Target) -> Result<Configured<'_>, Failure> {
             keys: private_keys,
             replicas,
             workspaces,
+            spools,
         }),
         _ => Err(Failure::Invalid),
     }
@@ -65,6 +68,7 @@ pub(super) fn validate_target(target: &Target) -> Result<(), Failure> {
         keys,
         replicas,
         workspaces,
+        spools,
     } = configured(target)?;
     private_directory(root)?;
     history.validate()?;
@@ -94,6 +98,16 @@ pub(super) fn validate_target(target: &Target) -> Result<(), Failure> {
         if !roots.insert(path.clone()) {
             return Err(Failure::Invalid);
         }
+    }
+    if spools.len() > 16
+        || spools.iter().any(|p| !p.is_absolute())
+        || spools
+            .iter()
+            .collect::<std::collections::BTreeSet<_>>()
+            .len()
+            != spools.len()
+    {
+        return Err(Failure::Invalid);
     }
     if workspaces.len() > 16 {
         return Err(Failure::Invalid);
@@ -389,6 +403,7 @@ fn cleanup(target: &Target, record: custody::Record) -> Result<Value, Failure> {
         history,
         replicas,
         workspaces,
+        spools,
         ..
     } = configured(target)?;
     let authorization = record.id()?;
@@ -415,6 +430,32 @@ fn cleanup(target: &Target, record: custody::Record) -> Result<Value, Failure> {
         archives.push(match work() {
             Ok(purged)=>json!({"root":path,"state":"payloads-erased","page_reclamation":if purged{"completed"}else{"pending"}}),
             Err(error)=>json!({"root":path,"state":"pending","error":error}),
+        });
+    }
+    let mut queues = Vec::new();
+    for database in spools {
+        let work = || -> Result<Value, Failure> {
+            let mut queue =
+                crate::evidence_spool::Spool::open(database).map_err(|_| Failure::Unavailable)?;
+            let mut result = queue.reconcile_erasure(history).map_err(|e| match e {
+                crate::evidence_spool::Error::Proof(f) => f,
+                crate::evidence_spool::Error::Conflict => Failure::Conflict,
+                _ => Failure::Unavailable,
+            })?;
+            result["database"] = json!(database);
+            result["page_reclamation"] = json!(if queue
+                .reclaim_erased_pages()
+                .map_err(|_| Failure::Unavailable)?
+            {
+                "completed"
+            } else {
+                "pending"
+            });
+            Ok(result)
+        };
+        queues.push(match work() {
+            Ok(value) => value,
+            Err(error) => json!({"database":database,"state":"pending","error":error}),
         });
     }
     let mut derived = Vec::new();
@@ -450,8 +491,8 @@ fn cleanup(target: &Target, record: custody::Record) -> Result<Value, Failure> {
         });
     }
     Ok(
-        json!({"authorization":authorization,"archives":archives,"workspaces":derived,"managed_cleanup":"pending-coordination",
-        "remaining_preconditions":["Resolve and erase managed spool and publication copies","Reconcile every configured workspace and include all other managed workspaces","Verify enrollment and restore activation for all managed stores"],
+        json!({"authorization":authorization,"archives":archives,"workspaces":derived,"spools":queues,"managed_cleanup":"pending-coordination",
+        "remaining_preconditions":["Resolve unpublished queued derivatives and all publication copies","Reconcile every configured workspace and include all other managed workspaces","Verify enrollment and restore activation for all managed stores"],
         "backup_purge":"not-performed","activation":"not-performed"}),
     )
 }

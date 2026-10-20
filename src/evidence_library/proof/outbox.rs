@@ -91,7 +91,7 @@ impl AnnotationOutbox {
             .operation(&evidence_service::hex(&operation))
             .map_err(|_| Failure::Corrupt)?;
         Ok(
-            json!({"destination":self.destination,"destination_digest":self.digest,"operation":evidence_service::hex(&operation),"state":state.as_ref().map_or("not-queued",|s|if s.pending {"queued"}else{"acknowledged"}),"record":state.as_ref().map(|s|json!({"position":s.position.to_string(),"manifest":s.manifest,"pending":s.pending}))}),
+            json!({"destination":self.destination,"destination_digest":self.digest,"operation":evidence_service::hex(&operation),"state":state.as_ref().map_or("not-queued",|s|if s.erased {"erased"}else if s.pending {"queued"}else{"acknowledged"}),"record":state.as_ref().map(|s|json!({"position":s.position.to_string(),"manifest":s.manifest,"pending":s.pending,"erased":s.erased}))}),
         )
     }
 }

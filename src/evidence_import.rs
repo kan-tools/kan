@@ -94,6 +94,7 @@ pub struct Progress {
     pub total_operations: usize,
     pub retained_operations: usize,
     pub pending_operations: usize,
+    pub erased_operations: usize,
     pub newly_queued: usize,
     pub queue_coverage_complete: bool,
     pub recovery_verified: bool,
@@ -398,10 +399,15 @@ impl Plan {
         let entries = self.entries();
         let mut retained = 0;
         let mut pending = 0;
+        let mut erased = 0;
         for ordinal in 0..entries.len() {
             if let Some(op) = spool.operation(&service::hex(&self.operation(ordinal)))? {
-                retained += 1;
-                pending += usize::from(op.pending);
+                if op.erased {
+                    erased += 1;
+                } else {
+                    retained += 1;
+                    pending += usize::from(op.pending);
+                }
             }
         }
         Ok(Progress {
@@ -409,6 +415,7 @@ impl Plan {
             total_operations: entries.len(),
             retained_operations: retained,
             pending_operations: pending,
+            erased_operations: erased,
             newly_queued: 0,
             queue_coverage_complete: retained == entries.len(),
             recovery_verified: false,
@@ -446,7 +453,10 @@ impl Plan {
         let mut added = 0;
         for (ordinal, entry) in self.entries().into_iter().enumerate() {
             let operation = self.operation(ordinal);
-            if spool.operation(&service::hex(&operation))?.is_some() {
+            if let Some(retained) = spool.operation(&service::hex(&operation))? {
+                if retained.erased {
+                    return Err(Error::Invalid("import operation explicitly erased"));
+                }
                 continue;
             }
             if added == limit {

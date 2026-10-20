@@ -4134,11 +4134,35 @@ async fn owner_capture_erasure_revalidates_full_selection_and_resumes_offline_re
             .unwrap()
             .with_erasure_histories(vec![history.clone()])
             .unwrap();
+    let sender_path = local.path().join("sender.sqlite");
+    {
+        let mut sender = kan::evidence_spool::Spool::create(
+            &sender_path,
+            &service::hex(&f.binding.scope),
+            identity(6).did().as_str(),
+            &f.binding.issuer,
+            1024 * 1024,
+        )
+        .unwrap();
+        let mut ingest = service::AdmittingService::new(
+            attested::Archive::open(&f.root, f.binding.clone()).unwrap(),
+            identity(8),
+            vec![grant()],
+        )
+        .unwrap();
+        for (n, raw) in f.requests.iter().enumerate() {
+            sender.enqueue(raw).unwrap();
+            let ack = ingest.dispatch(raw, 200).unwrap().bytes().unwrap();
+            if n < 2 {
+                sender.acknowledge(&ack).unwrap();
+            }
+        }
+    }
     let state = local.path().join("owner.sqlite");
     let readers = || {
         let workspace =
             kan::evidence_workspace::Workspace::open(&state, identity(9), [84; 32]).unwrap();
-        let owner=kan::evidence_library::Owner::new(serde_json::from_value(json!({"token":OWNER,"max_jobs":10,"targets":[{"kind":"capture-erasure","id":"capture","root":f.root,"history":history,"signing_key":signing,"issuer_key":issuer,"private_keys":[private],"replicas":[replica.path()],"workspaces":[{"database":derived_path,"signing_key":signing,"recipient_key":private}]}]})).unwrap(),workspace).unwrap();
+        let owner=kan::evidence_library::Owner::new(serde_json::from_value(json!({"token":OWNER,"max_jobs":10,"targets":[{"kind":"capture-erasure","id":"capture","root":f.root,"history":history,"signing_key":signing,"issuer_key":issuer,"private_keys":[private],"replicas":[replica.path()],"workspaces":[{"database":derived_path,"signing_key":signing,"recipient_key":private}],"spools":[sender_path]}]})).unwrap(),workspace).unwrap();
         kan::evidence_library::Readers::new(None, vec![server.client(&f)])
             .unwrap()
             .with_owner(owner)
@@ -4196,6 +4220,19 @@ async fn owner_capture_erasure_revalidates_full_selection_and_resumes_offline_re
     );
     assert_eq!(done["result"]["report"]["archives"][1]["state"], "pending");
     assert_eq!(done["result"]["report"]["backup_purge"], "not-performed");
+    assert_eq!(
+        done["result"]["report"]["spools"][0]["state"], "admitted-erasure-reconciled",
+        "{done}"
+    );
+    assert_eq!(
+        done["result"]["report"]["spools"][0]["retired_operations"],
+        3
+    );
+    assert!(kan::evidence_spool::Spool::open(&sender_path)
+        .unwrap()
+        .head()
+        .unwrap()
+        .is_none());
     assert_eq!(done["attempts"], 2);
     assert_eq!(
         owner_call(&ui, OWNER, apply.clone(), 200).await,

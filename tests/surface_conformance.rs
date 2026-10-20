@@ -535,6 +535,30 @@ const PERSISTENCE_MODULES: &[&str] = &[
 ];
 const PERSISTENCE_MUTATION_SITES: &[(&str, &str, &str, usize)] = &[
     (
+        "src/evidence_spool/erasure.rs",
+        "initialize_spool_erasure",
+        "EvidenceSpool",
+        1,
+    ),
+    (
+        "src/evidence_spool/erasure.rs",
+        "insert_spool_erasure_authorization",
+        "EvidenceSpool",
+        1,
+    ),
+    (
+        "src/evidence_spool/erasure.rs",
+        "insert_spool_erasure_operation",
+        "EvidenceSpool",
+        1,
+    ),
+    (
+        "src/evidence_spool/erasure.rs",
+        "erase_spool_payload",
+        "EvidenceSpool",
+        1,
+    ),
+    (
         "src/evidence_workspace/erasure.rs",
         "initialize_workspace_erasure",
         "EvidenceWorkspaceErasure",
@@ -1501,7 +1525,7 @@ fn every_persistence_facade_call_is_independently_inventoried() {
         if module == "src/persistence.rs" {
             assert_eq!(
                 format!("{:x}", Sha256::digest(source.as_bytes())),
-                "d52a24043ffb4ab7dbc38d3f3387f80074a040b7844412bb8b520157606bc4f9",
+                "5fece912d4ed81fea3c8628659b7b831b75b281c2743a0bce5384c32735b488d",
                 "the raw-mutation facade changed; review and update its committed implementation digest together with facade-call negative controls"
             );
             assert!(

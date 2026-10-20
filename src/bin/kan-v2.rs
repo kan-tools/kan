@@ -394,6 +394,13 @@ enum Command {
         #[arg(long)]
         erasure_history: PathBuf,
     },
+    /// Reconcile admitted erased operations in a retained sender spool.
+    #[cfg(feature = "v2-service")]
+    ReconcileSpoolErasure {
+        spool: PathBuf,
+        #[arg(long)]
+        erasure_history: PathBuf,
+    },
     /// Initialize an empty independently recoverable archive key history.
     #[cfg(feature = "v2-crypto")]
     InitKeyHistory { config: PathBuf },
@@ -1190,6 +1197,23 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 &bounded_read(std::fs::File::open(erasure_history)?, 65536)?,
             )?;
             print_json(&history.reconcile_archive(&archive)?)?;
+        }
+        #[cfg(feature = "v2-service")]
+        Command::ReconcileSpoolErasure {
+            spool,
+            erasure_history,
+        } => {
+            let history: kan::evidence_erasure_history::Access = serde_json::from_slice(
+                &bounded_read(std::fs::File::open(erasure_history)?, 65536)?,
+            )?;
+            let mut spool = kan::evidence_spool::Spool::open(&spool)?;
+            let mut report = spool.reconcile_erasure(&history)?;
+            report["page_reclamation"] = serde_json::json!(if spool.reclaim_erased_pages()? {
+                "completed"
+            } else {
+                "pending"
+            });
+            print_json(&report)?;
         }
         #[cfg(feature = "v2-service")]
         Command::Serve {

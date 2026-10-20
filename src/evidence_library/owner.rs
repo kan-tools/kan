@@ -29,6 +29,8 @@ pub enum Target {
         replicas: Vec<PathBuf>,
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         workspaces: Vec<erasure::WorkspaceTarget>,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        spools: Vec<PathBuf>,
     },
     KeyHistory {
         id: String,

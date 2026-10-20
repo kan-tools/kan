@@ -454,6 +454,59 @@ pub fn open_sqlite_bundle_mutation(
     rusqlite::Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_WRITE)
 }
 
+/// Fixed spool retirement writes; the caller validates current owner custody
+/// and exact admitted manifest commitments before invoking these mutations.
+#[cfg(feature = "v2-storage")]
+pub fn initialize_spool_erasure(
+    _surface: SurfaceWrite,
+    tx: &rusqlite::Transaction<'_>,
+) -> rusqlite::Result<()> {
+    tx.execute_batch(crate::evidence_spool::erasure::SCHEMA)
+}
+#[cfg(feature = "v2-storage")]
+pub fn insert_spool_erasure_authorization(
+    _surface: SurfaceWrite,
+    tx: &rusqlite::Transaction<'_>,
+    id: &str,
+    body: &[u8],
+) -> rusqlite::Result<()> {
+    tx.execute(
+        "INSERT INTO erasure_authorizations VALUES(?,?)",
+        rusqlite::params![id, body],
+    )?;
+    Ok(())
+}
+#[cfg(feature = "v2-storage")]
+pub fn insert_spool_erasure_operation(
+    _surface: SurfaceWrite,
+    tx: &rusqlite::Transaction<'_>,
+    position: u64,
+    authorization: &str,
+    manifest: Option<&[u8]>,
+) -> rusqlite::Result<()> {
+    tx.execute(
+        "INSERT INTO erased_operations VALUES(?,?,?)",
+        rusqlite::params![position as i64, authorization, manifest],
+    )?;
+    Ok(())
+}
+#[cfg(feature = "v2-storage")]
+pub fn erase_spool_payload(
+    _surface: SurfaceWrite,
+    tx: &rusqlite::Transaction<'_>,
+    position: u64,
+    acknowledged: bool,
+) -> rusqlite::Result<()> {
+    tx.execute("DELETE FROM pending WHERE position=?", [position as i64])?;
+    if acknowledged {
+        tx.execute(
+            "UPDATE state SET acknowledged_request=NULL,acknowledged_reply=NULL WHERE singleton=1",
+            [],
+        )?;
+    }
+    Ok(())
+}
+
 /// Fixed erasure mutations: callers authenticate the entire plan before writing.
 #[cfg(feature = "v2-storage")]
 pub fn initialize_evidence_erasure(

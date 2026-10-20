@@ -132,6 +132,18 @@ impl Record {
         let signature = service::hex(&signer.sign(&change.signed_bytes()?).map_err(invalid)?);
         Ok(Self { change, signature })
     }
+    /// Verify the attributed signature only; current owner authority and chain
+    /// membership still come from independently configured Access::current.
+    pub(crate) fn verify_signature(&self) -> Result<()> {
+        service::author(&self.change.owner)?;
+        let signature = service::unhex(&self.signature, 64)?;
+        if signature.len() != 64
+            || !crate::sign::verify(&self.change.owner, &self.change.signed_bytes()?, &signature)
+        {
+            return Err(Failure::Corrupt);
+        }
+        Ok(())
+    }
     pub fn id(&self) -> Result<String> {
         Ok(digest(&serde_json::to_vec(self).map_err(invalid)?))
     }
