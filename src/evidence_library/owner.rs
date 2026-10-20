@@ -1,5 +1,6 @@
 //! Separately authorized, configured owner maintenance. No browser paths or
 //! shell commands, and no automatic promotion of a recovered/backup artifact.
+mod backup_purge;
 mod erasure;
 use crate::{
     evidence_proof_service::{Binding, Profile},
@@ -119,6 +120,15 @@ pub struct Config {
 #[derive(Deserialize)]
 #[serde(tag = "action", rename_all = "kebab-case", deny_unknown_fields)]
 pub enum Request {
+    PreviewBackupPurge {
+        backup_job: String,
+    },
+    ApplyBackupPurge {
+        plan: Box<backup_purge::Plan>,
+        preview: String,
+        #[serde(default)]
+        wait: bool,
+    },
     PreviewErasure {
         target: String,
         capture: crate::evidence_store::erasure::Capture,
@@ -501,6 +511,9 @@ impl Owner {
         if job["contract"]["operation"] == "erase-capture" {
             return self.erasure_status(job);
         }
+        if job["contract"]["operation"] == "purge-backup" {
+            return self.backup_purge_status(job);
+        }
         let result = self.workspace.get("owner-result", id)?;
         let running = self
             .active
@@ -621,6 +634,14 @@ impl Owner {
     }
     pub async fn execute(self: &Arc<Self>, request: Request) -> Result<Value, Failure> {
         match request {
+            Request::PreviewBackupPurge { backup_job } => {
+                self.preview_backup_purge(backup_job).await
+            }
+            Request::ApplyBackupPurge {
+                plan,
+                preview,
+                wait,
+            } => self.apply_backup_purge(*plan, preview, wait).await,
             Request::PreviewErasure { target, capture } => {
                 self.preview_erasure(target, capture).await
             }

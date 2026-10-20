@@ -1157,3 +1157,45 @@ consistently on every service, sender and Library restart. Managed owner startup
 also rejects cleanup targets that omit registered replicas, senders, dependent
 workspaces or publication destinations. This is explicit configured coverage,
 not discovery of every running process or historical backup.
+
+### Purge one completed backup copy
+
+Backup retention is independent of capture erasure. In the owner job list, a
+successful proof-archive backup offers **Preview backup purge**. The separate
+preview names the exact backup job, path, verified archive binding, file length
+and SHA-256. **Delete entire backup** removes that whole copy, including unrelated
+content within it. It preserves the source archive, other backup files and keys.
+Locking owner access or changing the owner view expires the confirmation.
+
+The shared owner API/CLI/MCP requests are:
+
+- `preview-backup-purge` with `backup_job`: the ID of a completed `backup` job.
+- `apply-backup-purge` with the returned `plan`, its `preview` digest and optional
+  `wait`. Repeating the exact request recovers a lost acknowledgment or resumes an
+  interrupted/pending purge. The UI offers **Resume backup purge** for that case.
+
+The backup must come from a currently configured proof Archive target, with the
+same retained target settings as its successful job. Callers cannot supply an
+arbitrary deletion path or select recovery outputs, v1 source trees, legacy
+backups, live archives, cloud objects or key packages. The preview verifies the
+current complete backup and fingerprints its exact bytes; changed bytes invalidate
+approval before a purge job is accepted. Missing files, symlinks, hard links,
+SQLite sidecars, unverified data and incompatible configuration refuse the preview.
+
+Accepted authorization is retained in the encrypted owner journal before removal.
+The worker moves the backup into a private `.kan-purge-<job-id>` directory beside
+the output, syncs the directories, re-verifies the staged bytes, records that
+verification and removes only `backup.sqlite`. Unknown staging entries are
+preserved and leave `purge-pending`. A restart reuses the exact retained plan and
+can finish from the staged file. The empty staging directory and minimal owner
+receipt remain. An interruption after deletion can report
+`absence-observed-after-authorization`, distinguishing observed absence from a
+new successful unlink. No retry replaces a file or recursively removes a directory.
+
+Purge jobs report the backup job ID, path, fingerprint, byte length and per-copy
+outcome. The original backup job remains a historical success and the UI links its
+completed purge receipt. Capture-erasure jobs continue to report their independent
+backup-purge status; deleting one backup does not imply every backup of a capture
+was removed. External backup services, filesystem snapshots, old recovery keys and
+unregistered copies remain outside this operation. No physical or cryptographic
+irrecoverability is claimed.

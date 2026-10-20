@@ -675,6 +675,17 @@
     for(const operation of operations){const option=textNode('option',operation);option.value=operation;$('owner-operation').append(option);}
     $('owner-operation').value=operations[0]||'';
   }
+  async function previewBackupPurge(backupJob){
+    const value=await ownerRpc({action:'preview-backup-purge',backup_job:backupJob});if(!value)return;
+    const epoch=ownerEpoch;$('owner-detail').replaceChildren();
+    details($('owner-detail'),'Delete one complete backup copy — exact preview',JSON.stringify(value,null,2));
+    $('owner-detail').append(textNode('p',value.contract?.effect||'Delete the entire selected backup. Source archives and other copies are separate.','content-warning'));
+    const confirm=textNode('button','Delete entire backup');confirm.addEventListener('click',()=>ownerRun(async()=>{
+      if(!ownerToken||ownerEpoch!==epoch)throw new Error('Backup purge preview expired. Review a fresh preview.');
+      confirm.disabled=true;const result=await ownerRpc({action:'apply-backup-purge',plan:value.plan,preview:value.digest,wait:false});
+      if(result){$('owner-detail').replaceChildren();await ownerCatalog();}
+    }));$('owner-detail').append(confirm);
+  }
   async function ownerCatalog(){
     const value=await ownerRpc({action:'catalog'});if(!value)return;
     if(!Array.isArray(value.targets)||!Array.isArray(value.jobs))throw new Error('Invalid owner response.');
@@ -690,6 +701,12 @@
       if(report?.recovered_selected_bytes_match)row.append(textNode('p',`${report.verified_files} recovered files match · ${report.verified_bytes} verified bytes · current source inventory matches`));
       if(report?.destination&&!report.verified_selected_file_bytes)row.append(textNode('p',`Output: ${report.destination} · activation not performed`));
       if(Array.isArray(report?.remaining_preconditions)){const list=document.createElement('ul');for(const item of report.remaining_preconditions)list.append(textNode('li',item));row.append(textNode('p',status.job.contract.operation==='erase-capture'?'Erasure coverage and remaining checks:':'Cutover remains unapproved. Remaining checks:','content-coverage'));row.append(list);}
+      if(status.job.contract.operation==='purge-backup'){row.append(textNode('p',`Backup purge: ${report?.backup_purge||'pending'} · Source archive: ${report?.source_archive||'retained'} · Other backups: ${report?.other_backups||'not assessed'}`));row.append(textNode('p',`Backup job: ${status.job.contract.plan?.backup_job||'unknown'}`,'content-identity'));}
+      if(status.job.contract.operation==='backup'&&status.state==='succeeded'&&status.job.contract.target.binding){
+        const purged=value.jobs.some(j=>j.job?.contract?.operation==='purge-backup'&&j.job.contract.plan?.backup_job===status.job.id&&j.state==='succeeded');
+        if(purged)row.append(textNode('p','This backup copy has a completed purge receipt. Other copies are separate.','content-coverage'));
+        else {const purge=textNode('button','Preview backup purge');purge.addEventListener('click',()=>ownerRun(()=>previewBackupPurge(status.job.id)));row.append(purge);}
+      }
       if(status.state==='failed')row.append(textNode('p',status.result?.error||'Operation failed; inspect retained details.','content-warning'));
       const inspect=textNode('button','Inspect maintenance job');inspect.addEventListener('click',()=>ownerRun(async()=>{const value=await ownerRpc({action:'job',id:status.job.id});if(value){$('owner-detail').replaceChildren();details($('owner-detail'),'Retained job, result and output paths',JSON.stringify(value,null,2));}}));row.append(inspect);
       if(status.job.contract.operation==='erase-capture'){if(status.state!=='running'&&status.resumable){const resume=textNode('button','Resume erasure cleanup');resume.addEventListener('click',()=>ownerRun(async()=>{await ownerRpc({action:'resume-erasure',id:status.job.id,wait:false});if(ownerToken)await ownerCatalog();}));row.append(resume);}row.append(textNode('p',`Configured cleanup: ${report?.configured_cleanup||'pending'} · Managed cleanup: ${report?.managed_cleanup||'pending'} · Backup purge: ${report?.backup_purge||'not performed'}`));if(report?.enrollment)row.append(textNode('p',`Deployment enrollment: ${report.enrollment}`,'content-coverage'));for(const archive of report?.archives||[])row.append(textNode('p',`${archive.root} · ${archive.state} · page reclamation ${archive.page_reclamation||'pending'}`));for(const workspace of report?.workspaces||[])row.append(textNode('p',`${workspace.database} · ${workspace.state} · ${workspace.removed_or_fenced??'unknown'} dependent entries removed or fenced · page reclamation ${workspace.page_reclamation||'pending'}`));for(const queue of report?.spools||[])row.append(textNode('p',`${queue.database} · ${queue.state} · ${queue.retired_operations??'unknown'} admitted operations retired · page reclamation ${queue.page_reclamation||'pending'}`));
@@ -704,6 +721,7 @@
           if(publications.remaining)row.append(textNode('p',publications.remaining,'content-coverage'));
         }
       }
+      else if(status.job.contract.operation==='purge-backup'){if(status.state!=='running'&&status.resumable){const resume=textNode('button','Resume backup purge');resume.addEventListener('click',()=>ownerRun(async()=>{const result=await ownerRpc({action:'apply-backup-purge',plan:status.job.contract.plan,preview:status.job.id,wait:false});if(result)await ownerCatalog();}));row.append(resume);}}
       else if(status.state!=='running'){const retry=textNode('button','Preview new attempt');retry.addEventListener('click',()=>{ownerRetry=status.job.id;$('owner-target').value=status.job.contract.target.id;ownerOperations();$('owner-operation').value=status.job.contract.operation;$('owner-status').textContent='Select Preview maintenance to review a new linked job. Any earlier outputs stay retained.';});row.append(retry);}$('owner-jobs').append(row);
     }
   }

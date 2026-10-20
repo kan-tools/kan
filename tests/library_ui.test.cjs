@@ -856,3 +856,24 @@ test('capture erasure requires exact preview, clears on edits and lock, and resu
  u.node('erasure-preview').click();await tick();u.node('owner-lock').click();await u.respond(preview);
  assert.equal(u.node('erasure-apply').disabled,true);assert.equal(u.node('erasure-plan').textContent,'');assert.equal(u.node('erasure-writer').value,'');assert.equal(u.node('erasure-attempt').value,'');assert.equal(u.node('erasure-controls').hidden,true);
 });
+
+test('backup purge requires a separate exact preview, expires on lock and resumes its retained plan',async()=>{
+ const u=ui();await u.login();await u.respond({...proofCatalog,scopes:[proofEntry('archive-A')]});await u.respond(proofPage);
+ const target={kind:'archive',id:'archive',binding:{archive:'archive-A'}},backup={job:{id:'backup-job',contract:{operation:'backup',target}},state:'succeeded',result:{report:{destination:'/synthetic/backup.sqlite'}}};
+ const catalog={owner:'owner',targets:[target],jobs:[backup],limits:{jobs:10}};
+ const connect=async()=>{u.node('owner-token').value='owner-token';u.node('owner-connect').events.submit({preventDefault(){}});await tick();await u.respond(catalog);};
+ await connect();
+ const preview={digest:'purge-id',plan:{backup_job:'backup-job',database:'/synthetic/backup.sqlite',sha256:'hash'},contract:{effect:'Delete the entire backup; retain source and other copies.'}};
+ const show=async()=>{walk(u.node('owner-jobs')).find(n=>n.textContent==='Preview backup purge').click();await tick();assert.deepEqual(JSON.parse(u.pending[0].opts.body),{action:'preview-backup-purge',backup_job:'backup-job'});await u.respond(preview);return walk(u.node('owner-detail')).find(n=>n.textContent==='Delete entire backup');};
+ const stale=await show();u.node('owner-lock').click();stale.click();await tick();assert.equal(u.pending.length,0);assert.equal(u.node('owner-detail').children.length,0);
+ await connect();const confirm=await show();confirm.click();await tick();assert.deepEqual(JSON.parse(u.pending[0].opts.body),{action:'apply-backup-purge',plan:preview.plan,preview:'purge-id',wait:false});
+ await u.respond({state:'running'});
+ const purge={job:{id:'purge-id',contract:{operation:'purge-backup',target,plan:preview.plan}},state:'purge-pending',resumable:true,result:{report:{backup_purge:'unconfirmed'}}};
+ await u.respond({...catalog,jobs:[backup,purge]});
+ const row=u.node('owner-jobs').children[1];assert.equal(walk(row).some(n=>n.textContent==='Preview new attempt'),false);
+ walk(row).find(n=>n.textContent==='Resume backup purge').click();await tick();assert.deepEqual(JSON.parse(u.pending[0].opts.body),{action:'apply-backup-purge',plan:preview.plan,preview:'purge-id',wait:false});
+ await u.respond({state:'succeeded'});await u.respond({...catalog,jobs:[backup,{...purge,state:'succeeded',resumable:false,result:{report:{backup_purge:'removed-configured-copy',source_archive:'retained',other_backups:'not-assessed'}}}]});
+ assert.equal(walk(u.node('owner-jobs')).some(n=>n.textContent==='Preview backup purge'||n.textContent==='Resume backup purge'),false);
+ assert.ok(walk(u.node('owner-jobs')).some(n=>n.textContent.includes('completed purge receipt')));
+ assert.ok(walk(u.node('owner-jobs')).some(n=>n.textContent.includes('Source archive: retained')));
+});

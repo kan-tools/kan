@@ -2245,6 +2245,171 @@ async fn owner_maintenance_uses_separate_authority_preview_exact_retry_and_new_o
     server.stop().await;
 }
 
+#[tokio::test]
+async fn owner_backup_purge_is_exact_scoped_and_resumes_staged_copies() {
+    const OWNER: &str = "synthetic-owner-backup-purge-token";
+    let dir = private_workspace_directory();
+    let local = private_workspace_directory();
+    let output = private_workspace_directory();
+    let f = fixture_requests(dir.path(), Profile::Admitted, encrypted);
+    let server = Server::start(&f).await;
+    let state = local.path().join("owner.sqlite");
+    let readers = || {
+        let workspace =
+            kan::evidence_workspace::Workspace::open(&state, identity(9), [84; 32]).unwrap();
+        let owner=kan::evidence_library::Owner::new(serde_json::from_value(json!({"token":OWNER,"max_jobs":10,"targets":[
+            {"kind":"archive","id":"archive","root":f.root,"output":output.path(),"binding":{"profile":"admitted","archive":service::hex(&f.binding.archive),"scope":service::hex(&f.binding.scope),"issuer":f.binding.issuer}}
+        ]})).unwrap(),workspace).unwrap();
+        kan::evidence_library::Readers::new(None, vec![server.client(&f)])
+            .unwrap()
+            .with_owner(owner)
+    };
+    let ui = Ui::start(readers()).await;
+    let preview = owner_call(
+        &ui,
+        OWNER,
+        json!({"action":"preview","target":"archive","operation":"backup"}),
+        200,
+    )
+    .await;
+    let backup=owner_call(&ui,OWNER,json!({"action":"submit","target":"archive","operation":"backup","nonce":preview["nonce"],"preview":preview["digest"],"wait":true}),200).await;
+    assert_eq!(backup["state"], "succeeded");
+    let file = PathBuf::from(backup["result"]["report"]["destination"].as_str().unwrap());
+    let original = std::fs::read(&file).unwrap();
+    let query = json!({"action":"preview-backup-purge","backup_job":backup["job"]["id"]});
+    owner_call(&ui, TOKEN, query.clone(), 401).await;
+    let preview = owner_call(&ui, OWNER, query.clone(), 200).await;
+    assert_eq!(
+        std::fs::read(&file).unwrap(),
+        original,
+        "preview deletes nothing"
+    );
+    let request = json!({"action":"apply-backup-purge","plan":preview["plan"],"preview":preview["digest"],"wait":true});
+    let mut forged = request.clone();
+    forged["plan"]["database"] = json!(f.db());
+    owner_call(&ui, OWNER, forged, 400).await;
+    // A valid but changed snapshot at the same path invalidates the exact preview.
+    let previous = service::append_manifest(f.requests.last().unwrap())
+        .unwrap()
+        .cid()
+        .to_string();
+    attested::Archive::open(&f.root, f.binding.clone())
+        .unwrap()
+        .admit(
+            &encrypted(3, 8, Some(previous)),
+            &identity(8),
+            &grant(),
+            200,
+        )
+        .unwrap();
+    let other = output.path().join("independent.sqlite");
+    attested::Archive::open(&f.root, f.binding.clone())
+        .unwrap()
+        .backup(&other)
+        .unwrap();
+    std::fs::write(&file, std::fs::read(&other).unwrap()).unwrap();
+    owner_call(&ui, OWNER, request.clone(), 409).await;
+    assert!(file.exists());
+    std::fs::write(&file, &original).unwrap();
+    // An occupied staging namespace cannot be overwritten or recursively removed.
+    let stage = output.path().join(format!(
+        ".kan-purge-{}",
+        preview["digest"].as_str().unwrap()
+    ));
+    std::fs::create_dir(&stage).unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&stage, std::fs::Permissions::from_mode(0o700)).unwrap();
+    }
+    let foreign = stage.join("unexpected");
+    std::fs::write(&foreign, b"retain unknown bytes").unwrap();
+    let blocked = owner_call(&ui, OWNER, request.clone(), 200).await;
+    assert_eq!(blocked["state"], "purge-pending", "{blocked}");
+    assert_eq!(std::fs::read(&file).unwrap(), original);
+    assert_eq!(std::fs::read(&foreign).unwrap(), b"retain unknown bytes");
+    std::fs::remove_file(&foreign).unwrap();
+    let done = owner_call(&ui, OWNER, request.clone(), 200).await;
+    assert_eq!(done["state"], "succeeded", "{done}");
+    assert_eq!(
+        done["result"]["report"]["backup_purge"],
+        "removed-configured-copy"
+    );
+    assert!(!file.exists());
+    assert!(!stage.join("backup.sqlite").exists());
+    assert_eq!(
+        owner_call(&ui, OWNER, request, 200).await,
+        done,
+        "lost acknowledgment does not repeat deletion"
+    );
+    assert_eq!(
+        attested::Archive::verify_file(&f.db(), f.binding.clone())
+            .unwrap()
+            .commits,
+        4
+    );
+    assert_eq!(
+        attested::Archive::verify_file(&other, f.binding.clone())
+            .unwrap()
+            .commits,
+        4
+    );
+    // Reproduce interruption after durable authorization and relocation, before removal.
+    let snapshot = owner_call(
+        &ui,
+        OWNER,
+        json!({"action":"preview","target":"archive","operation":"backup"}),
+        200,
+    )
+    .await;
+    let backup=owner_call(&ui,OWNER,json!({"action":"submit","target":"archive","operation":"backup","nonce":snapshot["nonce"],"preview":snapshot["digest"],"wait":true}),200).await;
+    let preview = owner_call(
+        &ui,
+        OWNER,
+        json!({"action":"preview-backup-purge","backup_job":backup["job"]["id"]}),
+        200,
+    )
+    .await;
+    ui.stop().await;
+    {
+        let workspace =
+            kan::evidence_workspace::Workspace::open(&state, identity(9), [84; 32]).unwrap();
+        workspace
+            .put(
+                "owner-job",
+                preview["digest"].as_str().unwrap(),
+                json!({"id":preview["digest"],"contract":preview["contract"],"started_at":"200"}),
+            )
+            .unwrap();
+    }
+    let staged_dir = output.path().join(format!(
+        ".kan-purge-{}",
+        preview["digest"].as_str().unwrap()
+    ));
+    std::fs::create_dir(&staged_dir).unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&staged_dir, std::fs::Permissions::from_mode(0o700)).unwrap();
+    }
+    let staged = staged_dir.join("backup.sqlite");
+    std::fs::rename(preview["plan"]["database"].as_str().unwrap(), &staged).unwrap();
+    let ui = Ui::start(readers()).await;
+    let resumed=owner_call(&ui,OWNER,json!({"action":"apply-backup-purge","plan":preview["plan"],"preview":preview["digest"],"wait":true}),200).await;
+    assert_eq!(resumed["state"], "succeeded", "{resumed}");
+    assert!(!staged.exists());
+    let catalog = owner_call(&ui, OWNER, json!({"action":"catalog"}), 200).await;
+    assert_eq!(catalog["jobs"].as_array().unwrap().len(), 4);
+    assert_eq!(
+        attested::Archive::verify_file(&other, f.binding.clone())
+            .unwrap()
+            .commits,
+        4
+    );
+    ui.stop().await;
+    server.stop().await;
+}
+
 fn imported_claim_frames(audience: u8) -> (String, Vec<Vec<u8>>, Vec<u8>) {
     use atproto_dasl::Ipld;
     use kan::claim::v1::{Anchor, AuthorId, Claim, ClaimBody, ClaimContent, SubjectRef};
