@@ -569,3 +569,22 @@ authorized before its saved name or inputs are listed. Loss remains explicit on
 reopen. Trust changes produce a new content-addressed declaration, retaining the
 old view. The encrypted workspace's existing view bounds apply (200 declarations,
 256 KiB each). Saving a view does not make its relative authority globally current.
+
+### Native file delivery
+
+The browser's Blob/data-URL export path failed an isolated control while an HTTP
+attachment produced the exact downloaded bytes. Source export therefore uses an
+origin-checked native `POST /api/library/download`, with one `text/plain` form
+field containing JSON `{token, request}`. The credential remains in the request
+body, never a URL or cookie. Only existing source-range queries are accepted; the
+server repeats current grant, signature, membership and availability checks and
+returns bounded bytes as an attachment. The UI performs its ordinary source check
+first to show normal failure states. A race-time failure on the native POST shows
+the server's refusal and emits no attachment. Missing Origin and foreign Origin
+are refused, even with a valid token. CSP permits forms only to the same origin.
+
+`POST /api/owner/download` separately requires the owner credential and a bounded,
+typed wrapped recovery package previously exported by the UI. It only delivers
+that package as a file, without restoring, activating, unwrapping or granting
+custody. Both forms are removed and cleared immediately after submission; responses
+remain no-store. These routes add no persistent cache or ticket authority.

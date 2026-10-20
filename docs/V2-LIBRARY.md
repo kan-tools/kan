@@ -167,8 +167,11 @@ signed retained request and manifest before scope-bound decryption. Unknown
 formats remain inspectable. UTF-8 is shown only if the selected bytes decode
 exactly; other ranges show hex. Offsets are half-open byte ranges. The first UI
 reads 64 KiB at a time and does not accumulate previous ranges. Download exports
-only that range as a `.bin` file after another authorization check, not the full
-object or a transcript. No source HTML, external images or attachment scripts
+only that range as a `.bin` attachment after another authorization check, not the
+full object or a transcript. Native same-origin POST delivery avoids browser Blob
+URL limitations; credentials stay in the form body and are removed from the DOM
+after submission. Source access is checked again by the download endpoint. A
+revocation between preview and export returns a refusal without an attachment. No source HTML, external images or attachment scripts
 are executed.
 
 Every valid source/page/export read contacts the service before returning data,
@@ -960,3 +963,9 @@ subject history. Withdrawal does not cancel earlier analysis or enqueue new jobs
 A withdrawal targets one declaration, not its correction ancestors. Search over
 annotation history still includes withdrawn assertions. This operation is separate
 from owner-controlled erasure of retained payload bytes.
+
+The wrapped-key **Download package** action uses a separately owner-authenticated
+native POST. It transports the previously exported, typed recovery package; it
+does not verify or activate that package. Restore retains its separate preview and
+validation. Native download routes require an exact same-origin header, accept no
+URL credentials, return no-store attachments, and create no server-side export cache.

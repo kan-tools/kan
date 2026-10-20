@@ -3321,6 +3321,31 @@ async fn owner_key_epochs_require_owner_preview_and_restore_wrapped_history_afte
     .await;
     assert_eq!(export["package"]["records"].as_array().unwrap().len(), 1);
     let package = export["package"].clone();
+    let origin = ui.url.trim_end_matches("/api/library");
+    for (credential, status) in [(TOKEN, 403), (OWNER, 200)] {
+        let response = reqwest::Client::builder()
+            .no_proxy()
+            .build()
+            .unwrap()
+            .post(format!("{origin}/api/owner/download"))
+            .header("origin", origin)
+            .header("content-type", "text/plain")
+            .body(format!(
+                "payload={}\r\n",
+                json!({"token":credential,"package":package})
+            ))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), status);
+        if status == 200 {
+            assert_eq!(
+                response.headers()["content-disposition"],
+                "attachment; filename=\"kan-wrapped-key-recovery.json\""
+            );
+            assert_eq!(response.json::<Value>().await.unwrap(), package);
+        }
+    }
     let inspected = owner_call(&ui, OWNER, json!({"action":"keys","target":"keys"}), 200).await;
     let request = json!({"action":"preview-key-transfer","target":"keys","recipient":service::hex(&kan::evidence_crypto::public_key(&[85;32]).unwrap()),"epochs":inspected["epoch_ids"],"purpose":"replace-recovery"});
     owner_call(&ui, TOKEN, request.clone(), 401).await;
@@ -3788,6 +3813,95 @@ async fn cold_host_restores_source_search_annotations_and_references_from_indepe
         .as_array()
         .unwrap()
         .is_empty());
+    ui.stop().await;
+    server.stop().await;
+}
+
+#[tokio::test]
+async fn native_source_download_rechecks_grants_and_origin_and_exports_only_exact_bytes() {
+    let dir = tempfile::tempdir().unwrap();
+    let f = fixture_requests(dir.path(), Profile::Admitted, encrypted);
+    let server = Server::start(&f).await;
+    let ui = Ui::start(kan::evidence_library::Readers::new(None, vec![server.client(&f)]).unwrap())
+        .await;
+    let catalog = ui.call(json!({"action":"catalog"}), 200).await;
+    let entry = &catalog["scopes"][0];
+    let page = ui.call(json!({"action":"proof-page","source":entry["id"],"pin":entry["pin"],"cursor":null,"limit":1}),200).await;
+    let query = json!({"action":"proof-source","source":entry["id"],"pin":entry["pin"],"selection":page["records"][0]["selection"],"offset":"1","length":"4"});
+    let retained = ui.call(query.clone(), 200).await;
+    let payload = json!({"token":TOKEN,"request":query});
+    let origin = ui.url.trim_end_matches("/api/library");
+    let client = reqwest::Client::builder().no_proxy().build().unwrap();
+    let post = |payload: &Value| {
+        client
+            .post(format!("{}/download", ui.url))
+            .header("origin", origin)
+            .header("content-type", "text/plain")
+            .body(format!("payload={payload}\r\n"))
+    };
+    let response = post(&payload).send().await.unwrap();
+    assert_eq!(response.status(), 200);
+    assert_eq!(response.headers()["cache-control"], "no-store");
+    assert_eq!(
+        response.headers()["content-type"],
+        "application/octet-stream"
+    );
+    assert_eq!(
+        response.headers()["content-disposition"],
+        format!(
+            "attachment; filename=\"kan-occurrence-{}-offset-1.bin\"",
+            retained["record"]["sequence"].as_str().unwrap()
+        )
+    );
+    assert_eq!(
+        response.bytes().await.unwrap().as_ref(),
+        service::unhex(retained["bytes_hex"].as_str().unwrap(), 262144).unwrap()
+    );
+    for bad_origin in [None, Some("http://foreign.invalid")] {
+        let mut req = client
+            .post(format!("{}/download", ui.url))
+            .header("content-type", "text/plain")
+            .body(format!("payload={payload}\r\n"));
+        if let Some(origin) = bad_origin {
+            req = req.header("origin", origin);
+        }
+        assert_eq!(req.send().await.unwrap().status(), 403);
+    }
+    let mut invalid = payload.clone();
+    invalid["token"] = json!("wrong");
+    assert_eq!(post(&invalid).send().await.unwrap().status(), 403);
+    invalid = payload.clone();
+    invalid["request"] = json!({"action":"catalog"});
+    assert_eq!(post(&invalid).send().await.unwrap().status(), 400);
+    assert_eq!(
+        post(&payload)
+            .body(format!("payload={payload}\r\nextra=field\r\n"))
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        400
+    );
+    assert_eq!(
+        client
+            .get(format!("{}/download", ui.url))
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        405
+    );
+    f.remove(2);
+    assert_eq!(post(&payload).send().await.unwrap().status(), 404);
+    server
+        .service
+        .lock()
+        .unwrap()
+        .replace_grants(vec![])
+        .unwrap();
+    let response = post(&payload).send().await.unwrap();
+    assert_eq!(response.status(), 403);
+    assert!(!response.headers().contains_key("content-disposition"));
     ui.stop().await;
     server.stop().await;
 }

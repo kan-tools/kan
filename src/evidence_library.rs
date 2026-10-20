@@ -1,4 +1,5 @@
 //! Human evidence Library. Loopback presentation with a separate read capability.
+mod download;
 mod owner;
 mod proof;
 use crate::evidence_content::ContentError;
@@ -205,7 +206,7 @@ pub enum Query {
 fn response(code: StatusCode, mime: &'static str, body: impl Into<Bytes>) -> Response<Full<Bytes>> {
     let mut r = Response::new(Full::new(body.into()));
     *r.status_mut() = code;
-    for (key,value) in [("content-type",mime),("cache-control","no-store"),("x-content-type-options","nosniff"),("referrer-policy","no-referrer"),("content-security-policy","default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'"),("cross-origin-resource-policy","same-origin")] {
+    for (key,value) in [("content-type",mime),("cache-control","no-store"),("x-content-type-options","nosniff"),("referrer-policy","no-referrer"),("content-security-policy","default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'"),("cross-origin-resource-policy","same-origin")] {
         r.headers_mut().insert(key,hyper::header::HeaderValue::from_static(value));
     }
     r
@@ -358,6 +359,10 @@ async fn handle(
         return Ok(denied(StatusCode::FORBIDDEN));
     }
     let path = r.uri().path_and_query().map(|p| p.as_str());
+    if matches!(path, Some("/api/library/download" | "/api/owner/download")) {
+        let owner = path == Some("/api/owner/download");
+        return Ok(download::handle(r, &host, &token, &reader, owner).await);
+    }
     if path == Some("/api/owner") {
         let Some(owner) = &reader.owner else {
             return Ok(denied(StatusCode::NOT_FOUND));

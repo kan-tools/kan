@@ -11,7 +11,7 @@
   let scanCursor = null, scanComplete = false, scanCount = 0, discoveryRun = 0;
   const sourceId = entry => entry.id || entry.scope;
   const isProof = () => activeSource?.protocol === 'kan-proof-reader/1';
-  const buttons = new Map(), exports = new Map(), contentSelection = new Set(), checks = new Map();
+  const buttons = new Map(), contentSelection = new Set(), checks = new Map();
   let annotationRecovery=null;
   let searchStates = [], searchRun = 0, searchFilter = null, searchHits = new Map(), searchPages = 0;
   let analysisEnabled=false,analysisDraft=null,analysisPreview=null,analysisRecipes=[];
@@ -21,7 +21,12 @@
   function navigation(visible) {
     for(const [id,section] of [['evidence','evidence'],['search','search-workspace'],['sessions','session-workspace'],['imports','discovery'],['knowledge','knowledge'],['views','search-workspace'],['analysis','analysis'],['owner','owner-maintenance']])$('nav-'+id).hidden=!visible||$(section).hidden;
   }
-  function releaseExport(url) { clearTimeout(exports.get(url)); exports.delete(url); URL.revokeObjectURL(url); }
+  function nativeDownload(path,payload) {
+    const form=document.createElement('form'),field=document.createElement('input');
+    form.method='POST';form.action=path;form.enctype='text/plain';form.hidden=true;
+    field.type='hidden';field.name='payload';field.value=JSON.stringify(payload);form.append(field);document.body.append(form);
+    try{form.submit();}finally{field.value='';form.remove();}
+  }
   function notice(text, error = false) { $('notice').textContent = text; $('notice').className = `notice${error ? ' error' : ''}`; }
   function clearContent(clearSelection = true) {
     contentValue = null; returnItem = null; $('content-panel').replaceChildren(); $('content-tab').disabled = true;
@@ -45,7 +50,6 @@
   function lock(message = 'Locked · connect to browse authorized evidence.') {
     importControls=[];
     $('reference-input').value='';
-    for (const url of exports.keys()) releaseExport(url);
     epoch++; if (controller) controller.abort(); controller = null; token = ''; scopes = []; pin = null; history = []; after = 0; next = null;
     navigation(false);lockOwner();$('operations-link').hidden=true;clearAnalysis(true);clearKnowledge(true);clearSearch(true);
     pinWire = null; contentEnabled = false; activeSource = null; clearDiscovery(); clearWorkspace(); selections.clear(); clearContent(); checks.clear(); clearInspector(); buttons.clear(); $('rows').replaceChildren(); $('scope').replaceChildren(); $('capability-list').replaceChildren(); $('coverage').textContent = '';
@@ -743,7 +747,7 @@
   }));
   $('key-package').addEventListener('input',()=>{ownerEpoch++;if(ownerController)ownerController.abort();invalidateKeys();$('key-download').disabled=true;});
   $('key-download').addEventListener('click',()=>{
-    const url=URL.createObjectURL(new Blob([$('key-package').value],{type:'application/json'}));exports.set(url,setTimeout(()=>releaseExport(url),1000));const link=document.createElement('a');link.href=url;link.download='kan-wrapped-key-recovery.json';link.hidden=true;document.body.append(link);link.click();link.remove();
+    if(!ownerToken||$('key-download').disabled)return;nativeDownload('/api/owner/download',{token:ownerToken,package:JSON.parse($('key-package').value)});
   });
   $('key-restore-preview').addEventListener('click',()=>ownerRun(async()=>{
     invalidateKeys();const target=$('owner-target').value,packageValue=JSON.parse($('key-package').value),value=await ownerRpc({action:'restore-keys',target,package:packageValue,preview:null});if(!value)return;
@@ -1258,12 +1262,8 @@
     const request = sourceRequest(sequence,offset); clearInspector(); selected = sequence;
     const value = await rpc(request); if (!value) return;
     showSource(value); if (['missing','corrupt','key-unavailable'].includes(value.availability)) return;
-    const bytes = new Uint8Array(value.bytes_hex.match(/../g)?.map(x => parseInt(x,16)) || []);
-    const url = URL.createObjectURL(new Blob([bytes],{type:'application/octet-stream'}));
-    // Keep the URL alive for navigation to begin; lock/pagehide release it early.
-    exports.set(url, setTimeout(() => releaseExport(url), 1000));
-    const a = document.createElement('a'); a.href = url; a.download = `kan-occurrence-${sequence}-offset-${offset}.bin`;
-    a.hidden = true; document.body.append(a); a.click(); a.remove();
+    nativeDownload('/api/library/download',{token,request});
+    notice('Download requested. The server checks access again before returning this range.');
   }));
   $('encoding').addEventListener('click', () => { if (source && source.utf8 !== null) { hexadecimal = !hexadecimal; renderBytes(); } });
   $('content-tab').addEventListener('click', () => { if(contentValue) { tab('content'); $('selection').textContent = 'Selected Content'; $('source-hint').textContent = 'Observed content · roles and outcomes are claims. Follow citations to verified retained source.'; if(returnItem)returnItem.focus(); } });
