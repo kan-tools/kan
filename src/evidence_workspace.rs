@@ -323,7 +323,7 @@ impl Workspace {
             .prepare("SELECT id,body FROM entries WHERE kind=? ORDER BY id LIMIT ?")
             .map_err(invalid)?;
         let rows = q
-            .query_map(params![kind, limit + 1], |r| {
+            .query_map(params![kind, (limit + 1) as i64], |r| {
                 Ok((r.get::<_, String>(0)?, r.get::<_, Vec<u8>>(1)?))
             })
             .map_err(invalid)?;
