@@ -1453,7 +1453,7 @@ async fn analysis_retains_exact_lineage_quotas_retries_and_revoked_results() {
     let readers = || {
         kan::evidence_library::Readers::new(None,vec![server.client(&f)]).unwrap()
         .with_workspace(kan::evidence_workspace::Workspace::open(&local.path().join("workspace.sqlite"),identity(6),[97;32]).unwrap())
-        .with_analysis(serde_json::from_value(json!({"endpoint":endpoint,"token":"synthetic-analysis-gateway-token-12345","model":"synthetic-model","sources":[source],"recipes":[{"id":"assess","revision":"1","purpose":"day-assessment","instructions":"Assess progress using only cited evidence."}],"max_input_bytes":1024,"max_output_tokens":128,"max_jobs":4})).unwrap()).unwrap()
+        .with_analysis(serde_json::from_value(json!({"endpoint":endpoint,"token":"synthetic-analysis-gateway-token-12345","model":"synthetic-model","sources":[source],"recipes":[{"id":"assess","revision":"1","purpose":"day-assessment","instructions":"Assess progress using only cited evidence."}],"max_input_bytes":1024,"max_output_tokens":128,"max_jobs":5,"triggers":[{"tag":"automatic","recipe":"assess"}]})).unwrap()).unwrap()
     };
     let ui = Ui::start(readers()).await;
     let catalog = ui.call(json!({"action":"catalog"}), 200).await;
@@ -1487,16 +1487,69 @@ async fn analysis_retains_exact_lineage_quotas_retries_and_revoked_results() {
         ui.call(json!({"action":"analysis-job","id":id}), 200).await,
         detail
     );
+    let promoted_draft = json!({"subject":"day/derived","text":"Human-reviewed assessment","tags":[],"cites":draft["cites"],"supersedes":null,"derived_from":[id]});
+    let promotion = ui
+        .call(
+            json!({"action":"annotation-preview","draft":promoted_draft}),
+            200,
+        )
+        .await;
+    let promoted = ui
+        .call(
+            json!({"action":"annotation-save","draft":promoted_draft,"preview":promotion["id"]}),
+            200,
+        )
+        .await;
+    let correction = json!({"subject":"day/derived","text":"Corrected human interpretation","tags":[],"cites":draft["cites"],"supersedes":promoted["id"],"derived_from":[]});
+    let corrected = ui
+        .call(
+            json!({"action":"annotation-preview","draft":correction}),
+            200,
+        )
+        .await;
+    assert_eq!(
+        corrected["declaration"]["draft"]["derived_from"],
+        json!([id])
+    );
+    assert_eq!(corrected["declaration"]["draft"]["cites"], draft["cites"]);
     let mut retry = draft.clone();
     retry["retry_of"] = id.clone();
     let preview = ui
         .call(json!({"action":"analysis-preview","draft":retry}), 200)
         .await;
     assert_eq!(ui.call(json!({"action":"analysis-submit","draft":retry,"preview":preview["digest"],"nonce":preview["nonce"],"wait":true}),200).await["state"],"succeeded");
+    let note_draft = json!({"subject":"day/assessment","text":"Assess this explicit evidence","tags":["automatic"],"cites":draft["cites"],"supersedes":null});
+    let note_preview = ui
+        .call(
+            json!({"action":"annotation-preview","draft":note_draft}),
+            200,
+        )
+        .await;
+    assert_eq!(
+        note_preview["declaration"]["analysis_trigger_plan"][0]["recipe"]["id"],
+        "assess"
+    );
+    let note_request =
+        json!({"action":"annotation-save","draft":note_draft,"preview":note_preview["id"]});
+    let note = ui.call(note_request.clone(), 200).await;
+    let triggers = ui
+        .call(json!({"action":"annotation-triggers","id":note["id"]}), 200)
+        .await;
+    assert_eq!(triggers["attempts"][0]["outcomes"][0]["state"], "scheduled");
+    assert_eq!(ui.call(note_request, 200).await, note);
+    assert_eq!(
+        ui.call(json!({"action":"annotation-triggers","id":note["id"]}), 200)
+            .await,
+        triggers
+    );
+    assert_eq!(ui.call(json!({"action":"analysis-job","id":triggers["attempts"][0]["outcomes"][0]["job"],"cancel":true}),200).await["state"],"cancelled");
     submit["nonce"] = json!("e".repeat(64));
     submit["wait"] = json!(false);
     let running = ui.call(submit.clone(), 200).await;
-    assert_eq!(running["state"], "running");
+    assert!(matches!(
+        running["state"].as_str(),
+        Some("running" | "queued")
+    ));
     let cancelled = ui
         .call(
             json!({"action":"analysis-job","id":running["job"]["id"],"cancel":true}),

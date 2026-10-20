@@ -14,6 +14,7 @@ pub mod knowledge;
 pub mod outbox;
 pub mod search;
 pub mod sessions;
+mod triggers;
 
 pub struct Readers {
     analysis: Option<std::sync::Arc<analysis::Engine>>,
@@ -21,7 +22,7 @@ pub struct Readers {
     pub(super) operations: Option<crate::evidence_dashboard::Embedded>,
     workspace: Option<std::sync::Arc<crate::evidence_workspace::Workspace>>,
     legacy: Option<legacy::Reader>,
-    proof: BTreeMap<String, proof::Reader>,
+    proof: BTreeMap<String, std::sync::Arc<proof::Reader>>,
     workers: std::sync::Arc<tokio::sync::Semaphore>,
 }
 impl Readers {
@@ -46,7 +47,7 @@ impl Readers {
                 binding.scope,
                 binding.issuer
             );
-            if selected.insert(id, reader).is_some() {
+            if selected.insert(id, std::sync::Arc::new(reader)).is_some() {
                 return Err(Failure::Invalid);
             }
         }
@@ -82,7 +83,10 @@ impl Readers {
         self.workspace.as_deref().ok_or(Failure::Invalid)
     }
     fn selected(&self, id: &str) -> Result<&proof::Reader, Failure> {
-        self.proof.get(id).ok_or(Failure::AccessLimited)
+        self.proof
+            .get(id)
+            .map(|reader| reader.as_ref())
+            .ok_or(Failure::AccessLimited)
     }
     async fn declarations(&self, annotations: bool) -> Result<Vec<Value>, ContentError> {
         let _permit = self
@@ -154,6 +158,7 @@ impl Readers {
     }
     pub(super) async fn query(&self, request: Query) -> Result<Vec<u8>, ContentError> {
         let value = match request {
+            Query::AnnotationTriggers { id, retry } => self.annotation_triggers(&id, retry).await?,
             Query::AnalysisPreview { draft } => self.analysis_preview(draft).await?,
             Query::AnalysisSubmit {
                 draft,

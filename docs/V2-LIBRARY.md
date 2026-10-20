@@ -441,3 +441,25 @@ An interrupted process leaves an interrupted job; restart does not silently
 resend it. At most one scheduler owns a workspace, and one job runs at a time.
 The lifetime job quota requires an explicit configuration increase; stored records
 have no automatic expiry. Current source revocation hides jobs and their results.
+
+To schedule from annotation tags, add an optional `triggers` array to the private
+analysis configuration, for example:
+
+```json
+"triggers": [{"tag": "assess-day", "recipe": "day-assess"}]
+```
+
+The annotation preview shows every matching recipe revision and destination.
+Append records the annotation and queues matching analyses. **Inspect tag-triggered
+jobs** exposes scheduling receipts and **Retry failed scheduling** retries the
+same declared plan. Quota, missing input or permission failures remain visible;
+repeating an accepted trigger does not create another inference request. A changed
+configuration requires a new reviewed annotation, rather than silently changing
+the old trigger intent. The bounded queue holds up to sixteen jobs, with one
+inference request active. Inputs are reread immediately before dispatch, so queued
+work cannot send a cached copy after source loss or revocation.
+
+**Draft annotation from this result** opens an editable human annotation. The job
+reference and all its source citations follow it into the preview and any later
+corrections. The full result stays inspectable if a draft is excerpted to the note
+length limit. Merely inspecting a model response does not publish it.

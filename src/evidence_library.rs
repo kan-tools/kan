@@ -28,6 +28,11 @@ use tokio::{
 #[derive(Deserialize)]
 #[serde(tag = "action", rename_all = "kebab-case", deny_unknown_fields)]
 pub enum Query {
+    AnnotationTriggers {
+        id: String,
+        #[serde(default)]
+        retry: bool,
+    },
     AnalysisPreview {
         draft: AnalysisDraft,
     },
@@ -169,7 +174,8 @@ fn denied(code: StatusCode) -> Response<Full<Bytes>> {
 async fn query(reader: &Reader, query: Query) -> Result<Vec<u8>, ContentError> {
     use crate::evidence_content as content;
     let value: serde_json::Value = match query {
-        Query::AnalysisPreview { .. }
+        Query::AnnotationTriggers { .. }
+        | Query::AnalysisPreview { .. }
         | Query::AnalysisSubmit { .. }
         | Query::AnalysisJobs
         | Query::AnalysisJob { .. }

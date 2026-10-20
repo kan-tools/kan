@@ -291,12 +291,13 @@ impl Workspace {
                 | "analysis-input"
                 | "analysis-result"
                 | "analysis-event"
+                | "analysis-trigger"
         ) {
             return Err(Failure::Invalid);
         }
         if matches!(
             kind,
-            "view" | "annotation" | "analysis-job" | "analysis-event"
+            "view" | "annotation" | "analysis-job" | "analysis-event" | "analysis-trigger"
         ) && serde_json::to_vec(&value).map_err(invalid)?.len() > 262144
         {
             return Err(Failure::Invalid);

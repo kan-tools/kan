@@ -574,7 +574,7 @@ test('conversation refuses foreign identity and discards replies after close or 
 
 const analysisConfiguration={recipes:[{id:'day-review',revision:'1',purpose:'day-assessment',instructions:'Assess progress using cited evidence only.'}],model:'synthetic-model',endpoint:'http://127.0.0.1:9999/v1/messages',limits:{jobs:10}};
 async function openAnalysisUI(u){
- await u.login();await u.respond({...proofCatalog,capabilities:[...proofCatalog.capabilities,'analysis'],unavailable:proofCatalog.unavailable.filter(c=>c!=='analysis'),scopes:[{...proofEntry('archive-A'),pin,pin_wire:exactPin}]});await u.respond(proofPage);
+ await u.login();await u.respond({...proofCatalog,capabilities:[...proofCatalog.capabilities,'analysis','annotations'],unavailable:proofCatalog.unavailable.filter(c=>!['analysis','annotations'].includes(c)),scopes:[{...proofEntry('archive-A'),pin,pin_wire:exactPin}]});await u.respond(proofPage);
  u.node('rows').children[0].click();await tick();await u.respond(proofSource);u.node('analyze-source').click();await tick();
  assert.equal(JSON.parse(u.pending[0].opts.body).action,'analysis-jobs');await u.respond({configuration:analysisConfiguration,jobs:[],coverage:'complete'});
  u.node('analysis-form').events.submit({preventDefault(){}});await tick();return JSON.parse(u.pending[0].opts.body);
@@ -596,4 +596,23 @@ test('analysis recipe changes and cancellation invalidate stale previews',async(
   if(action==='recipe')u.node('analysis-recipe').events.change();else u.node('cancel-analysis-draft').click();
   assert.equal(pending.opts.signal.aborted,true);await u.respond({digest:'stale',nonce:'stale'});assert.equal(u.node('submit-analysis').disabled,true);assert.equal(u.node('analysis-preview').textContent,'');
  }
+});
+
+test('tag trigger plans are visible before append and scheduling failures remain retryable',async()=>{
+ const u=ui();await openKnowledge(u);u.node('load-annotations').click();await tick();
+ const note={id:'tag-note',author:'reader',analysis_trigger_plan:[{tag:'assess',recipe:{id:'day-review'},endpoint:'http://127.0.0.1:9999/v1/messages'}],draft:{subject:'day/subject',text:'Evidence for assessment',tags:['assess'],cites:[]}};
+ await u.respond({records:[note],coverage:'complete'});
+ walk(u.node('annotation-list')).find(n=>n.textContent==='Inspect tag-triggered jobs').click();await tick();assert.deepEqual(JSON.parse(u.pending[0].opts.body),{action:'annotation-triggers',id:note.id,retry:false});
+ await u.respond({plan:note.analysis_trigger_plan,attempts:[{outcomes:[{recipe:'day-review',state:'not-scheduled',reason:'Quota unavailable'}]}]});
+ walk(u.node('annotation-list')).find(n=>n.textContent==='Retry failed scheduling').click();await tick();assert.equal(JSON.parse(u.pending[0].opts.body).retry,true);
+ u.node('lock').click();await u.respond({plan:[],attempts:[]});assert.equal(u.node('annotation-list').children.length,0);
+});
+
+test('promoting model output drafts an editable annotation with job provenance and original citations',async()=>{
+ const u=ui(),request=await openAnalysisUI(u);u.node('cancel-analysis-draft').click();await u.respond({});
+ u.node('load-analysis').click();await tick();const job={id:'derived-job',draft:request.draft};
+ await u.respond({configuration:analysisConfiguration,jobs:[{state:'succeeded',job}],coverage:'complete'});
+ walk(u.node('analysis-jobs')).find(n=>n.textContent==='Inspect job and lineage').click();await tick();await u.respond({state:'succeeded',job,input:{},result:{parsed:{content:[{type:'text',text:'Review this generated assessment'}]}}});
+ walk(u.node('analysis-detail')).find(n=>n.textContent==='Draft annotation from this result').click();assert.equal(u.node('annotation-text').value,'Review this generated assessment');
+ u.node('annotation-form').events.submit({preventDefault(){}});await tick();const preview=JSON.parse(u.pending[0].opts.body);assert.equal(preview.action,'annotation-preview');assert.deepEqual(preview.draft.derived_from,['derived-job']);assert.deepEqual(preview.draft.cites,request.draft.cites);
 });

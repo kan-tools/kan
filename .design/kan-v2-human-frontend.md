@@ -284,3 +284,20 @@ intent before aborting the worker. Inspection rechecks every input source grant.
 The server runs asynchronously; the shared request supports waiting for completion
 for one-shot CLI use. Tag scheduling must use this same declaration/runner and
 limits, not an independent privileged execution path.
+
+Tag triggers are optional instance declarations (`tag`, `recipe`), limited to
+eight. Matching recipes, revision, model and destination are part of the signed
+annotation preview and declaration. Appending queues those jobs through the same
+preview-bound runner; deterministic nonces prevent duplicate inference on save
+or scheduling retries. An encrypted append-only receipt records scheduled job IDs
+or scheduling failure. Explicit retry retains the earlier receipt and refuses a
+changed trigger plan. At most sixteen jobs are queued/live and one dispatches at
+a time. The worker rereads every input and compares its hash immediately before
+sending; revoked, erased or changed inputs fail before dispatch. A restarted
+scheduler marks previously queued/running work interrupted rather than replaying.
+
+A user may draft an annotation from a model result, edit it, preview it and append
+it. `derived_from` references the original jobs. The server requires their retained
+results, inherits their evidence citations, and carries both through corrections.
+Promotion is therefore an explicit authored interpretation with inspectable model
+provenance, never an automatic conversion of model text into an original claim.

@@ -24,9 +24,17 @@ pub struct Recipe {
     pub purpose: String,
     pub instructions: String,
 }
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Trigger {
+    pub tag: String,
+    pub recipe: String,
+}
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Config {
+    #[serde(default)]
+    pub triggers: Vec<Trigger>,
     pub endpoint: String,
     pub token: String,
     pub model: String,
@@ -43,9 +51,13 @@ pub struct Draft {
     pub recipe: String,
     pub cites: Vec<Citation>,
     pub retry_of: Option<String>,
+    #[serde(default)]
+    pub trigger_annotation: Option<String>,
 }
 pub struct Engine {
     _lease: std::fs::File,
+    readers: BTreeMap<String, Arc<crate::evidence_reader::proof::Reader>>,
+    slots: Arc<tokio::sync::Semaphore>,
     config: Config,
     workspace: Arc<Workspace>,
     active: Mutex<BTreeMap<String, tokio::task::AbortHandle>>,
@@ -60,7 +72,11 @@ fn event_key(id: &str, n: u8) -> String {
     format!("{id}/{n}")
 }
 impl Engine {
-    pub(super) fn new(config: Config, workspace: Arc<Workspace>) -> Result<Arc<Self>, Failure> {
+    pub(super) fn new(
+        config: Config,
+        workspace: Arc<Workspace>,
+        readers: BTreeMap<String, Arc<crate::evidence_reader::proof::Reader>>,
+    ) -> Result<Arc<Self>, Failure> {
         let url = reqwest::Url::parse(&config.endpoint).map_err(|_| Failure::Invalid)?;
         let local = url
             .host_str()
@@ -108,9 +124,22 @@ impl Engine {
                 return Err(Failure::Invalid);
             }
         }
+        let mut tags = std::collections::BTreeSet::new();
+        if config.triggers.len() > 8
+            || config.triggers.iter().any(|t| {
+                t.tag.is_empty()
+                    || t.tag.len() > 64
+                    || !ids.contains(&t.recipe)
+                    || !tags.insert((&t.tag, &t.recipe))
+            })
+        {
+            return Err(Failure::Invalid);
+        }
         let lease = workspace.analysis_lease()?;
         Ok(Arc::new(Self {
             _lease: lease,
+            readers,
+            slots: Arc::new(tokio::sync::Semaphore::new(1)),
             config,
             workspace,
             active: Mutex::new(BTreeMap::new()),
@@ -131,6 +160,10 @@ impl Engine {
             .get("analysis-job", id)?
             .ok_or(Failure::Missing)?;
         let event = self.workspace.get("analysis-event", &event_key(id, 2))?;
+        let started = self
+            .workspace
+            .get("analysis-event", &event_key(id, 1))?
+            .is_some();
         let active = self
             .active
             .lock()
@@ -138,12 +171,15 @@ impl Engine {
             .get(id)
             .is_some_and(|handle| !handle.is_finished());
         Ok(
-            json!({"job":job,"state":event.as_ref().and_then(|e|e["state"].as_str()).unwrap_or(if active {"running"}else{"interrupted"}),"terminal":event}),
+            json!({"job":job,"state":event.as_ref().and_then(|e|e["state"].as_str()).unwrap_or(if active {if started {"running"}else{"queued"}}else{"interrupted"}),"terminal":event}),
         )
+    }
+    pub(super) fn trigger_plan(&self, tags: &[String]) -> Value {
+        json!(self.config.triggers.iter().filter(|t|tags.contains(&t.tag)).filter_map(|t|self.config.recipes.iter().find(|r|r.id==t.recipe).map(|recipe|json!({"tag":t.tag,"recipe":recipe,"model":self.config.model,"endpoint":self.config.endpoint}))).collect::<Vec<_>>())
     }
     fn manifest(&self) -> Result<Value, Failure> {
         Ok(
-            json!({"recipes":self.config.recipes,"model":self.config.model,"endpoint":self.config.endpoint,
+            json!({"recipes":self.config.recipes,"triggers":self.config.triggers,"model":self.config.model,"endpoint":self.config.endpoint,
             "limits":{"input_bytes":self.config.max_input_bytes,"output_tokens":self.config.max_output_tokens,"jobs":self.config.max_jobs,"concurrency":1},
             "authority":"Model-generated results are untrusted derived evidence. No tool execution or automatic claim publication."}),
         )
@@ -154,14 +190,31 @@ impl Engine {
             tokio::pin!(notified);
             notified.as_mut().enable();
             let status = self.status(id)?;
-            if status["state"] != "running" {
+            if status["state"] != "running" && status["state"] != "queued" {
                 return Ok(status);
             }
             let _ = tokio::time::timeout(Duration::from_secs(1), notified).await;
         }
     }
     async fn run(self: Arc<Self>, id: String, request: Vec<u8>) {
-        let result = self.fetch(&request).await;
+        let Ok(_slot) = self.slots.clone().acquire_owned().await else {
+            return;
+        };
+        {
+            let Ok(active) = self.active.lock() else {
+                return;
+            };
+            if !active.contains_key(&id) {
+                return;
+            }
+            if self.workspace.put("analysis-event",&event_key(&id,1),json!({"job":id,"sequence":1,"state":"running","at":crate::evidence_operations::now().to_string()})).is_err(){return;}
+        }
+        let result = match self.recheck_inputs(&id).await {
+            Ok(()) => self.fetch(&request).await,
+            Err(_) => Ok(
+                json!({"state":"failed","reason":"Input access, availability or integrity changed before dispatch; nothing was sent to the provider."}),
+            ),
+        };
         // Serialize cancellation/completion. The network request itself never
         // holds this lock. Persist terminal outcome before releasing the slot.
         if let Ok(mut active) = self.active.lock() {
@@ -182,6 +235,29 @@ impl Engine {
             }
         }
         self.done.notify_waiters();
+    }
+    async fn recheck_inputs(&self, id: &str) -> Result<(), Failure> {
+        let saved = self
+            .workspace
+            .get("analysis-input", id)?
+            .ok_or(Failure::Corrupt)?;
+        for input in saved["inputs"].as_array().ok_or(Failure::Corrupt)? {
+            let cite: Citation =
+                serde_json::from_value(input["citation"].clone()).map_err(|_| Failure::Corrupt)?;
+            let reader = self
+                .readers
+                .get(&cite.source)
+                .ok_or(Failure::AccessLimited)?;
+            let Source::Available { plaintext, .. } =
+                reader.source(&cite.pin, &cite.selection).await?
+            else {
+                return Err(Failure::Missing);
+            };
+            if input["sha256"] != service::hex(&Sha256::digest(&plaintext)) {
+                return Err(Failure::Corrupt);
+            }
+        }
+        Ok(())
     }
     async fn fetch(&self, body: &[u8]) -> Result<Value, Failure> {
         let client = reqwest::Client::builder()
@@ -247,6 +323,7 @@ impl Readers {
         self.analysis = Some(Engine::new(
             config,
             self.workspace.clone().ok_or(Failure::Invalid)?,
+            self.proof.clone(),
         )?);
         Ok(self)
     }
@@ -263,6 +340,17 @@ impl Readers {
             .ok_or(Failure::Invalid)?;
         if draft.cites.is_empty() || draft.cites.len() > 8 {
             return Err(Failure::Invalid.into());
+        }
+        if let Some(id) = &draft.trigger_annotation {
+            let annotation = engine
+                .workspace
+                .get("annotation", id)?
+                .ok_or(Failure::AccessLimited)?;
+            if annotation["draft"]["cites"]
+                != serde_json::to_value(&draft.cites).map_err(|_| Failure::Invalid)?
+            {
+                return Err(Failure::Invalid.into());
+            }
         }
         if let Some(id) = &draft.retry_of {
             let old = engine
@@ -351,7 +439,7 @@ impl Readers {
             let mut active = engine.active.lock().map_err(|_| Failure::Unavailable)?;
             if engine.workspace.get("analysis-job", &id)?.is_none() {
                 active.retain(|_, handle| !handle.is_finished());
-                if !active.is_empty() {
+                if active.len() >= 16 {
                     return Err(ContentError::Busy);
                 }
                 if engine.workspace.analysis_jobs()?.len() >= engine.config.max_jobs {
@@ -363,7 +451,6 @@ impl Readers {
                 contract["request_hex"] = json!(service::hex(&request));
                 engine.workspace.put("analysis-input", &id, contract)?;
                 engine.workspace.put("analysis-job",&id,json!({"id":id,"draft":draft,"preview":checked,"author":engine.workspace.author(),"created_at":crate::evidence_operations::now().to_string()}))?;
-                engine.workspace.put("analysis-event",&event_key(&id,1),json!({"job":id,"sequence":1,"state":"running","at":crate::evidence_operations::now().to_string()}))?;
                 let runner = engine.clone();
                 let task_id = id.clone();
                 let task = tokio::spawn(async move {
@@ -372,11 +459,17 @@ impl Readers {
                 active.insert(id.clone(), task.abort_handle());
             }
         }
-        if wait {
-            Ok(engine.wait(&id).await?)
+        let status = if wait {
+            engine.wait(&id).await?
         } else {
-            Ok(engine.status(&id)?)
+            engine.status(&id)?
+        };
+        for cite in &draft.cites {
+            self.selected(&cite.source)?
+                .page(&cite.pin, None, 1)
+                .await?;
         }
+        Ok(status)
     }
     pub(super) async fn analysis_jobs(&self) -> Result<Value, ContentError> {
         let engine = self.analysis()?;

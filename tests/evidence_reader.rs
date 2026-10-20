@@ -204,7 +204,7 @@ async fn library_http_authority_is_separate_and_denial_does_not_reveal_scope_exi
         .post(&endpoint)
         .header("content-type", "application/json")
         .bearer_auth("synthetic-library-token-32-characters")
-        .body("x".repeat(16385))
+        .body("x".repeat(262145))
         .send()
         .await
         .unwrap();

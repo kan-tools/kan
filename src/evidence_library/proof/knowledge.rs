@@ -24,6 +24,9 @@ pub struct Draft {
     pub cites: Vec<Citation>,
     /// Correction points to an earlier annotation; no earlier data is replaced.
     pub supersedes: Option<String>,
+    /// Explicit human promotion keeps the model-job provenance separate.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub derived_from: Vec<String>,
 }
 impl Readers {
     pub(super) async fn annotation_preview(&self, mut draft: Draft) -> Result<Value, ContentError> {
@@ -40,6 +43,7 @@ impl Readers {
             || draft.tags.iter().any(|s| s.is_empty() || s.len() > 64)
             || draft.cites.is_empty()
             || draft.cites.len() > 8
+            || draft.derived_from.len() > 8
         {
             return Err(Failure::Invalid.into());
         }
@@ -64,6 +68,11 @@ impl Readers {
                 serde_json::from_value(old["draft"].clone()).map_err(|_| Failure::Corrupt)?;
             // A correction cites both its original annotation and all the original
             // evidence, so it cannot quietly drop inconvenient provenance.
+            for job in prior.derived_from {
+                if !draft.derived_from.contains(&job) {
+                    draft.derived_from.push(job);
+                }
+            }
             for citation in prior.cites {
                 let encoded = serde_json::to_value(&citation).map_err(|_| Failure::Invalid)?;
                 if !draft
@@ -77,6 +86,34 @@ impl Readers {
             if draft.cites.len() > 8 {
                 return Err(Failure::Invalid.into());
             }
+        }
+        draft.derived_from.sort();
+        draft.derived_from.dedup();
+        if draft.derived_from.len() > 8 {
+            return Err(Failure::Invalid.into());
+        }
+        for id in &draft.derived_from {
+            let job = workspace
+                .get("analysis-job", id)?
+                .ok_or(Failure::AccessLimited)?;
+            if workspace.get("analysis-result", id)?.is_none() {
+                return Err(Failure::Missing.into());
+            }
+            let inputs: super::analysis::Draft =
+                serde_json::from_value(job["draft"].clone()).map_err(|_| Failure::Corrupt)?;
+            for cite in inputs.cites {
+                let encoded = serde_json::to_value(&cite).map_err(|_| Failure::Invalid)?;
+                if !draft
+                    .cites
+                    .iter()
+                    .any(|c| serde_json::to_value(c).ok().as_ref() == Some(&encoded))
+                {
+                    draft.cites.push(cite);
+                }
+            }
+        }
+        if draft.cites.len() > 8 {
+            return Err(Failure::Invalid.into());
         }
         let mut evidence = Vec::new();
         for cite in &draft.cites {
@@ -103,7 +140,7 @@ impl Readers {
             }
             .into());
         }
-        let declaration = json!({"version":1,"author":workspace.author(),"draft":draft});
+        let declaration = json!({"version":1,"author":workspace.author(),"analysis_trigger_plan":self.annotation_analysis_plan(&draft.tags),"draft":draft});
         let id = crate::evidence_service::hex(&Sha256::digest(
             serde_json::to_vec(&declaration).map_err(|_| Failure::Invalid)?,
         ));
@@ -123,11 +160,13 @@ impl Readers {
         let mut declaration = checked["declaration"].clone();
         declaration["id"] = json!(preview);
         if let Some(prior) = self.workspace()?.get("annotation", &preview)? {
+            self.schedule_annotation(&prior).await?;
             return Ok(prior);
         }
         declaration["recorded_at"] = json!(crate::evidence_operations::now().to_string());
         self.workspace()?
             .put("annotation", &preview, declaration.clone())?;
+        self.schedule_annotation(&declaration).await?;
         Ok(declaration)
     }
     pub(super) async fn annotations(
