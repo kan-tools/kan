@@ -148,6 +148,11 @@ impl Readers {
             }
             .into());
         }
+        for cite in &draft.cites {
+            self.selected(&cite.source)?
+                .check_citation_access(&cite.pin, &cite.selection)
+                .await?;
+        }
         let contract = json!({"version":1,"workspace_author":workspace.author(),"reference":reference,"declaration":declaration});
         let digest = crate::evidence_service::hex(&Sha256::digest(
             serde_json::to_vec(&contract).map_err(|_| Failure::Invalid)?,
@@ -293,7 +298,9 @@ impl Readers {
                 crate::evidence_reader::proof::Source::KeyUnavailable { record, .. } => {
                     (record, "key-unavailable")
                 }
-                crate::evidence_reader::proof::Source::Erased { record } => (record, "erased"),
+                crate::evidence_reader::proof::Source::Erased { .. } => {
+                    return Err(Failure::AccessLimited.into())
+                }
                 crate::evidence_reader::proof::Source::Missing { record } => (record, "missing"),
                 crate::evidence_reader::proof::Source::Corrupt { record } => (record, "corrupt"),
             };
@@ -356,6 +363,9 @@ impl Readers {
         let declarations = self.declarations(true).await?;
         let (authorized, partial) = self.authorized_sources().await;
         let mut records = Vec::new();
+        let mut erased = Vec::new();
+        let mut checked = std::collections::BTreeMap::new();
+        let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(20);
         for declaration in declarations {
             let draft: Draft = serde_json::from_value(declaration["draft"].clone())
                 .map_err(|_| Failure::Corrupt)?;
@@ -367,7 +377,31 @@ impl Readers {
             {
                 continue;
             }
-            records.push(declaration);
+            let mut affected = false;
+            for cite in &draft.cites {
+                let key = crate::evidence_service::hex(&Sha256::digest(
+                    serde_json::to_vec(cite).map_err(|_| Failure::Invalid)?,
+                ));
+                let is_erased = if let Some(value) = checked.get(&key) {
+                    *value
+                } else {
+                    let value = tokio::time::timeout_at(
+                        deadline,
+                        self.selected(&cite.source)?
+                            .citation_erased(&cite.selection),
+                    )
+                    .await
+                    .map_err(|_| ContentError::Limited)??;
+                    checked.insert(key, value);
+                    value
+                };
+                affected |= is_erased;
+            }
+            if affected {
+                erased.push(json!({"id":declaration["id"],"state":"erased-source","cleanup":"pending-coordinated-erasure"}));
+            } else {
+                records.push(declaration);
+            }
         }
         let mut withdrawals = linked_records(&records, "withdraws")?;
         records.retain(|r| {
@@ -382,7 +416,7 @@ impl Readers {
         });
         withdrawals.retain(|id, _| records.iter().any(|r| r["id"].as_str() == Some(id)));
         Ok(
-            json!({"records":records,"withdrawals":withdrawals,"coverage":if partial {"partial"} else {"complete"},"authority":"Reader-authored annotations; captured speaker claims and imported v1 claims are separate."}),
+            json!({"records":records,"erased":erased,"withdrawals":withdrawals,"coverage":if partial {"partial"} else {"complete"},"authority":"Reader-authored annotations; captured speaker claims and imported v1 claims are separate."}),
         )
     }
     /// Relations are attributed assertions with retained correction history.
@@ -438,7 +472,7 @@ impl Readers {
             }
         }
         Ok(
-            json!({"subjects":nodes,"relations":edges,"records":selected_records,"coverage":visible["coverage"],
+            json!({"subjects":nodes,"relations":edges,"records":selected_records,"erased":visible["erased"],"coverage":visible["coverage"],
             "authority":"Reader-authored declarations only. Relations retain direction and attribution; identity is not merged. Corrections and withdrawals retain history; withdrawn edges are labeled, not removed. Unseen or unauthorized declarations are not counted."}),
         )
     }

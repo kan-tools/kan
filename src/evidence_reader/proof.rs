@@ -631,11 +631,36 @@ impl Reader {
             Ok(self.rebind_citation(selection).await?.1)
         }
     }
-    pub(crate) async fn check_citation_access(&self, pin: &Pin, selection: &Token) -> Result<()> {
-        if selection.body.principal == self.signer.did() {
-            self.page(pin, None, 1).await?;
-        } else {
-            self.snapshot().await?;
+    /// Fresh metadata-only membership/erasure check. Captured bytes and keys are
+    /// not required, and a foreign selection remains attribution rather than a grant.
+    pub(crate) async fn citation_erased(&self, selection: &Token) -> Result<bool> {
+        let coordinate = self.citation_coordinate(selection)?;
+        let expected = coordinate.frontier(&self.access.binding)?;
+        let pin = self.snapshot().await?;
+        let checked = self.check_pin(&pin)?;
+        if expected.through > checked.frontier.through {
+            return Err(Failure::Missing);
+        }
+        let (_, reply) = self
+            .call(wire::Command::Page {
+                pin: wire::Coordinate::from_frontier(&checked.frontier),
+                next: coordinate,
+                limit: 1,
+            })
+            .await?;
+        let wire::Output::Page { mut records, .. } = reply.reply.result? else {
+            return Err(Failure::Corrupt);
+        };
+        if records.len() != 1 {
+            return Err(Failure::Missing);
+        }
+        let row = records.pop().ok_or(Failure::Missing)?;
+        self.verify_row(&checked, &expected, &row)?;
+        Ok(row.availability == wire::Availability::Erased)
+    }
+    pub(crate) async fn check_citation_access(&self, _pin: &Pin, selection: &Token) -> Result<()> {
+        if self.citation_erased(selection).await? {
+            return Err(Failure::AccessLimited);
         }
         Ok(())
     }

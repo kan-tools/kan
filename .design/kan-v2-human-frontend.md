@@ -669,3 +669,21 @@ spool/replica/derived-workspace cleanup and publication fencing, owner job/API/C
 preview/apply/status, and managed restore activation gating remain required. Do not
 present the low-level API as completed managed erasure. Qualification is pending
 remote CI; local Library checks cover the erased source state and disabled export.
+
+Derived read safeguards now recheck each cited occurrence's current erasure state
+using verified metadata, without needing its plaintext or historical key. Notes
+and analysis jobs with erased inputs return only minimal `erased-source` IDs;
+annotation bodies, graph edges, result text and publication controls are withheld.
+Those markers explicitly say coordinated physical cleanup is pending. Annotation
+restoration, new previews, publication preparation and analysis result access also
+refuse erased inputs. A worker rechecks inputs after inference and discards the
+provider response if access or availability changed. Already dispatched provider
+inputs cannot be recalled. These read/publication checks do not substitute for
+workspace/outbox purge or fencing a publication already queued; those remain part
+of the coordinated owner workflow. Whole-list metadata checks have a 20-second
+bound and fail visibly rather than returning partial data as complete.
+
+Remote all-target compilation passed at 3ad781e; the default test gate found three
+surface-registration omissions (rule registration, independently enumerated values,
+and mutation-facade digest). Those inventories are corrected with the existing
+facade-call controls retained. Runtime storage/reader qualification is still pending.

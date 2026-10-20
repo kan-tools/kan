@@ -200,6 +200,7 @@ fn add_spent(spent: &mut u64, amount: u64, maximum: u64) -> Result<()> {
 }
 
 pub struct Inventory {
+    erasures: erasure::History,
     reader: RecoveryReader,
     binding: attested::Binding,
     profile: Profile,
@@ -245,6 +246,7 @@ impl Inventory {
             configure_read(conn, &budget, deadline)
         })?;
         let plan = plan(&reader, profile, &binding)?;
+        let erasures = erasure::load(&reader.ledger.conn)?;
         let mut query = reader
             .ledger
             .conn
@@ -376,6 +378,7 @@ impl Inventory {
             .conn
             .progress_handler(0, None::<fn() -> bool>)?;
         Ok(Self {
+            erasures,
             reader,
             binding,
             profile,
@@ -474,7 +477,7 @@ impl Inventory {
                 }
                 break;
             }
-            let (availability, _) = payload(&self.reader.ledger.conn, &id, length)?;
+            let (availability, _) = payload(&self.reader.ledger.conn, &id, length, &self.erasures)?;
             sampled_bytes += length;
             record_bytes += size;
             let selection = Selection {
@@ -524,8 +527,9 @@ fn payload(
     conn: &Connection,
     id: &Cid,
     expected: usize,
+    erasures: &erasure::History,
 ) -> Result<(Availability, Option<Vec<u8>>)> {
-    if erasure::erased(conn, &id.to_string())? {
+    if erasures.objects.contains_key(&id.to_string()) {
         return Ok((Availability::Erased, None));
     }
     // A WITHOUT ROWID index seek can materialize the entire key record before
@@ -605,7 +609,8 @@ pub fn source(
     if length > max_payload_bytes {
         return Err(Error::Invalid("selected payload exceeds source budget"));
     }
-    let (availability, bytes) = payload(&reader.ledger.conn, &id, length)?;
+    let erasures = erasure::load(&reader.ledger.conn)?;
+    let (availability, bytes) = payload(&reader.ledger.conn, &id, length, &erasures)?;
     budget.check(deadline)?;
     let Some(bytes) = bytes else {
         return Ok(Source::Unavailable(availability));

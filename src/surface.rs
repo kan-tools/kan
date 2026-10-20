@@ -22,6 +22,8 @@ pub const EVIDENCE_VALUES: &[SurfaceValue] = &[
     SurfaceValue::new("evidence-keys:LOCK", "*"),
     SurfaceValue::new("evidence-keys:.pending-*", "*"),
     SurfaceValue::new("evidence-keys:epoch-*.json", "*"),
+    SurfaceValue::new("evidence-erasure-sqlite:erasures", "*"),
+    SurfaceValue::new("evidence-erasure-sqlite:objects", "*"),
     SurfaceValue::new("evidence-policy:LOCK", "*"),
     SurfaceValue::new("evidence-policy:.pending-*", "*"),
     SurfaceValue::new("evidence-policy:policy-*.json", "*"),

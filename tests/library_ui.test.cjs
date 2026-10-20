@@ -823,3 +823,11 @@ test('owner settings expose configured targets only after owner authorization an
  const rows=u.node('owner-settings').children.map(row=>row.children.map(n=>n.textContent));assert.deepEqual(rows.find(row=>row[0]==='Archive directory'),['Archive directory','/private/synthetic/archive']);assert.match(rows.find(row=>row[0]==='Pinned archive identity')[1],/scope/);
  u.node('owner-lock').click();assert.equal(u.node('owner-settings').children.length,0);assert.equal(u.node('library').hidden,false);
 });
+
+test('erased-source annotations show minimal status without a body or publication controls',async()=>{
+ const u=ui();await openKnowledge(u);u.node('load-annotations').click();await tick();
+ await u.respond({records:[],erased:[{id:'a'.repeat(64),state:'erased-source',cleanup:'pending-coordinated-erasure'}],coverage:'complete'});
+ const nodes=walk(u.node('annotation-list'));assert.ok(nodes.some(n=>n.textContent.includes('source erased by owner')));
+ assert.ok(nodes.some(n=>n.textContent.includes('cleanup pending')));assert.equal(nodes.some(n=>n.textContent==='Check ledger publication'),false);
+ u.node('lock').click();assert.equal(u.node('annotation-list').children.length,0);
+});

@@ -853,6 +853,11 @@ impl Ledger {
         if erasure::erased(&self.conn, &id.to_string())? {
             return Err(Error::Erased(id.to_string()));
         }
+        self.retained_object(id)
+    }
+    // Only callers holding a pinned transaction and an already checked erasure
+    // history may skip repeating that history's signature verification.
+    fn retained_object(&self, id: &Cid) -> Result<Vec<u8>> {
         let bytes: Vec<u8> = self
             .conn
             .query_row(
@@ -1180,7 +1185,7 @@ impl Ledger {
                     erasure::check_marker(tx, &cid(&e["ciphertext"]))?;
                     continue;
                 }
-                let payload = self.read_object(
+                let payload = self.retained_object(
                     &cid(&e["ciphertext"])
                         .parse()
                         .map_err(|_| Error::Corrupt("CID".into()))?,

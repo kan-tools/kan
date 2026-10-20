@@ -619,7 +619,7 @@ impl attested::Archive {
             }
             let signed_bytes = self
                 .ledger
-                .read_object(&object.parse().map_err(|_| corrupt())?)?;
+                .retained_object(&object.parse().map_err(|_| corrupt())?)?;
             spent = spent.checked_add(signed_bytes.len()).ok_or_else(corrupt)?;
             if spent > 256 * 1024 * 1024 {
                 return Err(Error::Invalid("capture erasure scan byte limit"));

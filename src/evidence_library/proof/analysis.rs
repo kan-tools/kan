@@ -209,12 +209,19 @@ impl Engine {
             }
             if self.workspace.put("analysis-event",&event_key(&id,1),json!({"job":id,"sequence":1,"state":"running","at":crate::evidence_operations::now().to_string()})).is_err(){return;}
         }
-        let result = match self.recheck_inputs(&id).await {
+        let mut result = match self.recheck_inputs(&id).await {
             Ok(()) => self.fetch(&request).await,
             Err(_) => Ok(
                 json!({"state":"failed","reason":"Input access, availability or integrity changed before dispatch; nothing was sent to the provider."}),
             ),
         };
+        // Erasure/revocation during inference must not republish the returned
+        // payload. Provider-side copies remain outside this cleanup guarantee.
+        if self.recheck_inputs(&id).await.is_err() {
+            result = Ok(
+                json!({"state":"failed","reason":"Input access or availability changed during analysis; response content was discarded. The provider may already hold submitted inputs."}),
+            );
+        }
         // Serialize cancellation/completion. The network request itself never
         // holds this lock. Persist terminal outcome before releasing the slot.
         if let Ok(mut active) = self.active.lock() {
@@ -484,17 +491,33 @@ impl Readers {
         let engine = self.analysis()?;
         let (authorized, partial) = self.authorized_sources().await;
         let mut jobs = Vec::new();
+        let mut erased = Vec::new();
+        let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(20);
         for job in engine.workspace.analysis_jobs()? {
             let draft: Draft =
                 serde_json::from_value(job["draft"].clone()).map_err(|_| Failure::Corrupt)?;
             if draft.cites.iter().all(|c| {
                 authorized.contains(&c.source) && engine.config.sources.contains(&c.source)
             }) {
-                jobs.push(engine.status(job["id"].as_str().ok_or(Failure::Corrupt)?)?);
+                let mut affected = false;
+                for cite in &draft.cites {
+                    affected |= tokio::time::timeout_at(
+                        deadline,
+                        self.selected(&cite.source)?
+                            .citation_erased(&cite.selection),
+                    )
+                    .await
+                    .map_err(|_| ContentError::Limited)??;
+                }
+                if affected {
+                    erased.push(json!({"id":job["id"],"state":"erased-source","cleanup":"pending-coordinated-erasure"}));
+                } else {
+                    jobs.push(engine.status(job["id"].as_str().ok_or(Failure::Corrupt)?)?);
+                }
             }
         }
         Ok(
-            json!({"jobs":jobs,"coverage":if partial{"partial"}else{"complete"},"configuration":engine.manifest()?}),
+            json!({"jobs":jobs,"erased":erased,"coverage":if partial{"partial"}else{"complete"},"configuration":engine.manifest()?}),
         )
     }
     pub(super) async fn analysis_job(

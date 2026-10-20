@@ -3905,3 +3905,86 @@ async fn native_source_download_rechecks_grants_and_origin_and_exports_only_exac
     ui.stop().await;
     server.stop().await;
 }
+
+#[tokio::test]
+async fn erased_source_is_explicit_and_its_derived_annotation_is_withheld_without_retraction() {
+    let dir = tempfile::tempdir().unwrap();
+    let local = private_workspace_directory();
+    let f = fixture_requests(dir.path(), Profile::Admitted, encrypted);
+    let server = Server::start(&f).await;
+    let ui = Ui::start(
+        kan::evidence_library::Readers::new(None, vec![server.client(&f)])
+            .unwrap()
+            .with_workspace(
+                kan::evidence_workspace::Workspace::open(
+                    &local.path().join("workspace.sqlite"),
+                    identity(6),
+                    [97; 32],
+                )
+                .unwrap(),
+            ),
+    )
+    .await;
+    let catalog = ui.call(json!({"action":"catalog"}), 200).await;
+    let entry = &catalog["scopes"][0];
+    let page=ui.call(json!({"action":"proof-page","source":entry["id"],"pin":entry["pin"],"cursor":null,"limit":3}),200).await;
+    let mut drafts = Vec::new();
+    let mut ids = Vec::new();
+    for n in 0..2 {
+        let draft = json!({"subject":format!("note/{n}"),"text":format!("private derived excerpt {n}"),"tags":[],"cites":[{"source":entry["id"],"pin":entry["pin"],"selection":page["records"][n]["selection"]}],"supersedes":null});
+        let preview = ui
+            .call(json!({"action":"annotation-preview","draft":draft}), 200)
+            .await;
+        let saved = ui
+            .call(
+                json!({"action":"annotation-save","draft":draft,"preview":preview["id"]}),
+                200,
+            )
+            .await;
+        ids.push(saved["id"].clone());
+        drafts.push(draft);
+    }
+    let mut archive = attested::Archive::open(&f.root, f.binding.clone()).unwrap();
+    let sequence = page["records"][0]["sequence"]
+        .as_str()
+        .unwrap()
+        .parse()
+        .unwrap();
+    let plan = archive
+        .preview_erasure(&[sequence], service::hex(&[23; 32]), 200)
+        .unwrap();
+    archive
+        .apply_erasure(store::erasure::Record::sign(plan, &identity(8)).unwrap())
+        .unwrap();
+    let source=ui.call(json!({"action":"proof-source","source":entry["id"],"pin":entry["pin"],"selection":page["records"][0]["selection"],"offset":"0","length":"100"}),200).await;
+    assert_eq!(source["availability"], "erased");
+    assert!(source.get("bytes_hex").is_none());
+    let notes = ui
+        .call(
+            json!({"action":"annotations","subject":null,"tag":null}),
+            200,
+        )
+        .await;
+    assert_eq!(notes["records"].as_array().unwrap().len(), 1);
+    assert_eq!(notes["records"][0]["id"], ids[1]);
+    assert_eq!(notes["erased"][0]["id"], ids[0]);
+    assert_eq!(notes["erased"][0]["state"], "erased-source");
+    assert!(!notes.to_string().contains("private derived excerpt 0"));
+    ui.call(
+        json!({"action":"annotation-preview","draft":drafts[0]}),
+        403,
+    )
+    .await;
+    ui.call(json!({"action":"annotation-delivery","id":ids[0]}), 403)
+        .await;
+    let graph = ui
+        .call(
+            json!({"action":"knowledge-graph","subject":null,"day":false}),
+            200,
+        )
+        .await;
+    assert_eq!(graph["erased"][0]["id"], ids[0]);
+    assert!(!graph.to_string().contains("private derived excerpt 0"));
+    ui.stop().await;
+    server.stop().await;
+}

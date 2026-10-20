@@ -44,6 +44,7 @@ const RULE_EVIDENCE: &[(&str, &str)] = &[
         "owner-pinned-knb1-inspection",
         "tests/evidence_recovery_bundle.rs",
     ),
+    ("signed-erasure-plan", "tests/evidence_attested_store.rs"),
     ("recipe-bound-copy", "tests/evidence_copy_destination.rs"),
     (
         "profile-selected-evidence-lifecycle",
@@ -1438,7 +1439,7 @@ fn every_persistence_facade_call_is_independently_inventoried() {
         if module == "src/persistence.rs" {
             assert_eq!(
                 format!("{:x}", Sha256::digest(source.as_bytes())),
-                "8ac0564e6a4a26fc6610fee7e70d62ee538163a61e1b9cc7abb04692d8c91ecb",
+                "9fcc93aa67bb42f0c819d9829c998b2400b79d8956ef075b2e28753eb6a79d3d",
                 "the raw-mutation facade changed; review and update its committed implementation digest together with facade-call negative controls"
             );
             assert!(

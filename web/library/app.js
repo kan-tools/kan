@@ -800,14 +800,23 @@
     analysisDraft=null;analysisPreview=null;$('analysis-form').hidden=true;$('analysis-target').textContent='';$('analysis-preview').textContent='';$('submit-analysis').disabled=true;$('analysis-detail').replaceChildren();
     if(hide){analysisEnabled=false;analysisRecipes=[];$('analysis').hidden=true;$('analysis-jobs').replaceChildren();$('analysis-recipe').replaceChildren();$('analysis-status').textContent='';}
   }
+  function showErasedDerivatives(root, records) {
+    if(records===undefined || records===null)return;
+    if(!Array.isArray(records)||records.length>1000)throw new Error('Invalid erased evidence status.');
+    for(const record of records){
+      if(typeof record.id!=='string'||record.id.length>128||record.state!=='erased-source')throw new Error('Invalid erased evidence marker.');
+      root.append(textNode('p',`${record.id} · source erased by owner. Derived content withheld; coordinated cleanup pending.`,'content-warning'));
+    }
+  }
   async function loadAnalysis() {
+    $('analysis-detail').replaceChildren();
     const value=await rpc({action:'analysis-jobs'});if(!value)return false;
     if(!Array.isArray(value.jobs)||!Array.isArray(value.configuration?.recipes))throw new Error('Invalid analysis configuration.');
     analysisRecipes=value.configuration.recipes;$('analysis-recipe').replaceChildren();
     for(const recipe of analysisRecipes){const option=textNode('option',`${recipe.id} · ${recipe.revision} · ${recipe.purpose}`);option.value=recipe.id;$('analysis-recipe').append(option);}
     $('analysis-recipe').value=analysisRecipes[0]?.id||'';
     $('analysis-status').textContent=`${value.jobs.length} visible jobs · ${value.coverage} source checks · ${value.configuration.model} · ${value.configuration.endpoint} · one active job · lifetime quota ${value.configuration.limits.jobs}`;
-    $('analysis-jobs').replaceChildren();
+    $('analysis-jobs').replaceChildren();showErasedDerivatives($('analysis-jobs'),value.erased);
     for(const status of value.jobs){
       const row=document.createElement('article');row.className='content-item';row.append(textNode('h3',`${status.job.draft.recipe} · ${status.state}`));row.append(textNode('p',status.job.id,'content-identity'));
       const report=status.result?.report;
@@ -880,6 +889,7 @@
     }
     if(value.relations.length){const table=document.createElement('table');table.className='relation-table';const head=document.createElement('tr');for(const label of ['From','Relation','To','Assertion'])head.append(textNode('th',label));table.append(head);
       for(const edge of value.relations){const row=document.createElement('tr');for(const name of [edge.from,edge.kind,edge.to]){const cell=document.createElement('td');if(name===edge.kind)cell.textContent=name;else{const open=textNode('button',name);open.addEventListener('click',()=>run(()=>knowledgeSubjects(name)));cell.append(open);}row.append(cell);}row.append(textNode('td',`${edge.author} · ${edge.annotation}${edge.corrected_by.length?' · corrected assertion retained':''}${edge.withdrawn_by?.length?' · withdrawn assertion retained':''}`));table.append(row);}root.append(table);}
+    showErasedDerivatives(root,value.erased);
     if(subject!==null&&!value.records.length)root.append(textNode('p','No currently authorized declaration for this subject. A relation target does not imply that its evidence is available.','content-coverage'));
   }
   $('load-subjects').addEventListener('click',()=>run(()=>knowledgeSubjects()));
@@ -921,6 +931,7 @@
     const value=await rpc({action:'annotations',subject:$('annotation-filter-subject').value.trim()||null,tag:$('annotation-filter-tag').value.trim()||null});if(!value)return;
     if(!Array.isArray(value.records) || value.records.length>1000)throw new Error('Invalid annotations.');
     $('annotation-status').textContent=`${value.records.length} authorized annotations · ${value.coverage==='partial'?'some source checks unavailable':'source access checked'}. Earlier revisions remain visible.`;
+    showErasedDerivatives($('annotation-list'),value.erased);
     for(const note of value.records){
       if(!note.draft || !Array.isArray(note.draft.cites) || !Array.isArray(note.draft.tags))throw new Error('Invalid annotation.');
       const row=textNode('article','');row.className='annotation';row.append(textNode('h3',note.draft.subject));row.append(textNode('pre',note.draft.text));row.append(textNode('p',`Author: ${note.author} · recorded at Unix ${note.recorded_at || 'unknown'} · ${note.id}`));if(note.draft.derived_from?.length)row.append(textNode('p',`Derived from analysis jobs: ${note.draft.derived_from.join(', ')}`));row.append(textNode('p',`Tags: ${note.draft.tags.join(', ')}${note.draft.supersedes?` · corrects ${note.draft.supersedes}`:''}${note.draft.withdraws?` · withdraws ${note.draft.withdraws}`:''}`));
