@@ -247,6 +247,11 @@ impl Owner {
             "running"
         } else if interrupted || attempts == 0 {
             "interrupted"
+        } else if result
+            .as_ref()
+            .is_some_and(|r| r["report"]["configured_cleanup"] == "reconciled")
+        {
+            "configured-cleanup-complete"
         } else {
             "cleanup-pending"
         };
@@ -382,7 +387,9 @@ impl Owner {
         let task = tokio::task::spawn_blocking(move || {
             let report = cleanup(&target, record, &owner.workspace, &key);
             let value = match report {
-                Ok(report) => json!({"state":"cleanup-pending","report":report}),
+                Ok(report) => {
+                    json!({"state":if report["configured_cleanup"] == "reconciled" {"configured-cleanup-complete"} else {"cleanup-pending"},"report":report})
+                }
                 Err(error) => {
                     json!({"state":"cleanup-pending","error":error,"report":{"authorization":"inspect-current-custody","managed_cleanup":"pending","backup_purge":"not-performed"}})
                 }
@@ -518,9 +525,29 @@ fn cleanup(
             Err(error) => json!({"database":workspace.database,"state":"pending","error":error}),
         });
     }
+    let complete = archives
+        .iter()
+        .all(|v| v["state"] == "payloads-erased" && v["page_reclamation"] == "completed")
+        && derived
+            .iter()
+            .all(|v| v["state"] == "reconciled" && v["page_reclamation"] == "completed")
+        && queues.iter().all(|v| {
+            v["state"] == "admitted-erasure-reconciled" && v["page_reclamation"] == "completed"
+        })
+        && publications::reconciled(&published);
+    let mut remaining = Vec::new();
+    if !complete {
+        remaining.push(
+            "Reconcile the reported pending archives, queues, workspaces or publication prefixes",
+        );
+    }
+    remaining.push("Verify that every managed process and restored host launches with independently current custody; unregistered and off-host copies are outside this job's configuration");
+    remaining.push("Historical backup purge is separate and has not been performed");
     Ok(
-        json!({"authorization":authorization,"archives":archives,"workspaces":derived,"spools":queues,"publications":published,"managed_cleanup":"pending-coordination",
-        "remaining_preconditions":["Resolve unpublished queued derivatives and all publication copies","Reconcile every configured workspace and include all other managed workspaces","Verify enrollment and restore activation for all managed stores"],
+        json!({"authorization":authorization,"archives":archives,"workspaces":derived,"spools":queues,"publications":published,
+        "scope":"owner-target-configuration","configured_cleanup":if complete {"reconciled"} else {"pending"},
+        "managed_cleanup":if complete {"configured-scope-reconciled"} else {"pending-coordination"},
+        "enrollment":"operator-verification-required","remaining_preconditions":remaining,
         "backup_purge":"not-performed","activation":"not-performed"}),
     )
 }

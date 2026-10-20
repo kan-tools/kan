@@ -4972,8 +4972,8 @@ async fn owner_capture_erasure_revalidates_full_selection_and_resumes_offline_re
         "{resumed}"
     );
     assert_eq!(
-        resumed["state"], "cleanup-pending",
-        "other managed copies are not silently completed"
+        resumed["state"], "configured-cleanup-complete",
+        "completion covers configured destinations, not unregistered copies or backups"
     );
     assert_eq!(
         history.current().unwrap().history.len(),
@@ -5184,6 +5184,19 @@ async fn owner_capture_erasure_revalidates_full_selection_and_resumes_offline_re
         "{restored}"
     );
     assert_eq!(restored["attempts"], 5);
+    assert_eq!(restored["state"], "configured-cleanup-complete");
+    assert_eq!(
+        restored["result"]["report"]["configured_cleanup"],
+        "reconciled"
+    );
+    assert_eq!(
+        restored["result"]["report"]["enrollment"],
+        "operator-verification-required"
+    );
+    assert_eq!(
+        restored["result"]["report"]["backup_purge"],
+        "not-performed"
+    );
 
     assert!(
         kan::evidence_workspace::Workspace::open(&derived_path, identity(9), PRIVATE)

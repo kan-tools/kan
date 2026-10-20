@@ -1007,7 +1007,7 @@ writes does not advertise it. Grant this process only the configuration/custody
 needed by its intended agent. Captured content cannot enable tools or permissions.
 No MCP install command is run automatically and no agent configuration is changed.
 
-### Retention and planned erasure
+### Retention and erasure
 
 Payloads are retained until explicit owner erasure; storage pressure and age do
 not authorize deletion. The accepted erasure contract selects logical captures
@@ -1016,11 +1016,15 @@ and requires current erasure history to be applied before a restored archive can
 be exposed. Minimal signed provenance remains as “erased by owner,” without
 semantically retracting assertions.
 
-**The complete owner erasure workflow is not available yet.** Signed storage primitives and an explicit `erased` source state are being qualified; coordinated cleanup and managed restore activation remain outstanding. Backup purge will have its own destination
-status. Old backups with old recovery keys may still recover the content outside
-managed restore; epoch rotation does not provide selective cryptographic erasure.
-Do not delete SQLite objects manually to simulate this feature: current archive
-verification correctly treats that as missing evidence, not an authorized erasure.
+Owner capture-erasure jobs operate over explicitly configured archives, queues,
+workspaces and publication destinations. Their completion is scoped to those
+paths and reported publication frontiers. Managed launch enrollment and current
+custody prevent stale restore exposure; the operator still has to include every
+managed host and use those launches. Backup purge has its own status. Old backups
+with old recovery keys may still recover content outside managed restore; epoch
+rotation does not provide selective cryptographic erasure. Do not delete SQLite
+objects manually to simulate this feature: verification treats that as missing
+evidence, not an authorized erasure.
 
 ### Independent erasure custody (experimental storage integration)
 
@@ -1046,10 +1050,10 @@ blocks access until reconciliation finishes. A newer independently retained
 its old pin together cannot prove freshness. Existing services without enrollment
 retain their experimental behavior and must not be represented as managed erasure.
 
-This initializes custody, not a complete erase workflow. Coordinated source/spool/
-replica/workspace removal, owner preview/apply/status, backup purge reporting and
-managed deployment enrollment remain under development. No historical offline
-backup or old key is made cryptographically irrecoverable by these operations.
+Initialization establishes custody. Use the owner jobs below for coordinated
+source, spool, replica, workspace and publication cleanup, and the managed launch
+manifest for enrollment. No historical offline backup or old key is made
+cryptographically irrecoverable by these operations.
 
 #### Owner capture erasure jobs
 
@@ -1074,9 +1078,13 @@ The journal commits before destructive work; independent custody publication
 precedes archive cleanup. Inspect `job` or the owner catalog for per-archive
 results, page reclamation and interrupted attempts. Configured spools retire admitted
 selected operations using signed manifest commitments; unaffected predecessors
-remain deliverable and later selected entries stay deferred. A result remains
-`cleanup-pending` because unpublished cancellation, remaining publication lineage
-and deployment-wide enrollment still require implementation. Configured stopped
+remain deliverable and later selected entries stay deferred. A result stays
+`cleanup-pending` while a declared destination has pending work. Once all configured
+archives, queues, workspaces and selected publication prefixes reconcile and reclaim
+pages, it becomes `configured-cleanup-complete`, with `configured_cleanup: reconciled`.
+This is the retained result of that pass, not a fresh global absence claim. It stays
+resumable for later copies or newly restored data. Deployment enrollment remains
+`operator-verification-required`; historical backup purge is separate. Configured stopped
 workspaces reconcile authenticated source citations and transitive annotation/
 analysis lineage against current owner custody, retaining unrelated entries.
 Active workspaces, unreadable records and orphan model outputs remain pending. Never

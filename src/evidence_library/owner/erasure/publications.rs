@@ -606,3 +606,33 @@ pub(super) fn cleanup(
         json!({"state":"selected-prefix-planned","pass":round,"destinations":reports,"remaining":"Each resume replays retained authorizations and scans current prefixes for later publications. Blocked queues, unavailable lineage and unconfigured copies remain pending; this is not global erasure completion."}),
     )
 }
+
+/// Completion is scoped to this pass's declared destinations and frontiers.
+/// Empty/unconfigured destinations make no statement about undiscovered copies.
+pub(super) fn reconciled(report: &Value) -> bool {
+    if report["state"] == "not-configured" {
+        return true;
+    }
+    if report["state"] != "selected-prefix-planned" {
+        return false;
+    }
+    report["destinations"]
+        .as_array()
+        .is_some_and(|destinations| {
+            destinations.iter().all(|d| {
+                d["coverage"] == "selected-prefix"
+                    && d["archives"].as_array().is_some_and(|archives| {
+                        !archives.is_empty()
+                            && archives.iter().all(|a| {
+                                a["state"] == "reconciled" && a["page_reclamation"] == "completed"
+                            })
+                    })
+                    && d["spools"].as_array().is_some_and(|spools| {
+                        spools.iter().all(|s| {
+                            s["cancellation"]["state"] == "queue-empty"
+                                && s["page_reclamation"] == "completed"
+                        })
+                    })
+            })
+        })
+}
