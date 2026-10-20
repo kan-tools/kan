@@ -36,6 +36,8 @@ pub enum Target {
         recipient: String,
         spool: PathBuf,
         batch: usize,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        recovered: Option<PathBuf>,
     },
     Archive {
         id: String,
@@ -66,6 +68,7 @@ pub enum Operation {
     Rotate,
     Import,
     RestoreImport,
+    ReconcileImport,
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -190,11 +193,17 @@ impl Owner {
                     recipient,
                     spool,
                     batch,
+                    recovered,
                     ..
                 } => {
                     if !source.is_absolute() || !spool.is_absolute() || !(1..=1024).contains(batch)
                     {
                         return Err(Failure::Invalid);
+                    }
+                    if let Some(path) = recovered {
+                        if !path.is_absolute() {
+                            return Err(Failure::Invalid);
+                        }
                     }
                     fixed(source_id)?;
                     fixed(recipient)?;
@@ -247,6 +256,9 @@ impl Owner {
             }
             Target::Operations { .. } if operation == Operation::Rotate => None,
             Target::Migration { .. } if operation == Operation::Import => None,
+            Target::Migration {
+                recovered: Some(_), ..
+            } if operation == Operation::ReconcileImport => None,
             Target::ImportRecovery { output, .. } if operation == Operation::RestoreImport => {
                 Some(output.join(nonce))
             }
@@ -268,6 +280,7 @@ impl Owner {
         Ok(
             json!({"version":1,"owner":self.workspace.author(),"target":selected,"operation":operation,"destination":destination,"nonce":nonce,"retry_of":retry_of,"import":migration_preview(selected)?,
             "effect":match operation{
+                Operation::ReconcileImport=>"Read and hash the configured recovery files against this exact current source plan, then recheck the source inventory. Record remaining cutover preconditions; do not fence writers or activate stores.",
                 Operation::RestoreImport=>"Verify and reconstruct the pinned import into a new owner-private PLAINTEXT directory. Retain source and any failed output. This verifies selected file bytes, not repository semantics, independent backup or cutover.",
                 Operation::Import=>"Queue a bounded batch of this exact selected v1 snapshot into the configured encrypted durable spool. Retain originals. Sending, independent recovery verification and cutover are separate actions; a completed job may leave more batches to queue.",
                 Operation::Backup=>"Copy and verify the current consistent archive snapshot into a new file. Retain the source; do not activate the output. The source may grow after preview.",
@@ -468,14 +481,27 @@ fn perform(
                     json!({"destination":output,"plan":report["plan"],"verified_selected_file_bytes":report["verified_selected_file_bytes"],"signed_requests_verified":report["signed_requests_verified"],"proof_binding":report["proof_binding"],"files":report["files"].as_array().map(Vec::len),"report":"report.json","activation":"not-performed","independent_backup":false}),
                 )
             }
-            Target::Migration { batch, .. } => {
-                if operation != Operation::Import {
+            Target::Migration {
+                batch, recovered, ..
+            } => {
+                if !matches!(operation, Operation::Import | Operation::ReconcileImport) {
                     return Err("invalid migration job".into());
                 }
                 let (plan, mut spool) = migration_plan(target)?;
                 let expected = contract["import"]["plan"]
                     .as_str()
                     .ok_or("missing pinned import plan")?;
+                if plan.id() != expected {
+                    return Err("source plan changed".into());
+                }
+                if operation == Operation::ReconcileImport {
+                    return Ok(plan.reconcile(
+                        recovered
+                            .as_deref()
+                            .ok_or("recovery directory not configured")?,
+                        &mut spool,
+                    )?);
+                }
                 let progress = workspace.queue_import(&plan, expected, &mut spool, *batch)?;
                 Ok(
                     json!({"progress":progress,"delivery":"not-performed","originals":"retained","activation":"not-performed","independent_backup":false}),

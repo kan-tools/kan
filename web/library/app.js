@@ -304,14 +304,14 @@
     const request={action:'proof-import',source:sourceId(entry),pin:entry.pin,selections:items.map(i=>i.record.selection),plan:items[0].description.plan,file,after};
     const value=await rpc(request);if(!value)return;
     if(value.version!=='kan-import-content/1'||value.source!==request.source||JSON.stringify(value.pin)!==JSON.stringify(entry.pin)||value.plan!==request.plan||!['inventory-verified','inventory-incomplete'].includes(value.state)||!Array.isArray(value.files)||value.files.length>16384||!Array.isArray(value.unavailable))throw new Error('Invalid import result.');
-    const panel=document.createElement('div'), selected=new Map(items.map(i=>[i.record.sequence,i]));
+    const panel=document.createElement('div'), importSelections=new Map(items.map(i=>[i.record.sequence,i]));
     function sources(parent,cites) {
       if(!Array.isArray(cites)||cites.length>1024)throw new Error('Invalid import citations.');
       for(const c of cites) {
-        const original=selected.get(c.record?.sequence);
+        const original=importSelections.get(c.record?.sequence);
         if(!original||!Array.isArray(c.bytes)||c.bytes.length!==2||c.bytes.some(x=>typeof x!=='string'||!/^(0|[1-9][0-9]*)$/.test(x))||BigInt(c.bytes[0])>BigInt(c.bytes[1]))throw new Error('Invalid import source.');
         const button=textNode('button',`Source ${c.record.sequence} · ${c.bytes.join('–')}`);button.addEventListener('click',()=>run(async()=>{
-          clearInspector();const result=await rpc({action:'proof-source',source:sourceId(entry),pin:entry.pin,selection:original.record.selection,offset:c.bytes[0],length:'65536'});if(!result)return;showSource(result);tab('source');
+          clearInspector();selected=original.record.sequence;selections.set(selected,original.record.selection);const result=await rpc({action:'proof-source',source:sourceId(entry),pin:entry.pin,selection:original.record.selection,offset:c.bytes[0],length:'65536'});if(!result)return;showSource(result);tab('source');
         }));parent.append(button);
       }
     }
@@ -339,7 +339,7 @@
             article.append(textNode('h3',`${record.state} · ${record.id||record.block}`));
             article.append(textNode('pre',JSON.stringify(record.claim||{notice:record.notice,codec:record.codec},null,2)));
             sources(article,record.sources);panel.append(article);
-            if(annotationsEnabled&&record.state==='verified-claim'&&record.sources.length<=8){const note=textNode('button','Annotate this imported claim');note.addEventListener('click',()=>editAnnotation(record.sources.map(c=>({source:sourceId(entry),pin:entry.pin,selection:selected.get(c.record.sequence).record.selection})),`claim/${record.id}`));article.append(note);}
+            if(annotationsEnabled&&record.state==='verified-claim'&&record.sources.length<=8){const note=textNode('button','Annotate this imported claim');note.addEventListener('click',()=>editAnnotation(record.sources.map(c=>({source:sourceId(entry),pin:entry.pin,selection:importSelections.get(c.record.sequence).record.selection})),`claim/${record.id}`));article.append(note);}
           }
           if(f.car.next!==null){if(!Number.isSafeInteger(f.car.next)||f.car.next<=after)throw new Error('Invalid CAR continuation.');const more=textNode('button','Next imported blocks');more.addEventListener('click',()=>run(()=>readImport(entry,items,file,f.car.next)));panel.append(more);}
         } else panel.append(textNode('pre',f.preview===null?'Binary bytes · inspect exact Source.':`${f.preview}${f.truncated?'\n[Preview truncated; exact bytes remain in Source.]':''}`));
@@ -578,7 +578,7 @@
   function ownerOperations(){
     ownerPreview=null;$('owner-submit').disabled=true;$('owner-preview').textContent='';$('owner-operation').replaceChildren();
     const target=ownerTargets.find(t=>t.id===$('owner-target').value);
-    const operations=target?.kind==='import-recovery'?['restore-import']:target?.kind==='migration'?['import']:target?.kind==='operations'?['rotate']:['backup','recover'];
+    const operations=target?.kind==='import-recovery'?['restore-import']:target?.kind==='migration'?(target.recovered?['import','reconcile-import']:['import']):target?.kind==='operations'?['rotate']:['backup','recover'];
     for(const operation of operations){const option=textNode('option',operation);option.value=operation;$('owner-operation').append(option);}
     $('owner-operation').value=operations[0];
   }
@@ -590,6 +590,13 @@
     $('owner-target').value=ownerTargets[0]?.id||'';ownerOperations();$('owner-controls').hidden=false;$('owner-connect').hidden=true;$('owner-lock').disabled=false;
     $('owner-status').textContent=`Owner ${value.owner} · ${value.jobs.length} retained jobs · one active job · lifetime quota ${value.limits.jobs}`;$('owner-jobs').replaceChildren();
     for(const status of value.jobs){const row=textNode('article','');row.className='content-item';row.append(textNode('h3',`${status.job.contract.operation} · ${status.job.contract.target.id} · ${status.state}`));row.append(textNode('p',status.job.id,'content-identity'));
+      const report=status.result?.report;
+      if(report?.progress)row.append(textNode('p',`${report.progress.retained_operations}/${report.progress.total_operations} import operations queued · ${report.progress.pending_operations} awaiting acknowledgment · ${report.progress.queue_coverage_complete?'queue coverage complete':'more batches remain'}`));
+      if(report?.verified_selected_file_bytes)row.append(textNode('p',`${report.files} files recovered and verified · plaintext output at ${report.destination}`));
+      if(report?.recovered_selected_bytes_match)row.append(textNode('p',`${report.verified_files} recovered files match · ${report.verified_bytes} verified bytes · current source inventory matches`));
+      if(report?.destination&&!report.verified_selected_file_bytes)row.append(textNode('p',`Output: ${report.destination} · activation not performed`));
+      if(Array.isArray(report?.remaining_preconditions)){const list=document.createElement('ul');for(const item of report.remaining_preconditions)list.append(textNode('li',item));row.append(textNode('p','Cutover remains unapproved. Remaining checks:','content-coverage'));row.append(list);}
+      if(status.state==='failed')row.append(textNode('p',status.result?.error||'Operation failed; inspect retained details.','content-warning'));
       const inspect=textNode('button','Inspect maintenance job');inspect.addEventListener('click',()=>ownerRun(async()=>{const value=await ownerRpc({action:'job',id:status.job.id});if(value){$('owner-detail').replaceChildren();details($('owner-detail'),'Retained job, result and output paths',JSON.stringify(value,null,2));}}));row.append(inspect);
       if(status.state!=='running'){const retry=textNode('button','Preview new attempt');retry.addEventListener('click',()=>{ownerRetry=status.job.id;$('owner-target').value=status.job.contract.target.id;ownerOperations();$('owner-operation').value=status.job.contract.operation;$('owner-status').textContent='Select Preview maintenance to review a new linked job. Any earlier outputs stay retained.';});row.append(retry);}$('owner-jobs').append(row);
     }
@@ -624,6 +631,13 @@
     $('analysis-jobs').replaceChildren();
     for(const status of value.jobs){
       const row=document.createElement('article');row.className='content-item';row.append(textNode('h3',`${status.job.draft.recipe} · ${status.state}`));row.append(textNode('p',status.job.id,'content-identity'));
+      const report=status.result?.report;
+      if(report?.progress)row.append(textNode('p',`${report.progress.retained_operations}/${report.progress.total_operations} import operations queued · ${report.progress.pending_operations} awaiting acknowledgment · ${report.progress.queue_coverage_complete?'queue coverage complete':'more batches remain'}`));
+      if(report?.verified_selected_file_bytes)row.append(textNode('p',`${report.files} files recovered and verified · plaintext output at ${report.destination}`));
+      if(report?.recovered_selected_bytes_match)row.append(textNode('p',`${report.verified_files} recovered files match · ${report.verified_bytes} verified bytes · current source inventory matches`));
+      if(report?.destination&&!report.verified_selected_file_bytes)row.append(textNode('p',`Output: ${report.destination} · activation not performed`));
+      if(Array.isArray(report?.remaining_preconditions)){const list=document.createElement('ul');for(const item of report.remaining_preconditions)list.append(textNode('li',item));row.append(textNode('p','Cutover remains unapproved. Remaining checks:','content-coverage'));row.append(list);}
+      if(status.state==='failed')row.append(textNode('p',status.result?.error||'Operation failed; inspect retained details.','content-warning'));
       const inspect=textNode('button','Inspect job and lineage');inspect.addEventListener('click',()=>run(()=>inspectAnalysis(status.job.id)));row.append(inspect);
       if(status.state==='running'||status.state==='queued'||status.state==='interrupted'){const cancel=textNode('button','Cancel job');cancel.addEventListener('click',()=>run(async()=>{await inspectAnalysis(status.job.id,true);await loadAnalysis();}));row.append(cancel);}
       if(status.state!=='running'&&status.state!=='queued'){const retry=textNode('button','Preview a linked retry');retry.addEventListener('click',()=>run(()=>editAnalysis(status.job.draft.cites,status.job.id,status.job.draft.recipe)));row.append(retry);}
@@ -782,7 +796,7 @@
     for(const {state,hit} of searchHits.values()) {
       const row=textNode('article','');row.className='search-result';
       row.append(textNode('p',`${state.entry.scope} · ${state.entry.binding.archive} · occurrence ${hit.record.sequence}`));
-      row.append(textNode('pre',hit.snippet));row.append(textNode('p',`${hit.kind} · ${hit.writer} · ${hit.coarse?'decoded JSON text; enclosing source':'exact UTF-8 source'} bytes ${hit.offset}–${hit.end}`));
+      row.append(textNode('pre',hit.snippet));row.append(textNode('p',`${hit.kind} · ${hit.writer} · ${hit.interpretation==='metadata-only'?'metadata filter; no text span matched':hit.coarse?'decoded JSON text; enclosing source':'exact UTF-8 source'} bytes ${hit.offset}–${hit.end}`));
       const open=textNode('button','Open exact source');open.addEventListener('click',()=>run(async()=>{
         searchRun++;cancelWork();choose(state.entry);clearContent();clearInspector();checks.clear();buttons.clear();selections.clear();selections.set(hit.record.sequence,hit.record.selection);
         $('rows').replaceChildren();after=0;next=null;history=[];$('previous').disabled=true;$('next').disabled=true;$('count').textContent='Search selection';$('page-position').textContent='Choose an archive to browse inventory';$('empty').hidden=true;
@@ -828,7 +842,6 @@
     if($('search-attempt').value.trim())searchFilter.attempt=$('search-attempt').value.trim();
     for(const [input,key] of [['search-from','attested_from'],['search-to','attested_to']])if($(input).value){const n=new Date($(input).value).getTime();if(!Number.isSafeInteger(n)||n<0)throw new Error('Invalid attestation date.');searchFilter[key]=String(n);}
     if(searchFilter.attested_from&&searchFilter.attested_to&&BigInt(searchFilter.attested_from)>BigInt(searchFilter.attested_to))throw new Error('Date range is reversed.');
-    if(!searchFilter.text){notice('Enter text to search.',true);return;}
     const entries=$('search-scope').value==='selected' ? [activeSource] : scopes;
     searchStates=searchTargets(entries.filter(s=>s?.protocol==='kan-proof-reader/1'));
     if(!searchStates.length){notice('No proof archive is available for this search.',true);return;}

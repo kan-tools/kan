@@ -33,7 +33,6 @@ pub struct Filter {
 impl Filter {
     pub fn validate(&self) -> Result<(), Failure> {
         if self.text.len() > 256
-            || self.text.trim().is_empty()
             || self.writer.as_ref().is_some_and(|s| s.len() > 256)
             || self.kind.as_ref().is_some_and(|s| s.len() > 64)
         {
@@ -157,14 +156,20 @@ fn doc(source: Source) -> Document {
             }
             _ => {
                 if bytes.starts_with(b"KANI") {
-                    d.kind = if crate::evidence_restore::decode_frame(&bytes).is_ok() {
-                        "import"
-                    } else {
-                        "malformed"
+                    match crate::evidence_restore::decode_frame(&bytes) {
+                        Ok((_, offset)) => {
+                            d.kind = "import".into();
+                            add(9, &bytes[9..offset]);
+                            add(offset, &bytes[offset..]);
+                        }
+                        Err(_) => {
+                            d.kind = "malformed".into();
+                            add(0, &bytes);
+                        }
                     }
-                    .into();
+                } else {
+                    add(0, &bytes)
                 }
-                add(0, &bytes)
             }
         }
     }
@@ -192,7 +197,7 @@ fn json_strings(value: &Value, strings: &mut Vec<String>, visited: &mut usize) {
 }
 
 fn key(target: &Target, cursor: Option<&Token>) -> Result<String, Failure> {
-    serde_json::to_string(&("raw-text/2", target, cursor)).map_err(|_| Failure::Invalid)
+    serde_json::to_string(&("raw-text/3", target, cursor)).map_err(|_| Failure::Invalid)
 }
 fn load(
     workspace: &Workspace,
@@ -247,7 +252,7 @@ pub(super) async fn index(
         }
         reader.page(&target.pin, None, 1).await?;
         let page = Page {
-            version: 2,
+            version: 3,
             documents,
             next: inventory.next,
             indexed_at: crate::evidence_operations::now(),
@@ -262,7 +267,7 @@ pub(super) async fn index(
     .await
     .map_err(|_| ContentError::Limited)?
 }
-fn matching(d: &Document, filter: &Filter) -> Option<(usize, usize, String, bool)> {
+fn matching(d: &Document, filter: &Filter) -> Option<(usize, usize, String, bool, &'static str)> {
     if filter
         .writer
         .as_ref()
@@ -292,6 +297,18 @@ fn matching(d: &Document, filter: &Filter) -> Option<(usize, usize, String, bool
         return None;
     }
     let query = filter.text.to_ascii_lowercase();
+    if query.is_empty() {
+        return Some((
+            0,
+            0,
+            format!(
+                "{} occurrence {} · metadata filter match",
+                d.kind, d.record.sequence
+            ),
+            true,
+            "metadata-only",
+        ));
+    }
     for span in &d.spans {
         if let Some(at) = span.text.to_ascii_lowercase().find(&query) {
             let mut lo = at.saturating_sub(100);
@@ -312,6 +329,11 @@ fn matching(d: &Document, filter: &Filter) -> Option<(usize, usize, String, bool
                 span.enclosing_end.unwrap_or(span.offset + end),
                 span.text[lo..hi].into(),
                 span.enclosing_end.is_some(),
+                if span.enclosing_end.is_some() {
+                    "json-string"
+                } else {
+                    "raw-utf8"
+                },
             ));
         }
     }
@@ -332,12 +354,12 @@ pub(super) async fn search(
     tokio::time::timeout(Duration::from_secs(25),async {
         reader.page(&target.pin,cursor,1).await?;
         let Some(page)=load(workspace,target,cursor)? else {return Ok(json!({"state":"not-indexed","hits":[],"next":null}));};
-        if page.version!=2 || page.documents.len()>8 {return Err(Failure::Corrupt.into());}
+        if page.version!=3 || page.documents.len()>8 {return Err(Failure::Corrupt.into());}
         let mut hits=Vec::new();let mut unavailable=0;
         for d in &page.documents {if matching(d,filter).is_some() {
             let current=doc(reader.source(&target.pin,&d.record.selection).await?);
             if matches!(current.kind.as_str(),"missing"|"corrupt") {unavailable+=1;continue;}
-            if let Some((start,end,snippet,coarse))=matching(&current,filter) {hits.push(json!({"record":current.record,"writer":current.writer,"kind":current.kind,"observer":current.observer,"attempt":current.attempt,"attested_at":current.record.issued_at,"offset":start.to_string(),"end":end.to_string(),"snippet":snippet,"coarse":coarse,"interpretation":if coarse {"json-string"}else{"raw-utf8"}}));}
+            if let Some((start,end,snippet,coarse,interpretation))=matching(&current,filter) {hits.push(json!({"record":current.record,"writer":current.writer,"kind":current.kind,"observer":current.observer,"attempt":current.attempt,"attested_at":current.record.issued_at,"offset":start.to_string(),"end":end.to_string(),"snippet":snippet,"coarse":coarse,"interpretation":interpretation}));}
         }}
         reader.page(&target.pin,None,1).await?;
         let mut value=status(&page);value["state"]=json!("indexed");value["hits"]=json!(hits);value["unavailable_matches"]=json!(unavailable);Ok(value)

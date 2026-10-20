@@ -600,10 +600,28 @@ latter `attested_from` / `attested_to` as canonical unsigned millisecond strings
 the browser converts local date/time inputs. These are distinct from observer
 clock claims inside captures. Saved views retain the complete filter.
 
-The encrypted `raw-text/2` projection also indexes up to 2,048 string values from
+The encrypted `raw-text/3` projection also indexes up to 2,048 string values from
 each complete JSON span (bounded to 8,192 visited JSON values). Escaped string
 matches are marked `json-string` / `coarse` and cite the enclosing original span,
 not an invented exact substring. Current source is re-read before returning a hit.
 Text crossing capture chunks still requires conversation reconstruction; this
 index explicitly reports that coverage limitation. Older projection pages remain
 retained and are not treated as the new interpretation.
+
+A migration target may additionally configure an absolute `recovered` directory.
+This enables `reconcile-import` in the owner API/CLI/browser. It checks the exact
+retained plan document, independently hashes every recovered selected file,
+rechecks the current source inventory, and reports queue acknowledgment progress.
+It never trusts `report.json` as evidence of success and never modifies originals
+or the recovery copy. Changed files, mismatched plans and unsafe paths refuse.
+
+The standalone CLI is `kan-v2 reconcile-import SOURCE --spool ... --source-id ...
+--recipient ... --selection store --recovered RECOVERY_DIRECTORY`. Reconciliation
+reports writer fencing, native semantic/identity validation, independent backup
+and key recovery, and explicit activation as separate outstanding conditions.
+A matching copy alone never makes `ready_for_cutover` true. The owner UI displays
+batch progress, verified file counts, output locations and those preconditions.
+
+Leave search text empty to browse by facets alone. These rows are labeled metadata
+filter matches and do not claim an exact text match. Import framing headers and
+UTF-8 inventory bodies are indexed separately from binary CAR bodies.

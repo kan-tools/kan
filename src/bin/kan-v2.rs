@@ -269,7 +269,15 @@ enum Command {
         #[arg(long, default_value_t = 1_000_000)]
         max_records: u64,
     },
-    /// Pin an explicit v1 source inventory and destination without importing.
+    /// Verify a recovered copy against the current selected v1 source, without cutover.
+    #[cfg(feature = "v2-crypto")]
+    ReconcileImport {
+        #[command(flatten)]
+        options: ImportOptions,
+        #[arg(long)]
+        recovered: PathBuf,
+    },
+    /// Pin a source inventory and destination without importing.
     #[cfg(feature = "v2-crypto")]
     ImportPlan {
         #[command(flatten)]
@@ -878,6 +886,11 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 )?,
             };
             print_json(&report)?;
+        }
+        #[cfg(feature = "v2-crypto")]
+        Command::ReconcileImport { options, recovered } => {
+            let (plan, mut spool) = import_plan(options)?;
+            print_json(&plan.reconcile(&recovered, &mut spool)?)?;
         }
         #[cfg(feature = "v2-crypto")]
         Command::ImportPlan { options } => {

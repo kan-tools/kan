@@ -1996,7 +1996,7 @@ async fn owner_import_pins_source_batches_exact_retry_and_preserves_originals() 
         [84; 32],
     )
     .unwrap();
-    let owner=kan::evidence_library::Owner::new(serde_json::from_value(json!({"token":"synthetic-owner-import-only-token","max_jobs":10,"targets":[{"kind":"migration","id":"old-project","source":source.path(),"selection":"store","source_id":service::hex(&[44;32]),"recipient":service::hex(&kan::evidence_crypto::public_key(&PRIVATE).unwrap()),"spool":spool,"batch":1}]})).unwrap(),workspace).unwrap();
+    let owner=kan::evidence_library::Owner::new(serde_json::from_value(json!({"token":"synthetic-owner-import-only-token","max_jobs":10,"targets":[{"kind":"migration","id":"old-project","source":source.path(),"selection":"store","source_id":service::hex(&[44;32]),"recipient":service::hex(&kan::evidence_crypto::public_key(&PRIVATE).unwrap()),"spool":spool,"batch":1,"recovered":local.path().join("recovered")}]})).unwrap(),workspace).unwrap();
     let f = fixture_requests(dir.path(), Profile::Admitted, encrypted);
     let server = Server::start(&f).await;
     let ui = Ui::start(
@@ -2046,6 +2046,53 @@ async fn owner_import_pins_source_batches_exact_retry_and_preserves_originals() 
         }
     }
     let (request, first) = first.unwrap();
+    let recovered = local.path().join("recovered");
+    let archive = local.path().join("imported-archive");
+    let mut destination = Service::new(
+        Ledger::create(&archive).unwrap(),
+        [1; 32],
+        identity(8),
+        vec![grant()],
+    )
+    .unwrap();
+    let mut queue = kan::evidence_spool::Spool::open(&spool).unwrap();
+    assert_eq!(queue.status().unwrap().pending, 4);
+    while let Some(bytes) = queue.head().unwrap() {
+        let reply = destination.dispatch(&bytes, 1000).unwrap();
+        assert!(reply.reply.result.is_ok());
+        queue.acknowledge(&reply.bytes().unwrap()).unwrap();
+    }
+    drop(queue);
+    drop(destination);
+    let plan_id = first["job"]["contract"]["import"]["plan"].as_str().unwrap();
+    let did = identity(6).did().to_string();
+    kan::evidence_restore::restore(
+        &archive.join("archive.sqlite"),
+        &recovered,
+        &kan::evidence_restore::Pins {
+            expected_plan: plan_id,
+            scope: [1; 32],
+            writer: &did,
+            recipient_private: PRIVATE,
+            max_records: 100,
+        },
+    )
+    .unwrap();
+    let preview = owner_call(
+        &ui,
+        OWNER,
+        json!({"action":"preview","target":"old-project","operation":"reconcile-import"}),
+        200,
+    )
+    .await;
+    let reconciled=owner_call(&ui,OWNER,json!({"action":"submit","target":"old-project","operation":"reconcile-import","nonce":preview["nonce"],"preview":preview["digest"],"wait":true}),200).await;
+    assert_eq!(reconciled["state"], "succeeded", "{reconciled}");
+    assert_eq!(
+        reconciled["result"]["report"]["recovered_selected_bytes_match"],
+        true
+    );
+    assert_eq!(reconciled["result"]["report"]["ready_for_cutover"], false);
+
     std::fs::write(source.path().join("repo.car"), b"later source state").unwrap();
     assert_eq!(
         owner_call(&ui, OWNER, request, 200).await,
@@ -2062,7 +2109,7 @@ async fn owner_import_pins_source_batches_exact_retry_and_preserves_originals() 
             .status()
             .unwrap()
             .pending,
-        4
+        0
     );
     ui.stop().await;
     server.stop().await;
@@ -2225,6 +2272,11 @@ async fn search_normalizes_complete_json_with_enclosing_cites_and_reproducible_f
             .len(),
         1
     );
+    let mut facets = query.clone();
+    facets["filter"] = json!({"text":"","observer":"collector"});
+    let rows = ui.call(facets, 200).await;
+    assert_eq!(rows["hits"].as_array().unwrap().len(), 3);
+    assert_eq!(rows["hits"][0]["interpretation"], "metadata-only");
     let saved=ui.call(json!({"action":"save-view","name":"One attested attempt","targets":[target],"filter":query["filter"]}),200).await;
     assert_eq!(saved["filter"]["observer"], "collector");
     assert_eq!(saved["filter"]["attested_from"], hit["attested_at"]);

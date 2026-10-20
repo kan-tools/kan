@@ -675,3 +675,11 @@ test('application navigation exposes available areas and clears them on lock',as
 test('search includes observer, attempt and attestation time in the reproducible filter',async()=>{
  const u=ui();await u.login();await u.respond(searchCatalog);await u.respond(proofPage);u.node('search-text').value='needle';u.node('search-observer').value='gateway';u.node('search-attempt').value='a'.repeat(64);u.node('search-from').value='2026-10-20T00:00';u.node('search-to').value='2026-10-21T00:00';u.node('search-form').events.submit({preventDefault(){}});await tick();await u.respond({indexed_occurrences:1,next:null});const request=JSON.parse(u.pending[0].opts.body);assert.equal(request.filter.observer,'gateway');assert.equal(request.filter.attempt,'a'.repeat(64));assert.equal(request.filter.attested_from,String(new Date('2026-10-20T00:00').getTime()));assert.ok(BigInt(request.filter.attested_to)>BigInt(request.filter.attested_from));
 });
+test('import source inspection retains its selection for following bytes and fresh-authority export',async()=>{
+ const u=ui();await openImported(u);await u.respond(importView);walk(u.node('content-panel')).find(n=>n.textContent==='Source 3 · 9–40').click();await tick();await u.respond({...proofSource,offset:'9',next:'13',total_bytes:'17'});
+ u.node('more').click();await tick();let request=JSON.parse(u.pending[0].opts.body);assert.deepEqual(request.selection,proofRow.selection);assert.equal(request.offset,'13');await u.respond({...proofSource,offset:'13',next:null,total_bytes:'17'});
+ u.node('download').click();await tick();request=JSON.parse(u.pending[0].opts.body);assert.deepEqual(request.selection,proofRow.selection);assert.equal(request.offset,'13');await u.respond({},403);assert.equal(u.node('library').hidden,true);
+});
+test('owner offers reconciliation only when a fixed recovery directory is configured',async()=>{
+ const u=ui();await ownerUI(u);u.node('owner-refresh').click();await tick();await u.respond({owner:'owner-did',targets:[{id:'legacy',kind:'migration',recovered:'/configured/recovery'}],jobs:[],limits:{jobs:10}});assert.deepEqual(u.node('owner-operation').children.map(n=>n.value),['import','reconcile-import']);
+});
