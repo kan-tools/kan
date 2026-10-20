@@ -124,7 +124,17 @@ pub(super) fn frontier(conn: &Connection, st: &State) -> Result<Option<(u64, Str
             .iter()
             .map(|t| (t.manifest.clone(), t.clone()))
             .collect::<BTreeMap<_, _>>();
-        records.insert(id, targets);
+        records.insert(
+            id,
+            (
+                targets,
+                record
+                    .change
+                    .erasure
+                    .as_ref()
+                    .is_some_and(|r| r.plan.initial_erasure.is_some()),
+            ),
+        );
     }
     let mut maximum = None;
     let mut partial = Vec::new();
@@ -142,12 +152,26 @@ pub(super) fn frontier(conn: &Connection, st: &State) -> Result<Option<(u64, Str
         let body: Option<Vec<u8>> = row.get(2)?;
         let operation: String = row.get(3)?;
         let cid: String = row.get(4)?;
-        let targets = records.get(&authorization).ok_or_else(invalid)?;
+        let (targets, initial) = records.get(&authorization).ok_or_else(invalid)?;
         let target = targets.get(&cid).ok_or_else(invalid)?;
         if let Some(bytes) = body {
-            manifest(&bytes, position, &operation, &cid, target, st, conn)?;
+            let canonical = if *initial {
+                let reply: SignedReply = serde_json::from_slice(&bytes).map_err(|_| invalid())?;
+                if reply.bytes()? != bytes {
+                    return Err(invalid());
+                }
+                service::admitted_erased_manifest(&reply, target, &st.audience)?
+                    .bytes()
+                    .to_vec()
+            } else {
+                bytes
+            };
+            manifest(&canonical, position, &operation, &cid, target, st, conn)?;
             maximum = Some((position, cid));
         } else {
+            if *initial {
+                return Err(invalid());
+            }
             partial.push(position);
         }
         used.insert(authorization);
@@ -266,6 +290,40 @@ impl Spool {
     /// selected head prefix may retire while later selected requests wait behind
     /// an unaffected head. No progress across such a gap is ever fabricated.
     pub fn reconcile_erasure(&mut self, history: &Access) -> Result<serde_json::Value> {
+        self.reconcile_erasure_with_admissions(history, &[])
+    }
+    /// Prospective initial erasures additionally require actual post-commit
+    /// issuer acknowledgments; authorization alone never advances a sender.
+    pub fn reconcile_erasure_with_admissions(
+        &mut self,
+        history: &Access,
+        replies: &[SignedReply],
+    ) -> Result<serde_json::Value> {
+        if replies.len() > 4096 {
+            return Err(invalid());
+        }
+        let mut proofs = BTreeMap::new();
+        let mut bytes = 0;
+        for reply in replies {
+            let encoded = reply.bytes()?;
+            bytes += encoded.len();
+            if encoded.len() > 65536 || bytes > 16 * 1024 * 1024 {
+                return Err(invalid());
+            }
+            let service::Output::Committed { record, .. } =
+                reply.reply.result.as_ref().map_err(Clone::clone)?
+            else {
+                return Err(invalid());
+            };
+            let Decoded::Known(m) = evidence::decode(&service::unhex(&record.manifest, 65536)?)
+                .map_err(|_| invalid())?
+            else {
+                return Err(invalid());
+            };
+            if proofs.insert(m.cid().to_string(), reply.clone()).is_some() {
+                return Err(invalid());
+            }
+        }
         let current = history.current()?;
         let st = state(&self.conn)?;
         if history.binding.profile != Profile::Admitted
@@ -303,12 +361,33 @@ impl Spool {
                 }
             }
         }
+        if let Some(bytes) = &st.reply {
+            let reply: SignedReply = serde_json::from_slice(bytes).map_err(|_| invalid())?;
+            if let service::Output::Committed { record, .. } =
+                reply.reply.result.as_ref().map_err(Clone::clone)?
+            {
+                let Decoded::Known(m) = evidence::decode(&service::unhex(&record.manifest, 65536)?)
+                    .map_err(|_| invalid())?
+                else {
+                    return Err(invalid());
+                };
+                proofs.entry(m.cid().to_string()).or_insert(reply);
+            }
+        }
         let mut pending = tx.prepare("SELECT position,manifest FROM pending ORDER BY position")?;
         let mut blocked = false;
         let mut deferred = BTreeSet::new();
         for row in pending.query_map([], |r| Ok((unsigned(r, 0)?, r.get::<_, String>(1)?)))? {
             let (position, cid) = row?;
-            if selected.contains_key(&cid) {
+            if let Some((record, _)) = selected.get(&cid) {
+                let initial = record
+                    .change
+                    .erasure
+                    .as_ref()
+                    .is_some_and(|e| e.plan.initial_erasure.is_some());
+                if initial && !proofs.contains_key(&cid) {
+                    blocked = true;
+                }
                 if blocked {
                     deferred.insert(position);
                 }
@@ -323,6 +402,7 @@ impl Spool {
             .map(|r| coordinates(r, &st))
             .transpose()?;
         let mut changes = Vec::new();
+        let mut unconfirmed = BTreeSet::new();
         for (cid, (record, target)) in &selected {
             let operation: Option<(u64, String)> = tx
                 .query_row(
@@ -350,7 +430,20 @@ impl Spool {
                     .filter(|a| a.0 == position)
                     .and(st.request.as_ref())
             });
-            let body = if let Some(raw) = raw {
+            let body = if record
+                .change
+                .erasure
+                .as_ref()
+                .is_some_and(|e| e.plan.initial_erasure.is_some())
+            {
+                let Some(reply) = proofs.get(cid) else {
+                    unconfirmed.insert(position);
+                    continue;
+                };
+                let m = service::admitted_erased_manifest(reply, target, &st.audience)?;
+                manifest(m.bytes(), position, &id, cid, target, &st, &tx)?;
+                Some(reply.bytes()?)
+            } else if let Some(raw) = raw {
                 if crate::evidence_store::ciphertext_cid(raw).to_string() != target.object
                     || raw.len() != target.length
                 {
@@ -369,7 +462,7 @@ impl Spool {
                 acknowledged.as_ref().is_some_and(|a| a.0 == position),
             ));
         }
-        if changes.is_empty() && !deferred.is_empty() {
+        if changes.is_empty() && (!deferred.is_empty() || !unconfirmed.is_empty()) {
             return Err(Error::Conflict);
         }
         if !changes.is_empty() {
@@ -423,7 +516,7 @@ impl Spool {
         }
         tx.commit()?;
         Ok(
-            serde_json::json!({"state":if deferred.is_empty(){"admitted-erasure-reconciled"}else{"partial-admitted-erasure"},"deferred_pending_operations":deferred.len(),"owner_checkpoint":current.tip,"retired_operations":changes.len(),"page_reclamation":"pending","unpublished_cancellation":"not-performed","backup_purge":"not-performed"}),
+            serde_json::json!({"state":if deferred.is_empty() && unconfirmed.is_empty(){"admitted-erasure-reconciled"}else{"partial-admitted-erasure"},"deferred_pending_operations":deferred.len(),"unconfirmed_initial_operations":unconfirmed.len(),"owner_checkpoint":current.tip,"retired_operations":changes.len(),"page_reclamation":"pending","unpublished_cancellation":"not-performed","backup_purge":"not-performed"}),
         )
     }
     pub fn reclaim_erased_pages(&self) -> Result<bool> {

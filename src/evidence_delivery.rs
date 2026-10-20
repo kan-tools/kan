@@ -85,11 +85,30 @@ pub fn queue(
 /// Sends only a durably queued request. No key, resealing, skipping or frontier guessing.
 /// Cancellation/transport failure can leave the remote committed; retry the same head.
 pub async fn deliver_one(spool: &mut Spool, endpoint: &str) -> Result<Option<Queued>, Error> {
+    deliver_checked(spool, endpoint, None).await
+}
+/// Deliver only the exact head whose source access the caller already checked.
+/// A competing drainer cannot cause that authorization to cover its successor.
+pub async fn deliver_expected(
+    spool: &mut Spool,
+    endpoint: &str,
+    expected: &[u8],
+) -> Result<Option<Queued>, Error> {
+    deliver_checked(spool, endpoint, Some(expected)).await
+}
+async fn deliver_checked(
+    spool: &mut Spool,
+    endpoint: &str,
+    expected: Option<&[u8]>,
+) -> Result<Option<Queued>, Error> {
     let _custody = spool.erasure_lease()?;
     spool.reconcile_managed_erasure()?;
     let Some(request) = spool.head()? else {
         return Ok(None);
     };
+    if expected.is_some_and(|old| old != request) {
+        return Err(crate::evidence_spool::Error::Conflict.into());
+    }
     let signed = SignedRequest::decode(&request)?;
     let Command::Append { id, position, .. } = &signed.request.command else {
         return Err(service::Failure::Invalid.into());

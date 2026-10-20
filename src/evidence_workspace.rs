@@ -403,6 +403,7 @@ impl Workspace {
         operation: &[u8; 16],
         id: &str,
     ) -> Result<()> {
+        let _custody = self.publication_lease()?;
         let declaration = self.get("annotation", id)?.ok_or(Failure::AccessLimited)?;
         let bytes = serde_json::to_vec(
             &serde_json::json!({"format":"kan-annotation/1","declaration":declaration}),

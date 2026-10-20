@@ -158,19 +158,51 @@ impl Readers {
         if destination != outbox.digest {
             return Err(Failure::Invalid.into());
         }
+        // A destination ACK does not authorize publication of erased/revoked
+        // source material. Hold enrolled source custody through the send.
+        let workspace = self.workspace()?;
+        let _source_custody = workspace.publication_lease()?;
+        let mut spool = outbox.open()?;
+        let _destination_custody = spool.erasure_lease().map_err(|_| Failure::AccessLimited)?;
+        spool
+            .reconcile_managed_erasure()
+            .map_err(|_| Failure::Unavailable)?;
+        let checked = spool.head().map_err(|_| Failure::AccessLimited)?;
+        if let Some(raw) = &checked {
+            let signed = evidence_service::SignedRequest::decode(raw)?;
+            let evidence_service::Command::Append { id: operation, .. } = signed.request.command
+            else {
+                return Err(Failure::Corrupt.into());
+            };
+            let mut selected = None;
+            for annotation in workspace.annotations()? {
+                let id = annotation["id"].as_str().ok_or(Failure::Corrupt)?;
+                if evidence_service::hex(&AnnotationOutbox::operation(id)?) == operation {
+                    selected = Some(id.to_owned());
+                    break;
+                }
+            }
+            // A missing/cleaned declaration or an unrelated queue head cannot
+            // be implicitly published by the annotation action.
+            self.annotation_delivery(&selected.ok_or(Failure::AccessLimited)?)
+                .await?;
+        }
         let _permit = self
             .workers
             .clone()
             .try_acquire_owned()
             .map_err(|_| ContentError::Busy)?;
-        let mut spool = outbox.open()?;
-        let delivered = tokio::time::timeout(
-            std::time::Duration::from_secs(10),
-            crate::evidence_delivery::deliver_one(&mut spool, &outbox.endpoint),
-        )
-        .await
-        .map_err(|_| Failure::Unavailable)?
-        .map_err(|_| Failure::Unavailable)?;
+        let delivered = if let Some(raw) = checked {
+            tokio::time::timeout(
+                std::time::Duration::from_secs(10),
+                crate::evidence_delivery::deliver_expected(&mut spool, &outbox.endpoint, &raw),
+            )
+            .await
+            .map_err(|_| Failure::Unavailable)?
+            .map_err(|_| Failure::Unavailable)?
+        } else {
+            None
+        };
         let status = spool.status().map_err(|_| Failure::Corrupt)?;
         Ok(
             json!({"delivered":delivered.map(|d|json!({"operation":d.operation,"position":d.position.to_string(),"manifest":d.manifest})),"pending":status.pending.to_string(),"destination":outbox.destination,"destination_digest":outbox.digest}),

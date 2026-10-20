@@ -1508,12 +1508,63 @@ async fn annotation_publication_is_explicit_destination_bound_and_exactly_retrie
         "acknowledged"
     );
     assert_eq!(
-        attested::Archive::open(remote.path(), binding)
+        attested::Archive::open(remote.path(), binding.clone())
             .unwrap()
             .verify()
             .unwrap()
             .through,
         1
+    );
+    // Queuing while readable does not authorize a later send after source erasure.
+    let mut later = draft.clone();
+    later["text"] = json!("Queued derivative must be withheld when its source is erased");
+    let preview = ui
+        .call(json!({"action":"annotation-preview","draft":later}), 200)
+        .await;
+    let saved = ui
+        .call(
+            json!({"action":"annotation-save","draft":later,"preview":preview["id"]}),
+            200,
+        )
+        .await;
+    ui.call(json!({"action":"annotation-queue","id":saved["id"],"destination":status["destination_digest"]}),200).await;
+    let retained = kan::evidence_spool::Spool::open(&spool)
+        .unwrap()
+        .head()
+        .unwrap()
+        .unwrap();
+    let mut source = attested::Archive::open(&f.root, f.binding.clone()).unwrap();
+    let sequence = page["records"][0]["sequence"]
+        .as_str()
+        .unwrap()
+        .parse()
+        .unwrap();
+    let plan = source
+        .preview_erasure(&[sequence], service::hex(&[74; 32]), 2000)
+        .unwrap();
+    source
+        .apply_erasure(store::erasure::Record::sign(plan, &identity(8)).unwrap())
+        .unwrap();
+    ui.call(
+        json!({"action":"annotation-drain","destination":status["destination_digest"]}),
+        403,
+    )
+    .await;
+    assert_eq!(
+        kan::evidence_spool::Spool::open(&spool)
+            .unwrap()
+            .head()
+            .unwrap(),
+        Some(retained)
+    );
+    assert_eq!(
+        attested::Archive::open(remote.path(), binding)
+            .unwrap()
+            .verify()
+            .unwrap()
+            .through,
+        1,
+        "erased derivative was not published"
     );
     ui.stop().await;
     server.stop().await;

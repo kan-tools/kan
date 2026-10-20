@@ -23,6 +23,16 @@ impl Workspace {
         }
         Ok(self)
     }
+    /// Keep independently current source custody across an external publication.
+    /// SQLite state is checked in a read transaction, but no database lock is
+    /// held while awaiting the network. Workspace maintenance has its own lease.
+    pub(crate) fn publication_lease(&self) -> Result<Vec<Snapshot>> {
+        let conn = self.conn.lock().map_err(invalid)?;
+        let tx = conn.unchecked_transaction().map_err(invalid)?;
+        let current = self.check_erasure_histories(&tx)?;
+        tx.commit().map_err(invalid)?;
+        Ok(current)
+    }
     pub(in crate::evidence_workspace) fn audit_erasure_snapshots(
         &self,
         conn: &Connection,

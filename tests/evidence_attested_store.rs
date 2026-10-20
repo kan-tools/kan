@@ -1323,6 +1323,11 @@ fn initial_erased_admission_preserves_chain_without_staging_payload_and_retires_
     )
     .unwrap();
     history.append(owner).unwrap();
+    assert!(
+        spool.reconcile_erasure(&history).is_err(),
+        "prospective intent is not a committed admission"
+    );
+    assert_eq!(spool.head().unwrap(), Some(raw.clone()));
     let admitted = archive
         .admit_erased(&raw, &identity(7), &grant(), &erasure)
         .unwrap();
@@ -1347,8 +1352,27 @@ fn initial_erased_admission_preserves_chain_without_staging_payload_and_retires_
         archive.admit(&raw, &identity(7), &grant(), 101).is_err(),
         "ordinary replay cannot stage erased bytes"
     );
+    assert!(
+        spool.reconcile_erasure(&history).is_err(),
+        "retirement still needs post-commit evidence"
+    );
+    let mut completion = kan::evidence_service::AdmittingService::new(
+        Archive::open(root.path(), binding()).unwrap(),
+        identity(7),
+        vec![grant()],
+    )
+    .unwrap();
+    let reply = completion.admit_erased(&raw, &erasure, &history).unwrap();
+    let mut forged = reply.clone();
+    forged.signature = hex(&[0; 64]);
+    assert!(spool
+        .reconcile_erasure_with_admissions(&history, &[forged])
+        .is_err());
+    assert_eq!(spool.head().unwrap(), Some(raw.clone()));
     assert_eq!(
-        spool.reconcile_erasure(&history).unwrap()["retired_operations"],
+        spool
+            .reconcile_erasure_with_admissions(&history, &[reply])
+            .unwrap()["retired_operations"],
         1
     );
     assert_eq!(spool.head().unwrap(), Some(next.clone()));

@@ -311,10 +311,10 @@ impl SignedReply {
         json(self)
     }
     pub fn verify(&self, request: &[u8], issuer: &str) -> Result<&Reply> {
-        if self.reply.version != 1
-            || self.reply.issuer != issuer
-            || self.reply.request != hex(&Sha256::digest(request))
-        {
+        self.verify_digest(&hex(&Sha256::digest(request)), issuer)
+    }
+    fn verify_digest(&self, digest: &str, issuer: &str) -> Result<&Reply> {
+        if self.reply.version != 1 || self.reply.issuer != issuer || self.reply.request != digest {
             return Err(Failure::Invalid);
         }
         if !sign::verify(
@@ -375,6 +375,52 @@ pub fn admitted_manifest(request: &[u8], reply: &SignedReply, issuer: &str) -> R
         return Err(Failure::Corrupt);
     }
     Ok(expected)
+}
+
+/// Verify a post-commit acknowledgment without retaining its erased request.
+/// The independent erasure target binds the same raw SHA256 object commitment.
+pub(crate) fn admitted_erased_manifest(
+    reply: &SignedReply,
+    target: &evidence_store::erasure::Target,
+    issuer: &str,
+) -> Result<Record> {
+    let digest = exact(&reply.reply.request, 32)?;
+    let mut object = vec![1, 0x55, 0x12, 0x20];
+    object.extend(digest);
+    if Cid::from_bytes(&object)
+        .map_err(|_| Failure::Invalid)?
+        .to_string()
+        != target.object
+    {
+        return Err(Failure::Invalid);
+    }
+    let verified = reply.verify_digest(&reply.reply.request, issuer)?;
+    let Output::Committed { record, .. } = verified.result.as_ref().map_err(Clone::clone)? else {
+        return Err(Failure::Invalid);
+    };
+    if record.sequence != target.sequence {
+        return Err(Failure::Invalid);
+    }
+    let Decoded::Known(manifest) =
+        evidence::decode(&unhex(&record.manifest, evidence::MAX_RECORD_BYTES)?)
+            .map_err(|_| Failure::Invalid)?
+    else {
+        return Err(Failure::Invalid);
+    };
+    let Decoded::Known(receipt) =
+        evidence::decode(&unhex(&record.receipt, evidence::MAX_RECORD_BYTES)?)
+            .map_err(|_| Failure::Invalid)?
+    else {
+        return Err(Failure::Invalid);
+    };
+    if manifest.kind() != evidence::Kind::Manifest
+        || manifest.cid().to_string() != target.manifest
+        || !evidence::binds(&receipt, &manifest)
+        || receipt.body()["issuer"] != author(issuer)?
+    {
+        return Err(Failure::Invalid);
+    }
+    Ok(manifest)
 }
 
 fn manifest(request: &SignedRequest, bytes: &[u8]) -> Result<Record> {
@@ -543,6 +589,62 @@ impl AdmittingService {
             request: hex(&Sha256::digest(bytes)),
             issuer: self.issuer(),
             result,
+        };
+        let signature = hex(&self
+            .signer
+            .sign(&preimage(REPLY_DOMAIN, &reply)?)
+            .map_err(|_| Failure::Unavailable)?);
+        Ok(SignedReply { reply, signature })
+    }
+    /// Owner-side cancellation completion, never exposed as an ordinary RPC.
+    /// Independent custody must already contain this exact initial erasure.
+    /// The signed acknowledgment is created only after the atomic archive commit.
+    pub fn admit_erased(
+        &mut self,
+        bytes: &[u8],
+        erasure: &evidence_store::erasure::Record,
+        history: &crate::evidence_erasure_history::Access,
+    ) -> Result<SignedReply> {
+        if history.binding.profile != crate::evidence_proof_service::Profile::Admitted
+            || history.binding.owner_binding()? != *self.archive.binding()
+            || erasure.plan.initial_erasure.is_none()
+        {
+            return Err(Failure::Invalid);
+        }
+        let current = history.current()?;
+        let id = erasure.id()?;
+        if !current
+            .history
+            .iter()
+            .filter_map(|r| r.change.erasure.as_ref())
+            .any(|r| r.id().ok().as_ref() == Some(&id))
+        {
+            return Err(Failure::AccessLimited);
+        }
+        let policy = self
+            .policy
+            .as_ref()
+            .map(crate::evidence_policy::Access::read)
+            .transpose()?;
+        if let Some(snapshot) = &policy {
+            self.replace_grants(snapshot.grants()?)?;
+        }
+        let request = SignedRequest::decode(bytes)?;
+        let grant = self
+            .grants
+            .get(&request.request.principal)
+            .ok_or(Failure::AccessLimited)?;
+        let admitted = self
+            .archive
+            .admit_erased(bytes, &self.signer, grant, erasure)?;
+        let reply = Reply {
+            version: 1,
+            request: hex(&Sha256::digest(bytes)),
+            issuer: self.issuer(),
+            result: Ok(Output::Committed {
+                record: view(&admitted.record),
+                duplicate: admitted.record.duplicate,
+            }),
         };
         let signature = hex(&self
             .signer

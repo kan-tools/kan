@@ -843,3 +843,18 @@ actual issuer-bound commitment to remove its pending payload. The storage API an
 fault/recovery tests implement this primitive; coordinated selection of queued
 and published derivatives, owner job integration and whole-instance completion
 are still required.
+
+The sender treats an `initial_erasure` record as prospective intent. It must also
+receive a signed post-commit service acknowledgment for the exact request hash,
+manifest and archive sequence before retiring that operation. It retains that
+minimal acknowledgment instead of raw request bytes; restart audits its signature
+and binding. Missing, forged or mismatched acknowledgments leave the queue intact
+and visibly blocked. The owner-side completion API signs only after the atomic
+archive commit and checks independently current custody plus the writer grant.
+
+Library annotation drain also revalidates the queued declaration's current source
+access before sending, and keeps enrolled workspace/source custody leased through
+the network operation. A declaration removed by cleanup or a head that cannot be
+resolved to an authored annotation refuses publication. Source-custody leases also
+cover the local queueing transaction. This closes the Library action's race;
+standalone generic senders and complete cascade enrollment remain separate work.
