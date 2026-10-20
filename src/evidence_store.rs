@@ -35,7 +35,7 @@ const APPLICATION_ID: i64 = 0x4b563201;
 // retained row has the requested scope. `scope != ?` scans that entire index.
 const FOREIGN_SCOPE: &str = "SELECT EXISTS(SELECT 1 FROM commits WHERE scope < ?1) OR EXISTS(SELECT 1 FROM commits WHERE scope > ?1)";
 const SCHEMA: &str = "
-CREATE TABLE objects(cid TEXT PRIMARY KEY, bytes BLOB NOT NULL CHECK(length(bytes)>0 AND length(bytes)<=4194304)) WITHOUT ROWID;
+CREATE TABLE objects(cid TEXT NOT NULL PRIMARY KEY, bytes BLOB NOT NULL CHECK(length(bytes)>0 AND length(bytes)<=4194304));
 CREATE TABLE commits(
  sequence INTEGER PRIMARY KEY, cid TEXT NOT NULL UNIQUE, scope BLOB NOT NULL, writer TEXT NOT NULL,
  operation BLOB NOT NULL, position INTEGER NOT NULL, previous TEXT,
@@ -49,6 +49,29 @@ CREATE TABLE bindings(
 PRAGMA application_id=1263940097;
 PRAGMA user_version=1;
 ";
+
+const LEGACY_OBJECTS_SCHEMA: &str = "CREATE TABLE objects(cid TEXT PRIMARY KEY, bytes BLOB NOT NULL CHECK(length(bytes)>0 AND length(bytes)<=4194304)) WITHOUT ROWID";
+const ROWID_OBJECTS_SCHEMA: &str = "CREATE TABLE objects(cid TEXT NOT NULL PRIMARY KEY, bytes BLOB NOT NULL CHECK(length(bytes)>0 AND length(bytes)<=4194304))";
+/// Payload lookup must never infer a safe layout merely from a profile number.
+fn rowid_objects(conn: &Connection) -> Result<bool> {
+    let (len,sql): (i64,String) = conn.query_row("SELECT length(sql),substr(sql,1,4096) FROM sqlite_schema WHERE type='table' AND name='objects'",[],|r|Ok((r.get(0)?,r.get(1)?)))?;
+    if len != sql.len() as i64 {
+        return Err(Error::Invalid("unsupported object table layout"));
+    }
+    match sql.as_str() {
+        ROWID_OBJECTS_SCHEMA => Ok(true),
+        LEGACY_OBJECTS_SCHEMA => Ok(false),
+        _ => Err(Error::Invalid("unsupported object table layout")),
+    }
+}
+fn expected_base_schema(source: &Connection, expected: &Connection) -> Result<()> {
+    if rowid_objects(source)? {
+        expected.execute_batch(SCHEMA)?;
+    } else {
+        expected.execute_batch(&SCHEMA.replace(ROWID_OBJECTS_SCHEMA, LEGACY_OBJECTS_SCHEMA))?;
+    }
+    Ok(())
+}
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -778,7 +801,7 @@ impl Ledger {
     }
     fn check_write_profile(&self, attested: bool) -> Result<()> {
         let expected = Connection::open_in_memory()?;
-        expected.execute_batch(SCHEMA)?;
+        expected_base_schema(&self.conn, &expected)?;
         if attested {
             expected.execute_batch(attested::SCHEMA)?;
         }
@@ -788,7 +811,7 @@ impl Ledger {
     }
     fn check_copy_schema(&self) -> Result<()> {
         let expected = Connection::open_in_memory()?;
-        expected.execute_batch(SCHEMA)?;
+        expected_base_schema(&self.conn, &expected)?;
         expected.execute_batch(attested::SCHEMA)?;
         expected.execute_batch(copied::SCHEMA)?;
         erasure::extend_schema(&self.conn, &expected)?;

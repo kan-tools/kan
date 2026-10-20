@@ -728,3 +728,83 @@ fn policy_history_refuses_stale_edits_tampering_and_rollback_and_retains_exact_r
         .preview(vec![grant(), grant()], service::hex(&[5; 32]))
         .is_err());
 }
+
+#[test]
+fn indexed_proof_wire_reads_bounded_pages_and_current_loss_under_fresh_grants() {
+    let dir = tempfile::tempdir().unwrap();
+    let f = fixture(dir.path(), Profile::Admitted);
+    attested::Archive::open(&f.root, f.binding.clone())
+        .unwrap()
+        .rebuild_serving_index(&identity(8))
+        .unwrap();
+    let mut limits = budget();
+    limits.items = 2; // Fewer than the three historical records.
+    assert!(wire::Service::new(
+        f.db(),
+        binding(&f),
+        identity(8),
+        vec![grant()],
+        limits.clone()
+    )
+    .is_err());
+    let mut r = wire::Service::new_indexed(
+        f.db(),
+        binding(&f),
+        identity(8),
+        vec![grant()],
+        limits,
+        None,
+    )
+    .unwrap();
+    let pin = snapshot(&f, &r);
+    let wire::Output::Page { records, next } = call(
+        &f,
+        &r,
+        wire::Command::Page {
+            pin: pin.clone(),
+            next: pin.clone(),
+            limit: 2,
+        },
+    ) else {
+        panic!("page")
+    };
+    assert_eq!(records.len(), 2);
+    let remaining = verify_rows(&f, &pin, &records);
+    assert_eq!(next.unwrap().frontier(&binding(&f)).unwrap(), remaining);
+    let command = wire::Command::Read {
+        pin: pin.clone(),
+        selected: pin.clone(),
+    };
+    let wire::Output::Evidence {
+        record,
+        source: wire::Source::Available {
+            signed_request,
+            writer,
+        },
+    } = call(&f, &r, command.clone())
+    else {
+        panic!("available")
+    };
+    assert_eq!(
+        service::unhex(&signed_request, service::MAX_REQUEST).unwrap(),
+        f.requests[2]
+    );
+    assert_eq!(writer, identity(6).did().as_str());
+    verify_rows(&f, &pin, &[record]);
+    f.remove(2);
+    assert!(matches!(
+        call(&f, &r, command.clone()),
+        wire::Output::Evidence {
+            source: wire::Source::Missing,
+            ..
+        }
+    ));
+    r.replace_grants(Vec::new()).unwrap();
+    let reply = r
+        .dispatch(&signed(&f, command).bytes().unwrap(), 1500)
+        .unwrap();
+    assert_eq!(
+        reply.reply.result.unwrap_err(),
+        service::Failure::AccessLimited
+    );
+}

@@ -62,7 +62,7 @@ impl Checkpoint {
             })
             .transpose()
     }
-    fn validate(&self, binding: &attested::Binding) -> Result<Frontier> {
+    pub(super) fn validate(&self, binding: &attested::Binding) -> Result<Frontier> {
         binding.validate()?;
         if self.statement.version != 1
             || self.statement.binding != wire(binding)
@@ -423,12 +423,21 @@ pub fn read_metadata(
     tx.commit()?;
     Ok(selected)
 }
-fn selected_metadata(
+pub(super) fn selected_metadata(
     conn: &Connection,
     binding: &attested::Binding,
     checkpoint: &Checkpoint,
     sequence: u64,
 ) -> Result<Metadata> {
+    let through: u64 = checkpoint
+        .statement
+        .frontier
+        .through
+        .parse()
+        .map_err(|_| corrupt())?;
+    if sequence == 0 || sequence > through {
+        return Err(Error::Invalid("indexed selection outside checkpoint"));
+    }
     let mut map = Map::new(SqlBlocks { conn, tx: None }, checkpoint.root()?);
     let row = attested::record(conn, sequence)?;
     let envelope = attested::envelope(conn, sequence)?;
@@ -773,4 +782,50 @@ impl attested::Archive {
         tx.commit()?;
         Ok(Some(next))
     }
+}
+
+/// Authenticate local serving state against separately supplied current custody.
+pub(super) fn checkpoint(
+    conn: &Connection,
+    binding: &attested::Binding,
+    expected_tip: Option<&str>,
+) -> Result<Checkpoint> {
+    let checkpoint = load(conn, binding)?;
+    check_current(conn, binding, &checkpoint)?;
+    if checkpoint.erasure_tip() != expected_tip {
+        return Err(Error::Conflict("indexed custody differs from owner"));
+    }
+    let frontier = checkpoint.validate(binding)?;
+    let actual: Option<(i64, String)> = conn
+        .query_row(
+            "SELECT sequence,cid FROM commits ORDER BY sequence DESC LIMIT 1",
+            [],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .optional()?;
+    let wanted = frontier
+        .manifest
+        .as_ref()
+        .map(|cid| (frontier.through as i64, cid.to_string()));
+    if actual != wanted {
+        return Err(Error::Conflict("indexed archive tip changed"));
+    }
+    Ok(checkpoint)
+}
+pub(super) fn erased(conn: &Connection, checkpoint: &Checkpoint, id: &Cid) -> Result<bool> {
+    let mut map = Map::new(SqlBlocks { conn, tx: None }, checkpoint.root()?);
+    let Some(value) = map
+        .get(&index::key(b"erased", id.to_string().as_bytes()).map_err(index_error)?)
+        .map_err(index_error)?
+    else {
+        return Ok(false);
+    };
+    let target: erasure::Target = serde_json::from_slice(&value).map_err(|_| corrupt())?;
+    if target.object != id.to_string()
+        || target.sequence == 0
+        || target.sequence > checkpoint.statement.erasure_through
+    {
+        return Err(corrupt());
+    }
+    Ok(true)
 }

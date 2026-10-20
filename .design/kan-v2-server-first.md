@@ -371,6 +371,27 @@ stale restore. A bounded result may report unavailable/corrupt selected evidence
 it must not label an unscanned archive globally verified. The accepted target stays
 unchanged; a new cache hit count or a smaller passing workload cannot close AC-8.
 
+#### Seekable payload layout
+
+New archives use a rowid `objects` table with a separate unique CID index. This
+keeps the lookup key separate from a potentially damaged large payload cell;
+length/type inspection and bounded substring reads use a CID seek followed by the
+rowid rather than scanning every object. Record fields, ciphertext CIDs, native
+proofs and logical profile numbers are unchanged. Strict schema validation accepts
+exactly this layout or the historical `WITHOUT ROWID` layout; unknown alternatives
+remain errors. Ordinary legacy readers retain their existing safe bounded-memory
+scan. Indexed proof/source readers require the seekable layout and report that
+requirement explicitly. Existing owner recovery builds a separate archive with the
+current layout and preserves the original; no live file is silently converted.
+
+Indexed inventory startup checks a signed current checkpoint and selected prefix
+membership. Every page occurrence is authenticated against the same root, including
+caller-selected continuation coordinates. Payload sampling verifies only selected
+bytes and checks erased-object membership from the current signed custody map.
+Fresh source reads reopen current state and reject changed custody before returning
+bytes. They retain existing duration, cancellation, item and byte budgets. These
+are selected-evidence claims, never a whole-archive audit claim.
+
 #### Authenticated serving-index implementation contract
 
 The bounded-serving work uses a separate content-addressed binary Patricia map;

@@ -1349,3 +1349,239 @@ fn single_bit_blob_to_text_serial_type_damage_remains_browsable() {
         assert_eq!(std::fs::read(f.db()).unwrap(), damaged);
     }
 }
+
+fn legacy_payload_layout(f: &Fixture) {
+    f.edit("BEGIN IMMEDIATE;
+CREATE TEMP TABLE saved_objects AS SELECT * FROM objects;
+DROP TABLE objects;
+CREATE TABLE objects(cid TEXT PRIMARY KEY, bytes BLOB NOT NULL CHECK(length(bytes)>0 AND length(bytes)<=4194304)) WITHOUT ROWID;
+INSERT INTO objects SELECT * FROM saved_objects;
+DROP TABLE saved_objects;
+COMMIT;");
+}
+
+#[test]
+fn legacy_payload_layout_recovers_to_seekable_layout_without_changing_evidence() {
+    let temp = tempfile::tempdir().unwrap();
+    let f = fixture(temp.path(), Profile::Admitted);
+    legacy_payload_layout(&f);
+    let old = f.open().page(None, page_budget(), budget()).unwrap();
+    let source = attested::Archive::open(&f.root, f.binding.clone()).unwrap();
+    source.rebuild_serving_index(&identity(8)).unwrap();
+    assert!(
+        Inventory::open_indexed(&f.db(), f.profile, f.binding.clone(), None, None, budget())
+            .is_err()
+    );
+    let rebuilt = temp.path().join("rebuilt");
+    std::fs::create_dir(&rebuilt).unwrap();
+    attested::Recovery::open(&f.db(), f.binding.clone())
+        .unwrap()
+        .rebuild(&rebuilt.join("archive.sqlite"))
+        .unwrap();
+    let destination = attested::Archive::open(&rebuilt, f.binding.clone()).unwrap();
+    destination.rebuild_serving_index(&identity(8)).unwrap();
+    let indexed = Inventory::open_indexed(
+        &rebuilt.join("archive.sqlite"),
+        f.profile,
+        f.binding.clone(),
+        None,
+        None,
+        budget(),
+    )
+    .unwrap();
+    let page = indexed.page(None, page_budget(), budget()).unwrap();
+    for (original, recovered) in old.records.iter().zip(&page.records) {
+        assert_eq!(
+            original.record.manifest.bytes(),
+            recovered.record.manifest.bytes()
+        );
+        assert_eq!(original.proof.bytes(), recovered.proof.bytes());
+        assert_eq!(recovered.availability, Availability::Available);
+    }
+    assert_eq!(source.verify().unwrap(), destination.verify().unwrap());
+    assert!(f.open().page(None, page_budget(), budget()).is_ok());
+    let conn = rusqlite::Connection::open(rebuilt.join("archive.sqlite")).unwrap();
+    let plan: String = conn
+        .query_row(
+            "EXPLAIN QUERY PLAN SELECT length(bytes) FROM objects WHERE cid=?",
+            [f.id(0)],
+            |r| r.get(3),
+        )
+        .unwrap();
+    assert!(plan.contains("SEARCH") && !plan.contains("SCAN"), "{plan}");
+}
+
+#[test]
+fn indexed_inventory_authenticates_selected_prefixes_with_constant_record_budget() {
+    let temp = tempfile::tempdir().unwrap();
+    let f = fixture(temp.path(), Profile::Admitted);
+    let archive = attested::Archive::open(&f.root, f.binding.clone()).unwrap();
+    archive.rebuild_serving_index(&identity(8)).unwrap();
+    let full = f.open().page(None, page_budget(), budget()).unwrap();
+    let older = full.records[1].proof.frontier().clone();
+    let mut one = budget();
+    one.items = 1;
+    assert!(Inventory::open(&f.db(), f.profile, f.binding.clone(), one.clone()).is_err());
+    let indexed = Inventory::open_indexed(
+        &f.db(),
+        f.profile,
+        f.binding.clone(),
+        Some(&older),
+        None,
+        one.clone(),
+    )
+    .unwrap();
+    let page = indexed
+        .page(
+            None,
+            PageBudget {
+                rows: 1,
+                ..page_budget()
+            },
+            one.clone(),
+        )
+        .unwrap();
+    assert_eq!(page.records[0].record.sequence, 2);
+    assert!(page.next.is_some());
+    let selected = page.records[0].selection.clone();
+    drop(indexed);
+    f.edit("UPDATE commits SET receipt=x'00' WHERE sequence=1");
+    assert!(Inventory::open(&f.db(), f.profile, f.binding.clone(), budget()).is_err());
+    let indexed = Inventory::open_indexed(
+        &f.db(),
+        f.profile,
+        f.binding.clone(),
+        Some(&older),
+        None,
+        one.clone(),
+    )
+    .unwrap();
+    assert!(indexed
+        .page(
+            None,
+            PageBudget {
+                rows: 1,
+                ..page_budget()
+            },
+            one.clone()
+        )
+        .is_ok());
+    assert!(indexed
+        .page(
+            page.next.as_ref(),
+            PageBudget {
+                rows: 1,
+                ..page_budget()
+            },
+            one.clone()
+        )
+        .is_err());
+    let Source::Available { bytes, .. } = inventory::source(
+        &f.db(),
+        f.profile,
+        f.binding.clone(),
+        &selected,
+        service::MAX_REQUEST,
+        one.clone(),
+    )
+    .unwrap() else {
+        panic!("available selected evidence");
+    };
+    assert_eq!(bytes, f.requests[1]);
+    let mut forged = older.clone();
+    forged.manifest = full.records[0].proof.frontier().manifest.clone();
+    assert!(Inventory::open_indexed(
+        &f.db(),
+        f.profile,
+        f.binding.clone(),
+        Some(&forged),
+        None,
+        one
+    )
+    .is_err());
+}
+
+#[test]
+fn indexed_source_reopens_current_bytes_and_erasure_custody() {
+    let temp = tempfile::tempdir().unwrap();
+    let f = fixture(temp.path(), Profile::Admitted);
+    let mut archive = attested::Archive::open(&f.root, f.binding.clone()).unwrap();
+    archive.rebuild_serving_index(&identity(8)).unwrap();
+    let indexed =
+        Inventory::open_indexed(&f.db(), f.profile, f.binding.clone(), None, None, budget())
+            .unwrap();
+    let page = indexed.page(None, page_budget(), budget()).unwrap();
+    let selected = page.records[1].selection.clone();
+    drop(indexed);
+    let conn = rusqlite::Connection::open(f.db()).unwrap();
+    conn.execute("UPDATE objects SET bytes=x'00' WHERE cid=?", [f.id(1)])
+        .unwrap();
+    assert!(matches!(
+        inventory::source(
+            &f.db(),
+            f.profile,
+            f.binding.clone(),
+            &selected,
+            service::MAX_REQUEST,
+            budget()
+        )
+        .unwrap(),
+        Source::Unavailable(Availability::Corrupt)
+    ));
+    conn.execute(
+        "UPDATE objects SET bytes=? WHERE cid=?",
+        rusqlite::params![&f.requests[1], f.id(1)],
+    )
+    .unwrap();
+    let plan = archive
+        .preview_erasure(&[2], service::hex(&[90; 32]), 200)
+        .unwrap();
+    let custody = archive
+        .apply_erasure(store::erasure::Record::sign(plan, &identity(8)).unwrap())
+        .unwrap();
+    assert!(inventory::source(
+        &f.db(),
+        f.profile,
+        f.binding.clone(),
+        &selected,
+        service::MAX_REQUEST,
+        budget()
+    )
+    .is_err());
+    archive
+        .refresh_serving_custody(&identity(8), custody.tip.as_deref().unwrap())
+        .unwrap();
+    assert!(inventory::source(
+        &f.db(),
+        f.profile,
+        f.binding.clone(),
+        &selected,
+        service::MAX_REQUEST,
+        budget()
+    )
+    .is_err());
+    let indexed = Inventory::open_indexed(
+        &f.db(),
+        f.profile,
+        f.binding.clone(),
+        None,
+        custody.tip.as_deref(),
+        budget(),
+    )
+    .unwrap();
+    let page = indexed.page(None, page_budget(), budget()).unwrap();
+    assert_eq!(page.records[1].availability, Availability::Erased);
+    assert!(matches!(
+        inventory::source(
+            &f.db(),
+            f.profile,
+            f.binding.clone(),
+            &page.records[1].selection,
+            service::MAX_REQUEST,
+            budget()
+        )
+        .unwrap(),
+        Source::Unavailable(Availability::Erased)
+    ));
+    assert_eq!(page.records[0].availability, Availability::Available);
+}

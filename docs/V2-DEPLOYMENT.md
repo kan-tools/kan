@@ -129,7 +129,7 @@ cryptographic erasure of old backups plus old keys. Replacing a registered path 
 custody configuration is an explicit owner configuration change followed by a
 restart; backup purge and off-host coordination remain separate work.
 
-### Explicit indexed ingest
+### Explicit indexed ingest and browsing
 
 An admitted archive can opt into authenticated index-based storage startup and
 append. Initialize it once with an explicit full audit:
@@ -144,9 +144,16 @@ policy, and independent erasure-history configuration. No missing/corrupt index
 silently triggers a full-history scan. Repair uses the explicit rebuild command;
 it must verify the source archive before replacing derived index data.
 
-This option currently covers admitted-archive startup and ingestion. Proof Library
-reads and independent custody/policy histories still use their existing paths;
-copied archives and full 10 GiB / 100 GiB qualification remain work in progress.
+Add `--indexed` to `serve-proof` to use bounded authenticated metadata and selected
+payload reads for the same admitted archive. The Library wire protocol and reader
+configuration stay unchanged. New archives use a separate payload CID index;
+legacy archives remain readable through the existing mode. For indexed browsing
+of an old archive, recover into a new output, initialize its serving index, and
+explicitly activate that output after checking the recovery result. Originals
+remain untouched; there is no implicit in-place layout conversion.
+
+Independent custody/policy histories still use their existing paths; copied
+archive indexing and full 10 GiB / 100 GiB qualification remain work in progress.
 Owner erasure workers refresh initialized indexes under current custody after
 reconciliation, including replicas and dependent publication archives. An external
 erasure that bypasses those workers leaves the old checkpoint refused until

@@ -371,6 +371,7 @@ impl SignedReply {
 
 /// Owner configuration, never populated from a remote request. No append API.
 pub struct Service {
+    indexed: bool,
     erasure_history: Option<crate::evidence_erasure_history::Access>,
     policy: Option<crate::evidence_policy::Access>,
     path: PathBuf,
@@ -387,18 +388,61 @@ impl Service {
         grants: Vec<Grant>,
         budget: inventory::Budget,
     ) -> Result<Self> {
+        Self::configured(path, binding, signer, grants, budget, false, None)
+    }
+    /// Serve initialized admitted archives through bounded authenticated metadata
+    /// and selected payload reads. Current custody remains an external input.
+    pub fn new_indexed(
+        path: PathBuf,
+        binding: Binding,
+        signer: Identity,
+        grants: Vec<Grant>,
+        budget: inventory::Budget,
+        current_erasure_tip: Option<&str>,
+    ) -> Result<Self> {
+        Self::configured(
+            path,
+            binding,
+            signer,
+            grants,
+            budget,
+            true,
+            current_erasure_tip,
+        )
+    }
+    fn configured(
+        path: PathBuf,
+        binding: Binding,
+        signer: Identity,
+        grants: Vec<Grant>,
+        budget: inventory::Budget,
+        indexed: bool,
+        current_erasure_tip: Option<&str>,
+    ) -> Result<Self> {
         if signer.did().as_str() != binding.issuer {
             return Err(Failure::Invalid);
         }
         let grants = Self::permissions(grants)?;
         // Valid metadata admits browsing, never admission or payload completeness.
-        inventory::Inventory::open(
-            &path,
-            binding.profile.inventory(),
-            binding.owner_binding()?,
-            budget.clone(),
-        )?;
+        if indexed {
+            inventory::Inventory::open_indexed(
+                &path,
+                binding.profile.inventory(),
+                binding.owner_binding()?,
+                None,
+                current_erasure_tip,
+                budget.clone(),
+            )?;
+        } else {
+            inventory::Inventory::open(
+                &path,
+                binding.profile.inventory(),
+                binding.owner_binding()?,
+                budget.clone(),
+            )?;
+        }
         Ok(Self {
+            indexed,
             erasure_history: None,
             policy: None,
             path,
@@ -417,9 +461,20 @@ impl Service {
         if history.binding != self.binding {
             return Err(Failure::Invalid);
         }
-        history
-            .current()?
-            .check_archive(&self.path, &self.binding)?;
+        let current = history.current()?;
+        if self.indexed {
+            inventory::Inventory::open_indexed(
+                &self.path,
+                self.binding.profile.inventory(),
+                self.binding.owner_binding()?,
+                None,
+                current.storage_tip()?.as_deref(),
+                self.budget.clone(),
+            )?;
+        } else {
+            current.check_archive(&self.path, &self.binding)?;
+        }
+        drop(current);
         self.erasure_history = Some(history);
         Ok(self)
     }
@@ -457,8 +512,24 @@ impl Service {
             .as_ref()
             .map(crate::evidence_erasure_history::Access::current)
             .transpose()?;
+        let storage_tip = custody
+            .as_ref()
+            .map(|current| current.storage_tip())
+            .transpose()?
+            .flatten();
         if let Some(current) = &custody {
-            current.check_archive(&self.path, &self.binding)?;
+            if self.indexed {
+                inventory::Inventory::open_indexed(
+                    &self.path,
+                    self.binding.profile.inventory(),
+                    self.binding.owner_binding()?,
+                    None,
+                    storage_tip.as_deref(),
+                    self.budget.clone(),
+                )?;
+            } else {
+                current.check_archive(&self.path, &self.binding)?;
+            }
         }
         let policy = self
             .policy
@@ -473,7 +544,12 @@ impl Service {
             version: 2,
             request: service::hex(&Sha256::digest(bytes)),
             issuer: self.binding.issuer.clone(),
-            result: self.execute(bytes, now, current.as_ref().unwrap_or(&self.grants)),
+            result: self.execute(
+                bytes,
+                now,
+                current.as_ref().unwrap_or(&self.grants),
+                storage_tip.as_deref(),
+            ),
         };
         let signature = self
             .signer
@@ -496,8 +572,24 @@ impl Service {
             ..self.budget.clone()
         })
     }
-    fn open(&self, pin: Option<&Coordinate>, deadline: Instant) -> Result<inventory::Inventory> {
+    fn open(
+        &self,
+        pin: Option<&Coordinate>,
+        deadline: Instant,
+        current_erasure_tip: Option<&str>,
+    ) -> Result<inventory::Inventory> {
         let binding = self.binding.owner_binding()?;
+        if self.indexed {
+            let selected = pin.map(|pin| pin.frontier(&self.binding)).transpose()?;
+            return Ok(inventory::Inventory::open_indexed(
+                &self.path,
+                self.binding.profile.inventory(),
+                binding,
+                selected.as_ref(),
+                current_erasure_tip,
+                self.remaining(deadline)?,
+            )?);
+        }
         Ok(if let Some(pin) = pin {
             inventory::Inventory::open_at(
                 &self.path,
@@ -558,7 +650,13 @@ impl Service {
         };
         Ok(EvidenceRecord { record, source })
     }
-    fn execute(&self, bytes: &[u8], now: u64, grants: &BTreeMap<String, Grant>) -> Result<Output> {
+    fn execute(
+        &self,
+        bytes: &[u8],
+        now: u64,
+        grants: &BTreeMap<String, Grant>,
+        current_erasure_tip: Option<&str>,
+    ) -> Result<Output> {
         let signed = SignedRequest::decode(bytes)?;
         let request = signed.request;
         if request.binding != self.binding
@@ -579,7 +677,7 @@ impl Service {
                     .to_vec(),
             }),
             Command::Snapshot => {
-                let inventory = self.open(None, deadline)?;
+                let inventory = self.open(None, deadline, current_erasure_tip)?;
                 Ok(Output::Snapshot {
                     frontier: Coordinate::from_frontier(inventory.frontier()),
                     plan: inventory.copy_plan().map(|p| service::hex(p.bytes())),
@@ -587,7 +685,7 @@ impl Service {
                 })
             }
             Command::Page { pin, next, limit } => {
-                let inventory = self.open(Some(&pin), deadline)?;
+                let inventory = self.open(Some(&pin), deadline, current_erasure_tip)?;
                 let page = inventory.page_from(
                     &next.frontier(&self.binding)?,
                     Self::page_budget(limit),
@@ -605,7 +703,7 @@ impl Service {
                 })
             }
             Command::ReadBatch { pin, selections } => {
-                let inventory = self.open(Some(&pin), deadline)?;
+                let inventory = self.open(Some(&pin), deadline, current_erasure_tip)?;
                 let mut records = Vec::new();
                 let mut payload_bytes = 0;
                 for selected in selections {
@@ -629,7 +727,7 @@ impl Service {
                 Ok(Output::EvidenceBatch { records })
             }
             Command::Read { pin, selected } => {
-                let inventory = self.open(Some(&pin), deadline)?;
+                let inventory = self.open(Some(&pin), deadline, current_erasure_tip)?;
                 let mut page = inventory.page_from(
                     &selected.frontier(&self.binding)?,
                     Self::page_budget(1),

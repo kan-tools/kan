@@ -14,6 +14,7 @@ use sha2::{Digest, Sha256};
 
 const CATALOG: &str = include_str!("fixtures/read-write-surface.tsv");
 const RULE_EVIDENCE: &[(&str, &str)] = &[
+    ("seekable-evidence-payload", "tests/evidence_inventory.rs"),
     (
         "authenticated-serving-index",
         "tests/evidence_attested_store.rs",
@@ -1585,7 +1586,7 @@ fn every_persistence_facade_call_is_independently_inventoried() {
         if module == "src/persistence.rs" {
             assert_eq!(
                 format!("{:x}", Sha256::digest(source.as_bytes())),
-                "2b6e33a53ba97441e8deaab531fed8ba6c5605c797c7eda1f0caefcabedfb2b6",
+                "9929586268cbe353872c1f3e08fb5b398a4e46cd8b70e119bb84063942f34fb0",
                 "the raw-mutation facade changed; review and update its committed implementation digest together with facade-call negative controls"
             );
             assert!(
@@ -2459,7 +2460,7 @@ async fn overlay_is_recomputed_from_authoritative_git_tree_claims() {
 
 #[cfg(feature = "v2-storage")]
 #[test]
-fn serving_index_catalog_matches_real_initialized_schema_columns() {
+fn serving_and_payload_catalogs_match_real_initialized_schema_columns() {
     use kan::evidence_store::attested::{Archive, Binding};
     let temp = tempfile::tempdir().unwrap();
     let signer = Identity::generate();
@@ -2475,17 +2476,27 @@ fn serving_index_catalog_matches_real_initialized_schema_columns() {
     archive.rebuild_serving_index(&signer).unwrap();
     let conn = rusqlite::Connection::open(temp.path().join("archive.sqlite")).unwrap();
     let mut actual = BTreeSet::new();
-    for table in ["serving_nodes", "serving_checkpoint"] {
+    for (table, artifact) in [
+        ("serving_nodes", "evidence-serving-sqlite:serving_nodes"),
+        (
+            "serving_checkpoint",
+            "evidence-serving-sqlite:serving_checkpoint",
+        ),
+        ("objects", "evidence-sqlite:objects"),
+    ] {
         let mut stmt = conn
             .prepare(&format!("PRAGMA table_info({table})"))
             .unwrap();
         for column in stmt.query_map([], |r| r.get::<_, String>(1)).unwrap() {
-            actual.insert((format!("evidence-serving-sqlite:{table}"), column.unwrap()));
+            actual.insert((artifact.to_string(), column.unwrap()));
         }
     }
     let declared: BTreeSet<_> = rows()
         .into_iter()
-        .filter(|r| r.artifact.starts_with("evidence-serving-sqlite:"))
+        .filter(|r| {
+            r.artifact.starts_with("evidence-serving-sqlite:")
+                || r.artifact == "evidence-sqlite:objects"
+        })
         .map(|r| (r.artifact.to_owned(), r.value.to_owned()))
         .collect();
     assert_eq!(actual, declared);

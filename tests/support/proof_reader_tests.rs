@@ -42,11 +42,32 @@ struct Server {
 }
 impl Server {
     async fn start(f: &Fixture) -> Self {
+        Self::start_with(reader(f)).await
+    }
+    async fn start_indexed(f: &Fixture) -> Self {
+        attested::Archive::open(&f.root, f.binding.clone())
+            .unwrap()
+            .rebuild_serving_index(&identity(8))
+            .unwrap();
+        Self::start_with(
+            wire::Service::new_indexed(
+                f.db(),
+                binding(f),
+                identity(8),
+                vec![grant()],
+                budget(),
+                None,
+            )
+            .unwrap(),
+        )
+        .await
+    }
+    async fn start_with(reader: wire::Service) -> Self {
         let listener = kan::evidence_http::bind("127.0.0.1:0".parse().unwrap())
             .await
             .unwrap();
         let endpoint = format!("http://{}/v2/read", listener.local_addr().unwrap());
-        let service = Arc::new(Mutex::new(reader(f)));
+        let service = Arc::new(Mutex::new(reader));
         let mode = Arc::new(AtomicUsize::new(0));
         let inner = service.clone();
         let selected = mode.clone();

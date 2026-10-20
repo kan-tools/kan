@@ -480,6 +480,9 @@ enum Command {
     #[cfg(feature = "v2-service")]
     ServeProof {
         archive: PathBuf,
+        /// Require authenticated serving checkpoints and seekable payload storage.
+        #[arg(long)]
+        indexed: bool,
         /// Owner-selected JSON binding: profile, archive, scope and issuer.
         #[arg(long)]
         binding: PathBuf,
@@ -1480,6 +1483,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         #[cfg(feature = "v2-service")]
         Command::ServeProof {
             archive,
+            indexed,
             binding,
             signing_key,
             grants,
@@ -1500,18 +1504,44 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             if items == 0 || metadata_bytes == 0 {
                 return Err("proof read budgets must be positive".into());
             }
-            let service = kan::evidence_proof_service::Service::new(
-                archive,
-                binding,
-                service_identity(&signing_key)?,
-                grants,
-                kan::evidence_store::inventory::Budget {
-                    items,
-                    metadata_bytes,
-                    duration: std::time::Duration::from_secs(4),
-                    cancelled: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
-                },
-            )?;
+            let history: Option<kan::evidence_erasure_history::Access> = erasure_history
+                .map(|path| -> Result<_, Box<dyn std::error::Error>> {
+                    Ok(serde_json::from_slice(&bounded_read(
+                        std::fs::File::open(path)?,
+                        65536,
+                    )?)?)
+                })
+                .transpose()?;
+            let current = if indexed {
+                history.as_ref().map(|h| h.current()).transpose()?
+            } else {
+                None
+            };
+            let tip = current
+                .as_ref()
+                .map(|s| s.storage_tip())
+                .transpose()?
+                .flatten();
+            let budget = kan::evidence_store::inventory::Budget {
+                items,
+                metadata_bytes,
+                duration: std::time::Duration::from_secs(4),
+                cancelled: Default::default(),
+            };
+            let signer = service_identity(&signing_key)?;
+            let service = if indexed {
+                kan::evidence_proof_service::Service::new_indexed(
+                    archive,
+                    binding,
+                    signer,
+                    grants,
+                    budget,
+                    tip.as_deref(),
+                )?
+            } else {
+                kan::evidence_proof_service::Service::new(archive, binding, signer, grants, budget)?
+            };
+            drop(current);
             let service = match access_policy {
                 Some(path) => service.with_policy(serde_json::from_slice(&bounded_read(
                     std::fs::File::open(path)?,
@@ -1519,10 +1549,8 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 )?)?)?,
                 None => service,
             };
-            let service = match erasure_history {
-                Some(path) => service.with_erasure_history(serde_json::from_slice(
-                    &bounded_read(std::fs::File::open(path)?, 65536)?,
-                )?)?,
+            let service = match history {
+                Some(history) => service.with_erasure_history(history)?,
                 None => service,
             };
             tokio::runtime::Runtime::new()?.block_on(async {
