@@ -382,3 +382,18 @@ from operator configuration. Published records use `kan-annotation/1` encrypted
 plaintext frames and preserve the authored declaration and all citations. Keep the
 workspace backup as well: automatic rebuilding from published annotations and
 cross-reader citation resolution are not implemented yet.
+
+After scanning authorized archives, use **Read conversation** on an explicit
+session group. Responses and tool activity appear beside gaps and membership
+claims; expand supplied request history when needed. Original archive copies
+remain separate. Citation buttons reopen the exact archive and snapshot. Each
+window covers at most eight selected attempts and 1024 occurrences; the next
+window is an explicit action. Complete traffic capture and chronological order
+are not inferred from session headers.
+
+The same workflow is available through `--request`: `proof-session` accepts an
+`identity` (`writer`, `observer`, `scheme`, `session`), `attempts` (each with
+`source`, `pin`, `selections`) and the same `format` as `proof-attempt`. HTTP uses
+`POST /api/library/proof-session` with the reader bearer credential. Current
+revocation denies the entire response; a missing payload remains an unavailable
+observation in its original attempt.

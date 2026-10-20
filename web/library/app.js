@@ -45,14 +45,14 @@
   async function rpc(body) {
     const current = ++epoch; if (controller) controller.abort(); controller = new AbortController();
     try {
-    const response = await fetch(['proof-content','proof-attempt'].includes(body.action) ? `/api/library/${body.action}` : '/api/library', {method:'POST', headers:{'Authorization':`Bearer ${token}`, 'Content-Type':'application/json'}, body:JSON.stringify(body), credentials:'omit', cache:'no-store', signal:controller.signal});
+    const response = await fetch(['proof-content','proof-attempt','proof-session'].includes(body.action) ? `/api/library/${body.action}` : '/api/library', {method:'POST', headers:{'Authorization':`Bearer ${token}`, 'Content-Type':'application/json'}, body:JSON.stringify(body), credentials:'omit', cache:'no-store', signal:controller.signal});
     if (current !== epoch) return null;
     if (!response.ok) {
       const denied = response.status === 401 || response.status === 403;
-      const message = body.action === 'proof-discover' && [422,429].includes(response.status) ? 'Discovery reached a work limit or its workers are busy. Retry the same batch; existing scan coverage is unchanged.' : ['content','proof-content','proof-attempt'].includes(body.action) && response.status === 422 ? 'Content interpretation reached a presentation limit or deadline. Inspect Source or select fewer complete captures; retained bytes remain available.' : ['content','proof-content','proof-attempt'].includes(body.action) && response.status === 429 ? 'Content workers are busy. Wait for current interpretation to finish, then retry.' : denied ? 'Access unavailable or revoked. Reconnect with an authorized reader.' : response.status === 404
+      const message = body.action === 'proof-discover' && [422,429].includes(response.status) ? 'Discovery reached a work limit or its workers are busy. Retry the same batch; existing scan coverage is unchanged.' : ['content','proof-content','proof-attempt','proof-session'].includes(body.action) && response.status === 422 ? 'Content interpretation reached a presentation limit or deadline. Inspect Source or select fewer complete captures; retained bytes remain available.' : ['content','proof-content','proof-attempt','proof-session'].includes(body.action) && response.status === 429 ? 'Content workers are busy. Wait for current interpretation to finish, then retry.' : denied ? 'Access unavailable or revoked. Reconnect with an authorized reader.' : response.status === 404
         ? 'Retained source is unavailable for this request. Choose another occurrence or refresh the snapshot.'
         : 'This response could not be verified. Retry, refresh the snapshot, or choose another scope.';
-      const error = new Error(message); error.accessDenied = denied; error.keepContentSelection = ['content','proof-content','proof-attempt'].includes(body.action) && [422,429].includes(response.status); error.readerMessage = message; throw error;
+      const error = new Error(message); error.accessDenied = denied; error.keepContentSelection = ['content','proof-content','proof-attempt','proof-session'].includes(body.action) && [422,429].includes(response.status); error.readerMessage = message; throw error;
     }
     const value = await response.json(); if (current !== epoch) return null; return value;
     } catch (error) { if (current !== epoch) return null; throw error; }
@@ -131,8 +131,8 @@
   }
   function renderCapabilities(value) {
     if (!Array.isArray(value.capabilities) || !Array.isArray(value.unavailable)) throw new Error('Unsupported capability response.');
-    const labels = {'operations-read':'Operations reader','text-search':'Persistent text search','attempt-content':'Large attempt Content','session-links':'Explicit session relationships','attempt-discovery':'Captured attempt discovery','snapshot-inventory':'Snapshot inventory','source-ranges':'Source ranges','provenance':'Provenance','content-inspection':'Selected Content','payload-availability':'Payload availability','semantic-search':'Search','normalized-sessions':'Sessions','annotations':'Annotations','saved-views':'Saved views','analysis':'Analysis','administrative-jobs':'Admin jobs'};
-    const supported = new Set(['operations-read','text-search','saved-views','annotations','snapshot-inventory','source-ranges','provenance','content-inspection','payload-availability','attempt-discovery','attempt-content','session-links']), seen = new Set();
+    const labels = {'operations-read':'Operations reader','text-search':'Persistent text search','attempt-content':'Large attempt Content','session-content':'Conversation reader','session-links':'Explicit session relationships','attempt-discovery':'Captured attempt discovery','snapshot-inventory':'Snapshot inventory','source-ranges':'Source ranges','provenance':'Provenance','content-inspection':'Selected Content','payload-availability':'Payload availability','semantic-search':'Search','normalized-sessions':'Sessions','annotations':'Annotations','saved-views':'Saved views','analysis':'Analysis','administrative-jobs':'Admin jobs'};
+    const supported = new Set(['operations-read','text-search','saved-views','annotations','snapshot-inventory','source-ranges','provenance','content-inspection','payload-availability','attempt-discovery','attempt-content','session-links','session-content']), seen = new Set();
     $('capability-list').replaceChildren();
     for (const [items, available] of [[value.capabilities,true],[value.unavailable,false]]) {
       for (const capability of items) {
@@ -356,12 +356,14 @@
     }
   }
   function clearWorkspace() {
+    clearSessionReader();
     workspaceRun++; workspaceStates = [];
     $('workspace-sessions').replaceChildren(); $('workspace-sources').replaceChildren();
     $('workspace-coverage').textContent = ''; $('session-workspace').hidden = true;
     $('scan-archives').disabled = false; $('stop-archives').disabled = true;
   }
   function resetWorkspace() {
+    clearSessionReader();
     workspaceRun++;
     for(const state of workspaceStates){state.records=[];state.cursor=null;state.complete=false;state.inspected=0;state.error=false;}
     renderWorkspace();$('stop-archives').disabled=true;
@@ -420,6 +422,13 @@
       const archiveCount=new Set(session.claims.map(c=>sourceId(c.group.state.entry))).size;
       card.append(textNode('summary',`Session ${session.link.session} · ${archiveCount} archives · ${session.claims.length} link claims`));
       card.append(textNode('p',`${session.link.scheme} · Writer ${session.writer} · Observer ${session.observer}`,'content-identity'));
+      const members=[...new Set(session.claims.map(c=>c.group))];
+      if(members.every(g=>g.state.entry.capabilities.includes('session-content'))) {
+        for(let i=0;i<members.length;i+=8) {
+          const chosen=members.slice(i,i+8), read=textNode('button',`Read conversation · attempts ${i+1}–${i+chosen.length}`);
+          read.addEventListener('click',()=>run(()=>readSession(session,chosen)));card.append(read);
+        }
+      }
       for(const {group,item,link} of session.claims) {
         const row=textNode('p',`${link.transition} · Attempt ${item.description.attempt} · Archive ${group.state.entry.binding.archive} `,'content-identity');
         if(group.state.entry.capabilities.includes('content-inspection')) {
@@ -447,7 +456,7 @@
   }
   async function scanWorkspace() {
     if(!workspaceStates.length)return;
-    const current=++workspaceRun;clearContent();clearInspector();
+    const current=++workspaceRun;clearSessionReader();clearContent();clearInspector();
     if(workspaceStates.reduce((n,s)=>n+s.records.length,0)>=1000)for(const state of workspaceStates)state.records=[];
     for(const state of workspaceStates)state.error=false;
     $('scan-archives').disabled=true;$('stop-archives').disabled=false;
@@ -643,18 +652,18 @@
     return pinWire ? {action:'source-exact',pin_wire:pinWire,sequence:String(sequence),offset:String(offset),length:'65536'} : {action:'source',pin,sequence,offset,length:65536};
   }
   function textNode(tag, text, className) { const e=document.createElement(tag);e.textContent=text;if(className)e.className=className;return e; }
-  function sourceLink(parent, value, input, label, offset = '0') {
+  function sourceLink(parent, value, input, label, offset = '0', opener = null) {
     const occurrence = value.occurrences[Number(input)]; if(!occurrence)throw new Error('Invalid Content citation.');
-    const button=textNode('button',label);button.addEventListener('click',()=>run(async()=>{returnItem=button;await inspect(occurrence.record.sequence,offset);}));parent.append(button);return button;
+    const button=textNode('button',label);button.addEventListener('click',()=>run(async()=>{if(opener){await opener(occurrence,offset);return;}returnItem=button;await inspect(occurrence.record.sequence,offset);}));parent.append(button);return button;
   }
   function details(parent, title, raw) {
     const d=document.createElement('details');d.append(textNode('summary',title));appendPagedText(d,raw,'');parent.append(d);
   }
-  function citationRenderer(value, stream) {
-    if(!Array.isArray(stream.citation_sets)||stream.citation_sets.length>(attemptMode?32768:2048)||!Array.isArray(stream.items))throw new Error('Invalid Content citation table.');
+  function citationRenderer(value, stream, opener = null) {
+    if(!Array.isArray(stream.citation_sets)||stream.citation_sets.length>((attemptMode||opener)?32768:2048)||!Array.isArray(stream.items))throw new Error('Invalid Content citation table.');
     let total=0;
     for(const set of stream.citation_sets){
-      if(!Array.isArray(set)||(total+=set.length)>(attemptMode?32768:4096))throw new Error('Invalid Content citation table.');
+      if(!Array.isArray(set)||(total+=set.length)>((attemptMode||opener)?32768:4096))throw new Error('Invalid Content citation table.');
       for(const c of set)if(!c||!Array.isArray(c.bytes)||c.bytes.length!==2||!value.occurrences[Number(c.input)])throw new Error('Invalid Content citation.');
     }
     function resolve(ref){
@@ -665,7 +674,7 @@
     }
     const uses=new Map(),shared=new Map();
     for(const item of stream.items)for(const ref of [item.citation_set,...(item.tool?[item.tool.citation_set]:[])]){resolve(ref);uses.set(ref,(uses.get(ref)||0)+1);}
-    function links(parent, ref, label){let first;for(const c of resolve(ref)){const button=sourceLink(parent,value,c.input,`${label} ${value.occurrences[Number(c.input)].record.sequence} · ${c.bytes.join('–')}`,c.bytes[0]);first ||= button;}return first;}
+    function links(parent, ref, label){let first;for(const c of resolve(ref)){const button=sourceLink(parent,value,c.input,`${label} ${value.occurrences[Number(c.input)].record.sequence} · ${c.bytes.join('–')}`,c.bytes[0],opener);first ||= button;}return first;}
     return {
       append(parent,ref,label){
         if(uses.get(ref)===1){links(parent,ref,label);return;}
@@ -679,6 +688,58 @@
       finish(parent){for(const group of shared.values())parent.append(group.detail);}
     };
   }
+  function clearSessionReader() {
+    $('session-reader').hidden=true;$('session-reader-body').replaceChildren();$('session-reader-status').textContent='';
+  }
+  async function readSession(session, groups) {
+    cancelWork();clearSessionReader();clearContent();clearInspector();
+    if(groups.reduce((n,g)=>n+g.items.length,0)>1024)throw new Error('Session selection exceeds 1024 records.');
+    const request={action:'proof-session',identity:{writer:session.writer,observer:session.observer,scheme:session.link.scheme,session:session.link.session},
+      attempts:groups.map(g=>({source:sourceId(g.state.entry),pin:g.state.entry.pin,selections:g.items.map(i=>i.record.selection)})),format:$('content-format').value};
+    notice('Reading selected conversation attempts and checking every archive…');
+    const value=await rpc(request);if(!value)return;
+    if(value.version!=='kan-session-content/1'||Object.keys(request.identity).some(k=>value.identity?.[k]!==request.identity[k])||!Array.isArray(value.attempts)||value.attempts.length!==groups.length)throw new Error('Invalid conversation response.');
+    // Build off-screen so malformed responses cannot leave partial plaintext.
+    const result=document.createElement('div');
+    value.attempts.forEach((attempt,index)=>{
+      const group=groups[index],content=attempt.content;
+      if(attempt.source!==request.attempts[index].source||JSON.stringify(attempt.pin)!==JSON.stringify(group.state.entry.pin)||content?.version!=='kan-content/2'||!Array.isArray(content.occurrences)||content.occurrences.length>1024||!Array.isArray(content.groups)||!['claimed','unconfirmed','conflicting'].includes(attempt.membership))throw new Error('Invalid conversation attempt.');
+      const selected=new Map(group.items.map(i=>[i.record.sequence,i]));
+      for(const o of content.occurrences)if(!selected.has(o.record.sequence))throw new Error('Unexpected conversation occurrence.');
+      const opener=(o,offset)=>openWorkspace(group,selected.get(o.record.sequence),offset);
+      const card=document.createElement('section');card.className='conversation-attempt';
+      card.append(textNode('h3',`Attempt ${index+1} · ${group.items[0].description.attempt}`));
+      card.append(textNode('p',`Archive ${group.state.entry.binding.archive} · Session membership ${attempt.membership}`,'content-identity'));
+      for(const link of attempt.links)card.append(textNode('p',`${link.transition} · ${link.parent_attempt?'Parent '+link.parent_attempt:'No parent claimed'} · Session ${link.session}`,'content-coverage'));
+      if(attempt.membership!=='claimed')card.append(textNode('p','Session membership could not be confirmed consistently from the selected retained metadata.','content-warning'));
+      for(const o of content.observations.filter(o=>o.kind!=='capture')){const row=textNode('p',`Unavailable or unplaced evidence: ${o.kind} ${o.reason||''} `,'content-warning');sourceLink(row,content,o.input,'Inspect source','0',opener);card.append(row);}
+      for(const normalized of content.groups) {
+        if(normalized.writer!==session.writer||normalized.observer!==session.observer)throw new Error('Conversation identity mismatch.');
+        card.append(textNode('p',`Outcome ${normalized.terminal} · ${normalized.missing_start?'start not selected':'start selected'} · ${normalized.unconfirmed_claim?'observer reports unconfirmed capture':'capture completeness unknown'}`,'content-coverage'));
+        if(normalized.ordinal_gaps.length)card.append(textNode('p',`Missing observed ordinals: ${normalized.ordinal_gaps.map(g=>g.join('–')).join(', ')} (end exclusive)`,'content-warning'));
+        if(normalized.ordinals.some(o=>o.conflict)||normalized.events_after_terminal)card.append(textNode('p','Conflicting ordinals or events after terminal remain in retained lineage.','content-warning'));
+        for(const direction of ['request','response']) {
+          const stream=normalized[direction],section=document.createElement(direction==='request'?'details':'section');
+          section.className='conversation-stream';section.append(textNode(direction==='request'?'summary':'h4',direction==='request'?'Supplied request history · may repeat earlier messages':'Observed response'));
+          const citations=citationRenderer(content,stream,opener);
+          if(stream.state!=='interpreted')section.append(textNode('p',`Stream ${stream.state}: ${stream.issues.map(i=>i.kind).join(', ')||'no complete selected stream'}`,'content-warning'));
+          for(const item of stream.items) {
+            const article=document.createElement('article');article.className='content-item';article.append(textNode('h5',`${item.role||'provider'} · ${item.kind}`));
+            if(item.text!==null)appendPagedText(article,item.text,'content-text');
+            if(item.issues.length)article.append(textNode('p',item.issues.join(' · '),'content-warning'));
+            if(item.tool){details(article,'Accumulated tool input (derived)',item.tool.json);citations.append(article,item.tool.citation_set,'Tool input source');}
+            if(item.event_json!==null)details(article,'Parsed event · Source preserves exact numbers',item.event_json);
+            citations.append(article,item.citation_set,'Source');section.append(article);
+          }
+          citations.finish(section);card.append(section);
+        }
+      }
+      const read=textNode('button','Inspect attempt and full lineage');read.addEventListener('click',()=>openWorkspace(group));card.append(read);result.append(card);
+    });
+    $('session-reader-body').replaceChildren();$('session-reader-body').append(result);$('session-reader-status').textContent=value.coverage;$('session-reader').hidden=false;
+    notice('Conversation ready · supplied history and archive copies remain distinct.');
+  }
+  $('close-session-reader').addEventListener('click',()=>{cancelWork();clearSessionReader();});
   function showContent(value) {
     if(value.version!=='kan-content/2'||value.pin_wire!==pinWire||!Array.isArray(value.occurrences)||value.occurrences.length>(attemptMode?1024:40)||!Array.isArray(value.observations)||!Array.isArray(value.groups))throw new Error('Unsupported Content response.');
     contentValue=value;$('content-panel').replaceChildren();$('content-tab').disabled=false;
@@ -736,7 +797,7 @@
     showContent(value);updateSelection();
   }));
   $('clear-content').addEventListener('click',()=>{cancelWork();clearContent();clearInspector();notice('Content selection cleared.');});
-  $('content-format').addEventListener('change',()=>{cancelWork();clearContent(false);clearInspector();});
+  $('content-format').addEventListener('change',()=>{cancelWork();clearSessionReader();clearContent(false);clearInspector();});
 
   $('connect').addEventListener('submit', event => {
     event.preventDefault(); token = $('token').value; $('token').value = ''; run(catalog);

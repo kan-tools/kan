@@ -12,6 +12,7 @@ use hyper::{
 use hyper_util::rt::TokioIo;
 pub use proof::knowledge::{Citation as EvidenceCitation, Draft as AnnotationDraft};
 pub use proof::outbox::AnnotationOutbox;
+pub use proof::sessions::{Identity as SessionIdentity, Selection as SessionSelection};
 pub use proof::{
     search::{Filter as SearchFilter, Target as SearchTarget},
     Readers,
@@ -26,6 +27,11 @@ use tokio::{
 #[derive(Deserialize)]
 #[serde(tag = "action", rename_all = "kebab-case", deny_unknown_fields)]
 pub enum Query {
+    ProofSession {
+        identity: SessionIdentity,
+        attempts: Vec<SessionSelection>,
+        format: crate::evidence_content::Format,
+    },
     AnnotationDelivery {
         id: String,
     },
@@ -146,7 +152,8 @@ fn denied(code: StatusCode) -> Response<Full<Bytes>> {
 async fn query(reader: &Reader, query: Query) -> Result<Vec<u8>, ContentError> {
     use crate::evidence_content as content;
     let value: serde_json::Value = match query {
-        Query::AnnotationDelivery { .. }
+        Query::ProofSession { .. }
+        | Query::AnnotationDelivery { .. }
         | Query::AnnotationQueue { .. }
         | Query::AnnotationDrain { .. }
         | Query::AnnotationPreview { .. }
@@ -309,8 +316,9 @@ async fn handle(
     }
     let proof_content = path == Some("/api/library/proof-content");
     let proof_attempt = path == Some("/api/library/proof-attempt");
+    let proof_session = path == Some("/api/library/proof-session");
     if r.method() != hyper::Method::POST
-        || (path != Some("/api/library") && !proof_content && !proof_attempt)
+        || (path != Some("/api/library") && !proof_content && !proof_attempt && !proof_session)
     {
         return Ok(denied(StatusCode::METHOD_NOT_ALLOWED));
     }
@@ -331,7 +339,7 @@ async fn handle(
         Duration::from_secs(3),
         Limited::new(
             r.into_body(),
-            if proof_attempt {
+            if proof_attempt || proof_session {
                 2 * 1024 * 1024
             } else if proof_content {
                 65536
@@ -353,6 +361,7 @@ async fn handle(
     };
     if matches!(&request, Query::ProofContent { .. }) != proof_content
         || matches!(&request, Query::ProofAttempt { .. }) != proof_attempt
+        || matches!(&request, Query::ProofSession { .. }) != proof_session
     {
         return Ok(denied(StatusCode::BAD_REQUEST));
     }

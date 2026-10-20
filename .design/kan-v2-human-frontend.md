@@ -251,3 +251,17 @@ One bounded delivery action advances the configured queue; the existing drainer
 can run it independently. Cross-reader citation resolution, reconstruction of
 workspace projections from published declarations and imported v1 claim rendering
 remain required; this publication adapter alone does not close Knowledge.
+
+### Conversation reading across archives
+
+`proof-session` composes the existing verified attempt interpreter for up to eight
+explicit attempts / 1024 occurrences / 96 MiB rendered content per request. Every
+archive is checked again before returning any content. Missing payloads remain
+visible; membership metadata is labeled claimed, conflicting or unconfirmed.
+The response keeps each original pin, occurrence and byte citation. Selection
+order is a presentation order, not an invented chronology. Supplied request
+history is collapsed separately from responses; archive copies, branch and
+compaction claims are never collapsed into a single fabricated conversation.
+The frontend offers consecutive eight-attempt windows and retains exact source
+navigation. Larger selections remain browsable individually. This is shared
+CLI/API/UI presentation over the raw ledger, with no new persistent authority.

@@ -38,7 +38,10 @@ impl Ui {
             .build()
             .unwrap()
             .post(
-                if value["action"] == "proof-content" || value["action"] == "proof-attempt" {
+                if value["action"] == "proof-content"
+                    || value["action"] == "proof-attempt"
+                    || value["action"] == "proof-session"
+                {
                     format!("{}/{}", self.url, value["action"].as_str().unwrap())
                 } else {
                     self.url.clone()
@@ -1324,4 +1327,73 @@ async fn annotation_publication_is_explicit_destination_bound_and_exactly_retrie
     server.stop().await;
     task.abort();
     let _ = task.await;
+}
+
+#[tokio::test]
+async fn session_content_preserves_archive_boundaries_membership_loss_and_revocation() {
+    let a = tempfile::tempdir().unwrap();
+    let b = tempfile::tempdir().unwrap();
+    let first_fixture = fixture_requests(a.path(), Profile::Admitted, captured_request);
+    let second_fixture = fixture_requests(b.path(), Profile::Copied, |n, a, p| {
+        let event = json!({"type":"http-metadata","direction":"request","headers":[["x-kan-session",service::hex("c".repeat(64).as_bytes())]],"omitted":[]});
+        encrypted_frame(n, a, p, &frame_bytes(&"b".repeat(64), n.into(), event, &[]))
+    });
+    let first = Server::start(&first_fixture).await;
+    let second = Server::start(&second_fixture).await;
+    let ui = Ui::start(
+        kan::evidence_library::Readers::new(
+            None,
+            vec![first.client(&first_fixture), second.client(&second_fixture)],
+        )
+        .unwrap(),
+    )
+    .await;
+    let catalog = ui.call(json!({"action":"catalog"}), 200).await;
+    let mut attempts = Vec::new();
+    for entry in catalog["scopes"].as_array().unwrap() {
+        let page = ui.call(json!({"action":"proof-page","source":entry["id"],"pin":entry["pin"],"cursor":null,"limit":3}),200).await;
+        attempts.push(json!({"source":entry["id"],"pin":entry["pin"],"selections":page["records"].as_array().unwrap().iter().map(|r|r["selection"].clone()).collect::<Vec<_>>()}));
+    }
+    let request = json!({"action":"proof-session","identity":{"writer":identity(6).did().as_str(),"observer":"collector","scheme":"kan-header","session":"c".repeat(64)},"attempts":attempts,"format":"anthropic-messages-json"});
+    let value = ui.call(request.clone(), 200).await;
+    assert_eq!(value["version"], "kan-session-content/1");
+    assert_eq!(value["attempts"][0]["membership"], "unconfirmed");
+    assert_eq!(value["attempts"][1]["membership"], "claimed");
+    assert_ne!(
+        value["attempts"][0]["source"],
+        value["attempts"][1]["source"]
+    );
+    assert_eq!(
+        value["attempts"][0]["content"]["groups"][0]["request"]["items"][0]["text"],
+        "Hello proof archive"
+    );
+    let mut conflict = request.clone();
+    conflict["identity"]["session"] = json!("d".repeat(64));
+    assert_eq!(
+        ui.call(conflict, 200).await["attempts"][1]["membership"],
+        "conflicting"
+    );
+    let mut foreign = request.clone();
+    foreign["identity"]["writer"] = json!(identity(9).did().as_str());
+    ui.call(foreign, 400).await;
+    let mut repeated = request.clone();
+    repeated["attempts"] = json!([attempts[0], attempts[0]]);
+    ui.call(repeated, 400).await;
+    first_fixture.remove(2);
+    let degraded = ui.call(request.clone(), 200).await;
+    assert!(degraded["attempts"][0]["content"]["observations"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|o| o["kind"] == "unavailable"));
+    second
+        .service
+        .lock()
+        .unwrap()
+        .replace_grants(Vec::new())
+        .unwrap();
+    ui.call(request, 403).await;
+    ui.stop().await;
+    first.stop().await;
+    second.stop().await;
 }

@@ -537,3 +537,37 @@ test('annotation publication shows the fixed destination and uses exact retry an
  const parent=row.children.find(x=>x.children.some(y=>y.textContent==='Queue encrypted annotation'));assert.match(parent.children[0].textContent,/target-scope.*target-issuer.*public-recipient/);parent.children.find(x=>x.textContent==='Queue encrypted annotation').click();await tick();assert.deepEqual(JSON.parse(u.pending[0].opts.body),{action:'annotation-queue',id:note.id,destination:'fixed-destination'});
  await u.respond({...status,state:'queued',record:{manifest:'manifest',position:0}});parent.children.find(x=>x.textContent==='Deliver one queued record').click();await tick();assert.equal(JSON.parse(u.pending[0].opts.body).action,'annotation-drain');await u.respond({pending:'0'});assert.equal(JSON.parse(u.pending[0].opts.body).action,'annotation-delivery');await u.respond({...status,state:'acknowledged',record:{manifest:'manifest',position:0}});assert.match(parent.children[0].textContent,/acknowledged/);assert.equal(parent.children.filter(x=>x.textContent==='Deliver one queued record').length,0);
 });
+
+async function sessionReaderFixture(u){
+ await u.login();await u.respond({...proofCatalog,scopes:['archive-A','archive-B'].map(id=>({...proofEntry(id),pin:{request:'pin-'+id,reply:{}},pin_wire:exactPin,capabilities:['attempt-discovery','content-inspection','attempt-content','session-links','session-content']}))});await u.respond(proofPage);
+ u.node('content-format').value='anthropic-messages-json';u.node('scan-archives').click();await tick();
+ const a=linkedRecord('1','a'.repeat(64)),b=linkedRecord('1','b'.repeat(64),a.description.attempt);
+ await u.respond({version:'kan-discovery/1',records:[a],next:null});await u.respond({version:'kan-discovery/1',records:[b],next:null});
+ walk(u.node('workspace-sessions')).find(n=>n.textContent==='Read conversation · attempts 1–2').click();await tick();
+ const request=JSON.parse(u.pending[0].opts.body);assert.equal(request.action,'proof-session');assert.equal(u.pending[0].url,'/api/library/proof-session');
+ assert.deepEqual(request.attempts.map(a=>a.source),['archive-A','archive-B']);
+ return {version:'kan-session-content/1',identity:request.identity,coverage:'Explicit attempts; no inferred chronology',attempts:request.attempts.map((attempt,index)=>{
+  const content=clone(contentResult);content.occurrences=[{record:{sequence:'1'}}];content.groups[0].writer='verified-writer';content.groups[0].observer=a.description.observer;
+  return {source:attempt.source,pin:attempt.pin,membership:index?'conflicting':'claimed',links:[index?b.description.session_link:a.description.session_link],content};
+ })};
+}
+test('conversation presents attempts without replaying request history as new turns and keeps archive citations',async()=>{
+ const u=ui(),value=await sessionReaderFixture(u);await u.respond(value);
+ assert.equal(u.node('session-reader').hidden,false);
+ const nodes=walk(u.node('session-reader-body'));
+ assert.ok(nodes.some(n=>n.textContent==='Supplied request history · may repeat earlier messages'));
+ assert.ok(nodes.some(n=>String(n.textContent).includes('Session membership conflicting')));
+ assert.ok(nodes.some(n=>n.textContent==='<script>never execute</script>'));
+ const cites=nodes.filter(n=>String(n.textContent).startsWith('Source 1 ·'));assert.equal(cites.length,2);cites[1].click();await tick();
+ const request=JSON.parse(u.pending[0].opts.body);assert.equal(request.source,'archive-B');assert.equal(request.pin.request,'pin-archive-B');assert.equal(request.offset,'20');
+ await u.respond({},403);assert.equal(u.node('session-reader-body').children.length,0);assert.equal(u.node('session-reader').hidden,true);
+});
+test('conversation refuses foreign identity and discards replies after close or lock',async()=>{
+ for(const action of ['identity','close','lock']) {
+  const u=ui(),value=await sessionReaderFixture(u);
+  if(action==='identity')value.identity.writer='other-writer';
+  if(action==='close')u.node('close-session-reader').click();
+  if(action==='lock')u.node('lock').click();
+  await u.respond(value);assert.equal(u.node('session-reader-body').children.length,0,action);assert.equal(u.node('session-reader').hidden,true,action);
+ }
+});

@@ -12,6 +12,7 @@ mod discovery;
 pub mod knowledge;
 pub mod outbox;
 pub mod search;
+pub mod sessions;
 
 pub struct Readers {
     outbox: Option<outbox::AnnotationOutbox>,
@@ -132,7 +133,7 @@ impl Readers {
                 let pin = reader.snapshot().await?;
                 Ok(json!({"id":id,"scope":reader.binding().scope,"binding":reader.binding(),
                     "protocol":wire::PROTOCOL,"pin_wire":serde_json::to_string(&pin).map_err(|_|Failure::Invalid)?,"pin":pin,
-                    "capabilities":["snapshot-inventory","source-ranges","provenance","payload-availability","content-inspection","attempt-discovery","attempt-content","session-links"]}))
+                    "capabilities":["snapshot-inventory","source-ranges","provenance","payload-availability","content-inspection","attempt-discovery","attempt-content","session-links","session-content"]}))
             } else {
                 let reader = self.legacy.as_ref().ok_or(Failure::Invalid)?;
                 let pin = reader.snapshot(id).await?;
@@ -150,6 +151,11 @@ impl Readers {
     }
     pub(super) async fn query(&self, request: Query) -> Result<Vec<u8>, ContentError> {
         let value = match request {
+            Query::ProofSession {
+                identity,
+                attempts,
+                format,
+            } => self.session_content(identity, attempts, format).await?,
             Query::AnnotationDelivery { id } => self.annotation_delivery(&id).await?,
             Query::AnnotationQueue { id, destination } => {
                 self.annotation_queue(&id, &destination).await?
@@ -308,7 +314,7 @@ impl Readers {
                     }
                 }
                 let mut catalog = json!({"version":2,"scopes":scopes,"coverage":if partial {"partial"} else {"complete"},
-                    "capabilities":["snapshot-inventory","source-ranges","provenance","payload-availability","content-inspection","attempt-discovery","attempt-content","session-links"],
+                    "capabilities":["snapshot-inventory","source-ranges","provenance","payload-availability","content-inspection","attempt-discovery","attempt-content","session-links","session-content"],
                     "unavailable":["semantic-search","normalized-sessions","annotations","saved-views","analysis","administrative-jobs"]});
                 if self.operations.is_some() {
                     catalog["capabilities"]
