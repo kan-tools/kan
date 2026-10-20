@@ -85,11 +85,9 @@ fn legacy(bytes: &[u8]) -> Option<StoredClaim> {
         };
     }
     if let Ok(record) = bounded::<crate::at_claim::Record>(bytes) {
+        let rev = record.rev.clone();
         if let Ok(claim) = record.verify() {
-            return Some(StoredClaim {
-                claim,
-                rev: record.rev,
-            });
+            return Some(StoredClaim { claim, rev });
         }
     }
     let record = bounded::<StoredClaim>(bytes).ok()?;
