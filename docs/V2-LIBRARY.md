@@ -1057,7 +1057,9 @@ The experimental `capture-erasure` owner target accepts `id`, `root`, `history`
 (the pinned independent owner-erasure Access configuration), `signing_key`
 (owner), `issuer_key`, `private_keys` (capture decryption credential paths), and
 optional `replicas` (same-binding archive directories), `spools` (absolute sender
-queue paths) and `workspaces` entries `{database, signing_key, recipient_key}`. All paths come from
+queue paths), `workspaces` entries `{database, signing_key, recipient_key}`, and
+`publications` entries `{root, history, signing_key, issuer_key, private_keys,
+replicas?, spools?}` for distinct annotation archives. All paths come from
 owner configuration. A stopped replica may remain offline at startup.
 
 The Library owner panel and shared owner request CLI support:
@@ -1073,7 +1075,7 @@ precedes archive cleanup. Inspect `job` or the owner catalog for per-archive
 results, page reclamation and interrupted attempts. Configured spools retire admitted
 selected operations using signed manifest commitments; unaffected predecessors
 remain deliverable and later selected entries stay deferred. A result remains
-`cleanup-pending` because unpublished cancellation, other publication-copy cleanup
+`cleanup-pending` because unpublished cancellation, remaining publication lineage
 and deployment-wide enrollment still require implementation. Configured stopped
 workspaces reconcile authenticated source citations and transitive annotation/
 analysis lineage against current owner custody, retaining unrelated entries.
@@ -1081,6 +1083,23 @@ Active workspaces, unreadable records and orphan model outputs remain pending. N
 interpret archive payload removal as completed managed erasure. Backup purge
 is reported separately as `not-performed`; no historical backup is deleted,
 and service enrollment/activation remains explicit.
+
+Publication cleanup scans each configured archive's verified prefix, decrypts with
+the explicitly configured keys, and verifies annotation attribution and citation
+tokens. It follows exact source coordinates across the configured archives plus
+same-author, same-subject correction and withdrawal parents. Text that merely
+mentions a CID does not select a publication. Missing keys, missing/corrupt source,
+unknown annotation versions or exceeded scan bounds leave cleanup pending.
+All selected child authorizations are stored together in the encrypted owner
+journal before publication deletion. Resume uses those exact records even after
+the publication bytes are gone, including when a replica comes back online.
+The report identifies each selected prefix, replica and admitted spool cleanup;
+it does not claim global coverage. Unpublished requests, dependencies known only
+through analysis-job lineage, later appends and unconfigured copies remain explicit
+coordination work. Bounds are 16 destinations, 4,096 annotation occurrences,
+512 selected occurrences, 256 MiB of requests and 120 seconds per planning pass.
+Configured workspaces also reconcile the publication histories, so caches that cite
+a removed publication are covered.
 
 Enroll a reader workspace with repeated `--workspace-erasure-history HISTORY.json`
 arguments to `kan-v2 library` (alongside `--workspace` / `--workspace-key`). Keep

@@ -65,6 +65,65 @@ impl Draft {
         Ok(())
     }
 }
+/// Decode an authenticated annotation publication identically for restoration
+/// and owner cleanup. The outer writer signature attributes the declaration;
+/// source tokens retain their separate issuer signatures.
+pub(crate) fn decode_publication(
+    plaintext: &[u8],
+    writer: &str,
+) -> Result<(Value, Draft), Failure> {
+    if plaintext.len() > 262144 {
+        return Err(Failure::Invalid);
+    }
+    let publication: Value = serde_json::from_slice(plaintext).map_err(|_| Failure::Invalid)?;
+    if publication["format"] != "kan-annotation/1"
+        || publication.as_object().is_none_or(|m| m.len() != 2)
+    {
+        return Err(Failure::Invalid);
+    }
+    let declaration = &publication["declaration"];
+    let object = declaration.as_object().ok_or(Failure::Invalid)?;
+    let fields = [
+        "version",
+        "author",
+        "analysis_trigger_plan",
+        "draft",
+        "id",
+        "recorded_at",
+    ];
+    if object.len() != fields.len()
+        || fields.iter().any(|k| !object.contains_key(*k))
+        || declaration["version"] != 1
+        || declaration["author"] != writer
+    {
+        return Err(Failure::Invalid);
+    }
+    let draft: Draft =
+        serde_json::from_value(declaration["draft"].clone()).map_err(|_| Failure::Invalid)?;
+    draft.validate()?;
+    crate::evidence_content::coordinate(
+        declaration["recorded_at"]
+            .as_str()
+            .ok_or(Failure::Invalid)?,
+    )?;
+    let id = declaration["id"].as_str().ok_or(Failure::Invalid)?;
+    let mut original = declaration.clone();
+    original
+        .as_object_mut()
+        .ok_or(Failure::Invalid)?
+        .remove("id");
+    original
+        .as_object_mut()
+        .ok_or(Failure::Invalid)?
+        .remove("recorded_at");
+    if crate::evidence_service::hex(&Sha256::digest(
+        serde_json::to_vec(&original).map_err(|_| Failure::Invalid)?,
+    )) != id
+    {
+        return Err(Failure::Corrupt);
+    }
+    Ok((declaration.clone(), draft))
+}
 impl Readers {
     pub(super) async fn restore_annotation(
         &self,
@@ -86,57 +145,8 @@ impl Readers {
         else {
             return Err(Failure::Missing.into());
         };
-        if plaintext.len() > 262144 {
-            return Err(Failure::Invalid.into());
-        }
-        let publication: Value =
-            serde_json::from_slice(&plaintext).map_err(|_| Failure::Invalid)?;
-        if publication["format"] != "kan-annotation/1"
-            || publication.as_object().is_none_or(|m| m.len() != 2)
-        {
-            return Err(Failure::Invalid.into());
-        }
-        let declaration = &publication["declaration"];
-        let object = declaration.as_object().ok_or(Failure::Invalid)?;
-        let fields = [
-            "version",
-            "author",
-            "analysis_trigger_plan",
-            "draft",
-            "id",
-            "recorded_at",
-        ];
-        if object.len() != fields.len()
-            || fields.iter().any(|k| !object.contains_key(*k))
-            || declaration["version"] != 1
-            || declaration["author"] != writer
-        {
-            return Err(Failure::Invalid.into());
-        }
-        let draft: Draft =
-            serde_json::from_value(declaration["draft"].clone()).map_err(|_| Failure::Invalid)?;
-        draft.validate()?;
-        crate::evidence_content::coordinate(
-            declaration["recorded_at"]
-                .as_str()
-                .ok_or(Failure::Invalid)?,
-        )?;
-        let id = declaration["id"].as_str().ok_or(Failure::Invalid)?;
-        let mut original = declaration.clone();
-        original
-            .as_object_mut()
-            .ok_or(Failure::Invalid)?
-            .remove("id");
-        original
-            .as_object_mut()
-            .ok_or(Failure::Invalid)?
-            .remove("recorded_at");
-        if crate::evidence_service::hex(&Sha256::digest(
-            serde_json::to_vec(&original).map_err(|_| Failure::Invalid)?,
-        )) != id
-        {
-            return Err(Failure::Corrupt.into());
-        }
+        let (declaration, draft) = decode_publication(&plaintext, &writer)?;
+        let id = declaration["id"].as_str().ok_or(Failure::Corrupt)?;
         let (authorized, partial) = self.authorized_sources().await;
         if !authorized.contains(&source)
             || draft.cites.iter().any(|c| !authorized.contains(&c.source))
@@ -170,7 +180,7 @@ impl Readers {
                     .as_object_mut()
                     .ok_or(Failure::Corrupt)?
                     .remove("recovered_from");
-                if plain != *declaration {
+                if plain != declaration {
                     return Err(Failure::Conflict.into());
                 }
                 restored = prior;

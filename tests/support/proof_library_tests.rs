@@ -4102,6 +4102,50 @@ async fn owner_capture_erasure_revalidates_full_selection_and_resumes_offline_re
     let cite = json!({"source":"source","pin":pin,"selection":page.records[0].selection});
     let unrelated =
         json!({"source":"other","pin":other_pin,"selection":other_page.records[0].selection});
+    // Publications live in a distinct copied archive, including a correction
+    // whose only source citation is unrelated. Its signed parent edge must
+    // still carry the erasure dependency across archive boundaries.
+    let publication_dir = private_workspace_directory();
+    let publication_custody = private_workspace_directory();
+    let publication_replica = private_workspace_directory();
+    let mut parent_publication = None;
+    let publications = fixture_requests(
+        publication_dir.path(),
+        Profile::Copied,
+        |n, audience, previous| {
+            use sha2::{Digest, Sha256};
+            let mut declaration = json!({"version":1,"author":identity(6).did().as_str(),"analysis_trigger_plan":[],
+            "draft":{"subject":"publication-erasure","text":if n==2 {page.records[0].manifest.clone()} else {format!("derived publication {n}")},
+                "tags":[],"cites":[if n==0 {cite.clone()} else {unrelated.clone()}],"supersedes":if n==1 {parent_publication.clone()} else {None::<String>}}});
+            let id = service::hex(&Sha256::digest(serde_json::to_vec(&declaration).unwrap()));
+            if n == 0 {
+                parent_publication = Some(id.clone());
+            }
+            declaration["id"] = json!(id);
+            declaration["recorded_at"] = json!("100");
+            let plain =
+                serde_json::to_vec(&json!({"format":"kan-annotation/1","declaration":declaration}))
+                    .unwrap();
+            encrypted_frame(n, audience, previous, &plain)
+        },
+    );
+    let mut publication_history:Access=serde_json::from_value(json!({"directory":publication_custody.path(),
+        "binding":{"profile":"copied","archive":service::hex(&publications.binding.archive),"scope":service::hex(&publications.binding.scope),"issuer":publications.binding.issuer},
+        "owner":identity(9).did().as_str()})).unwrap();
+    publication_history.initialize().unwrap();
+    let genesis = Record::sign(
+        publication_history.preview(None, "c".repeat(64)).unwrap(),
+        &identity(9),
+    )
+    .unwrap();
+    let minimum = genesis.id().unwrap();
+    publication_history.append(genesis).unwrap();
+    publication_history.minimum = Some(minimum);
+    let publication_backup = local.path().join("publications-before.sqlite");
+    copied::Archive::open(&publications.root, publications.binding.clone())
+        .unwrap()
+        .backup(&publication_backup)
+        .unwrap();
     let derived_path = local.path().join("reader.sqlite");
     let derived =
         kan::evidence_workspace::Workspace::open(&derived_path, identity(9), PRIVATE).unwrap();
@@ -4213,7 +4257,7 @@ async fn owner_capture_erasure_revalidates_full_selection_and_resumes_offline_re
     let readers = || {
         let workspace =
             kan::evidence_workspace::Workspace::open(&state, identity(9), [84; 32]).unwrap();
-        let owner=kan::evidence_library::Owner::new(serde_json::from_value(json!({"token":OWNER,"max_jobs":10,"targets":[{"kind":"capture-erasure","id":"capture","root":f.root,"history":history,"signing_key":signing,"issuer_key":issuer,"private_keys":[private],"replicas":[replica.path()],"workspaces":[{"database":derived_path,"signing_key":signing,"recipient_key":private}],"spools":[sender_path]}]})).unwrap(),workspace).unwrap();
+        let owner=kan::evidence_library::Owner::new(serde_json::from_value(json!({"token":OWNER,"max_jobs":10,"targets":[{"kind":"capture-erasure","id":"capture","root":f.root,"history":history,"signing_key":signing,"issuer_key":issuer,"private_keys":[private],"replicas":[replica.path()],"workspaces":[{"database":derived_path,"signing_key":signing,"recipient_key":private}],"spools":[sender_path],"publications":[{"root":publications.root,"history":publication_history,"signing_key":signing,"issuer_key":issuer,"private_keys":[private],"replicas":[publication_replica.path()]}]}]})).unwrap(),workspace).unwrap();
         kan::evidence_library::Readers::new(None, vec![server.client(&f)])
             .unwrap()
             .with_owner(owner)
@@ -4284,6 +4328,56 @@ async fn owner_capture_erasure_revalidates_full_selection_and_resumes_offline_re
         .head()
         .unwrap()
         .is_none());
+    assert_eq!(
+        done["result"]["report"]["publications"]["state"], "selected-prefix-planned",
+        "{done}"
+    );
+    assert_eq!(
+        done["result"]["report"]["publications"]["destinations"][0]["archives"][0]["state"],
+        "reconciled",
+        "{done}"
+    );
+    assert_eq!(
+        done["result"]["report"]["publications"]["destinations"][0]["archives"][1]["state"],
+        "pending"
+    );
+    let erased = copied::Archive::open(&publications.root, publications.binding.clone())
+        .unwrap()
+        .erasure_history()
+        .unwrap();
+    assert_eq!(erased.records.len(), 1);
+    assert_eq!(
+        erased.records[0]
+            .plan
+            .targets
+            .iter()
+            .map(|t| t.sequence)
+            .collect::<Vec<_>>(),
+        vec![1, 2],
+        "correction follows dependency; unrelated CID text is retained"
+    );
+    let retained = kan::evidence_store::inventory::Inventory::open(
+        &publications.db(),
+        Profile::Copied,
+        publications.binding.clone(),
+        budget(),
+    )
+    .unwrap();
+    let rows = retained
+        .page(
+            None,
+            PageBudget {
+                rows: 3,
+                record_bytes: 1024 * 1024,
+                payload_bytes: 16 * 1024 * 1024,
+            },
+            budget(),
+        )
+        .unwrap();
+    assert_eq!(rows.records[0].availability, Availability::Available);
+    assert_eq!(rows.records[1].availability, Availability::Erased);
+    assert_eq!(rows.records[2].availability, Availability::Erased);
+    drop(retained);
     assert_eq!(done["attempts"], 2);
     assert_eq!(
         owner_call(&ui, OWNER, apply.clone(), 200).await,
@@ -4324,6 +4418,20 @@ async fn owner_capture_erasure_revalidates_full_selection_and_resumes_offline_re
         )
         .unwrap();
     }
+    std::fs::copy(
+        &publication_backup,
+        publication_replica.path().join("archive.sqlite"),
+    )
+    .unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(
+            publication_replica.path().join("archive.sqlite"),
+            std::fs::Permissions::from_mode(0o600),
+        )
+        .unwrap();
+    }
     let ui = Ui::start(readers()).await;
     let resumed = owner_call(
         &ui,
@@ -4332,6 +4440,25 @@ async fn owner_capture_erasure_revalidates_full_selection_and_resumes_offline_re
         200,
     )
     .await;
+    assert_eq!(
+        publication_history.current().unwrap().history.len(),
+        2,
+        "resume reuses journaled child authorization after its source bytes are gone"
+    );
+    assert_eq!(
+        resumed["result"]["report"]["publications"]["destinations"][0]["archives"][1]["state"],
+        "reconciled",
+        "{resumed}"
+    );
+    assert_eq!(
+        copied::Archive::open(publication_replica.path(), publications.binding.clone())
+            .unwrap()
+            .erasure_history()
+            .unwrap()
+            .records
+            .len(),
+        1
+    );
     assert_eq!(resumed["attempts"], 3);
     assert_eq!(
         resumed["result"]["report"]["archives"][1]["state"], "payloads-erased",

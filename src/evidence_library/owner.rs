@@ -31,6 +31,8 @@ pub enum Target {
         workspaces: Vec<erasure::WorkspaceTarget>,
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         spools: Vec<PathBuf>,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        publications: Vec<erasure::PublicationTarget>,
     },
     KeyHistory {
         id: String,

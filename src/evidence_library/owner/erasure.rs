@@ -1,9 +1,11 @@
 //! Restartable owner authorization and archive cleanup. Secondary cleanup is
 //! explicit pending work, never inferred from successful primary deletion.
 use super::*;
+mod publications;
 use crate::{
     evidence_erasure_history as custody, evidence_store::erasure as storage, sign::Identity,
 };
+pub use publications::PublicationTarget;
 
 const ATTEMPTS: usize = 32;
 #[derive(Clone, Serialize, Deserialize)]
@@ -33,6 +35,7 @@ struct Configured<'a> {
     replicas: &'a [PathBuf],
     workspaces: &'a [WorkspaceTarget],
     spools: &'a [PathBuf],
+    publications: &'a [PublicationTarget],
 }
 fn configured(target: &Target) -> Result<Configured<'_>, Failure> {
     match target {
@@ -45,6 +48,7 @@ fn configured(target: &Target) -> Result<Configured<'_>, Failure> {
             replicas,
             workspaces,
             spools,
+            publications,
             ..
         } => Ok(Configured {
             root,
@@ -55,6 +59,7 @@ fn configured(target: &Target) -> Result<Configured<'_>, Failure> {
             replicas,
             workspaces,
             spools,
+            publications,
         }),
         _ => Err(Failure::Invalid),
     }
@@ -69,6 +74,7 @@ pub(super) fn validate_target(target: &Target) -> Result<(), Failure> {
         replicas,
         workspaces,
         spools,
+        publications,
     } = configured(target)?;
     private_directory(root)?;
     history.validate()?;
@@ -126,6 +132,7 @@ pub(super) fn validate_target(target: &Target) -> Result<(), Failure> {
     for path in keys {
         crate::evidence_crypto::read_private_key(path).map_err(invalid)?;
     }
+    publications::validate(publications, history, &roots)?;
     Ok(())
 }
 fn capture(
@@ -156,7 +163,7 @@ fn capture(
 }
 fn contract(target: &Target, plan: &Preview) -> Result<Value, Failure> {
     let value = json!({"version":1,"target":target,"operation":"erase-capture","plan":plan,
-        "effect":"Erase this closed capture from the configured archives after publishing independent owner authorization. Preserve minimal provenance. Configured stopped workspaces reconcile dependent data against current owner erasure history. Queue and other copy cleanup remain pending; historical backups and keys are not cryptographically erased.",
+        "effect":"Erase this closed capture from the configured archives after publishing independent owner authorization. Preserve minimal provenance. Scan configured publication archives for source-dependent annotations and their correction/withdrawal descendants, journal exact child authorizations before cleanup, and reconcile their configured replicas and admitted queue copies. Configured stopped workspaces reconcile dependent data against current owner erasure history. Unpublished queue and other copy cleanup remain pending; historical backups and keys are not cryptographically erased.",
         "cancellation":"Once accepted, authorization and erasure cannot be rolled back. Resume the retained job after interruption."});
     if serde_json::to_vec(&value).map_err(invalid)?.len() > 200 * 1024 {
         return Err(Failure::Unavailable);
@@ -373,7 +380,7 @@ impl Owner {
         let owner = self.clone();
         let key = id.to_string();
         let task = tokio::task::spawn_blocking(move || {
-            let report = cleanup(&target, record);
+            let report = cleanup(&target, record, &owner.workspace, &key);
             let value = match report {
                 Ok(report) => json!({"state":"cleanup-pending","report":report}),
                 Err(error) => {
@@ -397,18 +404,24 @@ impl Owner {
         }
     }
 }
-fn cleanup(target: &Target, record: custody::Record) -> Result<Value, Failure> {
+fn cleanup(
+    target: &Target,
+    record: custody::Record,
+    journal: &Workspace,
+    job: &str,
+) -> Result<Value, Failure> {
     let Configured {
         root,
         history,
         replicas,
         workspaces,
         spools,
+        publications,
         ..
     } = configured(target)?;
     let authorization = record.id()?;
     // Publish once, before deleting. Existing records are exact retry authority.
-    history.append(record)?;
+    history.append(record.clone())?;
     let mut archives = Vec::new();
     for path in std::iter::once(root).chain(replicas.iter().map(PathBuf::as_path)) {
         let work = || -> Result<bool, Failure> {
@@ -459,9 +472,14 @@ fn cleanup(target: &Target, record: custody::Record) -> Result<Value, Failure> {
         });
     }
     let mut derived = Vec::new();
+    // Resolve and journal publication lineage before local dependency cleanup
+    // can remove the corresponding annotation declarations.
+    let published = match publications::cleanup(publications, history, &record, journal, job) {
+        Ok(value) => value,
+        Err(error) => json!({"state":"pending","error":error}),
+    };
     for workspace in workspaces {
         let work = || -> Result<Value, Failure> {
-            let current = history.current()?;
             let local = Workspace::open_for_erasure(
                 &workspace.database,
                 Identity::load_existing(&workspace.signing_key).map_err(invalid)?,
@@ -469,20 +487,25 @@ fn cleanup(target: &Target, record: custody::Record) -> Result<Value, Failure> {
                     .map_err(invalid)?,
             )?;
             let mut removed = 0;
-            for record in &current.history {
-                if let Some(erasure) = &record.change.erasure {
-                    if let Some(plan) =
-                        local.preview_source_erasure(&history.binding, erasure, record.id()?)?
-                    {
-                        local.apply_erasure(&plan)?;
-                        removed += plan.targets.len();
+            let mut checkpoints = Vec::new();
+            for source in std::iter::once(history).chain(publications.iter().map(|p| &p.history)) {
+                let current = source.current()?;
+                for record in &current.history {
+                    if let Some(erasure) = &record.change.erasure {
+                        if let Some(plan) =
+                            local.preview_source_erasure(&source.binding, erasure, record.id()?)?
+                        {
+                            local.apply_erasure(&plan)?;
+                            removed += plan.targets.len();
+                        }
                     }
                 }
+                checkpoints.push(json!({"binding":source.binding,"owner_checkpoint":current.tip}));
             }
             local.reclaim_erased_pages()?;
 
             Ok(
-                json!({"database":workspace.database,"state":"reconciled","removed_or_fenced":removed,"owner_checkpoint":current.tip,"page_reclamation":"completed"}),
+                json!({"database":workspace.database,"state":"reconciled","removed_or_fenced":removed,"checkpoints":checkpoints,"page_reclamation":"completed"}),
             )
         };
         derived.push(match work() {
@@ -491,7 +514,7 @@ fn cleanup(target: &Target, record: custody::Record) -> Result<Value, Failure> {
         });
     }
     Ok(
-        json!({"authorization":authorization,"archives":archives,"workspaces":derived,"spools":queues,"managed_cleanup":"pending-coordination",
+        json!({"authorization":authorization,"archives":archives,"workspaces":derived,"spools":queues,"publications":published,"managed_cleanup":"pending-coordination",
         "remaining_preconditions":["Resolve unpublished queued derivatives and all publication copies","Reconcile every configured workspace and include all other managed workspaces","Verify enrollment and restore activation for all managed stores"],
         "backup_purge":"not-performed","activation":"not-performed"}),
     )
