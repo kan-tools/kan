@@ -126,7 +126,9 @@ pub enum Query {
         targets: Vec<SearchTarget>,
         filter: SearchFilter,
     },
-    Views,
+    Views {
+        after: Option<String>,
+    },
     CitationSource {
         cite: EvidenceCitation,
         offset: String,
@@ -242,7 +244,7 @@ async fn query(reader: &Reader, query: Query) -> Result<Vec<u8>, ContentError> {
         | Query::SearchAttempt { .. }
         | Query::SaveView { .. }
         | Query::SaveImportView { .. }
-        | Query::Views
+        | Query::Views { .. }
         | Query::ProofAttempt { .. }
         | Query::ResolveReference { .. }
         | Query::RestoreAnnotation { .. }

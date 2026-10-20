@@ -106,7 +106,7 @@ fn mutates(request: &Query) -> bool {
         | Query::Annotations { .. }
         | Query::AnnotationPreview { .. }
         | Query::AnnotationDelivery { .. }
-        | Query::Views
+        | Query::Views { .. }
         | Query::SearchPage { .. }
         | Query::SearchAttempt { .. }
         | Query::AnalysisPreview { .. }

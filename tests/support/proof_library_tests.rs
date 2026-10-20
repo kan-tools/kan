@@ -6025,3 +6025,78 @@ fn erasure_custody_keeps_accepting_new_work_and_fences_restores_after_1024_recor
         .is_err());
     assert_eq!(restored.erasure_history().unwrap().tip, package.tip);
 }
+
+#[tokio::test]
+async fn saved_views_page_beyond_200_after_restart_and_recheck_current_access() {
+    use kan::evidence_workspace::Workspace;
+    let dir = private_workspace_directory();
+    let local = private_workspace_directory();
+    let f = fixture_requests(dir.path(), Profile::Admitted, encrypted);
+    let server = Server::start(&f).await;
+    let database = local.path().join("workspace.sqlite");
+    let readers = || {
+        kan::evidence_library::Readers::new(None, vec![server.client(&f)])
+            .unwrap()
+            .with_workspace(Workspace::open(&database, identity(6), [71; 32]).unwrap())
+    };
+    let ui = Ui::start(readers()).await;
+    let catalog = ui.call(json!({"action":"catalog"}), 200).await;
+    let target = json!({"source":catalog["scopes"][0]["id"],"pin":catalog["scopes"][0]["pin"]});
+    let save =
+        json!({"action":"save-view","name":"First","targets":[target],"filter":{"text":"needle"}});
+    let template = ui.call(save.clone(), 200).await;
+    ui.stop().await;
+    {
+        let workspace = Workspace::open(&database, identity(6), [71; 32]).unwrap();
+        for n in 0..204 {
+            let mut value = template.clone();
+            value["name"] = json!(format!("Saved {n}"));
+            value["id"] = json!(format!("{n:064x}"));
+            workspace
+                .put("view", value["id"].as_str().unwrap(), value.clone())
+                .unwrap();
+        }
+    }
+    let mut ui = Ui::start(readers()).await;
+    let mut later = save.clone();
+    later["name"] = json!("Saved after the former lifetime limit");
+    let added = ui.call(later, 200).await;
+    let mut seen = std::collections::BTreeSet::new();
+    let mut cursor = Value::Null;
+    let mut first_next = Value::Null;
+    for page in 0..10 {
+        let response = ui.call(json!({"action":"views","after":cursor}), 200).await;
+        let views = response["views"].as_array().unwrap();
+        assert!(!views.is_empty());
+        assert!(views.len() <= 100);
+        for view in views {
+            assert!(seen.insert(view["id"].as_str().unwrap().to_string()));
+        }
+        cursor = response["next"].clone();
+        if cursor.is_null() {
+            break;
+        }
+        if page == 0 {
+            first_next = cursor.clone();
+            ui.stop().await;
+            ui = Ui::start(readers()).await;
+        }
+    }
+    assert!(cursor.is_null());
+    assert_eq!(seen.len(), 206);
+    assert!(seen.contains(added["id"].as_str().unwrap()));
+    server
+        .service
+        .lock()
+        .unwrap()
+        .replace_grants(vec![])
+        .unwrap();
+    let revoked = ui
+        .call(json!({"action":"views","after":first_next}), 200)
+        .await;
+    assert!(revoked["views"].as_array().unwrap().is_empty());
+    ui.call(json!({"action":"views","after":"invalid-cursor"}), 400)
+        .await;
+    ui.stop().await;
+    server.stop().await;
+}

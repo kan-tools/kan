@@ -16,6 +16,7 @@
   let annotationRecovery=null;
   let searchStates = [], searchRun = 0, searchFilter = null, searchHits = new Map(), searchPages = 0;
   let analysisEnabled=false,analysisDraft=null,analysisPreview=null,analysisRecipes=[];
+  let viewsNext=null;
   let annotationsEnabled=false, annotationCites=[], annotationDerivations=[], annotationRelations=[], annotationSupersedes=null, annotationWithdraws=null, annotationPreview=null;
   let attemptMode = false;
   let pinWire = null, contentEnabled = false, contentValue = null, returnItem = null;
@@ -1040,7 +1041,7 @@
   function clearSearch(hide = false) {
     searchRun++; searchStates=[]; searchFilter=null; searchHits.clear(); searchPages=0;
     $('search-results').replaceChildren();$('search-facets').replaceChildren();$('search-coverage').textContent='';
-    $('saved-views').replaceChildren();$('views-status').textContent='';$('save-view').disabled=true;$('resume-search').disabled=true;$('stop-search').disabled=true;
+    viewsNext=null;$('next-views').disabled=true;$('saved-views').replaceChildren();$('views-status').textContent='';$('save-view').disabled=true;$('resume-search').disabled=true;$('stop-search').disabled=true;
     if(hide){for(const id of ['search-observer','search-attempt','search-from','search-to','search-tag','search-subject'])$(id).value='';$('search-workspace').hidden=true;$('search-text').value='';$('search-writer').value='';$('view-name').value='';}
   }
   function searchTargets(entries) {
@@ -1138,11 +1139,13 @@
     const saved=await rpc({action:'save-view',name,targets:searchStates.map(s=>({source:sourceId(s.entry),pin:s.entry.pin})),filter:searchFilter});if(!saved)return;
     $('views-status').textContent=`Saved “${saved.name}” · ${saved.id}. This declaration preserves all selected snapshots and filters.`;
   }));
-  $('load-views').addEventListener('click',()=>run(async()=>{
-    $('saved-views').replaceChildren();$('views-status').textContent='Checking access to saved views…';
-    const value=await rpc({action:'views'});if(!value)return;
+  async function loadViews(after=null){
+    viewsNext=null;$('next-views').disabled=true;$('saved-views').replaceChildren();$('views-status').textContent='Checking access to saved views…';
+    const value=await rpc({action:'views',after});if(!value)return;
     if(!Array.isArray(value.views) || value.views.length>200)throw new Error('Invalid views.');
-    $('views-status').textContent=value.coverage==='partial'?'Some sources could not be checked. Only fully authorized views are shown.':'Views with current access to every source.';
+    if(value.next!=null && (typeof value.next!=='string'||!/^[0-9a-f]{64}$/.test(value.next)))throw new Error('Invalid view continuation.');
+    viewsNext=value.next||null;$('next-views').disabled=!viewsNext;
+    $('views-status').textContent=`${value.views.length} views on this page · ${value.coverage==='partial'?'some sources could not be checked':'current source access checked'}. ${viewsNext?'More saved views are available.':'End of saved views.'} Load saved views restarts from the first page.`;
     for(const view of value.views){
       if(view.kind==='import'){
         const q=view.query;
@@ -1165,7 +1168,9 @@
         await searchWindow();
       }));row.append(open);$('saved-views').append(row);
     }
-  }));
+  }
+  $('load-views').addEventListener('click',()=>run(()=>loadViews()));
+  $('next-views').addEventListener('click',()=>{if(viewsNext)run(()=>loadViews(viewsNext));});
   function sourceRequest(sequence, offset = 0) {
     if (isProof()) {
       const selection = discovered.get(String(sequence))?.record.selection || selections.get(String(sequence)); if (!selection) throw new Error('Missing verified selection.');

@@ -615,16 +615,6 @@ impl Workspace {
                 return Err(Failure::Invalid);
             }
         } else {
-            if kind == "view"
-                && tx
-                    .query_row("SELECT count(*) FROM entries WHERE kind='view'", [], |r| {
-                        r.get::<_, i64>(0)
-                    })
-                    .map_err(invalid)?
-                    >= 200
-            {
-                return Err(Failure::Invalid);
-            }
             if kind == "annotation"
                 && tx
                     .query_row(
@@ -663,6 +653,22 @@ impl Workspace {
         after: Option<&str>,
         limit: usize,
     ) -> Result<(Vec<Value>, Option<String>)> {
+        self.declarations_page("owner-job", after, limit)
+    }
+    /// Page saved views independently of the workspace's lifetime length.
+    pub fn views_page(
+        &self,
+        after: Option<&str>,
+        limit: usize,
+    ) -> Result<(Vec<Value>, Option<String>)> {
+        self.declarations_page("view", after, limit)
+    }
+    fn declarations_page(
+        &self,
+        kind: &str,
+        after: Option<&str>,
+        limit: usize,
+    ) -> Result<(Vec<Value>, Option<String>)> {
         if limit == 0
             || limit > 1000
             || after.is_some_and(|id| id.len() != 64 || evidence_service::unhex(id, 32).is_err())
@@ -673,14 +679,13 @@ impl Workspace {
         let tx = conn.unchecked_transaction().map_err(invalid)?;
         let _custody = self.check_erasure_histories(&tx)?;
         let mut q = tx
-            .prepare(
-                "SELECT id,body FROM entries WHERE kind='owner-job' AND id>? ORDER BY id LIMIT ?",
-            )
+            .prepare("SELECT id,body FROM entries WHERE kind=? AND id>? ORDER BY id LIMIT ?")
             .map_err(invalid)?;
         let rows = q
-            .query_map(params![after.unwrap_or(""), (limit + 1) as i64], |r| {
-                Ok((r.get::<_, String>(0)?, r.get::<_, Vec<u8>>(1)?))
-            })
+            .query_map(
+                params![kind, after.unwrap_or(""), (limit + 1) as i64],
+                |r| Ok((r.get::<_, String>(0)?, r.get::<_, Vec<u8>>(1)?)),
+            )
             .map_err(invalid)?;
         let mut out = Vec::new();
         let mut last = None;
@@ -692,8 +697,8 @@ impl Workspace {
                 return Ok((out, last));
             }
             bytes += body.len();
-            if !erasure::erased(self, &tx, "owner-job", &id)? {
-                out.push(self.unseal("owner-job", &id, &body)?);
+            if !erasure::erased(self, &tx, kind, &id)? {
+                out.push(self.unseal(kind, &id, &body)?);
             }
             last = Some(id);
         }

@@ -280,7 +280,10 @@ kan-v2 library --config /absolute/path/reader.json \
 
 Requests are `catalog`, `index-page` (`target: {source, pin}`, `cursor`),
 `search-page` (same fields plus `filter: {text, writer, kind}`), `save-view`
-(`name`, `targets`, `filter`) and `views`. Use catalog/source identifiers and pins
+(`name`, `targets`, `filter`) and `views` (`after`, optional opaque continuation).
+Views return at most 100 declarations per page plus `next`; pass it as `after`
+until null. Every page rechecks source access. Concurrent inserts before a cursor
+appear when restarting from the first page. Use catalog/source identifiers and pins
 verbatim. Null writer/kind mean no corresponding filter. CLI request files currently
 have the private-file reader's 64 KiB bound; HTTP requests allow 256 KiB.
 
@@ -288,7 +291,7 @@ Back up this database and its recipient key separately. Index pages are disposab
 but deleting the workspace also removes saved views. Nothing expires automatically.
 The workspace grows to the underlying SQLite/filesystem capacity; it no longer
 stops at 256 MiB. Individual encrypted records and request pages remain bounded,
-and 200 view declarations are supported. Disk-full writes report failure without
+and saved views have no 200-declaration lifetime quota. Disk-full writes report failure without
 removing history. Recovery streams copies and hashes in 64 KiB chunks, then
 verifies each encrypted record, rather than loading a whole workspace into memory. Hot journals are refused at startup pending explicit
 owner recovery; do not delete them to force startup. Source erasure must include
@@ -951,7 +954,8 @@ The shared API/CLI action `save-import-view` accepts `name`, `source`, `pin`,
 presentation offsets to zero, verifies the selected import, and preserves every
 control citation. It does not add trust in an author who was not selected.
 Only views whose complete source set is currently authorized are listed. This
-shares the encrypted workspace's 200-view and 256-KiB per-declaration bounds.
+shares the saved-view pagination contract and the 256-KiB per-declaration bound.
+The UI offers **Next saved views**; **Load saved views** starts a fresh traversal.
 
 ### Withdraw an annotation without erasing its history
 

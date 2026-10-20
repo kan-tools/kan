@@ -903,3 +903,18 @@ test('capture discovery remains non-destructive until a complete preview and can
  assert.equal(u.node('erasure-apply').disabled,false);assert.equal(u.node('erasure-preview').textContent,'Preview capture erasure');
  u.node('owner-lock').click();assert.equal(u.node('erasure-apply').disabled,true);
 });
+
+test('saved view pagination retains the cursor, restarts explicitly and clears continuation on lock',async()=>{
+ const u=ui();await u.login();await u.respond(searchCatalog);await u.respond(proofPage);
+ const view={name:'Paged view',targets:[{source:'archive-A',pin}],filter:{text:'needle'},author:'owner'};
+ u.node('load-views').click();await tick();assert.equal(JSON.parse(u.pending[0].opts.body).after,null);
+ await u.respond({views:[view],coverage:'complete',next:'a'.repeat(64)});
+ assert.equal(u.node('next-views').disabled,false);assert.match(u.node('views-status').textContent,/More saved views/);
+ u.node('next-views').click();await tick();assert.equal(JSON.parse(u.pending[0].opts.body).after,'a'.repeat(64));
+ assert.equal(u.node('next-views').disabled,true);assert.equal(u.node('saved-views').children.length,0);
+ await u.respond({views:[{...view,name:'Last view'}],coverage:'complete',next:null});
+ assert.equal(u.node('next-views').disabled,true);assert.match(u.node('views-status').textContent,/End of saved views/);
+ u.node('load-views').click();await tick();assert.equal(JSON.parse(u.pending[0].opts.body).after,null);
+ u.node('lock').click();await u.respond({views:[view],coverage:'complete',next:'b'.repeat(64)});
+ assert.equal(u.node('saved-views').children.length,0);assert.equal(u.node('next-views').disabled,true);
+});

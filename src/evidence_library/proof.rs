@@ -313,8 +313,19 @@ impl Readers {
                 workspace.put("view", &id, declaration.clone())?;
                 declaration
             }
-            Query::Views => {
-                let declarations = self.declarations(false).await?;
+            Query::Views { after } => {
+                let permit = self
+                    .workers
+                    .clone()
+                    .try_acquire_owned()
+                    .map_err(|_| ContentError::Busy)?;
+                let workspace = self.workspace.clone().ok_or(Failure::Invalid)?;
+                let (declarations, next) = tokio::task::spawn_blocking(move || {
+                    let _permit = permit;
+                    workspace.views_page(after.as_deref(), 100)
+                })
+                .await
+                .map_err(|_| Failure::Unavailable)??;
                 let (authorized, partial) = self.authorized_sources().await;
                 let views: Vec<_> = declarations
                     .into_iter()
@@ -327,7 +338,7 @@ impl Readers {
                         })
                     })
                     .collect();
-                json!({"views":views,"coverage":if partial {"partial"} else {"complete"}})
+                json!({"views":views,"next":next,"coverage":if partial {"partial"} else {"complete"},"scope":"this page; refresh from the first page to include concurrent insertions"})
             }
 
             Query::ProofAttempt {
