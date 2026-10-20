@@ -96,6 +96,9 @@ pub struct Page {
     pub next: Option<Token>,
 }
 pub enum Source {
+    Erased {
+        record: Occurrence,
+    },
     KeyUnavailable {
         record: Occurrence,
         writer: String,
@@ -562,6 +565,7 @@ impl Reader {
         let value = self.decode_source(&checked, &expected, row, source)?;
         let record = match value {
             Source::Available { record, .. }
+            | Source::Erased { record }
             | Source::Missing { record }
             | Source::Corrupt { record }
             | Source::KeyUnavailable { record, .. } => record,
@@ -663,6 +667,9 @@ impl Reader {
         let (record, proof) = self.verify_row(checked, expected, &row)?;
         let occurrence = self.occurrence(checked, &record, &proof, row.availability)?;
         match source {
+            wire::Source::Erased if row.availability == wire::Availability::Erased => {
+                Ok(Source::Erased { record: occurrence })
+            }
             wire::Source::Missing if row.availability == wire::Availability::Missing => {
                 Ok(Source::Missing { record: occurrence })
             }

@@ -37,6 +37,7 @@ pub enum SurfaceWrite {
     EvidenceOperationsCollection,
     EvidenceArchive,
     EvidenceAttestation,
+    EvidenceErasure,
     EvidenceCopy,
     EvidenceCopyPlan,
     EvidenceBackup,
@@ -82,6 +83,7 @@ impl SurfaceWrite {
         Self::EvidenceOperationsCollection,
         Self::EvidenceArchive,
         Self::EvidenceAttestation,
+        Self::EvidenceErasure,
         Self::EvidenceCopy,
         Self::EvidenceCopyPlan,
         Self::EvidenceBackup,
@@ -175,6 +177,10 @@ impl SurfaceWrite {
             Self::EvidenceAttestation => &[
                 "evidence-proof-sqlite:archive_identity",
                 "evidence-proof-sqlite:attestations",
+            ],
+            Self::EvidenceErasure => &[
+                "evidence-erasure-sqlite:erasures",
+                "evidence-erasure-sqlite:objects",
             ],
             Self::EvidenceCopyPlan => &["evidence-copy-plan:artifact"],
             Self::EvidenceCopy => &[
@@ -433,4 +439,36 @@ pub fn open_sqlite_bundle_mutation(
     path: &Path,
 ) -> rusqlite::Result<rusqlite::Connection> {
     rusqlite::Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_WRITE)
+}
+
+/// Fixed erasure mutations: callers authenticate the entire plan before writing.
+#[cfg(feature = "v2-storage")]
+pub fn initialize_evidence_erasure(
+    _surface: SurfaceWrite,
+    tx: &rusqlite::Transaction<'_>,
+) -> rusqlite::Result<()> {
+    tx.execute_batch(crate::evidence_store::erasure::SCHEMA)
+}
+#[cfg(feature = "v2-storage")]
+pub fn insert_evidence_erasure(
+    _surface: SurfaceWrite,
+    tx: &rusqlite::Transaction<'_>,
+    ordinal: i64,
+    id: &str,
+    bytes: &[u8],
+) -> rusqlite::Result<()> {
+    tx.execute(
+        "INSERT INTO erasures VALUES(?,?,?)",
+        rusqlite::params![ordinal, id, bytes],
+    )?;
+    Ok(())
+}
+#[cfg(feature = "v2-storage")]
+pub fn redact_evidence_object(
+    _surface: SurfaceWrite,
+    tx: &rusqlite::Transaction<'_>,
+    id: &str,
+) -> rusqlite::Result<()> {
+    tx.execute("UPDATE objects SET bytes=x'00' WHERE cid=?", [id])?;
+    Ok(())
 }

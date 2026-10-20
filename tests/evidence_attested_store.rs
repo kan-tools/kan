@@ -695,3 +695,329 @@ async fn queued_capture_reaches_profile_two_over_http_and_reads_through_proof_re
         1
     );
 }
+
+#[test]
+fn signed_erasure_preserves_proofs_blocks_replay_and_survives_recovery() {
+    use kan::evidence_store::{erasure::Record as Erasure, inventory};
+    let temp = tempfile::tempdir().unwrap();
+    let mut archive = Archive::create(temp.path(), binding()).unwrap();
+    let first = request(0, None);
+    let a = archive.admit(&first, &identity(7), &grant(), 100).unwrap();
+    let second = request(1, Some(a.record.manifest.cid().to_string()));
+    let b = archive.admit(&second, &identity(7), &grant(), 101).unwrap();
+    let before = archive.verify().unwrap();
+    let old = tempfile::tempdir().unwrap();
+    archive.backup(&old.path().join("archive.sqlite")).unwrap();
+    let plan = archive.preview_erasure(&[1], hex(&[3; 32]), 102).unwrap();
+    assert!(Erasure::sign(plan.clone(), &identity(8)).is_err());
+    let record = Erasure::sign(plan, &identity(7)).unwrap();
+    let mut wrong = record.clone();
+    wrong.plan.targets[0].length += 1;
+    assert!(archive.apply_erasure(wrong).is_err());
+    assert_eq!(archive.verify().unwrap(), before);
+    let history = archive.apply_erasure(record.clone()).unwrap();
+    assert_eq!(archive.apply_erasure(record).unwrap().tip, history.tip);
+    assert_eq!(
+        archive.verify().unwrap(),
+        before,
+        "erasure must not rewrite ledger or proof tips"
+    );
+    assert_eq!(
+        connection(temp.path())
+            .query_row(
+                "SELECT bytes FROM objects WHERE cid=?",
+                [kan::evidence_store::ciphertext_cid(&first).to_string()],
+                |r| r.get::<_, Vec<u8>>(0)
+            )
+            .unwrap(),
+        vec![0]
+    );
+    assert_eq!(
+        archive
+            .admit(&first, &identity(7), &grant(), 103)
+            .unwrap_err(),
+        Failure::AccessLimited
+    );
+    assert!(
+        archive
+            .admit(&second, &identity(7), &grant(), 103)
+            .unwrap()
+            .record
+            .duplicate
+    );
+    let third = request(2, Some(b.record.manifest.cid().to_string()));
+    archive.admit(&third, &identity(7), &grant(), 104).unwrap();
+    let budget = inventory::Budget {
+        items: 100,
+        metadata_bytes: 1024 * 1024,
+        duration: std::time::Duration::from_secs(10),
+        cancelled: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+    };
+    let path = temp.path().join("archive.sqlite");
+    let inv = inventory::Inventory::open(
+        &path,
+        inventory::Profile::Admitted,
+        binding(),
+        budget.clone(),
+    )
+    .unwrap();
+    let page = inv
+        .page(
+            None,
+            inventory::PageBudget {
+                rows: 10,
+                record_bytes: 1024 * 1024,
+                payload_bytes: 10 * kan::evidence_service::MAX_REQUEST,
+            },
+            budget.clone(),
+        )
+        .unwrap();
+    let erased = page
+        .records
+        .iter()
+        .find(|r| r.record.sequence == 1)
+        .unwrap();
+    assert_eq!(erased.availability, inventory::Availability::Erased);
+    assert!(matches!(
+        inventory::source(
+            &path,
+            inventory::Profile::Admitted,
+            binding(),
+            &erased.selection,
+            kan::evidence_service::MAX_REQUEST,
+            budget
+        )
+        .unwrap(),
+        inventory::Source::Unavailable(inventory::Availability::Erased)
+    ));
+    drop(inv);
+    let rebuilt = tempfile::tempdir().unwrap();
+    kan::evidence_store::attested::Recovery::open(&path, binding())
+        .unwrap()
+        .rebuild(&rebuilt.path().join("archive.sqlite"))
+        .unwrap();
+    let recovered = Archive::open(rebuilt.path(), binding()).unwrap();
+    assert_eq!(recovered.erasure_history().unwrap().tip, history.tip);
+    assert_eq!(recovered.verify().unwrap(), archive.verify().unwrap());
+    let mut restored = Archive::open(old.path(), binding()).unwrap();
+    assert!(restored
+        .reconcile_erasure(&history, &hex(&[9; 32]))
+        .is_err());
+    restored
+        .reconcile_erasure(&history, history.tip.as_ref().unwrap())
+        .unwrap();
+    assert_eq!(restored.verify().unwrap(), before);
+    assert_eq!(
+        restored
+            .admit(&first, &identity(7), &grant(), 105)
+            .unwrap_err(),
+        Failure::AccessLimited
+    );
+    assert!(restored.reclaim_erased_pages().unwrap());
+    // A raw payload replacement cannot be hidden by authorization: verification
+    // detects cleanup regression and source reads still refuse the erased bytes.
+    connection(temp.path())
+        .execute(
+            "UPDATE objects SET bytes=? WHERE cid=?",
+            rusqlite::params![
+                first,
+                kan::evidence_store::ciphertext_cid(&request(0, None)).to_string()
+            ],
+        )
+        .unwrap();
+    assert!(archive.verify().is_err());
+}
+
+#[test]
+fn erasure_refuses_stale_plans_and_forged_history_and_carries_future_restore_fences() {
+    use kan::evidence_store::erasure::Record as Erasure;
+    let temp = tempfile::tempdir().unwrap();
+    let mut archive = Archive::create(temp.path(), binding()).unwrap();
+    let first = request(0, None);
+    let a = archive.admit(&first, &identity(7), &grant(), 100).unwrap();
+    let old = tempfile::tempdir().unwrap();
+    archive.backup(&old.path().join("archive.sqlite")).unwrap();
+    let stale = archive.preview_erasure(&[1], hex(&[1; 32]), 101).unwrap();
+    let second = request(1, Some(a.record.manifest.cid().to_string()));
+    archive.admit(&second, &identity(7), &grant(), 102).unwrap();
+    assert!(archive
+        .apply_erasure(Erasure::sign(stale, &identity(7)).unwrap())
+        .is_err());
+    let plan = archive
+        .preview_erasure(&[1, 2], hex(&[2; 32]), 103)
+        .unwrap();
+    let package = archive
+        .apply_erasure(Erasure::sign(plan, &identity(7)).unwrap())
+        .unwrap();
+    let mut restored = Archive::open(old.path(), binding()).unwrap();
+    restored
+        .reconcile_erasure(&package, package.tip.as_ref().unwrap())
+        .unwrap();
+    assert_eq!(restored.verify().unwrap().through, 1);
+    assert_eq!(
+        restored
+            .admit(&second, &identity(7), &grant(), 104)
+            .unwrap_err(),
+        Failure::AccessLimited,
+        "a later erased object is fenced even when absent in the old backup"
+    );
+    let unrelated = SignedRequest::sign(
+        Request {
+            version: 1,
+            scope: hex(&binding().scope),
+            audience: binding().issuer,
+            principal: identity(6).did().to_string(),
+            expires: None,
+            command: Operation::Append {
+                id: hex(&[77; 16]),
+                position: 1,
+                previous: Some(a.record.manifest.cid().to_string()),
+                ciphertext: hex(b"new bytes"),
+            },
+        },
+        &identity(6),
+    )
+    .unwrap()
+    .bytes()
+    .unwrap();
+    assert_eq!(
+        restored
+            .admit(&unrelated, &identity(7), &grant(), 105)
+            .unwrap_err(),
+        Failure::Conflict
+    );
+    assert_eq!(restored.verify().unwrap().through, 1);
+    connection(temp.path())
+        .execute(
+            "UPDATE erasures SET body=replace(CAST(body AS TEXT),'signature','forgery')",
+            [],
+        )
+        .unwrap();
+    assert!(archive.verify().is_err());
+}
+
+#[cfg(feature = "v2-crypto")]
+#[test]
+fn capture_erasure_scans_the_complete_archive_and_refuses_active_or_unknown_membership() {
+    use kan::{
+        evidence_capture::{Event, Header, Observer, Outcome},
+        evidence_crypto as crypto,
+        evidence_store::erasure::{Capture, Record as Erasure},
+    };
+    let dir = tempfile::tempdir().unwrap();
+    let mut archive = Archive::create(dir.path(), binding()).unwrap();
+    let key = [18; 32];
+    let public = crypto::public_key(&key).unwrap();
+    let mut previous = None;
+    for (position, attempt, ordinal, event) in [
+        (
+            0,
+            20,
+            0,
+            Event::Started {
+                method: "POST".into(),
+                route: "test".into(),
+            },
+        ),
+        (
+            1,
+            21,
+            0,
+            Event::Started {
+                method: "POST".into(),
+                route: "test".into(),
+            },
+        ),
+        (
+            2,
+            20,
+            1,
+            Event::Terminal {
+                outcome: Outcome::Completed,
+            },
+        ),
+    ] {
+        let header = Header {
+            version: 2,
+            attempt: hex(&[attempt; 32]),
+            observer: Observer::Gateway,
+            ordinal,
+            observed_at_unix_micros: Some(100),
+            elapsed_micros: 0,
+            unconfirmed_before: 0,
+            event,
+        };
+        let h = serde_json::to_vec(&header).unwrap();
+        let mut frame = b"KANC2".to_vec();
+        frame.extend_from_slice(&(h.len() as u32).to_be_bytes());
+        frame.extend_from_slice(&h);
+        let sealed = crypto::seal(&public, &binding().scope, &frame).unwrap();
+        let bytes = SignedRequest::sign(
+            Request {
+                version: 1,
+                scope: hex(&binding().scope),
+                audience: binding().issuer,
+                principal: identity(6).did().to_string(),
+                expires: None,
+                command: Operation::Append {
+                    id: hex(&[position as u8; 16]),
+                    position,
+                    previous,
+                    ciphertext: hex(&sealed),
+                },
+            },
+            &identity(6),
+        )
+        .unwrap()
+        .bytes()
+        .unwrap();
+        previous = Some(
+            archive
+                .admit(&bytes, &identity(7), &grant(), 100)
+                .unwrap()
+                .record
+                .manifest
+                .cid()
+                .to_string(),
+        );
+    }
+    let selected = Capture {
+        writer: identity(6).did().to_string(),
+        observer: "gateway".into(),
+        attempt: hex(&[20; 32]),
+    };
+    let preview = archive
+        .preview_capture_erasure(selected.clone(), &[key], hex(&[1; 32]), 101)
+        .unwrap();
+    assert_eq!(
+        preview
+            .plan
+            .targets
+            .iter()
+            .map(|t| t.sequence)
+            .collect::<Vec<_>>(),
+        vec![1, 3]
+    );
+    assert!(!preview.recording_gap);
+    let active = Capture {
+        attempt: hex(&[21; 32]),
+        ..selected.clone()
+    };
+    assert!(archive
+        .preview_capture_erasure(active, &[key], hex(&[2; 32]), 101)
+        .is_err());
+    assert!(archive
+        .preview_capture_erasure(selected, &[[19; 32]], hex(&[2; 32]), 101)
+        .is_err());
+    archive
+        .apply_erasure(Erasure::sign(preview.plan, &identity(7)).unwrap())
+        .unwrap();
+    assert_eq!(archive.verify().unwrap().through, 3);
+    assert_eq!(
+        archive.erasure_history().unwrap().records[0]
+            .plan
+            .targets
+            .len(),
+        2
+    );
+}

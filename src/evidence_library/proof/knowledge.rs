@@ -293,6 +293,7 @@ impl Readers {
                 crate::evidence_reader::proof::Source::KeyUnavailable { record, .. } => {
                     (record, "key-unavailable")
                 }
+                crate::evidence_reader::proof::Source::Erased { record } => (record, "erased"),
                 crate::evidence_reader::proof::Source::Missing { record } => (record, "missing"),
                 crate::evidence_reader::proof::Source::Corrupt { record } => (record, "corrupt"),
             };

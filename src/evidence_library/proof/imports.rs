@@ -182,6 +182,7 @@ impl Readers {
                             }
                         }
                         Source::KeyUnavailable { record, .. }
+                        | Source::Erased { record }
                         | Source::Missing { record }
                         | Source::Corrupt { record } => {
                             if !seen.insert(record.sequence.clone()) {

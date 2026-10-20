@@ -633,3 +633,39 @@ damage. Cold restore must apply independently retained current erasure history
 before activation; replaying only the older checkpoint's history is insufficient.
 These are outstanding implementation/qualification requirements, not shipped
 behavior or authorization to erase existing data.
+
+### Storage erasure implementation in progress
+
+The proof storage API now prepares exact signed erasure plans at a pinned archive
+frontier and commits authorization plus payload removal atomically. The optional
+`erasures` table holds canonical issuer-signed records, chained independently from
+the immutable admission proofs. Erased object rows retain only a one-byte marker
+so immutable slot bindings and content identities survive; that marker is never
+returned as evidence. Verifiers accept it only with valid signed erasure authority
+and matching retained metadata. A missing marker, forged record, altered source
+coordinate or restored payload under an erasure marker remains corruption.
+
+The inventory, wire reader, Library Source, Content, discovery and search propagate
+an explicit `erased` state. Native downloads and analysis input acquisition refuse
+it. Exact signed-request replay is fenced before staging. Backup and derived-index
+rebuild preserve the signed history. Reconciliation of an older archive requires
+an independently supplied history and explicit expected tip, rejecting forks and
+rollback; erased objects absent from the old checkpoint remain fenced. A restored
+prefix behind that history cannot admit new records until its missing metadata is
+recovered. SQLite reclamation is a separate operation and never a guarantee about
+filesystem snapshots or backup copies.
+
+A bounded complete-archive scan resolves a closed capture by archive, writer,
+observer and attempt, using caller-supplied historical decryption keys. It refuses
+active captures, unknown capture framing, missing keys and exhausted bounds.
+Observed recording gaps are disclosed. The current limits are 100,000 inspected
+occurrences, 256 MiB signed-request scan bytes, 120 seconds, 4,096 selected objects,
+1 MiB per signed erasure record, and 16 MiB / 1,024 records / 32,768 distinct objects
+of erasure history. These are explicit capacity refusals, not incomplete success.
+
+This is a storage primitive, not the complete owner workflow. Independently durable
+history publication before acknowledgement, current-history service enrollment,
+spool/replica/derived-workspace cleanup and publication fencing, owner job/API/CLI/UI
+preview/apply/status, and managed restore activation gating remain required. Do not
+present the low-level API as completed managed erasure. Qualification is pending
+remote CI; local Library checks cover the erased source state and disabled export.

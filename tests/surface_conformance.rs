@@ -502,6 +502,24 @@ const PERSISTENCE_MODULES: &[&str] = &[
 ];
 const PERSISTENCE_MUTATION_SITES: &[(&str, &str, &str, usize)] = &[
     (
+        "src/evidence_store/erasure.rs",
+        "initialize_evidence_erasure",
+        "EvidenceErasure",
+        2,
+    ),
+    (
+        "src/evidence_store/erasure.rs",
+        "insert_evidence_erasure",
+        "EvidenceErasure",
+        2,
+    ),
+    (
+        "src/evidence_store/erasure.rs",
+        "redact_evidence_object",
+        "EvidenceErasure",
+        1,
+    ),
+    (
         "src/evidence_keys.rs",
         "write_new_owner_only",
         "EvidenceKeys",

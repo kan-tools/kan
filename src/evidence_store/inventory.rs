@@ -52,6 +52,7 @@ impl Budget {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Availability {
     Available,
+    Erased,
     Missing,
     Corrupt,
 }
@@ -120,6 +121,7 @@ fn schema(conn: &Connection, profile: Profile) -> Result<()> {
     if profile == Profile::Copied {
         expected.execute_batch(copied::SCHEMA)?;
     }
+    erasure::extend_schema(conn, &expected)?;
     // Bound every variable schema field; the SQLite allocation limit is separate.
     let query="SELECT substr(type,1,32),length(type),substr(name,1,256),length(name),substr(tbl_name,1,256),length(tbl_name),substr(sql,1,65536),length(sql) FROM sqlite_schema ORDER BY type,name";
     let mut a = conn.prepare(query)?;
@@ -523,6 +525,9 @@ fn payload(
     id: &Cid,
     expected: usize,
 ) -> Result<(Availability, Option<Vec<u8>>)> {
+    if erasure::erased(conn, &id.to_string())? {
+        return Ok((Availability::Erased, None));
+    }
     // A WITHOUT ROWID index seek can materialize the entire key record before
     // SQLite's value limit applies. Scan by the bounded CID field instead;
     // per-call VM cancellation bounds checked SQL work. This costs a linear

@@ -91,13 +91,13 @@
     $('encoding').disabled = source.utf8 === null;
   }
   function showSource(value) {
-    $('annotate-source').hidden=!annotationsEnabled || !isProof();$('analyze-source').hidden=!analysisEnabled || !isProof() || ['missing','corrupt','key-unavailable'].includes(value.availability);
-    const unavailable = ['missing','corrupt','key-unavailable'].includes(value.availability);
+    $('annotate-source').hidden=!annotationsEnabled || !isProof();$('analyze-source').hidden=!analysisEnabled || !isProof() || ['erased','missing','corrupt','key-unavailable'].includes(value.availability);
+    const unavailable = ['erased','missing','corrupt','key-unavailable'].includes(value.availability);
     source = unavailable ? null : value; $('download').disabled = unavailable; $('source-tab').disabled = false; $('provenance-tab').disabled = false; $('inspection').hidden = false; $('close-inspector').hidden = false;
     $('selection').textContent = `Occurrence ${value.record.sequence}`;
     $('source-hint').textContent = value.content_trust;
     if (unavailable) {
-      $('source').textContent = `Retained source is ${value.availability}. Issuer-attested metadata remains available.`;
+      $('source').textContent = value.availability==='erased' ? 'Erased by owner. Minimal issuer-attested provenance remains; this is not a semantic retraction.' : `Retained source is ${value.availability}. Issuer-attested metadata remains available.`;
       $('range').textContent = 'No source bytes available'; $('encoding').disabled = true; $('more').disabled = true;
     } else {
     hexadecimal = value.utf8 === null || /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069]/.test(value.utf8);
@@ -154,7 +154,7 @@
       const title = document.createElement('strong'), id = document.createElement('span'); title.textContent = `Occurrence ${row.sequence}`; id.textContent = row.manifest;
       button.append(title); button.append(id);
       if (isProof()) {
-        if (!['available','missing','corrupt'].includes(row.availability) || !row.selection || typeof row.sequence !== 'string') throw new Error('Invalid proof occurrence.');
+        if (!['available','erased','missing','corrupt'].includes(row.availability) || !row.selection || typeof row.sequence !== 'string') throw new Error('Invalid proof occurrence.');
         selections.set(row.sequence, row.selection);
         const badge = document.createElement('span'); badge.className = `availability ${row.availability}`; badge.textContent = `${row.availability} · ${row.purpose}`; button.append(badge);
       } button.addEventListener('click', () => run(() => inspect(row.sequence))); buttons.set(row.sequence,button);
@@ -433,7 +433,7 @@
   function validateDiscovery(value) {
       if (value.version !== 'kan-discovery/1' || !Array.isArray(value.records) || value.records.length > 20) throw new Error('Invalid discovery response.');
       for (const item of value.records) {
-        if (!item?.record?.selection || typeof item.record.sequence !== 'string' || !item.description || !['capture','import','opaque','unsupported','malformed','missing','corrupt','key-unavailable'].includes(item.description.kind)) throw new Error('Invalid discovery record.');
+        if (!item?.record?.selection || typeof item.record.sequence !== 'string' || !item.description || !['capture','import','opaque','unsupported','malformed','erased','missing','corrupt','key-unavailable'].includes(item.description.kind)) throw new Error('Invalid discovery record.');
         if (item.description.kind === 'import' && (typeof item.writer!=='string' || !/^[a-f0-9]{64}$/.test(item.description.plan) || !/^(0|[1-9][0-9]*)$/.test(item.description.ordinal))) throw new Error('Invalid import identity.');
         if (item.description.kind === 'capture' && (typeof item.writer !== 'string' || !/^(0|[1-9][0-9]*)$/.test(item.description.ordinal) || typeof item.description.attempt !== 'string' || !item.description.event)) throw new Error('Invalid capture identity.');
       }
@@ -1268,7 +1268,7 @@
     // Export rechecks authorization; the displayed range is not an offline grant.
     const request = sourceRequest(sequence,offset); clearInspector(); selected = sequence;
     const value = await rpc(request); if (!value) return;
-    showSource(value); if (['missing','corrupt','key-unavailable'].includes(value.availability)) return;
+    showSource(value); if (['erased','missing','corrupt','key-unavailable'].includes(value.availability)) return;
     nativeDownload('/api/library/download',{token,request});
     notice('Download requested. The server checks access again before returning this range.');
   }));

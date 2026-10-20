@@ -1586,3 +1586,40 @@ fn copy_plan_cli_refuses_preexisting_sidecar_outputs_before_opening_source() {
         assert_eq!(std::fs::read(&db).unwrap(), before, "{name}");
     }
 }
+
+#[test]
+fn copied_archive_erasure_retains_original_membership_and_recovery_authority() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = fixture(dir.path(), 2, 0);
+    let source = source(&path);
+    let root = dir.path().join("copied-erasure");
+    let mut archive = Archive::create(&root, &source, binding(&source)).unwrap();
+    assert!(archive
+        .preview_erasure(&[1], service::hex(&[1; 32]), 100)
+        .is_err());
+    finish(&mut archive, &source);
+    let before = archive.verify().unwrap();
+    let plan = archive
+        .preview_erasure(&[1], service::hex(&[2; 32]), 101)
+        .unwrap();
+    let package = archive
+        .apply_erasure(kan::evidence_store::erasure::Record::sign(plan, &identity(8)).unwrap())
+        .unwrap();
+    let after = archive.verify().unwrap();
+    assert_eq!(before.contents.snapshot, after.contents.snapshot);
+    assert_eq!(before.copy, after.copy);
+    let backup = dir.path().join("erased-backup.sqlite");
+    assert!(archive.backup(&backup).unwrap().copy.source_copy_complete);
+    let recovered = dir.path().join("recovered.sqlite");
+    kan::evidence_store::copied::Recovery::open(&backup, binding(&source))
+        .unwrap()
+        .rebuild(&recovered)
+        .unwrap();
+    assert!(
+        Archive::verify_file(&recovered, binding(&source))
+            .unwrap()
+            .copy
+            .source_copy_complete
+    );
+    assert_eq!(archive.erasure_history().unwrap().tip, package.tip);
+}

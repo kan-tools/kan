@@ -173,6 +173,7 @@ fn audit_state(
     let original_objects = u64::try_from(count).map_err(|_| corrupt("copy object count"))?;
     frame(&mut hash, b"objects");
     hash.update(original_objects.to_be_bytes());
+    let erasures = erasure::load(conn)?;
     let mut stmt = conn.prepare("SELECT cid,length FROM upgrade_objects ORDER BY cid")?;
     let mut rows = stmt.query([])?;
     while let Some(row) = rows.next()? {
@@ -181,6 +182,15 @@ fn audit_state(
         let length: i64 = row.get(1)?;
         if !(1..=MAX_CHUNK as i64).contains(&length) || id.to_string() != text {
             return Err(corrupt("original object coordinate"));
+        }
+        if let Some(erased) = erasures.objects.get(&text) {
+            if erased.length as i64 != length {
+                return Err(corrupt("erased copy length"));
+            }
+            erasure::check_marker(conn, &text)?;
+            frame(&mut hash, &id.to_bytes());
+            hash.update((length as u64).to_be_bytes());
+            continue;
         }
         let payload: Vec<u8> = conn
             .query_row(
@@ -234,6 +244,58 @@ pub struct Archive {
     inner: attested::Archive,
 }
 impl Archive {
+    #[cfg(feature = "v2-crypto")]
+    pub fn preview_capture_erasure(
+        &self,
+        capture: super::erasure::Capture,
+        keys: &[[u8; 32]],
+        nonce: String,
+        now: u64,
+    ) -> Result<super::erasure::CapturePreview> {
+        if !self.verify()?.copy.source_copy_complete {
+            return Err(Error::Conflict("copy incomplete"));
+        }
+        self.inner
+            .preview_capture_erasure(capture, keys, nonce, now)
+    }
+
+    pub fn preview_erasure(
+        &self,
+        sequences: &[u64],
+        nonce: String,
+        now: u64,
+    ) -> Result<super::erasure::Plan> {
+        if !self.verify()?.copy.source_copy_complete {
+            return Err(Error::Conflict("copy incomplete"));
+        }
+        self.inner.preview_erasure(sequences, nonce, now)
+    }
+    pub fn apply_erasure(
+        &mut self,
+        record: super::erasure::Record,
+    ) -> Result<super::erasure::Package> {
+        if !self.verify()?.copy.source_copy_complete {
+            return Err(Error::Conflict("copy incomplete"));
+        }
+        self.inner.apply_erasure(record)
+    }
+    pub fn erasure_history(&self) -> Result<super::erasure::Package> {
+        self.inner.erasure_history()
+    }
+    pub fn reconcile_erasure(
+        &mut self,
+        package: &super::erasure::Package,
+        expected_tip: &str,
+    ) -> Result<super::erasure::Package> {
+        if !self.verify()?.copy.source_copy_complete {
+            return Err(Error::Conflict("copy incomplete"));
+        }
+        self.inner.reconcile_erasure(package, expected_tip)
+    }
+    pub fn reclaim_erased_pages(&self) -> Result<bool> {
+        self.inner.reclaim_erased_pages()
+    }
+
     /// The owner must retain the exact plan artifact and external binding before
     /// calling. The verified source is required even for empty initialization.
     /// This initializes an empty archive; it does not certify possession of the

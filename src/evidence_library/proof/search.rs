@@ -115,6 +115,7 @@ fn doc(source: Source) -> Document {
         Source::KeyUnavailable { record, writer, .. } => {
             (record, Some(writer), None, "key-unavailable")
         }
+        Source::Erased { record } => (record, None, None, "erased"),
         Source::Missing { record } => (record, None, None, "missing"),
         Source::Corrupt { record } => (record, None, None, "corrupt"),
     };

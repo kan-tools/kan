@@ -243,6 +243,7 @@ impl SignedRequest {
 #[serde(rename_all = "kebab-case")]
 pub enum Availability {
     Available,
+    Erased,
     Missing,
     Corrupt,
 }
@@ -250,6 +251,7 @@ impl From<inventory::Availability> for Availability {
     fn from(value: inventory::Availability) -> Self {
         match value {
             inventory::Availability::Available => Self::Available,
+            inventory::Availability::Erased => Self::Erased,
             inventory::Availability::Missing => Self::Missing,
             inventory::Availability::Corrupt => Self::Corrupt,
         }
@@ -276,6 +278,7 @@ fn view(row: &inventory::Occurrence) -> RecordView {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "state", rename_all = "kebab-case", deny_unknown_fields)]
 pub enum Source {
+    Erased,
     Available {
         signed_request: String,
         writer: String,
@@ -509,6 +512,10 @@ impl Service {
                     signed_request: service::hex(&bytes),
                     writer,
                 }
+            }
+            inventory::Source::Unavailable(inventory::Availability::Erased) => {
+                record.availability = Availability::Erased;
+                Source::Erased
             }
             inventory::Source::Unavailable(inventory::Availability::Missing) => {
                 record.availability = Availability::Missing;

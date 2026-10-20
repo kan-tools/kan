@@ -37,6 +37,7 @@ impl From<evidence_store::Error> for Failure {
         match value {
             evidence_store::Error::Invalid(_) | evidence_store::Error::Record(_) => Self::Invalid,
             evidence_store::Error::Conflict(_) => Self::Conflict,
+            evidence_store::Error::Erased(_) => Self::AccessLimited,
             evidence_store::Error::Missing(_) | evidence_store::Error::MissingCommit(_) => {
                 Self::Missing
             }

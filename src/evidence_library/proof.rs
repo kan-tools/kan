@@ -548,6 +548,7 @@ fn source_value(
         proof::Source::KeyUnavailable { record, writer, .. } => {
             (record, Some(writer), None, "key-unavailable")
         }
+        proof::Source::Erased { record } => (record, None, None, "erased"),
         proof::Source::Missing { record } => (record, None, None, "missing"),
         proof::Source::Corrupt { record } => (record, None, None, "corrupt"),
     };

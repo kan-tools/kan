@@ -1016,7 +1016,7 @@ and requires current erasure history to be applied before a restored archive can
 be exposed. Minimal signed provenance remains as “erased by owner,” without
 semantically retracting assertions.
 
-**Erasure is not implemented yet.** Backup purge will have its own destination
+**The complete owner erasure workflow is not available yet.** Signed storage primitives and an explicit `erased` source state are being qualified; coordinated cleanup and managed restore activation remain outstanding. Backup purge will have its own destination
 status. Old backups with old recovery keys may still recover the content outside
 managed restore; epoch rotation does not provide selective cryptographic erasure.
 Do not delete SQLite objects manually to simulate this feature: current archive

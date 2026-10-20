@@ -251,6 +251,7 @@ pub(crate) async fn proof_content(
                         Some(writer),
                         Err(assembly::Unavailable::KeyUnavailable),
                     ),
+                    Source::Erased { record } => (record, None, Err(assembly::Unavailable::Erased)),
                     Source::Missing { record } => {
                         (record, None, Err(assembly::Unavailable::Missing))
                     }

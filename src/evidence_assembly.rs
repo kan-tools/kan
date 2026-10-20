@@ -19,6 +19,7 @@ pub const VERSION: &str = "kan-capture-assembly/1";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Unavailable {
+    Erased,
     Missing,
     Corrupt,
     Withheld,

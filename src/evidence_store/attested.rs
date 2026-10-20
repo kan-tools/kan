@@ -194,6 +194,7 @@ fn audit_prefix_cached(
     if u64::try_from(count).ok() != Some(through) {
         return Err(corrupt("attestation cardinality"));
     }
+    let erasures = erasure::load(conn)?;
     let mut frontier = Frontier::default();
     let mut selected = None;
     let mut stmt = conn.prepare(&format!(
@@ -209,7 +210,16 @@ fn audit_prefix_cached(
         let envelope = envelope(conn, record.sequence)?;
         // Hash the CURRENT retained bytes even on a memoized cryptographic check.
         // The authenticated manifest includes this checked ciphertext CID.
-        let bytes = retained_bytes(conn, &record)?;
+        let object = cid(&entries(&record.manifest)
+            .next()
+            .ok_or_else(|| corrupt("empty manifest"))?["ciphertext"]);
+        let erased = erasures.objects.contains_key(&object);
+        let bytes = if erased {
+            erasure::check_marker(conn, &object)?;
+            Vec::new()
+        } else {
+            retained_bytes(conn, &record)?
+        };
         let mut fingerprint = Sha256::new();
         fingerprint.update(b"kan.admission.crypto-cache.v1\0");
         fingerprint.update(binding.archive);
@@ -225,7 +235,25 @@ fn audit_prefix_cached(
         }
         let key: [u8; 32] = fingerprint.finalize().into();
         let cached = cache.as_ref().and_then(|c| c.entries.get(&key)).cloned();
-        let (verified, audience) = if let Some((verified, audience)) = cached {
+        let (verified, audience) = if erased {
+            let verified = proof::verify(
+                &envelope,
+                &binding.context(),
+                &record.manifest,
+                &record.receipt,
+                &frontier,
+            )
+            .map_err(|_| corrupt("invalid erased attestation"))?;
+            let audience = match verified.purpose() {
+                Purpose::Admitted => binding.issuer.clone(),
+                Purpose::RetainedVerified => copy
+                    .ok_or_else(|| corrupt("erased copy without plan"))?
+                    .source()
+                    .historical_issuer
+                    .clone(),
+            };
+            (verified, audience)
+        } else if let Some((verified, audience)) = cached {
             #[cfg(test)]
             if let Some(cache) = cache.as_mut() {
                 cache.hits += 1;

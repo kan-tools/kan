@@ -303,11 +303,11 @@ test('proof source keeps exact selection, proof purpose and historical issuer',a
  assert.equal(request.action,'proof-source');assert.deepEqual(request.selection,proofRow.selection);assert.equal(request.offset,'0');assert.equal(request.length,'65536');
  await u.respond(proofSource);const text=u.node('provenance').children.map(x=>x.textContent).join(' ');assert.match(text,/retained-verified/);assert.match(text,/historical-issuer/);assert.match(text,/1234/);assert.equal(u.node('download').disabled,false);
 });
-test('loss or corruption after available sample clears plaintext, preserves provenance and cannot export a Blob',async()=>{
- for(const availability of ['missing','corrupt']){const u=ui();await openProof(u);u.node('rows').children[0].click();await tick();await u.respond(proofSource);
+test('erasure, loss or corruption after sampling clears plaintext and disables export',async()=>{
+ for(const availability of ['erased','missing','corrupt']){const u=ui();await openProof(u);u.node('rows').children[0].click();await tick();await u.respond(proofSource);
  u.node('download').click();await tick();assert.equal(u.node('source').textContent,'');assert.equal(u.node('download').disabled,true);
  const lost={...proofSource,availability,record:{...proofRow,availability},writer:null};for(const key of ['bytes_hex','utf8','offset','total_bytes','next'])delete lost[key];await u.respond(lost);
- assert.equal(u.blobs.length,0);assert.match(u.node('source').textContent,new RegExp(availability));assert.equal(u.node('source').textContent.includes('<b>x'),false);
+ assert.equal(u.blobs.length,0);assert.equal(u.forms.length,0);assert.match(u.node('source').textContent,new RegExp(availability,'i'));assert.equal(u.node('source').textContent.includes('<b>x'),false);
  assert.equal(u.node('download').disabled,true);assert.equal(u.node('more').disabled,true);assert.equal(u.node('provenance-tab').disabled,false);assert.equal(u.node('rows').children.length,1);
  assert.match(u.node('provenance').children.map(x=>x.textContent).join(' '),/Writer|Unavailable/);
  }
