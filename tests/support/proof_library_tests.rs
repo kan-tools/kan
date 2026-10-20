@@ -3334,3 +3334,270 @@ async fn imported_current_claims_keep_signature_scope_authority_and_selected_tru
         server.stop().await;
     }
 }
+
+/// One cold-host drill composes the independently backed-up archive, wrapped
+/// epoch history and encrypted reader state. No original path survives restart.
+#[tokio::test]
+async fn cold_host_restores_source_search_annotations_and_references_from_independent_backups() {
+    use kan::{evidence_crypto as crypto, evidence_keys as keys, evidence_workspace::Workspace};
+    let original = private_workspace_directory();
+    let key_dir = private_workspace_directory();
+    let local = private_workspace_directory();
+    let backup = private_workspace_directory();
+    let restored_keys = private_workspace_directory();
+    let restored_data = private_workspace_directory();
+    let recovered_local = private_workspace_directory();
+    let binding = wire::Binding {
+        profile: wire::Profile::Admitted,
+        archive: service::hex(&[2; 32]),
+        scope: service::hex(&[1; 32]),
+        issuer: identity(8).did().to_string(),
+    };
+    let history = keys::Access {
+        directory: key_dir.path().to_owned(),
+        binding,
+        owner: identity(9).did().to_string(),
+        recovery_recipient: service::hex(&crypto::public_key(&[92; 32]).unwrap()),
+        minimum: None,
+    };
+    history.initialize().unwrap();
+    let change = history.preview(service::hex(&[1; 32])).unwrap();
+    let recipient = crypto::public_key(&change.unlock(&[92; 32]).unwrap()).unwrap();
+    history
+        .append(keys::Record::sign(change, &identity(9)).unwrap())
+        .unwrap();
+    let f = fixture_requests(
+        original.path(),
+        Profile::Admitted,
+        |n, audience, previous| {
+            let mut req = service::SignedRequest::decode(&request(n, audience, previous))
+                .unwrap()
+                .request;
+            let service::Command::Append { ciphertext, .. } = &mut req.command else {
+                unreachable!()
+            };
+            *ciphertext = service::hex(
+                &crypto::seal(
+                    &recipient,
+                    &[1; 32],
+                    b"Cold recovery needle: retained exact source.",
+                )
+                .unwrap(),
+            );
+            service::SignedRequest::sign(req, &identity(6))
+                .unwrap()
+                .bytes()
+                .unwrap()
+        },
+    );
+    let key_file = local.path().join("recovery.key");
+    std::fs::write(&key_file, [92; 32]).unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&key_file, std::fs::Permissions::from_mode(0o600)).unwrap();
+    }
+    let server = Server::start(&f).await;
+    let r = client::Reader::new(
+        identity(6),
+        client::Access {
+            binding: history.binding.clone(),
+            endpoint: server.endpoint.clone(),
+            private_key: [0; 32],
+        },
+    )
+    .unwrap()
+    .with_epochs(keys::ReaderAccess {
+        history: history.clone(),
+        recovery_key: key_file,
+    })
+    .unwrap();
+    let workspace = local.path().join("workspace.sqlite");
+    let ui = Ui::start(
+        kan::evidence_library::Readers::new(None, vec![r])
+            .unwrap()
+            .with_workspace(Workspace::open(&workspace, identity(6), [97; 32]).unwrap()),
+    )
+    .await;
+    let catalog = ui.call(json!({"action":"catalog"}), 200).await;
+    let entry = &catalog["scopes"][0];
+    let target = json!({"source":entry["id"],"pin":entry["pin"]});
+    let page=ui.call(json!({"action":"proof-page","source":entry["id"],"pin":entry["pin"],"cursor":null,"limit":3}),200).await;
+    let cite = json!({"source":entry["id"],"pin":entry["pin"],"selection":page["records"][0]["selection"]});
+    let source=ui.call(json!({"action":"proof-source","source":cite["source"],"pin":cite["pin"],"selection":cite["selection"],"offset":"0","length":"100"}),200).await;
+    let reference = source["reference"].clone();
+    let indexed = ui
+        .call(
+            json!({"action":"index-page","target":target,"cursor":null}),
+            200,
+        )
+        .await;
+    assert_eq!(indexed["indexed_occurrences"], 3);
+    let filter = json!({"text":"needle","writer":null,"kind":"opaque"});
+    ui.call(json!({"action":"save-view","name":"Recovery checkpoint","targets":[target],"filter":filter}),200).await;
+    let draft = json!({"subject":"telos/recoverable-memory","text":"Retain independent custody","tags":["decision"],"relations":[],"cites":[cite],"supersedes":null});
+    let preview = ui
+        .call(json!({"action":"annotation-preview","draft":draft}), 200)
+        .await;
+    let note = ui
+        .call(
+            json!({"action":"annotation-save","draft":draft,"preview":preview["id"]}),
+            200,
+        )
+        .await;
+    ui.stop().await;
+    server.stop().await;
+    let archive_backup = backup.path().join("evidence.sqlite");
+    attested::Archive::open(&f.root, f.binding.clone())
+        .unwrap()
+        .backup(&archive_backup)
+        .unwrap();
+    let workspace_backup = backup.path().join("workspace.sqlite");
+    Workspace::recover(&workspace, &workspace_backup, identity(6), [97; 32]).unwrap();
+    let epochs = history
+        .read()
+        .unwrap()
+        .history
+        .iter()
+        .map(|r| r.id().unwrap())
+        .collect();
+    let transfer = history
+        .preview_transfer(
+            service::hex(&crypto::public_key(&[93; 32]).unwrap()),
+            epochs,
+            keys::TransferPurpose::ReplaceRecovery,
+        )
+        .unwrap();
+    let key_backup = backup.path().join("wrapped-keys.json");
+    std::fs::write(
+        &key_backup,
+        serde_json::to_vec(
+            &history
+                .transfer(
+                    &transfer,
+                    &transfer.digest().unwrap(),
+                    &[92; 32],
+                    &identity(9),
+                )
+                .unwrap(),
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    // The synthetic source machine is gone. Only independent artifacts and
+    // separately held credentials are used by the newly configured instance.
+    drop(original);
+    drop(local);
+    drop(key_dir);
+    assert!(!workspace.exists());
+    assert!(!f.db().exists());
+    assert!(!history.directory.exists());
+    let package: keys::RecoveryPackage =
+        serde_json::from_slice(&std::fs::read(key_backup).unwrap()).unwrap();
+    let mut recovered_history = history.clone();
+    recovered_history.directory = restored_keys.path().to_owned();
+    recovered_history.recovery_recipient = service::hex(&crypto::public_key(&[93; 32]).unwrap());
+    recovered_history.minimum = package.tip.clone();
+    recovered_history.initialize().unwrap();
+    recovered_history.restore(&package).unwrap();
+    let new_key = recovered_local.path().join("recovery.key");
+    std::fs::write(&new_key, [93; 32]).unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&new_key, std::fs::Permissions::from_mode(0o600)).unwrap();
+    }
+    let restored_root = restored_data.path().join("archive");
+    std::fs::create_dir(&restored_root).unwrap();
+    attested::Recovery::open(&archive_backup, f.binding.clone())
+        .unwrap()
+        .rebuild(&restored_root.join("archive.sqlite"))
+        .unwrap();
+    let restored = Fixture {
+        root: restored_root,
+        binding: f.binding.clone(),
+        requests: f.requests,
+        profile: Profile::Admitted,
+    };
+    let restored_workspace = recovered_local.path().join("workspace.sqlite");
+    Workspace::recover(
+        &workspace_backup,
+        &restored_workspace,
+        identity(6),
+        [97; 32],
+    )
+    .unwrap();
+    let server = Server::start(&restored).await;
+    let r = client::Reader::new(
+        identity(6),
+        client::Access {
+            binding: recovered_history.binding.clone(),
+            endpoint: server.endpoint.clone(),
+            private_key: [0; 32],
+        },
+    )
+    .unwrap()
+    .with_epochs(keys::ReaderAccess {
+        history: recovered_history,
+        recovery_key: new_key,
+    })
+    .unwrap();
+    let ui = Ui::start(
+        kan::evidence_library::Readers::new(None, vec![r])
+            .unwrap()
+            .with_workspace(Workspace::open(&restored_workspace, identity(6), [97; 32]).unwrap()),
+    )
+    .await;
+    let resolved = ui
+        .call(
+            json!({"action":"resolve-reference","reference":reference}),
+            200,
+        )
+        .await;
+    let read=ui.call(json!({"action":"proof-source","source":resolved["source"],"pin":resolved["pin"],"selection":resolved["record"]["selection"],"offset":"0","length":"100"}),200).await;
+    assert_eq!(read["bytes_hex"], source["bytes_hex"]);
+    assert_eq!(read["reference"], reference);
+    let notes = ui
+        .call(
+            json!({"action":"annotations","subject":null,"tag":null}),
+            200,
+        )
+        .await;
+    assert_eq!(notes["records"][0]["id"], note["id"]);
+    assert_eq!(notes["records"][0]["author"], note["author"]);
+    let views = ui.call(json!({"action":"views"}), 200).await;
+    assert_eq!(views["views"].as_array().unwrap().len(), 1);
+    let search = json!({"action":"search-page","target":target,"cursor":null,"filter":filter});
+    assert_eq!(
+        ui.call(search.clone(), 200).await["hits"]
+            .as_array()
+            .unwrap()
+            .len(),
+        3
+    );
+    restored.remove(2);
+    assert_eq!(ui.call(search.clone(), 200).await["unavailable_matches"], 1);
+    server
+        .service
+        .lock()
+        .unwrap()
+        .replace_grants(vec![])
+        .unwrap();
+    ui.call(
+        json!({"action":"resolve-reference","reference":reference}),
+        403,
+    )
+    .await;
+    ui.call(search, 403).await;
+    assert!(ui
+        .call(
+            json!({"action":"annotations","subject":null,"tag":null}),
+            200
+        )
+        .await["records"]
+        .as_array()
+        .unwrap()
+        .is_empty());
+    ui.stop().await;
+    server.stop().await;
+}
