@@ -196,6 +196,13 @@ impl<R: AsyncRead + Unpin> AsyncRead for BoundedInput<R> {
         cx: &mut Context<'_>,
         buf: &mut ReadBuf<'_>,
     ) -> Poll<io::Result<()>> {
+        const LIMIT: usize = 2 * 1024 * 1024 + 65536;
+        if self.line > LIMIT {
+            return Poll::Ready(Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "MCP request frame exceeds limit",
+            )));
+        }
         let start = buf.filled().len();
         match Pin::new(&mut self.inner).poll_read(cx, buf) {
             Poll::Ready(Ok(())) => {
@@ -205,7 +212,10 @@ impl<R: AsyncRead + Unpin> AsyncRead for BoundedInput<R> {
                     } else {
                         self.line.saturating_add(1)
                     };
-                    if self.line > 2 * 1024 * 1024 + 65536 {
+                    if self.line > LIMIT {
+                        // AsyncRead must not report newly filled bytes together
+                        // with an error. Keep the stream poisoned on later calls.
+                        buf.set_filled(start);
                         return Poll::Ready(Err(io::Error::new(
                             io::ErrorKind::InvalidData,
                             "MCP request frame exceeds limit",
@@ -250,6 +260,12 @@ mod tests {
             line: 0,
         };
         assert!(input.read_to_end(&mut Vec::new()).await.is_err());
+        let mut retry = Vec::new();
+        assert_eq!(
+            input.read_to_end(&mut retry).await.unwrap_err().kind(),
+            io::ErrorKind::InvalidData
+        );
+        assert!(retry.is_empty(), "an invalid stream must not resume");
         let expected = b"first\nsecond\n";
         let mut input = BoundedInput {
             inner: expected.as_slice(),
