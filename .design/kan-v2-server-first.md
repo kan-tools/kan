@@ -330,8 +330,10 @@ requires every selected source batch plus the configured copy/derivative scope t
 reconcile. The same manifest mechanism supports explicit multi-capture selection
 and owner-selected archive prefixes; session labels remain evidence associations,
 not implicit deletion authority. Existing inline single-capture jobs remain
-resumable under their original contracts. This paragraph specifies the remaining
-implementation contract, not shipped capacity or completed bulk-selection support.
+resumable under their original contracts. The integration branch now implements
+this manifest, consent, bounded worker and explicit bulk-selection path in the
+shared owner API and Library. Runtime qualification remains pending CI; this is
+not a release or a claim of constant-memory discovery.
 
 ### 11. Compatibility and explicit departures
 

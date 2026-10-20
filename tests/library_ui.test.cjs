@@ -839,9 +839,9 @@ test('capture erasure requires exact preview, clears on edits and lock, and resu
  const catalog={owner:'owner',targets,jobs:[],limits:{jobs:10}};await u.respond(catalog);
  assert.equal(u.node('erasure-controls').hidden,false);assert.equal(u.node('owner-maintenance-preview').disabled,true);assert.equal(u.node('erasure-apply').disabled,true);
  u.node('erasure-writer').value='did:key:writer';u.node('erasure-attempt').value='a'.repeat(64);u.node('erasure-preview').click();await tick();
- assert.deepEqual(JSON.parse(u.pending[0].opts.body),{action:'preview-erasure',target:'capture',capture:{writer:'did:key:writer',observer:'collector',attempt:'a'.repeat(64)}});
- const plan={recording_gap:false,authorization:{erasure:{plan:{targets:[{sequence:1},{sequence:2}]}}}},preview={target:'capture',digest:'digest',plan,contract:{effect:'Erase selected capture',target:targets[0]}};
- await u.respond(preview);assert.equal(u.node('erasure-apply').disabled,false);assert.match(u.node('erasure-status').textContent,/2 capture records/);
+ assert.deepEqual(JSON.parse(u.pending[0].opts.body),{action:'preview-erasure-selection',target:'capture',selection:{kind:'capture',capture:{writer:'did:key:writer',observer:'collector',attempt:'a'.repeat(64)}}});
+ const plan={selection:'a'.repeat(64)},preview={target:'capture',digest:'digest',plan,summary:{objects:2,bytes:'2048',pages:1,recording_gap:false},contract:{effect:'Erase selected capture',target:targets[0]}};
+ await u.respond(preview);assert.equal(u.node('erasure-apply').disabled,false);assert.match(u.node('erasure-status').textContent,/2 records selected/);
  u.node('erasure-attempt').events.input();assert.equal(u.node('erasure-apply').disabled,true);assert.equal(u.node('erasure-plan').textContent,'');
  u.node('erasure-preview').click();await tick();await u.respond(preview);u.node('erasure-apply').click();await tick();assert.deepEqual(JSON.parse(u.pending[0].opts.body),{action:'apply-erasure',target:'capture',plan,preview:'digest',wait:false});
  await u.respond({state:'running'});
@@ -854,7 +854,7 @@ test('capture erasure requires exact preview, clears on edits and lock, and resu
  const buttons=u.node('owner-jobs').children[0].children.filter(n=>n.events.click);assert.ok(!buttons.some(n=>n.textContent==='Preview new attempt'));
  buttons.find(n=>n.textContent==='Resume erasure cleanup').click();await tick();assert.deepEqual(JSON.parse(u.pending[0].opts.body),{action:'resume-erasure',id:'digest',wait:false});
  await u.respond({state:'running'});await u.respond({...catalog,jobs:[job]});
- u.node('erasure-preview').click();await tick();u.node('owner-lock').click();await u.respond(preview);
+ u.node('erasure-writer').value='did:key:writer';u.node('erasure-attempt').value='a'.repeat(64);u.node('erasure-preview').click();await tick();u.node('owner-lock').click();await u.respond(preview);
  assert.equal(u.node('erasure-apply').disabled,true);assert.equal(u.node('erasure-plan').textContent,'');assert.equal(u.node('erasure-writer').value,'');assert.equal(u.node('erasure-attempt').value,'');assert.equal(u.node('erasure-controls').hidden,true);
 });
 
@@ -899,8 +899,8 @@ test('capture discovery remains non-destructive until a complete preview and can
  await u.respond({target:'capture',state:'discovering',progress:{scanned_through:'512',through:'2000',selected_records:2},effect:'Discovery only'});
  assert.equal(u.node('erasure-apply').disabled,true);assert.match(u.node('erasure-status').textContent,/512 of 2000/);assert.equal(u.node('erasure-preview').textContent,'Continue discovery');
  u.node('erasure-preview').click();await tick();assert.deepEqual(JSON.parse(u.pending[0].opts.body),request);
- await u.respond({target:'capture',digest:'complete',plan:{recording_gap:false,authorization:{erasure:{plan:{targets:[{},{}]}}}},contract:{effect:'Review selected capture'}});
- assert.equal(u.node('erasure-apply').disabled,false);assert.equal(u.node('erasure-preview').textContent,'Preview capture erasure');
+ await u.respond({target:'capture',digest:'complete',plan:{selection:'a'.repeat(64)},summary:{objects:2,bytes:'2048',pages:1,recording_gap:false},contract:{effect:'Review selected capture'}});
+ assert.equal(u.node('erasure-apply').disabled,false);assert.equal(u.node('erasure-preview').textContent,'Preview erasure');
  u.node('owner-lock').click();assert.equal(u.node('erasure-apply').disabled,true);
 });
 
@@ -932,4 +932,27 @@ test('annotation pages show cross-page corrections and withdrawals and invalidat
  u.node('load-annotations').click();await tick();assert.equal(JSON.parse(u.pending[0].opts.body).after,null);
  u.node('lock').click();await u.respond({records:[note],coverage:'complete',next:'e'.repeat(64)});
  assert.equal(u.node('annotation-list').children.length,0);assert.equal(u.node('next-annotations').disabled,true);
+});
+
+test('bulk erasure reviews retained coordinate pages and clears them on edits and owner lock',async()=>{
+ const u=ui();await ownerUI(u);u.node('owner-refresh').click();await tick();
+ await u.respond({owner:'owner',targets:[{kind:'capture-erasure',id:'capture'}],jobs:[],limits:{jobs_per_page:10}});
+ u.node('erasure-kind').value='captures';u.node('erasure-kind').events.input();
+ u.node('erasure-writer').value='did:key:writer';u.node('erasure-attempt').value='a'.repeat(64)+'\n'+'b'.repeat(64);
+ u.node('erasure-preview').click();await tick();
+ const request=JSON.parse(u.pending[0].opts.body);assert.equal(request.action,'preview-erasure-selection');assert.equal(request.selection.kind,'captures');assert.equal(request.selection.captures.length,2);
+ const summary={objects:700,bytes:'1000000',pages:2,recording_gap:true};
+ const preview={target:'capture',digest:'digest',plan:{selection:'a'.repeat(64)},summary,contract:{effect:'Review complete pinned selection'}};
+ await u.respond(preview);assert.match(u.node('erasure-status').textContent,/700 records selected/);assert.match(u.node('erasure-status').textContent,/recording gaps reported/);
+ u.node('erasure-inspect').click();await tick();assert.deepEqual(JSON.parse(u.pending[0].opts.body),{action:'inspect-erasure-selection',target:'capture',selection:preview.plan.selection,page:0});
+ await u.respond({selection:preview.plan.selection,page:0,targets:[{sequence:1,manifest:'exact-manifest',object:'exact-object'}],next:1});
+ assert.equal(u.node('erasure-next').disabled,false);assert.match(u.node('erasure-coordinates').textContent,/exact-manifest/);
+ u.node('erasure-next').click();await tick();assert.equal(JSON.parse(u.pending[0].opts.body).page,1);
+ await u.respond({selection:preview.plan.selection,page:1,targets:[{sequence:700}],next:null});assert.equal(u.node('erasure-next').disabled,true);
+ u.node('erasure-kind').value='archive-prefix';u.node('erasure-kind').events.input();assert.equal(u.node('erasure-coordinates').textContent,'');assert.equal(u.node('erasure-apply').disabled,true);assert.equal(u.node('erasure-writer').disabled,true);
+ u.node('erasure-preview').click();await tick();assert.deepEqual(JSON.parse(u.pending[0].opts.body).selection,{kind:'archive-prefix'});
+ await u.respond(preview);assert.match(u.node('erasure-status').textContent,/opaque data and active captures/);
+ u.node('erasure-inspect').click();await tick();u.node('owner-lock').click();
+ await u.respond({selection:preview.plan.selection,page:0,targets:[{sequence:1,manifest:'late-private-coordinate'}],next:1});
+ assert.equal(u.node('erasure-coordinates').textContent,'');assert.equal(u.node('erasure-next').disabled,true);assert.equal(u.node('erasure-kind').value,'capture');assert.equal(u.node('erasure-attempt').value,'');
 });

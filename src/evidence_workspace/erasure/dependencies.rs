@@ -93,17 +93,16 @@ fn directly_affected(
     }
 }
 impl Workspace {
-    /// Owner-side read snapshot of source-dependent annotation declarations.
-    /// Resolve this before deleting local job lineage; the coordinator retains
-    /// only authenticated declaration identities in its encrypted cleanup plan.
-    pub(crate) fn source_erasure_annotations(
+    /// Read-only dependency discovery over owner-verified selection coordinates;
+    /// these coordinates are not accepted by any deletion operation.
+    pub(crate) fn source_selection_annotations(
         &self,
         binding: &Binding,
-        record: &Record,
+        coordinates: &[crate::evidence_store::erasure::Target],
     ) -> Result<Vec<Value>> {
         let conn = self.conn.lock().map_err(invalid)?;
         let tx = conn.unchecked_transaction().map_err(invalid)?;
-        let selected = self.erasure_dependency_ids(&tx, binding, record)?;
+        let selected = self.selection_dependency_ids(&tx, binding, coordinates)?;
         let mut annotations = Vec::new();
         for (kind, id) in selected {
             if kind != "annotation" {
@@ -177,9 +176,15 @@ impl Workspace {
         record: &Record,
     ) -> Result<Vec<(String, String)>> {
         record.validate(&binding.owner_binding()?, &record.plan.previous)?;
-        let targets = record
-            .plan
-            .targets
+        self.selection_dependency_ids(conn, binding, &record.plan.targets)
+    }
+    fn selection_dependency_ids(
+        &self,
+        conn: &Connection,
+        binding: &Binding,
+        coordinates: &[crate::evidence_store::erasure::Target],
+    ) -> Result<Vec<(String, String)>> {
+        let targets = coordinates
             .iter()
             .map(|t| (t.sequence.to_string(), t.manifest.clone()))
             .collect::<BTreeSet<_>>();

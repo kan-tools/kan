@@ -304,7 +304,7 @@ fn plan(
     targets: &[PublicationTarget],
     workspaces: &[WorkspaceTarget],
     primary: &custody::Access,
-    parent: &custody::Record,
+    parent: &SourceSelection,
     retained: &Seeds,
     cache: &discovery::Cache<'_>,
 ) -> Result<Planning, Failure> {
@@ -322,7 +322,6 @@ fn plan(
         }
     }
     let deadline = Instant::now() + Duration::from_secs(120);
-    let erased = parent.change.erasure.as_ref().ok_or(Failure::Invalid)?;
     let mut identities = retained.identities.clone();
     for workspace in workspaces {
         if Instant::now() >= deadline || !workspace.database.is_file() {
@@ -333,7 +332,9 @@ fn plan(
             Identity::load_existing(&workspace.signing_key).map_err(invalid)?,
             crate::evidence_crypto::read_private_key(&workspace.recipient_key).map_err(invalid)?,
         )?;
-        for mut declaration in local.source_erasure_annotations(&primary.binding, erased)? {
+        for mut declaration in
+            local.source_selection_annotations(&primary.binding, &parent.targets)?
+        {
             if Instant::now() >= deadline {
                 return Err(Failure::Unavailable);
             }
@@ -437,7 +438,7 @@ fn plan(
     Ok(Planning::Ready(Box::new(Plan {
         version: 1,
         job: job.into(),
-        parent: parent.id()?,
+        parent: parent.authorization.clone(),
         destinations,
         identities,
         prior_coordinates: Some(retained.coordinates.clone()),
@@ -449,7 +450,7 @@ pub(super) fn cleanup(
     targets: &[PublicationTarget],
     workspaces: &[WorkspaceTarget],
     primary: &custody::Access,
-    parent: &custody::Record,
+    parent: &SourceSelection,
     journal: &Workspace,
     job: &str,
 ) -> Result<Value, Failure> {
@@ -457,7 +458,13 @@ pub(super) fn cleanup(
         return Ok(json!({"state":"not-configured"}));
     }
     let (mut retained, seed_pages) = Seeds::load(journal, job)?;
-    retained.include(parent)?;
+    for target in &parent.targets {
+        retained.coordinates.insert(coordinate(
+            &primary.binding,
+            &target.sequence.to_string(),
+            &target.manifest,
+        )?);
+    }
     queues::include_retained(journal, job, &mut retained)?;
     // Every new plan is written only after its predecessor's primary custody
     // and archive reconciliation succeed. Its cumulative seeds let a restart
@@ -499,7 +506,7 @@ pub(super) fn cleanup(
             .is_some_and(|required| required > seed_pages)
             || previous.version != 1
             || previous.job != job
-            || previous.parent != parent.id()?
+            || previous.parent != parent.authorization
             || previous.destinations.len() != targets.len()
         {
             return Err(Failure::Corrupt);

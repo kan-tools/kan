@@ -5855,7 +5855,7 @@ async fn owner_publication_discovery_resumes_retained_pages_before_authorizing_c
             .with_owner(owner)
     };
     let ui = Ui::start(readers()).await;
-    let preview=owner_call(&ui,OWNER,json!({"action":"preview-erasure","target":"capture","capture":{"writer":identity(6).did().as_str(),"observer":"collector","attempt":"a".repeat(64)}}),200).await;
+    let preview=owner_call(&ui,OWNER,json!({"action":"preview-erasure-selection","target":"capture","selection":{"kind":"capture","capture":{"writer":identity(6).did().as_str(),"observer":"collector","attempt":"a".repeat(64)}}}),200).await;
     let first=owner_call(&ui,OWNER,json!({"action":"apply-erasure","target":"capture","plan":preview["plan"],"preview":preview["digest"],"wait":true}),200).await;
     assert_eq!(first["state"], "cleanup-pending", "{first}");
     assert_eq!(
@@ -6257,4 +6257,278 @@ async fn annotation_pages_cross_1000_keep_off_page_history_and_recheck_access() 
         .await;
     ui.stop().await;
     server.stop().await;
+}
+
+#[tokio::test]
+async fn owner_complete_selection_resumes_batches_after_restart_and_intervening_custody() {
+    use kan::evidence_erasure_history::{Access, Record};
+    const OWNER: &str = "synthetic-complete-selection-owner-token";
+    let source = private_workspace_directory();
+    let local = private_workspace_directory();
+    let custody = private_workspace_directory();
+    // Deliberately an active capture: archive-prefix consent explicitly covers
+    // all retained payloads, whereas closed-capture selection must refuse it.
+    let f = fixture_requests(source.path(), Profile::Admitted, captured_request);
+    let server = Server::start(&f).await;
+    let mut history:Access=serde_json::from_value(json!({"directory":custody.path(),"binding":{"profile":"admitted","archive":service::hex(&f.binding.archive),"scope":service::hex(&f.binding.scope),"issuer":f.binding.issuer},"owner":identity(9).did().as_str()})).unwrap();
+    history.initialize().unwrap();
+    let genesis =
+        Record::sign(history.preview(None, "a".repeat(64)).unwrap(), &identity(9)).unwrap();
+    let minimum = genesis.id().unwrap();
+    history.append(genesis).unwrap();
+    history.minimum = Some(minimum);
+    let write = |name: &str, bytes: &[u8]| {
+        let path = local.path().join(name);
+        std::fs::write(&path, bytes).unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).unwrap();
+        }
+        path
+    };
+    let signer = write("owner.key", &[9; 32]);
+    let issuer = write("issuer.key", &[8; 32]);
+    let private = write("capture.key", &PRIVATE);
+    let state = local.path().join("owner.sqlite");
+    let readers = || {
+        let workspace =
+            kan::evidence_workspace::Workspace::open(&state, identity(9), [84; 32]).unwrap();
+        let owner=kan::evidence_library::Owner::new(serde_json::from_value(json!({"token":OWNER,"max_jobs":10,"targets":[{"kind":"capture-erasure","id":"capture","root":f.root,"history":history,"signing_key":signer,"issuer_key":issuer,"private_keys":[private],"root_batch_records":1}]})).unwrap(),workspace).unwrap();
+        kan::evidence_library::Readers::new(None, vec![server.client(&f)])
+            .unwrap()
+            .with_owner(owner)
+    };
+    let ui = Ui::start(readers()).await;
+    owner_call(&ui,OWNER,json!({"action":"preview-erasure-selection","target":"capture","selection":{"kind":"capture","capture":{"writer":identity(6).did().as_str(),"observer":"collector","attempt":"a".repeat(64)}}}),400).await;
+    let query = json!({"action":"preview-erasure-selection","target":"capture","selection":{"kind":"archive-prefix"}});
+    owner_call(&ui, TOKEN, query.clone(), 401).await;
+    let preview = owner_call(&ui, OWNER, query, 200).await;
+    assert_eq!(preview["summary"]["objects"], 3);
+    assert_eq!(preview["summary"]["pages"], 1);
+    assert!(preview["summary"]["coverage"]
+        .as_str()
+        .unwrap()
+        .contains("active captures"));
+    assert_eq!(
+        preview["plan"].as_object().unwrap().len(),
+        1,
+        "approval submits a retained reference, not client coordinates"
+    );
+    let inspected=owner_call(&ui,OWNER,json!({"action":"inspect-erasure-selection","target":"capture","selection":preview["plan"]["selection"],"page":0}),200).await;
+    assert_eq!(inspected["targets"].as_array().unwrap().len(), 3);
+    assert!(inspected["next"].is_null());
+    assert_eq!(
+        history.current().unwrap().history.len(),
+        1,
+        "preview and inspection publish no deletion authority"
+    );
+    owner_call(&ui,OWNER,json!({"action":"apply-erasure","target":"capture","plan":preview["plan"],"preview":"0".repeat(64),"wait":true}),400).await;
+    let apply = json!({"action":"apply-erasure","target":"capture","plan":preview["plan"],"preview":preview["digest"],"wait":true});
+    let first = owner_call(&ui, OWNER, apply.clone(), 200).await;
+    assert_eq!(first["state"], "cleanup-pending", "{first}");
+    assert_eq!(first["result"]["report"]["root_erasure"]["remaining"], 2);
+    assert_eq!(history.current().unwrap().history.len(), 2);
+    owner_call(&ui, OWNER, apply, 200).await;
+    assert_eq!(
+        history.current().unwrap().history.len(),
+        2,
+        "retry of accepted approval creates no extra batch"
+    );
+    ui.stop().await;
+    // A later archive append and a different legitimate owner erasure change
+    // both chains. Resume must retain the original selection and safely rebase.
+    let previous = service::append_manifest(f.requests.last().unwrap())
+        .unwrap()
+        .cid()
+        .to_string();
+    let bytes = encrypted_frame(3, 8, Some(previous), b"later unselected object");
+    let mut archive = attested::Archive::open(&f.root, f.binding.clone()).unwrap();
+    archive.admit(&bytes, &identity(8), &grant(), 200).unwrap();
+    let native = kan::evidence_store::erasure::Record::sign(
+        archive.preview_erasure(&[4], "c".repeat(64), 200).unwrap(),
+        &identity(8),
+    )
+    .unwrap();
+    let extra = Record::sign(
+        history.preview(Some(native), "d".repeat(64)).unwrap(),
+        &identity(9),
+    )
+    .unwrap();
+    history.append(extra).unwrap();
+    history.reconcile_archive(&f.root).unwrap();
+    drop(archive);
+    let ui = Ui::start(readers()).await;
+    let resume = json!({"action":"resume-erasure","id":preview["digest"],"wait":true});
+    let second = owner_call(&ui, OWNER, resume.clone(), 200).await;
+    assert_eq!(
+        second["result"]["report"]["root_erasure"]["remaining"], 1,
+        "{second}"
+    );
+    let done = owner_call(&ui, OWNER, resume.clone(), 200).await;
+    assert_eq!(done["state"], "configured-cleanup-complete", "{done}");
+    assert_eq!(done["result"]["report"]["root_erasure"]["selected"], 3);
+    assert_eq!(done["result"]["report"]["root_erasure"]["remaining"], 0);
+    assert_eq!(done["result"]["report"]["backup_purge"], "not-performed");
+    let current = history.current().unwrap();
+    assert_eq!(current.history.len(), 5);
+    let roots = current
+        .history
+        .iter()
+        .filter_map(|r| r.change.erasure.as_ref())
+        .filter(|r| r.plan.targets[0].sequence != 4)
+        .collect::<Vec<_>>();
+    assert_eq!(roots.len(), 3);
+    assert!(roots.iter().all(|r| r.plan.targets.len() == 1));
+    assert_eq!(
+        roots
+            .iter()
+            .map(|r| r.plan.targets[0].sequence)
+            .collect::<Vec<_>>(),
+        vec![1, 2, 3]
+    );
+    drop(current);
+    owner_call(&ui, OWNER, resume, 200).await;
+    assert_eq!(history.current().unwrap().history.len(), 5);
+    ui.stop().await;
+    let journal = kan::evidence_workspace::Workspace::open(&state, identity(9), [84; 32]).unwrap();
+    let current = history.current().unwrap();
+    for record in current
+        .history
+        .iter()
+        .skip(1)
+        .filter(|r| r.change.erasure.as_ref().unwrap().plan.targets[0].sequence != 4)
+    {
+        let intent = journal
+            .get(
+                "owner-result",
+                &format!(
+                    "erasure:{}:root-intent:{}",
+                    preview["digest"].as_str().unwrap(),
+                    record.id().unwrap()
+                ),
+            )
+            .unwrap()
+            .unwrap();
+        assert_eq!(intent["consent"], preview["digest"]);
+        assert_eq!(intent["record"], serde_json::to_value(record).unwrap());
+    }
+    drop(current);
+    drop(journal);
+    server.stop().await;
+}
+
+#[tokio::test]
+async fn explicit_capture_union_refuses_stale_consent_and_keeps_unselected_archive_payloads() {
+    use kan::evidence_erasure_history::{Access, Record};
+    let source = private_workspace_directory();
+    let local = private_workspace_directory();
+    let custody = private_workspace_directory();
+    let frame = |n: u8| {
+        let ordinal = n % 2;
+        let attempt = if n < 2 { "a" } else { "b" }.repeat(64);
+        let event = if ordinal == 0 {
+            json!({"type":"started","method":"POST","route":"test"})
+        } else {
+            json!({"type":"terminal","outcome":"completed"})
+        };
+        let header=serde_json::to_vec(&json!({"version":2,"attempt":attempt,"observer":"collector","ordinal":ordinal,"observed_at_unix_micros":null,"elapsed_micros":0,"unconfirmed_before":0,"event":event})).unwrap();
+        let mut frame = b"KANC2".to_vec();
+        frame.extend_from_slice(&(header.len() as u32).to_be_bytes());
+        frame.extend(header);
+        frame
+    };
+    let f = fixture_requests(source.path(), Profile::Admitted, |n, a, p| {
+        encrypted_frame(n, a, p, &frame(n))
+    });
+    let mut archive = attested::Archive::open(&f.root, f.binding.clone()).unwrap();
+    let previous = service::append_manifest(f.requests.last().unwrap())
+        .unwrap()
+        .cid()
+        .to_string();
+    let terminal = encrypted_frame(3, 8, Some(previous), &frame(3));
+    let previous = archive
+        .admit(&terminal, &identity(8), &grant(), 200)
+        .unwrap()
+        .record
+        .manifest
+        .cid()
+        .to_string();
+    let mut history:Access=serde_json::from_value(json!({"directory":custody.path(),"binding":{"profile":"admitted","archive":service::hex(&f.binding.archive),"scope":service::hex(&f.binding.scope),"issuer":f.binding.issuer},"owner":identity(9).did().as_str()})).unwrap();
+    history.initialize().unwrap();
+    let genesis =
+        Record::sign(history.preview(None, "a".repeat(64)).unwrap(), &identity(9)).unwrap();
+    let minimum = genesis.id().unwrap();
+    history.append(genesis).unwrap();
+    history.minimum = Some(minimum);
+    let write = |name: &str, bytes: &[u8]| {
+        let path = local.path().join(name);
+        std::fs::write(&path, bytes).unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).unwrap();
+        }
+        path
+    };
+    let signer = write("owner.key", &[9; 32]);
+    let issuer = write("issuer.key", &[8; 32]);
+    let private = write("capture.key", &PRIVATE);
+    let workspace = kan::evidence_workspace::Workspace::open(
+        &local.path().join("owner.sqlite"),
+        identity(9),
+        [84; 32],
+    )
+    .unwrap();
+    let owner=kan::evidence_library::Owner::new(serde_json::from_value(json!({"token":"synthetic-capture-union-owner-token","max_jobs":10,"targets":[{"kind":"capture-erasure","id":"capture","root":f.root,"history":history,"signing_key":signer,"issuer_key":issuer,"private_keys":[private]}]})).unwrap(),workspace).unwrap();
+    let capture = |attempt: &str| json!({"writer":identity(6).did().as_str(),"observer":"collector","attempt":attempt.repeat(64)});
+    let query = json!({"action":"preview-erasure-selection","target":"capture","selection":{"kind":"captures","captures":[capture("a"),capture("b")]}});
+    let preview = owner
+        .execute(serde_json::from_value(query.clone()).unwrap())
+        .await
+        .unwrap();
+    assert_eq!(preview["summary"]["objects"], 4);
+    let later = encrypted_frame(4, 8, Some(previous), b"keep this opaque later payload");
+    archive.admit(&later, &identity(8), &grant(), 201).unwrap();
+    let request = |p: &Value| {
+        serde_json::from_value(json!({"action":"apply-erasure","target":"capture","plan":p["plan"],"preview":p["digest"],"wait":true})).unwrap()
+    };
+    assert!(matches!(
+        owner.execute(request(&preview)).await,
+        Err(service::Failure::Conflict)
+    ));
+    assert_eq!(
+        history.current().unwrap().history.len(),
+        1,
+        "stale approval publishes no authority"
+    );
+    let preview = owner
+        .execute(serde_json::from_value(query).unwrap())
+        .await
+        .unwrap();
+    assert_eq!(preview["summary"]["objects"], 4);
+    assert_eq!(preview["summary"]["through"], 5);
+    let done = owner.execute(request(&preview)).await.unwrap();
+    assert_eq!(done["state"], "configured-cleanup-complete", "{done}");
+    let proof = attested::Archive::verify_file(&f.db(), f.binding.clone()).unwrap();
+    assert_eq!(proof.erased_objects, 4);
+    let inventory =
+        Inventory::open(&f.db(), Profile::Admitted, f.binding.clone(), budget()).unwrap();
+    let page = inventory
+        .page(
+            None,
+            PageBudget {
+                rows: 5,
+                record_bytes: 1024 * 1024,
+                payload_bytes: 16 * 1024 * 1024,
+            },
+            budget(),
+        )
+        .unwrap();
+    assert_eq!(page.records[0].availability, Availability::Available);
+    assert!(page
+        .records
+        .iter()
+        .skip(1)
+        .all(|r| r.availability == Availability::Erased));
 }

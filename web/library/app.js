@@ -2,7 +2,7 @@
   'use strict';
   const $ = id => document.getElementById(id);
   let policyRows=[],policyPreview=null,keyPreview=null,keyRestore=null,keyTransfer=null,keyEpochs=[],importControls=[];
-  let erasurePreview=null;
+  let erasurePreview=null,erasureNext=null;
   let ownerToken='',ownerEpoch=0,ownerController,ownerTargets=[],ownerPreview=null,ownerRetry=null;
   let token = '', epoch = 0, controller, scopes = [], pin, after = 0, next = null, history = [], selected = null, source = null, hexadecimal = false;
   const selections = new Map();
@@ -710,7 +710,7 @@
       }
       if(status.state==='failed')row.append(textNode('p',status.result?.error||'Operation failed; inspect retained details.','content-warning'));
       const inspect=textNode('button','Inspect maintenance job');inspect.addEventListener('click',()=>ownerRun(async()=>{const value=await ownerRpc({action:'job',id:status.job.id});if(value){$('owner-detail').replaceChildren();details($('owner-detail'),'Retained job, result and output paths',JSON.stringify(value,null,2));}}));row.append(inspect);
-      if(status.job.contract.operation==='erase-capture'){if(status.state!=='running'&&status.resumable){const resume=textNode('button','Resume erasure cleanup');resume.addEventListener('click',()=>ownerRun(async()=>{await ownerRpc({action:'resume-erasure',id:status.job.id,wait:false});if(ownerToken)await ownerCatalog();}));row.append(resume);}row.append(textNode('p',`Configured cleanup: ${report?.configured_cleanup||'pending'} · Managed cleanup: ${report?.managed_cleanup||'pending'} · Backup purge: ${report?.backup_purge||'not performed'}`));if(report?.enrollment)row.append(textNode('p',`Deployment enrollment: ${report.enrollment}`,'content-coverage'));for(const archive of report?.archives||[])row.append(textNode('p',`${archive.root} · ${archive.state} · page reclamation ${archive.page_reclamation||'pending'}`));for(const workspace of report?.workspaces||[])row.append(textNode('p',`${workspace.database} · ${workspace.state} · ${workspace.removed_or_fenced??'unknown'} dependent entries removed or fenced · page reclamation ${workspace.page_reclamation||'pending'}`));for(const queue of report?.spools||[])row.append(textNode('p',`${queue.database} · ${queue.state} · ${queue.retired_operations??'unknown'} admitted operations retired · page reclamation ${queue.page_reclamation||'pending'}`));
+      if(['erase-capture','erase-selection'].includes(status.job.contract.operation)){if(status.state!=='running'&&status.resumable){const resume=textNode('button','Resume erasure cleanup');resume.addEventListener('click',()=>ownerRun(async()=>{await ownerRpc({action:'resume-erasure',id:status.job.id,wait:false});if(ownerToken)await ownerCatalog();}));row.append(resume);}row.append(textNode('p',`Configured cleanup: ${report?.configured_cleanup||'pending'} · Managed cleanup: ${report?.managed_cleanup||'pending'} · Backup purge: ${report?.backup_purge||'not performed'}`));if(report?.root_erasure)row.append(textNode('p',`Root selection: ${report.root_erasure.fenced} of ${report.root_erasure.selected} records fenced · ${report.root_erasure.remaining} remaining · up to ${report.root_erasure.per_attempt} per resume`));if(report?.enrollment)row.append(textNode('p',`Deployment enrollment: ${report.enrollment}`,'content-coverage'));for(const archive of report?.archives||[])row.append(textNode('p',`${archive.root} · ${archive.state} · page reclamation ${archive.page_reclamation||'pending'}`));for(const workspace of report?.workspaces||[])row.append(textNode('p',`${workspace.database} · ${workspace.state} · ${workspace.removed_or_fenced??'unknown'} dependent entries removed or fenced · page reclamation ${workspace.page_reclamation||'pending'}`));for(const queue of report?.spools||[])row.append(textNode('p',`${queue.database} · ${queue.state} · ${queue.retired_operations??'unknown'} admitted operations retired · page reclamation ${queue.page_reclamation||'pending'}`));
         const publications=report?.publications;
         if(publications){row.append(textNode('p',`Publication cleanup: ${publications.state||'pending'}${Number.isSafeInteger(publications.pass)&&publications.pass>=0?` · pass ${publications.pass+1}`:''}`));
           if(publications.progress)row.append(textNode('p',`Publication discovery: ${publications.progress.retained_pages??0} pages retained · remaining through ${publications.progress.remaining_through??'unknown'} · selected frontier ${publications.progress.frontier?.through??'unknown'}`,'content-coverage'));
@@ -746,20 +746,32 @@
   }));
   $('owner-lock').addEventListener('click',()=>{lockOwner();$('owner-maintenance').hidden=false;});
 
-  function invalidateErasure(){erasurePreview=null;$('erasure-preview').textContent='Preview capture erasure';$('erasure-apply').disabled=true;$('erasure-plan').textContent='';}
-  function clearErasure(){invalidateErasure();$('erasure-controls').hidden=true;$('erasure-writer').value='';$('erasure-attempt').value='';$('erasure-observer').value='collector';$('erasure-status').textContent='';}
-  for(const id of ['erasure-writer','erasure-attempt','erasure-observer'])$(id).addEventListener('input',()=>{ownerEpoch++;if(ownerController)ownerController.abort();invalidateErasure();});
+  function invalidateErasure(){erasurePreview=null;erasureNext=null;$('erasure-preview').textContent='Preview erasure';$('erasure-apply').disabled=true;$('erasure-plan').textContent='';$('erasure-inspect').disabled=true;$('erasure-next').disabled=true;$('erasure-coordinates').textContent='';}
+  function erasureFields(){const archive=$('erasure-kind').value==='archive-prefix';for(const id of ['erasure-writer','erasure-attempt','erasure-observer'])$(id).disabled=archive;}
+  function clearErasure(){invalidateErasure();$('erasure-controls').hidden=true;$('erasure-writer').value='';$('erasure-attempt').value='';$('erasure-observer').value='collector';$('erasure-kind').value='capture';erasureFields();$('erasure-status').textContent='';}
+  for(const id of ['erasure-writer','erasure-attempt','erasure-observer','erasure-kind'])$(id).addEventListener('input',()=>{ownerEpoch++;if(ownerController)ownerController.abort();invalidateErasure();erasureFields();});
   $('erasure-preview').addEventListener('click',()=>ownerRun(async()=>{
-    invalidateErasure();const target=$('owner-target').value,capture={writer:$('erasure-writer').value.trim(),observer:$('erasure-observer').value,attempt:$('erasure-attempt').value.trim()};
-    const value=await ownerRpc({action:'preview-erasure',target,capture});if(!value)return;
+    invalidateErasure();const target=$('owner-target').value,kind=$('erasure-kind').value;
+    const captures=$('erasure-attempt').value.trim().split(/\s+/).filter(Boolean).map(attempt=>({writer:$('erasure-writer').value.trim(),observer:$('erasure-observer').value,attempt}));
+    if(kind!=='archive-prefix'&&(!captures.length||(kind==='capture'&&captures.length!==1)))throw new Error('Enter one attempt ID per selected capture.');
+    const selection=kind==='archive-prefix'?{kind}:kind==='captures'?{kind,captures}:{kind:'capture',capture:captures[0]};
+    const value=await ownerRpc({action:'preview-erasure-selection',target,selection});if(!value)return;
     if(value.target===target&&value.state==='discovering'){
-      $('erasure-status').textContent=`Discovery scanned through ${value.progress?.scanned_through??'unknown'} of ${value.progress?.through??'unknown'} records · ${value.progress?.selected_records??0} capture records found. Continue discovery to finish the preview; nothing has been erased.`;
+      $('erasure-status').textContent=`Discovery scanned through ${value.progress?.scanned_through??'unknown'} of ${value.progress?.through??'unknown'} records · ${value.progress?.selected_records??0} capture records found${Number.isInteger(value.capture_index)?` · capture ${value.capture_index+1} of ${value.captures}`:''}. Continue discovery to finish the preview; nothing has been erased.`;
       $('erasure-plan').textContent=value.effect||'';$('erasure-preview').textContent='Continue discovery';return;
     }
-    if(value.target!==target||typeof value.digest!=='string'||!Array.isArray(value.plan?.authorization?.erasure?.plan?.targets)||!value.contract)throw new Error('Invalid erasure preview.');
-    erasurePreview=value;$('erasure-status').textContent=`${value.plan.authorization.erasure.plan.targets.length} capture records selected · ${value.plan.recording_gap?'recording gaps reported':'no recording gap reported'}. Review the exact destinations and remaining cleanup below.`;
-    $('erasure-plan').textContent=JSON.stringify(value.contract,null,2);$('erasure-apply').disabled=false;
+    if(value.target!==target||typeof value.digest!=='string'||typeof value.plan?.selection!=='string'||!Number.isSafeInteger(value.summary?.objects)||value.summary.objects<1||!value.contract)throw new Error('Invalid erasure preview.');
+    erasurePreview=value;$('erasure-status').textContent=`${value.summary.objects} records selected · ${value.summary.bytes} stored bytes · ${value.summary.pages} coordinate pages · ${kind==='archive-prefix'?'all retained payloads, including opaque data and active captures':value.summary.recording_gap?'recording gaps reported':'no recording gap reported'}. Review the selection and configured destinations below.`;
+    $('erasure-plan').textContent=JSON.stringify(value.contract,null,2);$('erasure-apply').disabled=false;$('erasure-inspect').disabled=false;
   }));
+  async function inspectErasure(page){
+    if(!erasurePreview)return;const p=erasurePreview;$('erasure-next').disabled=true;
+    const value=await ownerRpc({action:'inspect-erasure-selection',target:p.target,selection:p.plan.selection,page});if(!value||erasurePreview!==p)return;
+    if(value.selection!==p.plan.selection||value.page!==page||!Array.isArray(value.targets)||(value.next!==null&&(!Number.isSafeInteger(value.next)||value.next!==page+1)))throw new Error('Invalid selection coordinates.');
+    $('erasure-coordinates').textContent=JSON.stringify({page:page+1,targets:value.targets},null,2);erasureNext=value.next;$('erasure-next').disabled=erasureNext===null;
+  }
+  $('erasure-inspect').addEventListener('click',()=>ownerRun(()=>inspectErasure(0)));
+  $('erasure-next').addEventListener('click',()=>ownerRun(()=>erasureNext===null?undefined:inspectErasure(erasureNext)));
   $('erasure-apply').addEventListener('click',()=>ownerRun(async()=>{
     if(!erasurePreview)return;const p=erasurePreview;$('erasure-apply').disabled=true;
     const result=await ownerRpc({action:'apply-erasure',target:p.target,plan:p.plan,preview:p.digest,wait:false});if(!result)return;

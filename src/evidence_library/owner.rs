@@ -34,6 +34,8 @@ pub enum Target {
         spools: Vec<PathBuf>,
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         publications: Vec<erasure::PublicationTarget>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        root_batch_records: Option<usize>,
     },
     KeyHistory {
         id: String,
@@ -137,9 +139,21 @@ pub enum Request {
         #[serde(default = "capture_page_records")]
         page_records: usize,
     },
+    PreviewErasureSelection {
+        target: String,
+        selection: erasure::Selector,
+        #[serde(default = "capture_page_records")]
+        page_records: usize,
+    },
+    InspectErasureSelection {
+        target: String,
+        selection: String,
+        #[serde(default)]
+        page: usize,
+    },
     ApplyErasure {
         target: String,
-        plan: Box<erasure::Preview>,
+        plan: Box<erasure::Approval>,
         preview: String,
         #[serde(default)]
         wait: bool,
@@ -514,7 +528,10 @@ impl Owner {
             .workspace
             .get("owner-job", id)?
             .ok_or(Failure::AccessLimited)?;
-        if job["contract"]["operation"] == "erase-capture" {
+        if matches!(
+            job["contract"]["operation"].as_str(),
+            Some("erase-capture" | "erase-selection")
+        ) {
             return self.erasure_status(job);
         }
         if job["contract"]["operation"] == "purge-backup" {
@@ -653,12 +670,36 @@ impl Owner {
                 capture,
                 page_records,
             } => self.preview_erasure(target, capture, page_records).await,
+            Request::PreviewErasureSelection {
+                target,
+                selection,
+                page_records,
+            } => {
+                self.preview_erasure_selection(target, selection, page_records)
+                    .await
+            }
+            Request::InspectErasureSelection {
+                target,
+                selection,
+                page,
+            } => {
+                self.inspect_erasure_selection(target, selection, page)
+                    .await
+            }
             Request::ApplyErasure {
                 target,
                 plan,
                 preview,
                 wait,
-            } => self.submit_erasure(target, *plan, preview, wait).await,
+            } => match *plan {
+                erasure::Approval::Inline(plan) => {
+                    self.submit_erasure(target, *plan, preview, wait).await
+                }
+                erasure::Approval::Retained(reference) => {
+                    self.submit_erasure_selection(target, reference, preview, wait)
+                        .await
+                }
+            },
             Request::ResumeErasure { id, wait } => self.resume_erasure(id, wait).await,
             Request::Keys { target } => self.key_action(target, KeyAction::Read).await,
             Request::PreviewKeyRotation { target } => {

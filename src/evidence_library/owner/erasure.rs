@@ -2,6 +2,8 @@
 //! explicit pending work, never inferred from successful primary deletion.
 use super::*;
 mod checkpoints;
+mod selections;
+pub use selections::{Approval, Selector};
 mod publications;
 use crate::{
     evidence_erasure_history as custody, evidence_store::erasure as storage, sign::Identity,
@@ -76,6 +78,15 @@ pub(super) fn validate_target(target: &Target) -> Result<(), Failure> {
         spools,
         publications,
     } = configured(target)?;
+    if let Target::CaptureErasure {
+        root_batch_records: Some(n),
+        ..
+    } = target
+    {
+        if *n == 0 || *n > 512 {
+            return Err(Failure::Invalid);
+        }
+    }
     private_directory(root)?;
     history.validate()?;
     if history.minimum.is_none()
@@ -163,7 +174,7 @@ fn capture(
 }
 enum Discovery {
     Pending(Value),
-    Complete(Box<storage::CapturePreview>),
+    Complete(Box<storage::CaptureSelection>),
 }
 fn discover_capture(
     journal: &Workspace,
@@ -194,8 +205,6 @@ fn discover_capture(
         .map(|p| crate::evidence_crypto::read_private_key(p).map_err(invalid))
         .collect::<Result<Vec<_>, _>>()?;
     let binding = history.binding.owner_binding()?;
-    let nonce = service::hex(&rand::random::<[u8; 32]>());
-    let now = crate::evidence_operations::now();
     // Each page is durable before constructing an erasure authority. A crash or
     // stale frontier therefore continues discovery instead of restarting it.
     let retain =
@@ -214,7 +223,7 @@ fn discover_capture(
             if !scan.complete() {
                 return Ok(Discovery::Pending(scan.progress()));
             }
-            archive.finish_capture_erasure(scan, nonce, now)?
+            archive.finish_capture_selection(scan)?
         }
         Profile::Copied => {
             let archive = store::copied::Archive::open(root, binding)?;
@@ -229,7 +238,7 @@ fn discover_capture(
             if !scan.complete() {
                 return Ok(Discovery::Pending(scan.progress()));
             }
-            archive.finish_capture_erasure(scan, nonce, now)?
+            archive.finish_capture_selection(scan)?
         }
     };
     Ok(Discovery::Complete(Box::new(resolved)))
@@ -331,10 +340,19 @@ impl Owner {
                 Discovery::Pending(progress)=>return Ok(json!({"target":target.id(),"state":"discovering","progress":progress,"effect":"Discovery only; no erasure authorization or deletion has occurred. Repeat this preview request to continue."})),
                 Discovery::Complete(resolved)=>*resolved,
             };
+            let Configured { root, history, issuer, .. } = configured(&target)?;
+            let current = history.current()?;
+            current.check_archive(&root.join("archive.sqlite"), &history.binding)?;
+            let binding = history.binding.owner_binding()?;
+            let nonce = service::hex(&rand::random::<[u8; 32]>());
+            let now = crate::evidence_operations::now();
+            let native = match history.binding.profile {
+                Profile::Admitted => store::attested::Archive::open(root,binding)?.preview_erasure(&resolved.sequences,nonce,now)?,
+                Profile::Copied => store::copied::Archive::open(root,binding)?.preview_erasure(&resolved.sequences,nonce,now)?,
+            };
+            if native.through != resolved.through || native.tip != resolved.tip { return Err(Failure::Conflict); }
+            let resolved = storage::CapturePreview { capture:resolved.capture,plan:native,recording_gap:resolved.recording_gap,coverage:resolved.coverage };
             let receipt=serde_json::to_value(&resolved).map_err(invalid)?;
-            let Configured {
-                history, issuer, ..
-            } = configured(&target)?;
             let signer = Identity::load_existing(issuer).map_err(invalid)?;
             let record = storage::Record::sign(resolved.plan, &signer)?;
             let plan = Preview {
@@ -456,6 +474,9 @@ impl Owner {
             .get("owner-job", &id)?
             .ok_or(Failure::Missing)?;
         let c = &job["contract"];
+        if c["operation"] == "erase-selection" {
+            return self.resume_erasure_selection(id, wait).await;
+        }
         if c["operation"] != "erase-capture" || Self::hash(c)? != id {
             return Err(Failure::Invalid);
         }
@@ -531,9 +552,37 @@ impl Owner {
         }
     }
 }
+// Read-only lineage roots, only passed after independent custody has accepted
+// the exact object selection. This is not a storage deletion authority.
+struct SourceSelection {
+    authorization: String,
+    targets: Vec<storage::Target>,
+}
 fn cleanup(
     target: &Target,
     record: custody::Record,
+    journal: &Workspace,
+    job: &str,
+) -> Result<Value, Failure> {
+    let Configured { history, .. } = configured(target)?;
+    let selected = SourceSelection {
+        authorization: record.id()?,
+        targets: record
+            .change
+            .erasure
+            .as_ref()
+            .ok_or(Failure::Invalid)?
+            .plan
+            .targets
+            .clone(),
+    };
+    // Publish once, before deleting. Existing records are exact retry authority.
+    history.append(record)?;
+    cleanup_selected(target, &selected, journal, job)
+}
+fn cleanup_selected(
+    target: &Target,
+    selected: &SourceSelection,
     journal: &Workspace,
     job: &str,
 ) -> Result<Value, Failure> {
@@ -546,9 +595,7 @@ fn cleanup(
         publications,
         ..
     } = configured(target)?;
-    let authorization = record.id()?;
-    // Publish once, before deleting. Existing records are exact retry authority.
-    history.append(record.clone())?;
+    let authorization = &selected.authorization;
     let mut archives = Vec::new();
     for path in std::iter::once(root).chain(replicas.iter().map(PathBuf::as_path)) {
         let work = || -> Result<bool, Failure> {
@@ -602,7 +649,7 @@ fn cleanup(
     // Resolve and journal publication lineage before local dependency cleanup
     // can remove the corresponding annotation declarations.
     let published =
-        match publications::cleanup(publications, workspaces, history, &record, journal, job) {
+        match publications::cleanup(publications, workspaces, history, selected, journal, job) {
             Ok(value) => value,
             Err(error) => json!({"state":"pending","error":error}),
         };

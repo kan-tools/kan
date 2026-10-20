@@ -732,41 +732,55 @@ ciphertexts. This is the physical cleanup primitive: the owner coordinator still
 must resolve the complete capture/derivative/outbox/replica dependency set, bind its
 independently signed authorization and reconcile old workspace backups before use.
 
-### Resumable owner capture erasure
+### Resumable owner evidence erasure
 
-The configured capture-erasure target pins the archive, independently retained
-owner custody, issuer and owner signing files, capture decryption files and a
-bounded list of same-binding replica directories. Browser input chooses only the
-writer/observer/attempt; it cannot supply paths or raw occurrence selections.
-Preview resolves the closed capture across the full pinned archive. Apply
-recomputes that selection, refuses stale plans, and stores an encrypted immutable
-job containing the exact signed owner authorization before any destructive work.
-The worker publishes the independent authorization first, then reconciles each
-configured archive against current custody and attempts SQLite page reclamation.
+The configured `capture-erasure` target pins one archive, independent owner custody,
+issuer/owner signing files, capture decryption files and registered cleanup targets.
+The Library now previews a closed capture, an explicit list of closed captures, or
+every retained payload in the current archive prefix. The archive option explicitly
+includes opaque/imported data and active captures; it does not infer completeness
+from a session label. The multi-capture UI accepts one attempt ID per line for the
+chosen writer/observer; the shared API also accepts distinct writers/observers.
 
-A restart resumes the same signed record and job, with append-only attempt
-observations. Failed/offline destinations remain individually pending. This
-initial coordinator reports `cleanup-pending` after archive cleanup: spool,
-derived workspace and other publication-copy resolution are still required.
-Backup purge and service activation are separate statuses; no generic success
-label may imply managed erasure is complete. Bounds are 16 configured replicas,
-64 decryption keys, 200 KiB preview contract and 32 cleanup attempts per job.
-Exceeding a bound refuses explicitly; no truncated capture is erased.
+`preview-erasure-selection` accepts `target` and a tagged `selection`: `capture`
+with `capture`, `captures` with `captures`, or `archive-prefix`. Capture discovery
+returns `discovering` until every selected capture is closed and fully scanned;
+repeat the same request to continue. Discovery checkpoints retain small headers
+and linked membership deltas, including compatibility with older inline checkpoints.
+A completed preview retains content-addressed coordinate pages and returns a compact
+`plan: {selection: <digest>}`, contract digest and summary: archive frontier, custody,
+object/byte totals, gaps, destinations and cleanup limits. `inspect-erasure-selection`
+accepts `target`, `selection` and zero-based `page`; it returns exact object/manifest
+coordinates and `next`. Missing, reordered or inconsistent pages fail closed.
 
-Configured erasure workspaces now use an exclusive maintenance lease, load
-authenticated encrypted entries with a 64 MiB / 16,384-row scan budget, and
-resolve exact signed source selections plus declared correction, promotion,
-retry and trigger edges. A bounded reverse graph (65,536 edges) follows
-transitive dependencies. Search pages containing selected records are removed
-as whole disposable pages; unrelated pages and snapshot-only saved scopes
-remain. Imported views include their selected repository/control evidence.
-Absent analysis results and terminal events receive no-recreation tombstones.
-Orphan model outputs without job lineage refuse cleanup rather than claiming
-that they are unrelated. Workspaces must be stopped; busy/offline/corrupt
-destinations stay pending. Every retry reconciles current independent custody,
-including old restored workspace contents, before physical SQLite reclamation.
-This does not yet fence activation of unenrolled readers or erase queued and
-published copies. Those remain explicit product completion requirements.
+`apply-erasure` takes the returned plan and preview digest. It rechecks all coordinates,
+current custody and the exact preview frontier before retaining owner-signed consent.
+The worker journals each bounded native issuer/owner authorization before publishing
+independent custody. Default root work is 512 objects per attempt; optional target
+`root_batch_records` (1–512) lowers that operational batch size. The signed complete
+selection never changes. `resume-erasure` repairs accepted but incompletely applied
+batches and may rebase chain coordinates after legitimate intervening custody changes.
+It accepts already-erased objects only under verified exact current custody. Later
+archive appends stay outside consent. Legacy inline previews/jobs remain accepted.
+
+The UI exposes selected/fenced/remaining counts, coordinate-page inspection and
+resume controls. After all root objects are fenced, publication cleanup uses the
+whole approved coordinate union. It resolves and retains annotation/correction/
+withdrawal lineage before workspace cleanup can remove local declarations. Registered
+replicas, admitted and unpublished queues, derived workspaces and publication archives
+report their own reconciliation/reclamation state. `configured-cleanup-complete` covers
+only that configuration; deployment enrollment verification and backup purge remain
+separate. Old backups and keys are not promised cryptographically irrecoverable.
+
+Configured erasure workspaces use an exclusive maintenance lease and retain only
+structural metadata during dependency discovery. Cleanup processes at most 4,096
+entries / 64 MiB per source batch, retaining parent jobs until dependent outputs are
+fenced. The reverse graph still has a 65,536-edge execution budget. Search pages are
+removed as disposable pages; unrelated entries and snapshot-only scopes remain.
+Absent outputs receive no-recreation tombstones. Missing lineage, busy/offline stores
+and incomplete publication discovery remain pending. Every retry checks current
+independent custody before reclamation. Large-selection API/runtime qualification
+is pending CI; the current frontend tests pass.
 
 Managed reader workspaces may be enrolled through independently configured owner
 custody histories. Every workspace read/write/declaration operation holds current

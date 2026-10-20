@@ -413,6 +413,66 @@ impl attested::Archive {
         tx.commit()?;
         Ok(plan)
     }
+    /// Inspect exact immutable coordinates without constructing a deletion
+    /// authority. None selects every retained payload in the current prefix;
+    /// an explicit list may include already-erased coordinates for resume checks.
+    pub fn inspect_erasure_selection(
+        &self,
+        sequences: Option<&[u64]>,
+        prefix: Option<(u64, &str)>,
+    ) -> Result<Coordinates> {
+        let verified = self.verify()?;
+        let tx = self.ledger.conn.unchecked_transaction()?;
+        let snap = self.ledger.snapshot()?;
+        if snap.through != verified.through || snap.tip != verified.manifest {
+            return Err(Error::Conflict(
+                "archive advanced during selection inspection",
+            ));
+        }
+        if let Some((through, tip)) = prefix {
+            if through == 0
+                || through > snap.through
+                || attested::record(&tx, through)?.manifest.cid().to_string() != tip
+            {
+                return Err(Error::Conflict("selection prefix changed"));
+            }
+        }
+        let history = load(&tx)?;
+        let requested: Vec<u64> = match sequences {
+            Some(values) => values.to_vec(),
+            None => (1..=snap.through).collect(),
+        };
+        let mut unique = BTreeSet::new();
+        let mut targets = Vec::new();
+        for sequence in requested {
+            if sequence == 0 || sequence > snap.through || !unique.insert(sequence) {
+                return Err(Error::Invalid("selection coordinate"));
+            }
+            let record = attested::record(&tx, sequence)?;
+            let es: Vec<_> = entries(&record.manifest).collect();
+            if es.len() != 1 {
+                return Err(corrupt());
+            }
+            let object = cid(&es[0]["ciphertext"]);
+            if sequences.is_none() && history.objects.contains_key(&object) {
+                continue;
+            }
+            targets.push(Target {
+                sequence,
+                manifest: record.manifest.cid().to_string(),
+                object,
+                length: usize::try_from(number(&es[0]["length"])).map_err(|_| corrupt())?,
+            });
+        }
+        targets.sort_by_key(|t| t.sequence);
+        let selected = Coordinates {
+            through: snap.through,
+            tip: snap.tip.ok_or_else(corrupt)?.to_string(),
+            targets,
+        };
+        tx.commit()?;
+        Ok(selected)
+    }
     pub fn erasure_history(&self) -> Result<Package> {
         Ok(load(&self.ledger.conn)?.package())
     }
@@ -578,6 +638,14 @@ pub struct CapturePreview {
     pub recording_gap: bool,
     pub coverage: String,
 }
+/// Exact immutable object coordinates, not a deletion authority.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Coordinates {
+    pub through: u64,
+    pub tip: String,
+    pub targets: Vec<Target>,
+}
 /// Complete capture membership, not a deletion authority. Native erasure plans
 /// can be prepared from bounded subsets after this selection is owner-approved.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -656,6 +724,7 @@ impl CaptureScan {
         }
         Ok(self)
     }
+    #[cfg(any(feature = "v2-crypto", test))]
     fn selection(self, binding: &attested::Binding) -> Result<CaptureSelection> {
         if !self.complete()
             || self.binding

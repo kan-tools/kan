@@ -322,6 +322,16 @@ impl Archive {
         }
         self.inner.apply_erasure(record)
     }
+    pub fn inspect_erasure_selection(
+        &self,
+        sequences: Option<&[u64]>,
+        prefix: Option<(u64, &str)>,
+    ) -> Result<super::erasure::Coordinates> {
+        if !self.verify()?.copy.source_copy_complete {
+            return Err(Error::Conflict("copy incomplete"));
+        }
+        self.inner.inspect_erasure_selection(sequences, prefix)
+    }
     pub fn erasure_history(&self) -> Result<super::erasure::Package> {
         self.inner.erasure_history()
     }
