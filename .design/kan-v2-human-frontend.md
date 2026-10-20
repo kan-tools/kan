@@ -348,3 +348,15 @@ archive binding and output root, previews its plaintext effect, and records the
 new output/report location. Proof metadata audit and restoration share a pinned
 transaction. Access changes, key lifecycle, reconciliation/cutover and explicit
 erasure require further owner contracts and remain build work.
+
+### Reconstructed search
+
+The raw encrypted index remains page-addressed. Search responses additionally
+expose authorized capture membership so the browser can reconstruct explicit
+attempts after completing the selected archive scan. The shared `search-attempt`
+API uses the existing Content assembler/interpreter, current access checks and
+limits. It searches supported message text across capture chunks, retaining all
+enclosing source ranges and reporting unavailable streams. Message boundaries
+are preserved; separate SSE delta items are not implicitly concatenated. No
+normalized text is written to blind storage. Browser work windows bound retained
+members and interpretation calls, and cancellation keeps completed results only.

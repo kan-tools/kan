@@ -21,6 +21,9 @@ impl SurfaceValue {
 pub const EVIDENCE_VALUES: &[SurfaceValue] = &[
     SurfaceValue::new("evidence-annotation:plaintext-frame", "*"),
     SurfaceValue::new("evidence-workspace:database", "*"),
+    SurfaceValue::new("evidence-workspace:database-lock", "*"),
+    SurfaceValue::new("evidence-workspace-recovery:database", "*"),
+    SurfaceValue::new("evidence-workspace-recovery:database-journal", "*"),
     SurfaceValue::new("evidence-workspace:database-journal", "*"),
     SurfaceValue::new("evidence-workspace:search-page", "*"),
     SurfaceValue::new("evidence-workspace:view", "*"),

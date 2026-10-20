@@ -50,14 +50,14 @@
   async function rpc(body) {
     const current = ++epoch; if (controller) controller.abort(); controller = new AbortController();
     try {
-    const response = await fetch(['proof-content','proof-attempt','proof-session','proof-import'].includes(body.action) ? `/api/library/${body.action}` : '/api/library', {method:'POST', headers:{'Authorization':`Bearer ${token}`, 'Content-Type':'application/json'}, body:JSON.stringify(body), credentials:'omit', cache:'no-store', signal:controller.signal});
+    const response = await fetch(['proof-content','proof-attempt','proof-session','proof-import','search-attempt'].includes(body.action) ? `/api/library/${body.action}` : '/api/library', {method:'POST', headers:{'Authorization':`Bearer ${token}`, 'Content-Type':'application/json'}, body:JSON.stringify(body), credentials:'omit', cache:'no-store', signal:controller.signal});
     if (current !== epoch) return null;
     if (!response.ok) {
       const denied = response.status === 401 || response.status === 403;
-      const message = body.action === 'proof-discover' && [422,429].includes(response.status) ? 'Discovery reached a work limit or its workers are busy. Retry the same batch; existing scan coverage is unchanged.' : ['content','proof-content','proof-attempt','proof-session','proof-import'].includes(body.action) && response.status === 422 ? 'Content interpretation reached a presentation limit or deadline. Inspect Source or select fewer complete captures; retained bytes remain available.' : ['content','proof-content','proof-attempt','proof-session','proof-import'].includes(body.action) && response.status === 429 ? 'Content workers are busy. Wait for current interpretation to finish, then retry.' : denied ? 'Access unavailable or revoked. Reconnect with an authorized reader.' : response.status === 404
+      const message = body.action === 'proof-discover' && [422,429].includes(response.status) ? 'Discovery reached a work limit or its workers are busy. Retry the same batch; existing scan coverage is unchanged.' : ['content','proof-content','proof-attempt','proof-session','proof-import','search-attempt'].includes(body.action) && response.status === 422 ? 'Content interpretation reached a presentation limit or deadline. Inspect Source or select fewer complete captures; retained bytes remain available.' : ['content','proof-content','proof-attempt','proof-session','proof-import','search-attempt'].includes(body.action) && response.status === 429 ? 'Content workers are busy. Wait for current interpretation to finish, then retry.' : denied ? 'Access unavailable or revoked. Reconnect with an authorized reader.' : response.status === 404
         ? 'Retained source is unavailable for this request. Choose another occurrence or refresh the snapshot.'
         : 'This response could not be verified. Retry, refresh the snapshot, or choose another scope.';
-      const error = new Error(message); error.accessDenied = denied; error.keepContentSelection = ['content','proof-content','proof-attempt','proof-session','proof-import'].includes(body.action) && [422,429].includes(response.status); error.readerMessage = message; throw error;
+      const error = new Error(message); error.accessDenied = denied; error.keepContentSelection = ['content','proof-content','proof-attempt','proof-session','proof-import','search-attempt'].includes(body.action) && [422,429].includes(response.status); error.readerMessage = message; throw error;
     }
     const value = await response.json(); if (current !== epoch) return null; return value;
     } catch (error) { if (current !== epoch) return null; throw error; }
@@ -789,27 +789,32 @@
     if(hide){for(const id of ['search-observer','search-attempt','search-from','search-to'])$(id).value='';$('search-workspace').hidden=true;$('search-text').value='';$('search-writer').value='';$('view-name').value='';}
   }
   function searchTargets(entries) {
-    return entries.map(entry=>({entry:{...entry},cursor:null,complete:false,count:0,binary:0n,unavailable:0,facets:new Map()}));
+    return entries.map(entry=>({entry:{...entry},cursor:null,complete:false,count:0,binary:0n,unavailable:0,facets:new Map(),attempts:new Map(),members:0,omitted:0}));
   }
   function renderSearch() {
     $('search-results').replaceChildren();$('search-facets').replaceChildren();
     for(const {state,hit} of searchHits.values()) {
       const row=textNode('article','');row.className='search-result';
       row.append(textNode('p',`${state.entry.scope} · ${state.entry.binding.archive} · occurrence ${hit.record.sequence}`));
-      row.append(textNode('pre',hit.snippet));row.append(textNode('p',`${hit.kind} · ${hit.writer} · ${hit.interpretation==='metadata-only'?'metadata filter; no text span matched':hit.coarse?'decoded JSON text; enclosing source':'exact UTF-8 source'} bytes ${hit.offset}–${hit.end}`));
-      const open=textNode('button','Open exact source');open.addEventListener('click',()=>run(async()=>{
-        searchRun++;cancelWork();choose(state.entry);clearContent();clearInspector();checks.clear();buttons.clear();selections.clear();selections.set(hit.record.sequence,hit.record.selection);
-        $('rows').replaceChildren();after=0;next=null;history=[];$('previous').disabled=true;$('next').disabled=true;$('count').textContent='Search selection';$('page-position').textContent='Choose an archive to browse inventory';$('empty').hidden=true;
-        $('stop-search').disabled=true;
-        $('scope').value=sourceId(state.entry);await inspect(hit.record.sequence,hit.offset);
-      }));row.append(open);$('search-results').append(row);
+      row.append(textNode('pre',hit.snippet));row.append(textNode('p',`${hit.kind} · ${hit.writer} · ${hit.interpretation==='reconstructed-message'?'reconstructed message; enclosing source ranges':hit.interpretation==='metadata-only'?'metadata filter; no text span matched':hit.coarse?'decoded JSON text; enclosing source':'exact UTF-8 source'} bytes ${hit.offset}–${hit.end}`));
+      const cites=hit.cites||[{record:hit.record,offset:hit.offset,end:hit.end}];
+      for(const [i,cite] of cites.entries()) {
+        const open=textNode('button',cites.length===1?'Open exact source':`Source ${i+1} · occurrence ${cite.record.sequence} · bytes ${cite.offset}–${cite.end}`);open.addEventListener('click',()=>run(async()=>{
+          searchRun++;cancelWork();choose(state.entry);clearContent();clearInspector();checks.clear();buttons.clear();selections.clear();selections.set(cite.record.sequence,cite.record.selection);
+          $('rows').replaceChildren();after=0;next=null;history=[];$('previous').disabled=true;$('next').disabled=true;$('count').textContent='Search selection';$('page-position').textContent='Choose an archive to browse inventory';$('empty').hidden=true;
+          $('stop-search').disabled=true;
+          $('scope').value=sourceId(state.entry);await inspect(cite.record.sequence,cite.offset);
+        }));row.append(open);
+      }
+      $('search-results').append(row);
     }
     for(const state of searchStates) {
       const facets=[...state.facets].map(([k,n])=>`${k}: ${n}`).join(' · ');
-      $('search-facets').append(textNode('p',`${state.entry.binding.archive}: ${state.count} indexed occurrences searched · ${state.complete?'pinned inventory scan complete':'partial scan'} · ${state.binary} unsearchable bytes · ${state.unavailable} unavailable matches${facets?' · '+facets:''}`));
+      $('search-facets').append(textNode('p',`${state.entry.binding.archive}: ${state.count} indexed occurrences searched · ${state.complete?'pinned inventory scan complete':'partial scan'} · ${state.binary} unsearchable bytes · ${state.unavailable} unavailable matches · ${[...state.attempts.values()].filter(a=>a.done).length}/${state.attempts.size} reconstructed attempts searched${state.omitted?` · ${state.omitted} members beyond the 1,024-member reconstruction window`:''}${facets?' · '+facets:''}`));
+      for(const attempt of state.attempts.values())for(const stream of attempt.coverage||[])if(stream.state!=='interpreted'||stream.issues?.length)$('search-facets').append(textNode('p',`${stream.attempt} · ${stream.direction}: ${stream.state}; ${JSON.stringify(stream.issues||[])}`));
     }
-    $('search-coverage').textContent=`${searchHits.size} matches shown across ${searchPages} index pages. Facets reflect indexing time. Raw UTF-8 and bounded decoded strings from complete JSON spans are searched; normalized matches cite their enclosing source. Binary spans and phrases crossing chunks are excluded. Complete inventory does not prove complete capture.`;
-    $('resume-search').disabled=searchStates.every(s=>s.complete);$('save-view').disabled=!searchFilter || !searchStates.length;
+    $('search-coverage').textContent=`${searchHits.size} matches shown across ${searchPages} index pages. Facets reflect indexing time. Raw UTF-8 and bounded decoded strings from complete JSON spans are searched; normalized matches cite their enclosing source. Supported reconstructed messages also span capture chunks; every contributing range is linked. Reconstruction waits for each archive scan to complete, then runs four attempts per window. Binary/unsupported fields and phrases crossing distinct messages or SSE delta items remain excluded. Complete inventory does not prove complete capture.`;
+    $('resume-search').disabled=searchStates.every(s=>s.complete&&[...s.attempts.values()].every(a=>a.done));$('save-view').disabled=!searchFilter || !searchStates.length;
   }
   async function searchWindow() {
     const current=++searchRun;$('stop-search').disabled=false;$('resume-search').disabled=true;
@@ -828,10 +833,32 @@
             if(!hit.record || typeof hit.record.sequence!=='string' || !hit.record.selection || typeof hit.snippet!=='string' || hit.snippet.length>1024 || !/^\d+$/.test(hit.offset) || !/^\d+$/.test(hit.end))throw new Error('Invalid search hit.');
             searchHits.set(`${target.source}:${hit.record.sequence}`,{state,hit});
           }
+          if(searchFilter.text)for(const member of result.attempt_members||[]) {
+            if(typeof member.writer!=='string'||!['collector','gateway'].includes(member.observer)||typeof member.attempt!=='string'||!/^[0-9a-f]{64}$/.test(member.attempt)||!member.record?.selection||typeof member.record.sequence!=='string')throw new Error('Invalid attempt search member.');
+            const key=JSON.stringify([member.writer,member.observer,member.attempt]);
+            if(state.members>=1024){state.omitted++;continue;}
+            if(!state.attempts.has(key))state.attempts.set(key,{selections:new Map(),done:false});
+            const attempt=state.attempts.get(key);
+            if(!attempt.selections.has(member.record.sequence)){attempt.selections.set(member.record.sequence,member.record.selection);state.members++;}
+          }
           state.count+=result.indexed_occurrences;state.binary+=BigInt(result.unsearchable_bytes);state.unavailable+=result.unavailable_matches;
           for(const [kind,count] of Object.entries(result.facets_as_indexed.kind))state.facets.set(kind,(state.facets.get(kind)||0)+count);
           state.cursor=result.next;state.complete=result.next===null;searchPages++;pages++;renderSearch();
         }
+      }
+      let normalized=0;
+      for(const state of searchStates.filter(s=>s.complete))for(const [key,attempt] of state.attempts) {
+        if(attempt.done)continue;
+        if(current!==searchRun||normalized>=4||searchHits.size>=1000)return;
+        const target={source:sourceId(state.entry),pin:state.entry.pin};
+        const result=await rpc({action:'search-attempt',target,selections:[...attempt.selections.values()],filter:searchFilter});
+        if(!result||current!==searchRun)return;
+        if(result.version!=='normalized-attempt-search/1'||!Array.isArray(result.hits)||result.hits.length>128||!Array.isArray(result.streams))throw new Error('Invalid reconstructed search.');
+        for(const hit of result.hits){
+          if(typeof hit.snippet!=='string'||hit.snippet.length>1024||!Array.isArray(hit.cites)||!hit.cites.length||hit.cites.length>1024||hit.cites.some(c=>!c.record?.selection||typeof c.record.sequence!=='string'||!/^\d+$/.test(c.offset)||!/^\d+$/.test(c.end)))throw new Error('Invalid reconstructed source ranges.');
+        }
+        for(const hit of result.hits)searchHits.set(`${target.source}:${key}:${hit.direction}:${hit.item}`,{state,hit});
+        attempt.done=true;attempt.coverage=result.streams;normalized++;renderSearch();
       }
     } finally {if(current===searchRun){$('stop-search').disabled=true;renderSearch();}}
   }

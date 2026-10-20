@@ -604,8 +604,17 @@ The encrypted `raw-text/3` projection also indexes up to 2,048 string values fro
 each complete JSON span (bounded to 8,192 visited JSON values). Escaped string
 matches are marked `json-string` / `coarse` and cite the enclosing original span,
 not an invented exact substring. Current source is re-read before returning a hit.
-Text crossing capture chunks still requires conversation reconstruction; this
-index explicitly reports that coverage limitation. Older projection pages remain
+The raw page index explicitly reports its chunk boundary limitation. The browser
+then reconstructs discovered capture attempts after each selected archive scan
+finishes, in windows of four attempts and up to 1,024 retained members per archive.
+`search-attempt` accepts a pinned target, explicit selections and the same filter;
+it searches supported message text across capture chunks under fresh source access.
+Request JSON and response JSON/SSE use the existing bounded interpreters. Every hit
+links all enclosing source byte ranges; incomplete streams remain visible. Distinct
+messages and SSE delta items are not concatenated. The result is bounded to 128
+matches and 8,192 citations, and a limit refusal remains retryable rather than
+claiming no matches. This reconstruction is disposable and is not stored as another
+authoritative transcript. Older projection pages remain
 retained and are not treated as the new interpretation.
 
 A migration target may additionally configure an absolute `recovered` directory.

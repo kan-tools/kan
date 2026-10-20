@@ -57,6 +57,7 @@ const ATTEMPT: Presentation = Presentation {
 #[derive(Clone, Copy, Debug, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum Format {
+    AnthropicMessagesAuto,
     AnthropicMessagesJson,
     AnthropicMessagesSse,
 }
@@ -599,6 +600,19 @@ fn render_selected(
     for group in &assembled.groups {
         budget.check()?;
         let response_format = match format {
+            Format::AnthropicMessagesAuto => {
+                if group
+                    .response
+                    .contiguous
+                    .as_deref()
+                    .and_then(|bytes| bytes.iter().find(|b| !b.is_ascii_whitespace()))
+                    .is_some_and(|b| *b == b'{')
+                {
+                    provider::Format::Response
+                } else {
+                    provider::Format::Sse
+                }
+            }
             Format::AnthropicMessagesJson => provider::Format::Response,
             Format::AnthropicMessagesSse => provider::Format::Sse,
         };

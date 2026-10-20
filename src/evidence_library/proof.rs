@@ -212,6 +212,21 @@ impl Readers {
                 )
                 .await?
             }
+            Query::SearchAttempt {
+                target,
+                selections,
+                filter,
+            } => {
+                self.workspace()?;
+                search::attempt(
+                    self.selected(&target.source)?,
+                    &target,
+                    &selections,
+                    &filter,
+                    self.workers.clone(),
+                )
+                .await?
+            }
             Query::SearchPage {
                 target,
                 cursor,

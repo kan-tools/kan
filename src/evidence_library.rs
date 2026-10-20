@@ -95,6 +95,11 @@ pub enum Query {
         target: SearchTarget,
         cursor: Option<verified::Token>,
     },
+    SearchAttempt {
+        target: SearchTarget,
+        selections: Vec<verified::Token>,
+        filter: SearchFilter,
+    },
     SearchPage {
         target: SearchTarget,
         cursor: Option<verified::Token>,
@@ -206,6 +211,7 @@ async fn query(reader: &Reader, query: Query) -> Result<Vec<u8>, ContentError> {
         | Query::Annotations { .. }
         | Query::IndexPage { .. }
         | Query::SearchPage { .. }
+        | Query::SearchAttempt { .. }
         | Query::SaveView { .. }
         | Query::Views
         | Query::ProofAttempt { .. }
@@ -400,6 +406,7 @@ async fn handle(
             _ => denied(StatusCode::NOT_FOUND),
         });
     }
+    let search_attempt = path == Some("/api/library/search-attempt");
     let proof_content = path == Some("/api/library/proof-content");
     let proof_attempt = path == Some("/api/library/proof-attempt");
     let proof_import = path == Some("/api/library/proof-import");
@@ -409,7 +416,8 @@ async fn handle(
             && !proof_content
             && !proof_attempt
             && !proof_session
-            && !proof_import)
+            && !proof_import
+            && !search_attempt)
     {
         return Ok(denied(StatusCode::METHOD_NOT_ALLOWED));
     }
@@ -430,7 +438,7 @@ async fn handle(
         Duration::from_secs(3),
         Limited::new(
             r.into_body(),
-            if proof_attempt || proof_session || proof_import {
+            if proof_attempt || proof_session || proof_import || search_attempt {
                 2 * 1024 * 1024
             } else if proof_content {
                 65536
@@ -454,6 +462,7 @@ async fn handle(
         || matches!(&request, Query::ProofAttempt { .. }) != proof_attempt
         || matches!(&request, Query::ProofSession { .. }) != proof_session
         || matches!(&request, Query::ProofImport { .. }) != proof_import
+        || matches!(&request, Query::SearchAttempt { .. }) != search_attempt
     {
         return Ok(denied(StatusCode::BAD_REQUEST));
     }

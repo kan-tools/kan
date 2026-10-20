@@ -362,6 +362,138 @@ pub(super) async fn search(
             if let Some((start,end,snippet,coarse,interpretation))=matching(&current,filter) {hits.push(json!({"record":current.record,"writer":current.writer,"kind":current.kind,"observer":current.observer,"attempt":current.attempt,"attested_at":current.record.issued_at,"offset":start.to_string(),"end":end.to_string(),"snippet":snippet,"coarse":coarse,"interpretation":interpretation}));}
         }}
         reader.page(&target.pin,None,1).await?;
-        let mut value=status(&page);value["state"]=json!("indexed");value["hits"]=json!(hits);value["unavailable_matches"]=json!(unavailable);Ok(value)
+        let mut metadata_filter=filter.clone();metadata_filter.text.clear();
+        let candidates:Vec<_>=page.documents.iter().filter(|d|d.kind=="capture" && matching(d,&metadata_filter).is_some()).map(|d|json!({"record":d.record,"writer":d.writer,"observer":d.observer,"attempt":d.attempt})).collect();
+        let mut value=status(&page);value["attempt_members"]=json!(candidates);value["state"]=json!("indexed");value["hits"]=json!(hits);value["unavailable_matches"]=json!(unavailable);Ok(value)
     }).await.map_err(|_|ContentError::Limited)?
+}
+
+/// Search reconstructed supported messages. All output citations identify source
+/// ranges in the supplied selection; normalized character offsets are not bytes.
+pub(super) async fn attempt(
+    reader: &Reader,
+    target: &Target,
+    selections: &[Token],
+    filter: &Filter,
+    workers: Arc<tokio::sync::Semaphore>,
+) -> Result<Value, ContentError> {
+    filter.validate()?;
+    if filter.text.is_empty() {
+        return Err(Failure::Invalid.into());
+    }
+    let bytes = crate::evidence_content::proof_content(
+        reader,
+        &target.pin,
+        selections,
+        crate::evidence_content::Format::AnthropicMessagesAuto,
+        workers.clone(),
+        true,
+    )
+    .await?;
+    let permit = workers
+        .try_acquire_owned()
+        .map_err(|_| ContentError::Busy)?;
+    let filter = filter.clone();
+    let value = tokio::task::spawn_blocking(move || {
+        let _permit = permit;
+        normalized(&bytes, &filter)
+    })
+    .await
+    .map_err(|_| ContentError::Limited)??;
+    reader.page(&target.pin, None, 1).await?;
+    Ok(value)
+}
+fn normalized(bytes: &[u8], filter: &Filter) -> Result<Value, ContentError> {
+    let value: Value = serde_json::from_slice(bytes).map_err(|_| Failure::Corrupt)?;
+    let occurrences = value["occurrences"].as_array().ok_or(Failure::Corrupt)?;
+    let mut hits = Vec::new();
+    let mut streams = Vec::new();
+    let mut citations = 0usize;
+    let mut metadata_filter = filter.clone();
+    metadata_filter.text.clear();
+    let query = filter.text.to_ascii_lowercase();
+    for group in value["groups"].as_array().ok_or(Failure::Corrupt)? {
+        for direction in ["request", "response"] {
+            let stream = &group[direction];
+            streams.push(json!({"attempt":group["attempt"],"direction":direction,"state":stream["state"],"issues":stream["issues"],"terminal":group["terminal"],"ordinal_gaps":group["ordinal_gaps"]}));
+            let sets = stream["citation_sets"].as_array().ok_or(Failure::Corrupt)?;
+            for (ordinal, item) in stream["items"]
+                .as_array()
+                .ok_or(Failure::Corrupt)?
+                .iter()
+                .enumerate()
+            {
+                // Keep message/block boundaries. Unsupported fields still have raw search.
+                let (text, citation_set) = if let Some(text) = item["text"].as_str() {
+                    (text, &item["citation_set"])
+                } else if let Some(text) = item["tool"]["json"].as_str() {
+                    (text, &item["tool"]["citation_set"])
+                } else {
+                    continue;
+                };
+                let Some(at) = text.to_ascii_lowercase().find(&query) else {
+                    continue;
+                };
+                let index = citation_set
+                    .as_str()
+                    .and_then(|s| s.parse::<usize>().ok())
+                    .ok_or(Failure::Corrupt)?;
+                let source_ranges = sets
+                    .get(index)
+                    .and_then(Value::as_array)
+                    .ok_or(Failure::Corrupt)?;
+                let mut cites = Vec::new();
+                let mut allowed = true;
+                for cite in source_ranges {
+                    let input = cite["input"]
+                        .as_str()
+                        .and_then(|s| s.parse::<usize>().ok())
+                        .ok_or(Failure::Corrupt)?;
+                    let origin = occurrences.get(input).ok_or(Failure::Corrupt)?;
+                    let record: Occurrence = serde_json::from_value(origin["record"].clone())
+                        .map_err(|_| Failure::Corrupt)?;
+                    let document = Document {
+                        record,
+                        writer: origin["writer"].as_str().map(str::to_owned),
+                        kind: "capture".into(),
+                        observer: group["observer"].as_str().map(str::to_owned),
+                        attempt: group["attempt"].as_str().map(str::to_owned),
+                        spans: vec![],
+                        unsearchable_bytes: 0,
+                    };
+                    if matching(&document, &metadata_filter).is_none() {
+                        allowed = false;
+                        break;
+                    }
+                    cites.push(json!({"record":document.record,"offset":cite["bytes"][0],"end":cite["bytes"][1]}));
+                }
+                if !allowed || cites.is_empty() {
+                    continue;
+                }
+                citations += cites.len();
+                if citations > 8192 || hits.len() >= 128 {
+                    return Err(ContentError::Limited);
+                }
+                let mut lo = at.saturating_sub(100);
+                while !text.is_char_boundary(lo) {
+                    lo += 1;
+                }
+                let mut hi = (at + query.len() + 100).min(text.len());
+                while !text.is_char_boundary(hi) {
+                    hi -= 1;
+                }
+                let first = &cites[0];
+                hits.push(json!({"record":first["record"],"offset":first["offset"],"end":first["end"],"snippet":&text[lo..hi],"coarse":true,"interpretation":"reconstructed-message","kind":"capture","writer":group["writer"],"observer":group["observer"],"attempt":group["attempt"],"direction":direction,"item":ordinal,"item_kind":item["kind"],"issues":item["issues"],"cites":cites}));
+            }
+        }
+    }
+    let out = json!({"version":"normalized-attempt-search/1","hits":hits,"streams":streams,"coverage":"Selected attempt only. Complete reconstructed supported message fields are searched across capture chunks. Each match retains all enclosing source ranges. Distinct messages and SSE delta items are not concatenated; incomplete streams and unsupported fields remain visible through raw search and Content."});
+    if serde_json::to_vec(&out)
+        .map_err(|_| Failure::Corrupt)?
+        .len()
+        > 4 * 1024 * 1024
+    {
+        return Err(ContentError::Limited);
+    }
+    Ok(out)
 }

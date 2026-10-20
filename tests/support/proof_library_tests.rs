@@ -38,7 +38,8 @@ impl Ui {
             .build()
             .unwrap()
             .post(
-                if value["action"] == "proof-content"
+                if value["action"] == "search-attempt"
+                    || value["action"] == "proof-content"
                     || value["action"] == "proof-attempt"
                     || value["action"] == "proof-session"
                     || value["action"] == "proof-import"
@@ -2385,4 +2386,109 @@ async fn owner_workspace_recovery_is_previewed_separate_and_retains_authored_his
     assert!(source.exists());
     ui.stop().await;
     server.stop().await;
+}
+
+#[tokio::test]
+async fn search_reconstructs_chunked_messages_with_all_citations_and_rechecks_loss_and_access() {
+    let body = br#"{"messages":[{"role":"user","content":"Hello \u0070roof archive"}]}"#;
+    let split = 47;
+    for profile in [Profile::Admitted, Profile::Copied] {
+        let dir = private_workspace_directory();
+        let local = private_workspace_directory();
+        let f = fixture_requests(dir.path(), profile, |n, a, p| {
+            let (event, bytes) = match n {
+                0 => (json!({"type":"request-chunk","offset":0}), &body[..split]),
+                1 => (
+                    json!({"type":"request-chunk","offset":split}),
+                    &body[split..],
+                ),
+                _ => (json!({"type":"request-end","bytes":body.len()}), &b""[..]),
+            };
+            encrypted_frame(
+                n,
+                a,
+                p,
+                &frame_bytes(&"a".repeat(64), n as u64, event, bytes),
+            )
+        });
+        let server = Server::start(&f).await;
+        let ui = Ui::start(
+            kan::evidence_library::Readers::new(None, vec![server.client(&f)])
+                .unwrap()
+                .with_workspace(
+                    kan::evidence_workspace::Workspace::open(
+                        &local.path().join("search.sqlite"),
+                        identity(6),
+                        [97; 32],
+                    )
+                    .unwrap(),
+                ),
+        )
+        .await;
+        let catalog = ui.call(json!({"action":"catalog"}), 200).await;
+        let entry = &catalog["scopes"][0];
+        let target = json!({"source":entry["id"],"pin":entry["pin"]});
+        ui.call(json!({"action":"index-page","target":target}), 200)
+            .await;
+        let filter = json!({"text":"Hello proof","observer":"collector"});
+        let raw = ui
+            .call(
+                json!({"action":"search-page","target":target,"filter":filter}),
+                200,
+            )
+            .await;
+        assert!(raw["hits"].as_array().unwrap().is_empty());
+        assert_eq!(raw["attempt_members"].as_array().unwrap().len(), 3);
+        let selections: Vec<_> = raw["attempt_members"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|m| m["record"]["selection"].clone())
+            .collect();
+        let query = json!({"action":"search-attempt","target":target,"selections":selections,"filter":filter});
+        let found = ui.call(query.clone(), 200).await;
+        assert_eq!(found["hits"].as_array().unwrap().len(), 1, "{found}");
+        let hit = &found["hits"][0];
+        assert_eq!(hit["interpretation"], "reconstructed-message");
+        assert_eq!(hit["snippet"], "Hello proof archive");
+        let cites = hit["cites"].as_array().unwrap();
+        assert_eq!(cites.len(), 2);
+        let mut reconstructed = Vec::new();
+        for cite in cites {
+            let start = cite["offset"].as_str().unwrap().parse::<u64>().unwrap();
+            let end = cite["end"].as_str().unwrap().parse::<u64>().unwrap();
+            let source = ui.call(json!({"action":"proof-source","source":entry["id"],"pin":entry["pin"],"selection":cite["record"]["selection"],"offset":start.to_string(),"length":(end-start).to_string()}),200).await;
+            reconstructed.extend(
+                service::unhex(
+                    source["bytes_hex"].as_str().unwrap(),
+                    (end - start) as usize,
+                )
+                .unwrap(),
+            );
+        }
+        assert_eq!(reconstructed, body);
+        let mut excluded = query.clone();
+        excluded["filter"]["kind"] = json!("opaque");
+        assert!(ui.call(excluded, 200).await["hits"]
+            .as_array()
+            .unwrap()
+            .is_empty());
+        f.remove(1);
+        let missing = ui.call(query.clone(), 200).await;
+        assert!(missing["hits"].as_array().unwrap().is_empty());
+        assert!(missing["streams"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|s| s["state"] == "unavailable"));
+        server
+            .service
+            .lock()
+            .unwrap()
+            .replace_grants(vec![])
+            .unwrap();
+        ui.call(query, 403).await;
+        ui.stop().await;
+        server.stop().await;
+    }
 }

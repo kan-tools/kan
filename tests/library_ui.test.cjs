@@ -687,3 +687,17 @@ test('owner offers reconciliation only when a fixed recovery directory is config
 test('owner workspace recovery offers only the configured recovery operation',async()=>{
  const u=ui();await ownerUI(u);u.node('owner-refresh').click();await tick();await u.respond({owner:'owner-did',targets:[{id:'reader-history',kind:'workspace-recovery'}],jobs:[],limits:{jobs:10}});assert.deepEqual(u.node('owner-operation').children.map(n=>n.value),['recover']);
 });
+
+test('search reconstructs selected attempts after inventory and opens every contributing range',async()=>{
+ const u=ui();await openSearch(u);
+ const member={record:proofRow,writer:'writer',observer:'collector',attempt:'a'.repeat(64)};
+ const page={...searchPage,hits:[],attempt_members:[member]};
+ await u.respond(page);await u.respond(page);
+ await u.respond(searchPage);await u.respond({...searchPage,hits:[],attempt_members:[]});
+ let q=JSON.parse(u.pending[0].opts.body);assert.equal(q.action,'search-attempt');assert.equal(q.target.source,'archive-A');assert.deepEqual(q.selections,[proofRow.selection]);
+ const second={...proofRow,sequence:'2',selection:{...proofRow.selection,body:'second-selection'}};
+ const hit={...searchPage.hits[0],kind:'capture',interpretation:'reconstructed-message',coarse:true,direction:'request',item:1,cites:[{record:proofRow,offset:'200',end:'210'},{record:second,offset:'300',end:'320'}]};
+ await u.respond({version:'normalized-attempt-search/1',hits:[hit],streams:[{attempt:member.attempt,direction:'response',state:'unavailable',issues:[]}]});
+ assert.equal(u.node('search-results').children.length,1);assert.match(u.node('search-facets').children.map(n=>n.textContent).join(' '),/response: unavailable/);assert.equal(u.node('resume-search').disabled,true);
+ const links=walk(u.node('search-results')).filter(n=>n.textContent.startsWith('Source '));assert.equal(links.length,2);links[1].click();await tick();q=JSON.parse(u.pending[0].opts.body);assert.equal(q.source,'archive-A');assert.equal(q.offset,'300');assert.deepEqual(q.selection,second.selection);await u.respond(proofSource);
+});
