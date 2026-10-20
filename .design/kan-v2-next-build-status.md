@@ -416,3 +416,19 @@ Latest fully green integration baseline: `2f91b45` (PR CI 39502707104, migration
 39502707118, perf 39502707116; companion capacity passed). Complete-selection
 erasure, including restart/intervening custody and stale-consent handling, passed.
 The indexed-storage work after that baseline is not yet runtime-qualified.
+
+At `3697dd1`, MSRV/compiler, default workspace tests, migration, perf and the
+separate indexed 11 MiB capture job passed. The broad v2 integration stage reached
+83 passing inventory tests but failed one copied-index fixture while constructing
+an invalid signed request, before its intended incomplete-copy assertion. The
+fixture now supplies a valid predecessor; the queued managed ingest/restore,
+maintenance and graph-pagination changes still need runtime qualification.
+
+Package inspection also found nonportable filenames in historical review
+artifacts. Cargo packaging now excludes `.design/reviews` while retaining the
+independent `.design/tools` oracles, both frontends and v2 source. Local package
+assembly (without compilation) succeeded at 3.2 MiB compressed. CI checks the file
+list, and the release workflow now qualifies v2 features and compiles the actual
+package before publication. The yanked `chacha20` 0.10.1 dependency is replaced by
+its 0.10.2 patch; this and the packaging changes await remote qualification. No
+release or registry publication has been performed.

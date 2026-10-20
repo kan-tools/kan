@@ -34,6 +34,7 @@ jobs:
       - run: python3 tests/test_revert_v2.py
 
       - uses: Swatinem/rust-cache@v2
+      - run: cargo package --list --locked > /dev/null
       - run: cargo build --workspace --all-targets
       - run: cargo test --workspace
       - run: python3 -m pip install cryptography==46.0.3

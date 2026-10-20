@@ -18,6 +18,10 @@ documentation = "https://docs.rs/kan"
 readme = "README.md"
 keywords = ["agents", "provenance", "append-only", "content-addressed", "mcp"]
 categories = ["command-line-utilities", "development-tools"]
+# Historical review logs and mutation snapshots remain in Git. They are not
+# runtime inputs, and some archived filenames are not portable Cargo paths.
+# Keep .design/tools: independent conformance oracles use those packaged files.
+exclude = [".design/reviews/**"]
 
 [features]
 # Draft RFC 4 reference API. No production caller or stable wire promise.

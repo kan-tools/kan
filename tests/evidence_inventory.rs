@@ -1641,8 +1641,20 @@ fn copied_index_tracks_resumable_recipe_prefix_native_append_and_erasure() {
     let partial = open(None);
     assert_eq!(partial.frontier().through, 1);
     assert_eq!(partial.recipe_metadata_match(), Some(false));
+    // A well-formed continuation must reach the incomplete-copy gate. A
+    // nonzero writer position without a predecessor fails while signing and
+    // never exercises the archive's refusal.
+    let partial_request = request(
+        1,
+        8,
+        partial
+            .frontier()
+            .manifest
+            .as_ref()
+            .map(ToString::to_string),
+    );
     assert!(archive
-        .admit_indexed(&request(3, 8, None), &identity(8), &grant(), 200, None)
+        .admit_indexed(&partial_request, &identity(8), &grant(), 200, None)
         .is_err());
     let old_pin = partial.frontier().clone();
     drop(partial);
