@@ -286,9 +286,11 @@ have the private-file reader's 64 KiB bound; HTTP requests allow 256 KiB.
 
 Back up this database and its recipient key separately. Index pages are disposable,
 but deleting the workspace also removes saved views. Nothing expires automatically.
-The database has a 256 MiB capacity bound and supports 200 view declarations; a
-full workspace reports failure instead of deleting history. Keep old workspaces
-when moving to a new one. Hot journals are refused at startup pending explicit
+The workspace grows to the underlying SQLite/filesystem capacity; it no longer
+stops at 256 MiB. Individual encrypted records and request pages remain bounded,
+and 200 view declarations are supported. Disk-full writes report failure without
+removing history. Recovery streams copies and hashes in 64 KiB chunks, then
+verifies each encrypted record, rather than loading a whole workspace into memory. Hot journals are refused at startup pending explicit
 owner recovery; do not delete them to force startup. Source erasure must include
 affected derived workspaces in the owner erasure plan.
 

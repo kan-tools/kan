@@ -388,3 +388,48 @@ fn workspace_erasure_refuses_a_stale_plan_without_partially_erasing_other_entrie
     foreign.scope = kan::evidence_service::hex(&[0; 32]);
     assert!(workspace.apply_erasure(&foreign).is_err());
 }
+
+#[test]
+fn workspace_beyond_old_capacity_reopens_writes_and_streams_recovery() {
+    let dir = private_directory();
+    let source = dir.path().join("large.sqlite");
+    let destination = dir.path().join("recovered.sqlite");
+    let w = Workspace::open(&source, identity(6), [8; 32]).unwrap();
+    let value = json!({"text":"retained before expansion"});
+    w.put("view", "before", value.clone()).unwrap();
+    drop(w);
+    // SQLite permits unused trailing pages. Sparse extension crosses the former
+    // open/recovery cap without a huge encrypted fixture or a large RAM buffer.
+    let bytes = 257 * 1024 * 1024;
+    std::fs::OpenOptions::new()
+        .write(true)
+        .open(&source)
+        .unwrap()
+        .set_len(bytes)
+        .unwrap();
+    let w = Workspace::open(&source, identity(6), [8; 32]).unwrap();
+    assert_eq!(w.get("view", "before").unwrap(), Some(value.clone()));
+    w.put("view", "after", json!({"text":"writes remain available"}))
+        .unwrap();
+    let db = rusqlite::Connection::open(&source).unwrap();
+    // Query on the writer's connection is not exposed; a successful reopened
+    // read/write above verifies startup no longer rejects the larger file.
+    assert_eq!(
+        db.query_row("PRAGMA integrity_check", [], |r| r.get::<_, String>(0))
+            .unwrap(),
+        "ok"
+    );
+    drop(db);
+    drop(w);
+    assert!(std::fs::metadata(&source).unwrap().len() >= bytes);
+    let report = Workspace::recover(&source, &destination, identity(6), [8; 32]).unwrap();
+    assert_eq!(report["authenticated_entries"]["view"], 2);
+    assert_eq!(report["originals"], "retained");
+    assert!(std::fs::metadata(&source).unwrap().len() >= bytes);
+    let recovered = Workspace::open(&destination, identity(6), [8; 32]).unwrap();
+    assert_eq!(recovered.get("view", "before").unwrap(), Some(value));
+    assert_eq!(
+        recovered.get("view", "after").unwrap().unwrap()["text"],
+        "writes remain available"
+    );
+}

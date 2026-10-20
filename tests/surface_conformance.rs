@@ -642,7 +642,7 @@ const PERSISTENCE_MUTATION_SITES: &[(&str, &str, &str, usize)] = &[
     ),
     (
         "src/evidence_workspace.rs",
-        "write_new_owner_only",
+        "open_new_owner_only",
         "EvidenceWorkspaceRecovery",
         1,
     ),

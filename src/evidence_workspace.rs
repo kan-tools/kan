@@ -9,7 +9,11 @@ use rusqlite::{params, Connection, OpenFlags, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
-use std::{io::Read, path::Path, sync::Mutex};
+use std::{
+    io::{Read, Seek, SeekFrom, Write},
+    path::Path,
+    sync::Mutex,
+};
 pub mod erasure;
 pub mod publication;
 
@@ -49,10 +53,7 @@ fn invalid<T>(_: T) -> Failure {
 }
 fn private(path: &Path, directory: bool) -> Result<()> {
     let m = std::fs::symlink_metadata(path).map_err(invalid)?;
-    if m.file_type().is_symlink()
-        || (directory && !m.is_dir())
-        || (!directory && (!m.is_file() || m.len() > 256 * 1024 * 1024))
-    {
+    if m.file_type().is_symlink() || (directory && !m.is_dir()) || (!directory && !m.is_file()) {
         return Err(Failure::Invalid);
     }
     #[cfg(unix)]
@@ -209,7 +210,7 @@ impl Workspace {
             return Err(Failure::Corrupt);
         }
         conn.execute_batch(
-            "PRAGMA synchronous=FULL; PRAGMA fullfsync=ON; PRAGMA max_page_count=65536;",
+            "PRAGMA synchronous=FULL; PRAGMA fullfsync=ON; PRAGMA max_page_count=4294967294;",
         )
         .map_err(invalid)?;
         let scope = Sha256::digest(
@@ -276,18 +277,47 @@ impl Workspace {
                 _ => return Err(Failure::Invalid),
             }
         }
-        fn bytes(path: &Path) -> Result<Vec<u8>> {
+        // Copy/hash fixed-size chunks. Recovery must not need the entire lifetime
+        // workspace (or rollback journal) resident in memory.
+        fn transfer(path: &Path, output: Option<&mut std::fs::File>) -> Result<String> {
             private(path, false)?;
-            let mut data = Vec::new();
-            std::fs::File::open(path)
-                .map_err(invalid)?
-                .take(256 * 1024 * 1024 + 1)
-                .read_to_end(&mut data)
-                .map_err(invalid)?;
-            if data.len() > 256 * 1024 * 1024 {
-                return Err(Failure::Invalid);
+            let mut source = std::fs::File::open(path).map_err(invalid)?;
+            let mut output = output;
+            let mut hash = Sha256::new();
+            let mut chunk = [0u8; 65536];
+            loop {
+                let n = source.read(&mut chunk).map_err(invalid)?;
+                if n == 0 {
+                    break;
+                }
+                hash.update(&chunk[..n]);
+                if let Some(writer) = &mut output {
+                    writer.write_all(&chunk[..n]).map_err(invalid)?;
+                }
             }
-            Ok(data)
+            Ok(evidence_service::hex(&hash.finalize()))
+        }
+        fn validate_copy(path: &Path, suffix: &str) -> Result<()> {
+            private(path, false)?;
+            let mut file = std::fs::File::open(path).map_err(invalid)?;
+            let mut header = [0u8; 28];
+            file.read_exact(&mut header).map_err(invalid)?;
+            if suffix.is_empty() {
+                if &header[..16] != b"SQLite format 3\0" || header[18..20] != [1, 1] {
+                    return Err(Failure::Corrupt);
+                }
+            } else {
+                // This application never ATTACHes databases. Refuse super-journal
+                // pointers before SQLite can follow a path outside the new copy.
+                const MAGIC: &[u8] = &[0xd9, 0xd5, 0x05, 0xf9, 0x20, 0xa1, 0x63, 0xd7];
+                let mut tail = [0u8; 8];
+                file.seek(SeekFrom::End(-8)).map_err(invalid)?;
+                file.read_exact(&mut tail).map_err(invalid)?;
+                if (header[..8] != *MAGIC && header[..8] != [0; 8]) || tail == *MAGIC {
+                    return Err(Failure::Corrupt);
+                }
+            }
+            Ok(())
         }
         let journal = sidecar(source, "-journal");
         let journal_present = match std::fs::symlink_metadata(&journal) {
@@ -302,31 +332,19 @@ impl Workspace {
             vec![""]
         } {
             let input = sidecar(source, suffix);
-            let data = bytes(&input)?;
-            if suffix.is_empty() {
-                if data.len() < 20 || &data[..16] != b"SQLite format 3\0" || data[18..20] != [1, 1]
-                {
-                    return Err(Failure::Corrupt);
-                }
-            } else {
-                // This application never ATTACHes databases. Refuse super-journal
-                // pointers before SQLite can follow a path outside the new copy.
-                const MAGIC: &[u8] = &[0xd9, 0xd5, 0x05, 0xf9, 0x20, 0xa1, 0x63, 0xd7];
-                if data.len() < 28
-                    || (data[..8] != *MAGIC && data[..8] != [0; 8])
-                    || data.ends_with(MAGIC)
-                {
-                    return Err(Failure::Corrupt);
-                }
-            }
-            let digest = evidence_service::hex(&Sha256::digest(&data));
+            validate_copy(&input, suffix)?;
             // surface-write: evidence-workspace-recovery:database,evidence-workspace-recovery:database-journal
-            crate::persistence::write_new_owner_only(
+            let mut output = crate::persistence::open_new_owner_only(
                 crate::persistence::SurfaceWrite::EvidenceWorkspaceRecovery,
                 &sidecar(destination, suffix),
-                &data,
             )
             .map_err(invalid)?;
+            let digest = transfer(&input, Some(&mut output))?;
+            output.sync_all().map_err(invalid)?;
+            drop(output);
+            // Revalidate the actual copied bytes before SQLite can interpret a
+            // rollback journal. The source may have changed while being copied.
+            validate_copy(&sidecar(destination, suffix), suffix)?;
             hashes.push((suffix, digest));
         }
         let recovered = Self::open_locked(destination, signer, private_key, target_lease, true)?;
@@ -356,8 +374,7 @@ impl Workspace {
         }
         // Every original input must still match the retained copy's source bytes.
         for (suffix, expected) in &hashes {
-            if evidence_service::hex(&Sha256::digest(bytes(&sidecar(source, suffix))?)) != *expected
-            {
+            if transfer(&sidecar(source, suffix), None)? != *expected {
                 return Err(Failure::Unavailable);
             }
         }
