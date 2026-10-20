@@ -263,7 +263,19 @@ async fn actual_proof_service_and_library_cli_restart_with_missing_payload() {
         policy
             .append(
                 kan::evidence_policy::Record::sign(
-                    policy.preview(vec![grant()], "b".repeat(64)).unwrap(),
+                    policy
+                        .preview(
+                            vec![
+                                grant(),
+                                service::Grant {
+                                    principal: identity(5).did().to_string(),
+                                    append: true,
+                                    inventory: false,
+                                },
+                            ],
+                            "b".repeat(64),
+                        )
+                        .unwrap(),
                     &identity(9),
                 )
                 .unwrap(),
@@ -324,6 +336,69 @@ async fn actual_proof_service_and_library_cli_restart_with_missing_payload() {
         assert!(!refused.status.success());
         assert!(String::from_utf8_lossy(&refused.stderr).contains("not registered"));
         assert!(!unregistered.exists());
+        // Real indexed ingress shares the same archive and independent policy
+        // as proof reads. Missing older payloads must not stall new capture.
+        let mut ingress = if profile == Profile::Admitted {
+            let (process, endpoint) = start_cli(
+                &[
+                    "--deployment",
+                    deployment.to_str().unwrap(),
+                    "serve-admitted",
+                    f.root.to_str().unwrap(),
+                    "--indexed",
+                    "--binding",
+                    binding_file.to_str().unwrap(),
+                    "--signing-key",
+                    owner.to_str().unwrap(),
+                    "--access-policy",
+                    policy_file.to_str().unwrap(),
+                    "--listen",
+                    "127.0.0.1:0",
+                ],
+                "proof ingest ",
+            );
+            let mut queue = kan::evidence_spool::Spool::create(
+                &dir.path().join("queue.sqlite"),
+                &service::hex(&f.binding.scope),
+                identity(5).did().as_str(),
+                &f.binding.issuer,
+                1024 * 1024,
+            )
+            .unwrap()
+            .with_erasure_history(custody.clone())
+            .unwrap();
+            let mut input = service::SignedRequest::decode(&encrypted(0, 8, None))
+                .unwrap()
+                .request;
+            input.principal = identity(5).did().to_string();
+            let service::Command::Append { id, .. } = &mut input.command else {
+                unreachable!()
+            };
+            *id = service::hex(&[50; 16]);
+            let bytes = service::SignedRequest::sign(input, &identity(5))
+                .unwrap()
+                .bytes()
+                .unwrap();
+            queue.enqueue(&bytes).unwrap();
+            let delivered = kan::evidence_delivery::deliver_one(&mut queue, &endpoint)
+                .await
+                .unwrap()
+                .unwrap();
+            assert!(queue.head().unwrap().is_none());
+            let retry = kan::evidence_http::send(&endpoint, &f.binding.issuer, &bytes)
+                .await
+                .unwrap();
+            assert_eq!(
+                service::admitted_manifest(&bytes, &retry, &f.binding.issuer)
+                    .unwrap()
+                    .cid()
+                    .to_string(),
+                delivered.manifest
+            );
+            Some((process, endpoint, queue, delivered.manifest))
+        } else {
+            None
+        };
         let (service_process, endpoint) = start_cli(
             &[
                 "--deployment",
@@ -390,9 +465,17 @@ async fn actual_proof_service_and_library_cli_restart_with_missing_payload() {
         assert_eq!(catalog["coverage"], "complete");
         let entry = &catalog["scopes"][0];
         let page:Value=call(json!({"action":"proof-page","source":entry["id"],"pin":entry["pin"],"cursor":null,"limit":40})).await.unwrap().json().await.unwrap();
-        assert_eq!(page["records"].as_array().unwrap().len(), 3);
-        assert_eq!(page["records"][0]["availability"], "missing");
-        let source:Value=call(json!({"action":"proof-source","source":entry["id"],"pin":entry["pin"],"selection":page["records"][1]["selection"],"offset":"0","length":"65536"})).await.unwrap().json().await.unwrap();
+        let missing_index = usize::from(profile == Profile::Admitted);
+        let available_index = missing_index + 1;
+        assert_eq!(page["records"].as_array().unwrap().len(), 3 + missing_index);
+        assert_eq!(page["records"][missing_index]["availability"], "missing");
+        if profile == Profile::Admitted {
+            let captured: Value = call(json!({"action":"proof-source","source":entry["id"],"pin":entry["pin"],"selection":page["records"][0]["selection"],"offset":"0","length":"65536"}))
+                .await.unwrap().json().await.unwrap();
+            assert_eq!(captured["bytes_hex"], service::hex(RAW));
+            assert_eq!(page["records"][0]["sequence"], "4");
+        }
+        let source:Value=call(json!({"action":"proof-source","source":entry["id"],"pin":entry["pin"],"selection":page["records"][available_index]["selection"],"offset":"0","length":"65536"})).await.unwrap().json().await.unwrap();
         assert_eq!(source["bytes_hex"], service::hex(RAW));
         let revoke = kan::evidence_policy::Record::sign(
             policy.preview(vec![], "c".repeat(64)).unwrap(),
@@ -400,12 +483,36 @@ async fn actual_proof_service_and_library_cli_restart_with_missing_payload() {
         )
         .unwrap();
         policy.append_with_checkpoint(revoke, &identity(9)).unwrap();
-        let denied = call(json!({"action":"proof-source","source":entry["id"],"pin":entry["pin"],"selection":page["records"][1]["selection"],"offset":"0","length":"65536"})).await.unwrap();
+        let denied = call(json!({"action":"proof-source","source":entry["id"],"pin":entry["pin"],"selection":page["records"][available_index]["selection"],"offset":"0","length":"65536"})).await.unwrap();
         assert_eq!(
             denied.status(),
             403,
             "running managed service must observe indexed revocation"
         );
+        if let Some((_, endpoint, queue, previous)) = &mut ingress {
+            let mut input =
+                service::SignedRequest::decode(&encrypted(1, 8, Some(previous.clone())))
+                    .unwrap()
+                    .request;
+            input.principal = identity(5).did().to_string();
+            let service::Command::Append { id, .. } = &mut input.command else {
+                unreachable!()
+            };
+            *id = service::hex(&[51; 16]);
+            let bytes = service::SignedRequest::sign(input, &identity(5))
+                .unwrap()
+                .bytes()
+                .unwrap();
+            queue.enqueue(&bytes).unwrap();
+            assert!(kan::evidence_delivery::deliver_one(queue, endpoint)
+                .await
+                .is_err());
+            assert_eq!(
+                queue.head().unwrap().unwrap(),
+                bytes,
+                "revocation retains exact unsent capture bytes"
+            );
+        }
         drop(library_process);
         drop(service_process);
     }
@@ -4252,6 +4359,7 @@ async fn cold_host_restores_source_search_annotations_and_references_from_indepe
     let minimum = genesis.id().unwrap();
     custody.append(genesis).unwrap();
     custody.minimum = Some(minimum);
+    custody.rebuild_serving_index(&identity(9)).unwrap();
     history.initialize().unwrap();
     let change = history.preview(service::hex(&[1; 32])).unwrap();
     let recipient = crypto::public_key(&change.unlock(&[92; 32]).unwrap()).unwrap();
@@ -4289,7 +4397,7 @@ async fn cold_host_restores_source_search_annotations_and_references_from_indepe
         use std::os::unix::fs::PermissionsExt;
         std::fs::set_permissions(&key_file, std::fs::Permissions::from_mode(0o600)).unwrap();
     }
-    let server = Server::start(&f).await;
+    let server = Server::start_indexed(&f).await;
     let r = client::Reader::new(
         identity(6),
         client::Access {
@@ -4308,7 +4416,12 @@ async fn cold_host_restores_source_search_annotations_and_references_from_indepe
     let ui = Ui::start(
         kan::evidence_library::Readers::new(None, vec![r])
             .unwrap()
-            .with_workspace(Workspace::open(&workspace, identity(6), [97; 32]).unwrap()),
+            .with_workspace(
+                Workspace::open(&workspace, identity(6), [97; 32])
+                    .unwrap()
+                    .with_erasure_histories(vec![custody.clone()])
+                    .unwrap(),
+            ),
     )
     .await;
     let catalog = ui.call(json!({"action":"catalog"}), 200).await;
@@ -4419,7 +4532,7 @@ async fn cold_host_restores_source_search_annotations_and_references_from_indepe
         [97; 32],
     )
     .unwrap();
-    let server = Server::start(&restored).await;
+    let server = Server::start_indexed(&restored).await;
     let r = client::Reader::new(
         identity(6),
         client::Access {
@@ -4525,7 +4638,12 @@ async fn cold_host_restores_source_search_annotations_and_references_from_indepe
     let ui = Ui::start(
         kan::evidence_library::Readers::new(None, vec![r])
             .unwrap()
-            .with_workspace(Workspace::open(&restored_workspace, identity(6), [97; 32]).unwrap()),
+            .with_workspace(
+                Workspace::open(&restored_workspace, identity(6), [97; 32])
+                    .unwrap()
+                    .with_erasure_histories(vec![custody.clone()])
+                    .unwrap(),
+            ),
     )
     .await;
     let resolved = ui
@@ -4581,7 +4699,7 @@ async fn cold_host_restores_source_search_annotations_and_references_from_indepe
     ui.stop().await;
     // An independently advanced custody checkpoint fences the stale restored
     // workspace before the CLI can serve its retained annotation/search data.
-    custody.append(erase).unwrap();
+    custody.append_with_checkpoint(erase, &identity(9)).unwrap();
     let refused = tokio::time::timeout(Duration::from_secs(30), managed().output())
         .await
         .unwrap()
