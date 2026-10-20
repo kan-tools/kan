@@ -594,4 +594,47 @@ fn managed_owner_launch_requires_the_registered_cleanup_inventory() {
         !offline.exists(),
         "inventory validation does not fabricate an offline replica"
     );
+    let mut reader_sources = json!([{"scope":svc::hex(&binding.scope),"endpoint":"http://127.0.0.1:1/v2/read",
+        "issuer":binding.issuer,"private_key_file":private,"protocol":kan::evidence_proof_service::PROTOCOL,
+        "profile":"admitted","archive":svc::hex(&binding.archive)}]);
+    let reader_config = write("reader.json", &serde_json::to_vec(&reader_sources).unwrap());
+    let owner_config = dir.path().join("owner.json");
+    tokio::runtime::Runtime::new().unwrap().block_on(async {
+        use tokio::io::{AsyncWriteExt, BufReader as TokioBufReader};
+        let mut command = tokio::process::Command::new(env!("CARGO_BIN_EXE_kan-v2"));
+        command.arg("--deployment").arg(&deployment).arg("library")
+            .arg("--config").arg(&reader_config).arg("--signing-key").arg(&key)
+            .arg("--workspace").arg(&database).arg("--workspace-key").arg(&private)
+            .arg("--owner-config").arg(&owner_config).arg("--mcp").arg("--mcp-owner");
+        let mut child = command.stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::null()).kill_on_drop(true).spawn().unwrap();
+        let mut input = child.stdin.take().unwrap();
+        let mut output = TokioBufReader::new(child.stdout.take().unwrap());
+        mcp_request(&mut input,&mut output,1,"initialize",json!({"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"managed-test","version":"1"}})).await;
+        input.write_all(b"{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\"}\n").await.unwrap();
+        let result = mcp_request(&mut input,&mut output,2,"tools/call",json!({"name":"kan_v2_owner","arguments":{"query":{"action":"catalog"}}})).await;
+        assert_eq!(result["result"]["structuredContent"]["targets"][0]["id"],"capture");
+        drop(input);
+        assert!(tokio::time::timeout(Duration::from_secs(5),child.wait()).await.unwrap().unwrap().success());
+    });
+    reader_sources[0]["archive"] = json!(svc::hex(&[33; 32]));
+    write("reader.json", &serde_json::to_vec(&reader_sources).unwrap());
+    let omitted_source = Process::new(env!("CARGO_BIN_EXE_kan-v2"))
+        .arg("--deployment")
+        .arg(&deployment)
+        .arg("library")
+        .arg("--config")
+        .arg(&reader_config)
+        .arg("--signing-key")
+        .arg(&key)
+        .arg("--workspace")
+        .arg(&database)
+        .arg("--workspace-key")
+        .arg(&private)
+        .arg("--request")
+        .arg(&request)
+        .output()
+        .unwrap();
+    assert!(!omitted_source.status.success());
+    assert!(String::from_utf8_lossy(&omitted_source.stderr)
+        .contains("Library source is absent from managed custody"));
 }
