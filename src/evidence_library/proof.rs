@@ -168,7 +168,15 @@ impl Readers {
                 self.import_content(&source, &pin, &selections, &plan, file, after, view)
                     .await?
             }
-            Query::KnowledgeGraph { subject, day } => self.knowledge_graph(subject, day).await?,
+            Query::KnowledgeGraph {
+                subject,
+                day,
+                after,
+                limit,
+            } => {
+                self.knowledge_graph(subject, day, after, limit.unwrap_or(100))
+                    .await?
+            }
             Query::AnnotationTriggers { id, retry } => self.annotation_triggers(&id, retry).await?,
             Query::AnalysisPreview { draft } => self.analysis_preview(draft).await?,
             Query::AnalysisSubmit {

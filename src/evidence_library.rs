@@ -59,6 +59,8 @@ pub enum Query {
         subject: Option<String>,
         #[serde(default)]
         day: bool,
+        after: Option<String>,
+        limit: Option<usize>,
     },
     AnnotationTriggers {
         id: String,

@@ -620,7 +620,7 @@ test('promoting model output drafts an editable annotation with job provenance a
 test('subject relations are previewed as attributed assertions and day browsing retains correction history',async()=>{
  const u=ui();await openKnowledge(u);u.node('relation-kind').value='InTensionWith';u.node('relation-target').value='telos/speed';u.node('add-relation').click();
  u.node('annotation-form').events.submit({preventDefault(){}});await tick();assert.deepEqual(JSON.parse(u.pending[0].opts.body).draft.relations,[{kind:'InTensionWith',target:'telos/speed'}]);
- u.node('cancel-annotation').click();await u.respond({});u.node('knowledge-mode').value='day';u.node('load-subjects').click();await tick();assert.deepEqual(JSON.parse(u.pending[0].opts.body),{action:'knowledge-graph',subject:null,day:true});
+ u.node('cancel-annotation').click();await u.respond({});u.node('knowledge-mode').value='day';u.node('load-subjects').click();await tick();assert.deepEqual(JSON.parse(u.pending[0].opts.body),{action:'knowledge-graph',subject:null,day:true,after:null,limit:100});
  await u.respond({coverage:'complete',authority:'Attributed declarations only',subjects:[{subject:'atom/storage',kind:'atom',declarations:2}],relations:[],records:[]});
  u.node('knowledge-subjects').children[0].click();await tick();assert.equal(JSON.parse(u.pending[0].opts.body).subject,'atom/storage');
  const declaration={id:'old-note',author:'reader',draft:{subject:'atom/storage',text:'```day-atom\n{"inputs":["raw"],"outputs":["durable"]}\n```',cites:[]}};
@@ -973,4 +973,22 @@ test('control and archive checkpoint repair use the shared preview-bound owner j
   u.node('owner-lock').click();await u.respond({state:'succeeded'});
   assert.equal(u.node('owner-jobs').children.length,0);
  }
+});
+
+
+test('graph pages preserve continuation through empty results, retry failures, and discard stale responses',async()=>{
+ const u=ui();await openKnowledge(u);u.node('load-subjects').click();await tick();
+ const empty={coverage:'complete',authority:'Attributed declarations',scope:'This page only',subjects:[],relations:[],records:[],next:'graph-page-2'};
+ await u.respond(empty);assert.equal(u.node('next-subjects').disabled,false);assert.match(u.node('knowledge-coverage').textContent,/more pages available/);
+ u.node('next-subjects').click();await tick();const next={action:'knowledge-graph',subject:null,day:false,after:'graph-page-2',limit:100};
+ assert.deepEqual(JSON.parse(u.pending[0].opts.body),next);await u.respond({},503);assert.equal(u.node('next-subjects').disabled,false);
+ u.node('next-subjects').click();await tick();assert.deepEqual(JSON.parse(u.pending[0].opts.body),next);
+ await u.respond({...empty,subjects:[{subject:'atom/later',kind:'atom',declarations:1}],next:null});assert.equal(u.node('next-subjects').disabled,true);assert.match(u.node('knowledge-subjects').children[0].textContent,/on this page/);
+ u.node('knowledge-subjects').children[0].click();await tick();assert.deepEqual(JSON.parse(u.pending[0].opts.body),{action:'knowledge-graph',subject:'atom/later',day:false,after:null,limit:100});
+ await u.respond(empty);assert.match(walk(u.node('knowledge-detail')).find(n=>String(n.textContent).includes('No currently authorized')).textContent,/on this page/);
+ u.node('next-subjects').click();await tick();assert.equal(JSON.parse(u.pending[0].opts.body).subject,'atom/later');
+ u.node('knowledge-mode').value='day';u.node('knowledge-mode').events.change();await u.respond({...empty,subjects:[{subject:'late-private-node'}]});
+ assert.equal(u.node('next-subjects').disabled,true);assert.equal(u.node('knowledge-subjects').children.length,0);
+ u.node('load-subjects').click();await tick();assert.deepEqual(JSON.parse(u.pending[0].opts.body),{action:'knowledge-graph',subject:null,day:true,after:null,limit:100});
+ u.node('lock').click();await u.respond(empty);assert.equal(u.node('next-subjects').disabled,true);assert.equal(u.node('knowledge-coverage').textContent,'');
 });

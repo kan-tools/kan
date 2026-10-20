@@ -333,6 +333,15 @@ assertion when a correction appears. Subject counts and edges include only
 currently authorized declarations, and a referenced target never implies access
 to its evidence.
 
+Graph browsing pages the declaration stream (1–100 entries, default 100) before
+applying subject or Day filters. Its opaque continuation survives reconnects;
+empty filtered pages retain continuation, and page-local counts never claim
+lifetime totals. Freshly authorized incoming corrections and withdrawals are
+resolved across pages. Related-metadata discovery streams the workspace with a
+20-second work budget and 8 MiB retained-metadata budget; exhaustion refuses the
+page rather than inventing an uncorrected assertion. This is an execution limit,
+not an annotation retention quota. UI, API, CLI and MCP share the same request.
+
 The day view selects `telos/`, `atom/`, `bridge/` and `thread/` subjects. Explicit
 fenced day JSON is shown as declared data beside the original text, including
 malformed-declaration notices. A human can follow relations, inspect a subject's

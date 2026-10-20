@@ -6508,13 +6508,44 @@ async fn annotation_pages_cross_1000_keep_off_page_history_and_recheck_access() 
     }
     assert!(cursor.is_null());
     assert_eq!(seen.len(), 1003);
-    let graph = ui
+    let mut cursor = Value::Null;
+    let mut graph_seen = std::collections::BTreeSet::new();
+    let mut graph_links = false;
+    let mut graph_first_next = Value::Null;
+    for page_number in 0..20 {
+        let graph = ui.call(json!({"action":"knowledge-graph","subject":"telos/paged-history","day":true,"after":cursor,"limit":100}), 200).await;
+        assert!(graph["records"].as_array().unwrap().len() <= 100);
+        assert!(graph["scope"].as_str().unwrap().contains("page-local"));
+        for record in graph["records"].as_array().unwrap() {
+            assert!(graph_seen.insert(record["declaration"]["id"].as_str().unwrap().to_string()));
+            if record["declaration"]["id"] == parent["id"] {
+                assert_eq!(record["corrected_by"], json!([correction["id"]]));
+                assert_eq!(record["withdrawn_by"], json!([withdrawal["id"]]));
+                graph_links = true;
+            }
+        }
+        cursor = graph["next"].clone();
+        if page_number == 0 {
+            graph_first_next = cursor.clone();
+        }
+        if cursor.is_null() {
+            break;
+        }
+    }
+    assert!(cursor.is_null());
+    assert!(graph_links);
+    assert_eq!(graph_seen.len(), 1003);
+    let empty = ui
         .call(
-            json!({"action":"knowledge-graph","subject":null,"day":true}),
+            json!({"action":"knowledge-graph","subject":"absent","limit":1}),
             200,
         )
         .await;
-    assert_eq!(graph["subjects"][0]["declarations"], 1003);
+    assert!(empty["subjects"].as_array().unwrap().is_empty());
+    assert!(
+        !empty["next"].is_null(),
+        "empty filtered graph page is not end of history"
+    );
     server
         .service
         .lock()
@@ -6527,6 +6558,14 @@ async fn annotation_pages_cross_1000_keep_off_page_history_and_recheck_access() 
     assert!(revoked["records"].as_array().unwrap().is_empty());
     assert!(revoked["withdrawals"].as_object().unwrap().is_empty());
     assert!(revoked["corrections"].as_object().unwrap().is_empty());
+    let revoked_graph = ui.call(json!({"action":"knowledge-graph","after":graph_first_next,"subject":"telos/paged-history"}), 200).await;
+    assert!(revoked_graph["subjects"].as_array().unwrap().is_empty());
+    assert!(revoked_graph["records"].as_array().unwrap().is_empty());
+    assert!(revoked_graph["relations"].as_array().unwrap().is_empty());
+    ui.call(json!({"action":"knowledge-graph","limit":0}), 400)
+        .await;
+    ui.call(json!({"action":"knowledge-graph","after":"invalid"}), 400)
+        .await;
     ui.call(json!({"action":"annotations","limit":0}), 400)
         .await;
     ui.call(json!({"action":"annotations","after":"invalid"}), 400)

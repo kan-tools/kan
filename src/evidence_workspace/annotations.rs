@@ -25,6 +25,8 @@ impl Workspace {
             .collect::<Result<_>>()?;
         let ids: BTreeSet<_> = selected.keys().cloned().collect();
         let mut related = Vec::new();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
+        let mut related_bytes = 0usize;
         if !ids.is_empty() {
             let conn = self.conn.lock().map_err(invalid)?;
             let tx = conn.unchecked_transaction().map_err(invalid)?;
@@ -34,6 +36,9 @@ impl Workspace {
                 .map_err(invalid)?;
             let mut rows = q.query([]).map_err(invalid)?;
             while let Some(row) = rows.next().map_err(invalid)? {
+                if std::time::Instant::now() >= deadline {
+                    return Err(Failure::Unavailable);
+                }
                 let id: String = row.get(0).map_err(invalid)?;
                 if erasure::erased(self, &tx, "annotation", &id)? {
                     continue;
@@ -56,10 +61,20 @@ impl Workspace {
                 if matches {
                     // Only attribution, links and exact access-check citations
                     // are needed; do not copy the neighbor's text or recipes.
-                    related.push(serde_json::json!({"id":annotation,"author":value["author"],
+                    let neighbor = serde_json::json!({"id":annotation,"author":value["author"],
                         "recovered_from":value["recovered_from"],"draft":{"subject":draft["subject"],
                         "text":"","tags":[],"cites":draft["cites"],
-                        "supersedes":draft["supersedes"],"withdraws":draft["withdraws"]}}));
+                        "supersedes":draft["supersedes"],"withdraws":draft["withdraws"]}});
+                    related_bytes = related_bytes
+                        .checked_add(serde_json::to_vec(&neighbor).map_err(invalid)?.len())
+                        .ok_or(Failure::Unavailable)?;
+                    // An execution budget, never a retention/declaration limit.
+                    // Refuse the page rather than omit cross-page history and
+                    // falsely render an assertion as uncorrected/unwithdrawn.
+                    if related_bytes > 8 * 1024 * 1024 {
+                        return Err(Failure::Unavailable);
+                    }
+                    related.push(neighbor);
                 }
             }
         }

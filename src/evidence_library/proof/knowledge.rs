@@ -443,15 +443,23 @@ impl Readers {
         &self,
         subject: Option<String>,
         day: bool,
+        after: Option<String>,
+        limit: usize,
     ) -> Result<Value, ContentError> {
         if subject.as_ref().is_some_and(|s| s.len() > 256) {
             return Err(Failure::Invalid.into());
         }
-        let visible = self.annotations(None, None).await?;
+        // Page declarations before materializing the graph. Incoming correction
+        // and withdrawal links remain freshly authorized across page boundaries.
+        // Subject/day filtering follows paging so incoming relation assertions
+        // on other subjects remain discoverable without a lifetime allocation.
+        let visible = self.annotations_page(None, None, after, limit).await?;
         let records = visible["records"].as_array().ok_or(Failure::Corrupt)?;
         let mut subjects = std::collections::BTreeMap::<String, Vec<&Value>>::new();
-        let corrected = linked_records(records, "supersedes")?;
-        let withdrawn = linked_records(records, "withdraws")?;
+        let corrected: std::collections::BTreeMap<String, Vec<String>> =
+            serde_json::from_value(visible["corrections"].clone()).map_err(|_| Failure::Corrupt)?;
+        let withdrawn: std::collections::BTreeMap<String, Vec<String>> =
+            serde_json::from_value(visible["withdrawals"].clone()).map_err(|_| Failure::Corrupt)?;
         for record in records {
             let name = record["draft"]["subject"]
                 .as_str()
@@ -490,7 +498,8 @@ impl Readers {
             }
         }
         Ok(
-            json!({"subjects":nodes,"relations":edges,"records":selected_records,"erased":visible["erased"],"coverage":visible["coverage"],
+            json!({"subjects":nodes,"relations":edges,"records":selected_records,"erased":visible["erased"],"coverage":visible["coverage"],"next":visible["next"],
+            "scope":"This declaration page only; counts are page-local. Incoming correction and withdrawal links are checked across the workspace. Continue even when a filtered page is empty; restart to include new earlier declarations.",
             "authority":"Reader-authored declarations only. Relations retain direction and attribution; identity is not merged. Corrections and withdrawals retain history; withdrawn edges are labeled, not removed. Unseen or unauthorized declarations are not counted."}),
         )
     }

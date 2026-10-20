@@ -16,7 +16,7 @@
   let annotationRecovery=null;
   let searchStates = [], searchRun = 0, searchFilter = null, searchHits = new Map(), searchPages = 0;
   let analysisEnabled=false,analysisDraft=null,analysisPreview=null,analysisRecipes=[];
-  let viewsNext=null, annotationsNext=null;
+  let viewsNext=null, annotationsNext=null, knowledgeNext=null, knowledgeSubject=null;
   let annotationsEnabled=false, annotationCites=[], annotationDerivations=[], annotationRelations=[], annotationSupersedes=null, annotationWithdraws=null, annotationPreview=null;
   let attemptMode = false;
   let pinWire = null, contentEnabled = false, contentValue = null, returnItem = null;
@@ -942,12 +942,14 @@
     $('annotation-relations').replaceChildren();annotationRelations.forEach((relation,index)=>{const row=textNode('p',`${relation.kind} → ${relation.target} `),remove=textNode('button','Remove relation');remove.type='button';remove.addEventListener('click',()=>{invalidateAnnotation();annotationRelations.splice(index,1);renderAnnotationRelations();});row.append(remove);$('annotation-relations').append(row);});
   }
   $('add-relation').addEventListener('click',()=>{const target=$('relation-target').value.trim();if(!target||annotationRelations.length>=16)return;invalidateAnnotation();annotationRelations.push({kind:$('relation-kind').value,target});$('relation-target').value='';renderAnnotationRelations();});
-  async function knowledgeSubjects(subject=null){
-    $('knowledge-detail').replaceChildren();if(subject===null)$('knowledge-subjects').replaceChildren();
-    const value=await rpc({action:'knowledge-graph',subject,day:subject===null&&$('knowledge-mode').value==='day'});if(!value)return;
-    if(!Array.isArray(value.subjects)||!Array.isArray(value.relations)||!Array.isArray(value.records))throw new Error('Invalid subject graph.');
-    $('knowledge-coverage').textContent=`${value.coverage} source checks · ${value.authority}`;
-    if(subject===null)for(const node of value.subjects){const button=textNode('button',`${node.subject} · ${node.kind} · ${node.declarations} declarations`);button.addEventListener('click',()=>run(()=>knowledgeSubjects(node.subject)));$('knowledge-subjects').append(button);}
+  async function knowledgeSubjects(subject=null,after=null){
+    knowledgeNext=after;knowledgeSubject=subject;$('next-subjects').disabled=true;
+    $('knowledge-detail').replaceChildren();$('knowledge-subjects').replaceChildren();
+    let value;try{value=await rpc({action:'knowledge-graph',subject,day:subject===null&&$('knowledge-mode').value==='day',after,limit:100});}catch(error){$('next-subjects').disabled=knowledgeNext===null;throw error;}if(!value)return;
+    if(!Array.isArray(value.subjects)||!Array.isArray(value.relations)||!Array.isArray(value.records)||(value.next!=null&&typeof value.next!=='string'))throw new Error('Invalid subject graph.');
+    knowledgeNext=value.next??null;$('next-subjects').disabled=knowledgeNext===null;
+    $('knowledge-coverage').textContent=`${value.coverage} source checks · Declaration page (${knowledgeNext?'more pages available':'end of current traversal'}) · ${value.scope||'Counts describe this page only.'} ${value.authority}`;
+    if(subject===null)for(const node of value.subjects){const button=textNode('button',`${node.subject} · ${node.kind} · ${node.declarations} declarations on this page`);button.addEventListener('click',()=>run(()=>knowledgeSubjects(node.subject)));$('knowledge-subjects').append(button);}
     const root=$('knowledge-detail');if(subject!==null)root.append(textNode('h3',subject));
     for(const record of value.records){const note=record.declaration,section=document.createElement('article');section.className='annotation';section.append(textNode('p',`${note.author} · ${note.id}${record.corrected_by.length?' · corrected by '+record.corrected_by.join(', '):''}${record.withdrawn_by?.length?' · withdrawn by '+record.withdrawn_by.join(', '):''}${note.draft.withdraws?' · withdrawal of '+note.draft.withdraws:''}`,'content-identity'));appendPagedText(section,note.draft.text,'content-text');
       for(const match of note.draft.text.matchAll(/```(day-(?:atom|bridge|telos))\s*\n([\s\S]*?)```/g)){
@@ -959,12 +961,14 @@
     if(value.relations.length){const table=document.createElement('table');table.className='relation-table';const head=document.createElement('tr');for(const label of ['From','Relation','To','Assertion'])head.append(textNode('th',label));table.append(head);
       for(const edge of value.relations){const row=document.createElement('tr');for(const name of [edge.from,edge.kind,edge.to]){const cell=document.createElement('td');if(name===edge.kind)cell.textContent=name;else{const open=textNode('button',name);open.addEventListener('click',()=>run(()=>knowledgeSubjects(name)));cell.append(open);}row.append(cell);}row.append(textNode('td',`${edge.author} · ${edge.annotation}${edge.corrected_by.length?' · corrected assertion retained':''}${edge.withdrawn_by?.length?' · withdrawn assertion retained':''}`));table.append(row);}root.append(table);}
     showErasedDerivatives(root,value.erased);
-    if(subject!==null&&!value.records.length)root.append(textNode('p','No currently authorized declaration for this subject. A relation target does not imply that its evidence is available.','content-coverage'));
+    if(subject!==null&&!value.records.length)root.append(textNode('p','No currently authorized declaration for this subject on this page. Continue through remaining pages; a relation target does not imply that its evidence is available.','content-coverage'));
   }
   $('load-subjects').addEventListener('click',()=>run(()=>knowledgeSubjects()));
-  $('knowledge-mode').addEventListener('change',()=>{cancelWork();$('knowledge-subjects').replaceChildren();$('knowledge-detail').replaceChildren();$('knowledge-coverage').textContent='View changed; browse subjects to refresh.';});
+  $('next-subjects').addEventListener('click',()=>{if(knowledgeNext!==null)run(()=>knowledgeSubjects(knowledgeSubject,knowledgeNext));});
+  $('knowledge-mode').addEventListener('change',()=>{cancelWork();knowledgeNext=null;knowledgeSubject=null;$('next-subjects').disabled=true;$('knowledge-subjects').replaceChildren();$('knowledge-detail').replaceChildren();$('knowledge-coverage').textContent='View changed; browse subjects to refresh.';});
 
   function clearKnowledge(hide=false) {
+    knowledgeNext=null;knowledgeSubject=null;$('next-subjects').disabled=true;
     annotationsNext=null;$('next-annotations').disabled=true;
     annotationCites=[];annotationDerivations=[];annotationRelations=[];$('annotation-relations').replaceChildren();$('relation-target').value='';annotationSupersedes=null;annotationWithdraws=null;annotationPreview=null;
     for(const id of ['annotation-subject','annotation-tags','add-relation'])$(id).disabled=false;

@@ -325,8 +325,11 @@ returns `next`, `corrections` and `withdrawals`; a filtered page may be empty wi
 a non-null continuation. Restart from the first page to include concurrent inserts
 that sort before an earlier cursor. Link discovery streams encrypted declarations
 and retains only matching attribution/citation metadata, not unrelated note bodies.
-Whole-corpus graph/search evaluations still grow with retained metadata and retain
-their execution budgets. A draft contains `subject`, `text`, `tags`, `cites` and nullable
+Graph browsing uses these bounded declaration pages. Incoming-link discovery
+streams the workspace with a 20-second work budget and at most 8 MiB of matching
+neighbor metadata; exhaustion refuses the page instead of omitting corrections
+or withdrawals. These are execution budgets, not retention limits. Whole-corpus
+search evaluations still grow with retained metadata. A draft contains `subject`, `text`, `tags`, `cites` and nullable
 `supersedes`. Each citation contains an exact `source`, `pin` and `selection` from
 the proof reader. Saving the same declaration again returns the original entry.
 `recorded_at` is the reader server's observation time, not a source event timestamp.
@@ -496,9 +499,17 @@ in the history. Process declarations in fenced `day-atom`, `day-bridge` or
 `day-telos` JSON blocks are inspectable as data; they are never executed by the
 browser. **Assess cited evidence** selects original citations for a recipe preview.
 
-The shared `knowledge-graph` action accepts optional `subject` and `day` fields;
-its result includes authorized subjects, relation assertions, selected declaration
-history and coverage. Imported v1 claims are not counted as authored v2 annotations.
+The shared `knowledge-graph` action accepts optional `subject`, `day`, opaque
+`after` and `limit` (1–100, default 100). **Next graph page** continues the current
+subject or Day view. Its result includes authorized subjects, relation assertions,
+selected declaration history, source-check coverage, explicit page scope and
+`next`. Counts describe this declaration page, not lifetime subject totals.
+Filtering follows paging so incoming relations remain discoverable; an empty
+filtered page can still have a continuation. Correction and withdrawal links
+include freshly authorized declarations outside the page. Restart browsing to
+include concurrent declarations that sort before an earlier cursor. Changing
+views or locking clears continuation; a failed page can be retried without
+advancing it. Imported v1 claims are not counted as authored v2 annotations.
 
 ## Owner maintenance
 
