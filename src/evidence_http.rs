@@ -18,11 +18,13 @@ use tokio::{net::TcpListener, sync::Semaphore};
 const MAX_REPLY: usize = 32 * 1024 * 1024;
 enum Hosted {
     Legacy(Service),
+    Admitted(crate::evidence_service::AdmittingService),
     Proof(proof::Service),
 }
 impl Hosted {
     fn dispatch(&mut self, bytes: &[u8], now: u64) -> Result<Vec<u8>, Failure> {
         match self {
+            Self::Admitted(service) => service.dispatch(bytes, now)?.bytes(),
             Self::Legacy(service) => service.dispatch(bytes, now)?.bytes(),
             Self::Proof(service) => service.dispatch(bytes, now)?.bytes(),
         }
@@ -116,6 +118,13 @@ pub async fn bind(address: SocketAddr) -> std::io::Result<TcpListener> {
 /// already accepted commits may finish, so clients retry original request bytes.
 pub async fn serve(listener: TcpListener, service: Service) -> std::io::Result<()> {
     serve_inner(listener, Hosted::Legacy(service), LEGACY).await
+}
+/// Owner-selected profile-2 ingest using existing signed append requests.
+pub async fn serve_admitted(
+    listener: TcpListener,
+    service: crate::evidence_service::AdmittingService,
+) -> std::io::Result<()> {
+    serve_inner(listener, Hosted::Admitted(service), LEGACY).await
 }
 /// Explicit proof-reader endpoint. No legacy fallback or write command.
 pub async fn serve_proof(listener: TcpListener, service: proof::Service) -> std::io::Result<()> {

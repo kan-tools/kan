@@ -221,3 +221,15 @@ for the annotation to be displayed. Missing payloads remain citable as explicitl
 unavailable evidence. The private workspace has a 1,000 annotation declaration
 budget, with explicit capacity failure and no automatic expiry. Other relation
 kinds, imported-v1 claim rendering and tag-triggered analysis remain separate work.
+
+### Live proof-archive ingress
+
+`serve-admitted` connects the existing durable spool protocol to the profile-2
+admission API. It accepts only authenticated scoped append requests, returns the
+existing signed durable commit reply after atomic source/receipt/attestation
+commit, and leaves all reads to the proof-aware read service. No append-to-read
+fallback or automatic legacy conversion is introduced. This supplies the live
+capture-to-proof-Library route; full-archive admission audit performance remains
+unchanged. Reader-workspace annotations are currently local authored records;
+publication of those declarations to the blind ledger is still required before
+calling the knowledge work package complete.

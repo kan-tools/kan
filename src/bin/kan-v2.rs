@@ -330,6 +330,19 @@ enum Command {
         #[arg(long, default_value = "127.0.0.1:7282")]
         listen: std::net::SocketAddr,
     },
+    /// Append encrypted queued requests to an explicitly selected proof archive.
+    #[cfg(feature = "v2-service")]
+    ServeAdmitted {
+        archive: PathBuf,
+        #[arg(long)]
+        binding: PathBuf,
+        #[arg(long)]
+        signing_key: PathBuf,
+        #[arg(long)]
+        grants: PathBuf,
+        #[arg(long, default_value = "127.0.0.1:7282")]
+        listen: std::net::SocketAddr,
+    },
     /// Serve proof metadata read-only, including archives with unavailable payloads.
     #[cfg(feature = "v2-service")]
     ServeProof {
@@ -910,6 +923,33 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 let listener=kan::evidence_http::bind(listen).await?;
                 println!("{}",serde_json::json!({"listen":listener.local_addr()?.to_string(),"issuer":service.issuer(),"experimental":true,"payload_encryption":"caller-supplied","grant_history":"not-retained","startup":"full-audit"}));
                 kan::evidence_http::serve(listener,service).await
+            })?;
+        }
+        #[cfg(feature = "v2-service")]
+        Command::ServeAdmitted {
+            archive,
+            binding,
+            signing_key,
+            grants,
+            listen,
+        } => {
+            let binding: kan::evidence_proof_service::Binding =
+                serde_json::from_slice(&bounded_read(std::fs::File::open(binding)?, 4096)?)?;
+            if binding.profile != kan::evidence_proof_service::Profile::Admitted {
+                return Err("ingest requires an explicitly admitted profile".into());
+            }
+            let service = kan::evidence_service::AdmittingService::new(
+                kan::evidence_store::attested::Archive::open(&archive, binding.owner_binding()?)?,
+                service_identity(&signing_key)?,
+                serde_json::from_slice(&bounded_read(std::fs::File::open(grants)?, 65536)?)?,
+            )?;
+            tokio::runtime::Runtime::new()?.block_on(async {
+                let listener=kan::evidence_http::bind(listen).await?;
+                eprintln!("proof ingest http://{}/v1/rpc",listener.local_addr()?);
+                #[cfg(feature="v2-crypto")]
+                {tokio::select!{result=kan::evidence_http::serve_admitted(listener,service)=>result,_=shutdown()=>Ok(())}}
+                #[cfg(not(feature="v2-crypto"))]
+                {kan::evidence_http::serve_admitted(listener,service).await}
             })?;
         }
         #[cfg(feature = "v2-service")]

@@ -445,6 +445,84 @@ fn view(record: &Committed) -> RecordView {
     }
 }
 
+/// Explicit profile-2 ingest. Read operations use the separate proof endpoint;
+/// the durable delivery request/reply format remains compatible with the spool.
+pub struct AdmittingService {
+    archive: crate::evidence_store::attested::Archive,
+    signer: Identity,
+    grants: BTreeMap<String, Grant>,
+}
+impl AdmittingService {
+    pub fn new(
+        archive: crate::evidence_store::attested::Archive,
+        signer: Identity,
+        grants: Vec<Grant>,
+    ) -> Result<Self> {
+        if archive.binding().issuer != signer.did().as_str() {
+            return Err(Failure::AccessLimited);
+        }
+        archive.verify()?;
+        let mut service = Self {
+            archive,
+            signer,
+            grants: BTreeMap::new(),
+        };
+        service.replace_grants(grants)?;
+        Ok(service)
+    }
+    pub fn issuer(&self) -> String {
+        self.signer.did().to_string()
+    }
+    pub fn replace_grants(&mut self, grants: Vec<Grant>) -> Result<()> {
+        let mut selected = BTreeMap::new();
+        for grant in grants {
+            author(&grant.principal)?;
+            if selected.insert(grant.principal.clone(), grant).is_some() {
+                return Err(Failure::Invalid);
+            }
+        }
+        self.grants = selected;
+        Ok(())
+    }
+    pub fn dispatch(&mut self, bytes: &[u8], now: u64) -> Result<SignedReply> {
+        if bytes.len() > MAX_REQUEST {
+            return Err(Failure::Invalid);
+        }
+        let result = self.append(bytes, now);
+        let reply = Reply {
+            version: 1,
+            request: hex(&Sha256::digest(bytes)),
+            issuer: self.issuer(),
+            result,
+        };
+        let signature = hex(&self
+            .signer
+            .sign(&preimage(REPLY_DOMAIN, &reply)?)
+            .map_err(|_| Failure::Unavailable)?);
+        Ok(SignedReply { reply, signature })
+    }
+    fn append(&mut self, bytes: &[u8], now: u64) -> Result<Output> {
+        let signed = SignedRequest::decode(bytes)?;
+        let request = &signed.request;
+        let grant = self
+            .grants
+            .get(&request.principal)
+            .ok_or(Failure::AccessLimited)?;
+        if !grant.append
+            || !matches!(request.command, Command::Append { .. })
+            || request.scope != hex(&self.archive.binding().scope)
+            || request.audience != self.issuer()
+        {
+            return Err(Failure::AccessLimited);
+        }
+        let admitted = self.archive.admit(bytes, &self.signer, grant, now)?;
+        Ok(Output::Committed {
+            record: view(&admitted.record),
+            duplicate: admitted.record.duplicate,
+        })
+    }
+}
+
 pub struct Service {
     ledger: Ledger,
     scope: String,

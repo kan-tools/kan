@@ -556,3 +556,142 @@ fn unproven_raw_append_between_audit_and_commit_conflicts() {
     );
     assert!(archive.verify().is_err());
 }
+
+#[cfg(feature = "v2-crypto")]
+#[tokio::test]
+async fn queued_capture_reaches_profile_two_over_http_and_reads_through_proof_reader() {
+    use kan::{
+        evidence_crypto as crypto, evidence_delivery as delivery, evidence_http as http,
+        evidence_proof_service as wire, evidence_reader::proof as reader,
+        evidence_service::AdmittingService, evidence_spool::Spool,
+    };
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path().join("archive");
+    std::fs::create_dir(&root).unwrap();
+    let archive = Archive::create(&root, binding()).unwrap();
+    let service = AdmittingService::new(archive, identity(7), vec![grant()]).unwrap();
+    let listener = http::bind("127.0.0.1:0".parse().unwrap()).await.unwrap();
+    let endpoint = format!("http://{}/v1/rpc", listener.local_addr().unwrap());
+    let ingest = tokio::spawn(http::serve_admitted(listener, service));
+    let mut spool = Spool::create(
+        &temp.path().join("spool.sqlite"),
+        &hex(&binding().scope),
+        identity(6).did().as_str(),
+        &binding().issuer,
+        8 * 1024 * 1024,
+    )
+    .unwrap();
+    let private = [71; 32];
+    let queued = delivery::queue(
+        &mut spool,
+        &identity(6),
+        &crypto::public_key(&private).unwrap(),
+        &[19; 16],
+        b"A retained message through real profile-2 ingress",
+    )
+    .unwrap();
+    let retained = spool.head().unwrap().unwrap();
+    let committed = delivery::deliver_one(&mut spool, &endpoint)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(queued.manifest, committed.manifest);
+    assert!(spool.head().unwrap().is_none());
+    let reply = http::send(&endpoint, &binding().issuer, &retained)
+        .await
+        .unwrap();
+    let kan::evidence_service::Output::Committed { duplicate, .. } = reply.reply.result.unwrap()
+    else {
+        panic!("append reply")
+    };
+    assert!(duplicate);
+    let pin = wire::Binding {
+        profile: wire::Profile::Admitted,
+        archive: hex(&binding().archive),
+        scope: hex(&binding().scope),
+        issuer: binding().issuer,
+    };
+    let service = wire::Service::new(
+        root.clone(),
+        pin.clone(),
+        identity(7),
+        vec![Grant {
+            principal: identity(5).did().to_string(),
+            append: false,
+            inventory: true,
+        }],
+        kan::evidence_store::inventory::Budget {
+            items: 100,
+            metadata_bytes: 1024 * 1024,
+            duration: std::time::Duration::from_secs(5),
+            cancelled: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+        },
+    )
+    .unwrap();
+    let listener = http::bind("127.0.0.1:0".parse().unwrap()).await.unwrap();
+    let endpoint_read = format!("http://{}/v2/read", listener.local_addr().unwrap());
+    let reads = tokio::spawn(http::serve_proof(listener, service));
+    let reader = reader::Reader::new(
+        identity(5),
+        reader::Access {
+            binding: pin,
+            endpoint: endpoint_read,
+            private_key: private,
+        },
+    )
+    .unwrap();
+    let snapshot = reader.snapshot().await.unwrap();
+    let page = reader.page(&snapshot, None, 1).await.unwrap();
+    assert_eq!(page.records[0].purpose, "admitted");
+    let reader::Source::Available { plaintext, .. } = reader
+        .source(&snapshot, &page.records[0].selection)
+        .await
+        .unwrap()
+    else {
+        panic!("retained source")
+    };
+    assert_eq!(
+        plaintext,
+        b"A retained message through real profile-2 ingress"
+    );
+    let forbidden = SignedRequest::sign(
+        Request {
+            version: 1,
+            scope: hex(&binding().scope),
+            principal: identity(5).did().to_string(),
+            audience: binding().issuer,
+            expires: None,
+            command: Operation::Append {
+                id: hex(&[28; 16]),
+                position: 0,
+                previous: None,
+                ciphertext: hex(b"denied"),
+            },
+        },
+        &identity(5),
+    )
+    .unwrap()
+    .bytes()
+    .unwrap();
+    assert_eq!(
+        http::send(&endpoint, &binding().issuer, &forbidden)
+            .await
+            .unwrap()
+            .reply
+            .result
+            .unwrap_err(),
+        Failure::AccessLimited
+    );
+    reads.abort();
+    ingest.abort();
+    let _ = reads.await;
+    let _ = ingest.await;
+    assert_eq!(
+        Archive::open(&root, binding())
+            .unwrap()
+            .verify()
+            .unwrap()
+            .through,
+        1
+    );
+}

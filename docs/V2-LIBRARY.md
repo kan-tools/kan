@@ -312,3 +312,28 @@ the checked `draft` and its `preview` digest, and `annotations` with optional
 `supersedes`. Each citation contains an exact `source`, `pin` and `selection` from
 the proof reader. Saving the same declaration again returns the original entry.
 `recorded_at` is the reader server's observation time, not a source event timestamp.
+
+## Writing captures into a proof archive
+
+An existing profile-2 archive can now receive the same signed, encrypted append
+requests used by the durable spool. Select it explicitly with the same admitted
+binding file used by the proof reader:
+
+```sh
+kan-v2 serve-admitted /absolute/path/archive \
+  --binding /absolute/path/admitted-binding.json \
+  --signing-key /absolute/path/archive-owner.identity \
+  --grants /absolute/path/ingest-grants.json \
+  --listen 127.0.0.1:7282
+```
+
+Point the existing queue drainer at `http://127.0.0.1:7282/v1/rpc`. The wire
+request and signed durable commit reply remain compatible with queued requests;
+each admitted record also gains an atomic issuer attestation in the archive.
+Exact retries return the original committed record. Wrong principals, scope,
+audience or append permissions are refused before storage mutation. Reads remain
+on `serve-proof` at `/v2/read`, with separately configured inventory grants.
+This command opens only an existing explicitly selected admitted archive; it does
+not convert a legacy archive, initialize one implicitly or enable network exposure
+beyond loopback. Use the existing authenticated transport/tunnel arrangement for
+remote access. Grant changes currently require owner restart/reconfiguration.
