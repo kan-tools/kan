@@ -1224,3 +1224,15 @@ custody and archive reconciliation succeed. Replica/queue work is still checked
 against current custody on each resume. These changes remove retry/history-count
 ceilings; per-operation discovery, journal-size and resource budgets remain and
 must not be read as claims of unlimited capacity.
+
+
+Workspace source cleanup streams each encrypted row, discards cached text and
+model bodies after checking their typed citations, and retains only the metadata
+needed for transitive lineage. Unrelated cached bytes and owner-job history no
+longer exhaust a whole-workspace scan quota. Cleanup applies at most 4,096 target
+fences / 64 MiB of selected ciphertext per batch. Analysis job declarations remain
+until their outputs and other selected non-job entries are fenced, so interruption
+between batches cannot turn retained model output into an orphan. Owner jobs show
+`pending-batches` until a subsequent dependency scan finds nothing left; resume
+continues the retained authorization. Each batch preserves unrelated entries and
+its tombstones reject delayed writes.

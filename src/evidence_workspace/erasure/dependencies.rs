@@ -10,6 +10,7 @@ struct Entry {
     kind: String,
     id: String,
     value: Value,
+    affected: bool,
 }
 fn text<'a>(v: &'a Value, key: &str) -> Result<&'a str> {
     v[key].as_str().ok_or(Failure::Corrupt)
@@ -46,6 +47,50 @@ fn cites(v: &Value, binding: &Binding, targets: &BTreeSet<(String, String)>) -> 
         binding,
         targets,
     )
+}
+fn directly_affected(
+    kind: &str,
+    value: &Value,
+    binding: &Binding,
+    targets: &BTreeSet<(String, String)>,
+) -> Result<bool> {
+    match kind {
+        "annotation" | "analysis-job" | "analysis-input" => {
+            cites(&value["draft"]["cites"], binding, targets)
+        }
+        "search-page" => {
+            if value["version"] != 3 {
+                return Err(Failure::Corrupt);
+            }
+            let docs = value["documents"].as_array().ok_or(Failure::Corrupt)?;
+            selections(
+                &Value::Array(
+                    docs.iter()
+                        .map(|d| d["record"]["selection"].clone())
+                        .collect(),
+                ),
+                binding,
+                targets,
+            )
+        }
+        "view" if value["kind"] == "import" => {
+            let records = value["records"].as_array().ok_or(Failure::Corrupt)?;
+            let mut yes = selections(
+                &Value::Array(records.iter().map(|r| r["selection"].clone()).collect()),
+                binding,
+                targets,
+            )?;
+            if let Some(controls) = value["query"]["view"].get("controls") {
+                for control in controls.as_array().ok_or(Failure::Corrupt)? {
+                    for part in control["parts"].as_array().ok_or(Failure::Corrupt)? {
+                        yes |= selections(&part["selections"], binding, targets)?;
+                    }
+                }
+            }
+            Ok(yes)
+        }
+        _ => Ok(false),
+    }
 }
 impl Workspace {
     /// Owner-side read snapshot of source-dependent annotation declarations.
@@ -99,7 +144,30 @@ impl Workspace {
         if ids.is_empty() {
             return Ok(None);
         }
-        self.preview_erasure_ids(&ids, authorization).map(Some)
+        let mut ids = ids;
+        ids.sort_by_key(|(kind, id)| (kind == "analysis-job", kind.clone(), id.clone()));
+        let selected = {
+            let conn = self.conn.lock().map_err(invalid)?;
+            let mut total = 0usize;
+            let mut selected = Vec::new();
+            for (kind, id) in ids {
+                let size: Option<usize> = conn
+                    .query_row(
+                        "SELECT length(body) FROM entries WHERE kind=? AND id=?",
+                        params![kind, id],
+                        |r| r.get(0),
+                    )
+                    .optional()
+                    .map_err(invalid)?;
+                if selected.len() == 4096 || total + size.unwrap_or(0) > 64 * 1024 * 1024 {
+                    break;
+                }
+                total += size.unwrap_or(0);
+                selected.push((kind, id));
+            }
+            selected
+        };
+        self.preview_erasure_ids(&selected, authorization).map(Some)
     }
     pub(in crate::evidence_workspace) fn erasure_dependency_ids(
         &self,
@@ -115,9 +183,10 @@ impl Workspace {
             .map(|t| (t.sequence.to_string(), t.manifest.clone()))
             .collect::<BTreeSet<_>>();
         let mut markers = BTreeSet::new();
+        let mut selected = BTreeSet::new();
         let entries = {
             let mut q = conn
-                .prepare("SELECT kind,id,body FROM entries ORDER BY kind,id LIMIT 16385")
+                .prepare("SELECT kind,id,body FROM entries ORDER BY kind,id")
                 .map_err(invalid)?;
             let rows = q
                 .query_map([], |r| {
@@ -129,18 +198,10 @@ impl Workspace {
                 })
                 .map_err(invalid)?;
             let mut entries = Vec::new();
-            let mut total = 0usize;
-            for (n, row) in rows.enumerate() {
-                if n >= 16384 {
-                    return Err(Failure::Unavailable);
-                }
+            for row in rows {
                 let (kind, id, bytes) = row.map_err(invalid)?;
                 if !allowed(&kind) && kind != "erasure" {
                     continue;
-                }
-                total = total.checked_add(bytes.len()).ok_or(Failure::Unavailable)?;
-                if total > 64 * 1024 * 1024 {
-                    return Err(Failure::Unavailable);
                 }
                 if kind == "erasure" {
                     let value = self.unseal(&kind, &id, &bytes)?;
@@ -159,15 +220,34 @@ impl Workspace {
                 if erased(self, conn, &kind, &id)? {
                     return Err(Failure::Corrupt);
                 }
+                let value = self.unseal(&kind, &id, &bytes)?;
+                let affected = directly_affected(&kind, &value, binding, &targets)?;
+                if affected {
+                    selected.insert((kind.clone(), id.clone()));
+                }
+                // Cache text, model inputs/outputs and note bodies cannot add
+                // graph edges. Drop them after checking their typed citations.
+                if matches!(kind.as_str(), "search-page" | "view" | "analysis-input") {
+                    continue;
+                }
+                let value = serde_json::json!({
+                    "id":value.get("id"), "version":value.get("version"),
+                    "manifest":value.get("manifest"), "annotation":value.get("annotation"), "job":value.get("job"),
+                    "draft": {
+                        "supersedes":value["draft"].get("supersedes"), "withdraws":value["draft"].get("withdraws"),
+                        "derived_from":value["draft"].get("derived_from").cloned().unwrap_or_else(||serde_json::json!([])),
+                        "retry_of":value["draft"].get("retry_of"), "trigger_annotation":value["draft"].get("trigger_annotation")
+                    }
+                });
                 entries.push(Entry {
-                    value: self.unseal(&kind, &id, &bytes)?,
+                    value,
                     kind,
                     id,
+                    affected,
                 });
             }
             entries
         };
-        let mut selected = BTreeSet::new();
         let mut annotations = BTreeSet::new();
         let mut jobs = BTreeSet::new();
         let mut annotation_entries = BTreeMap::new();
@@ -180,7 +260,7 @@ impl Workspace {
                         return Err(Failure::Corrupt);
                     }
                     annotation_entries.insert(id.to_string(), e);
-                    let yes = cites(&e.value["draft"]["cites"], binding, &targets)?;
+                    let yes = e.affected;
                     if yes {
                         annotations.insert(id.to_string());
                     }
@@ -192,43 +272,9 @@ impl Workspace {
                         return Err(Failure::Corrupt);
                     }
                     job_entries.insert(id.to_string(), e);
-                    let yes = cites(&e.value["draft"]["cites"], binding, &targets)?;
+                    let yes = e.affected;
                     if yes {
                         jobs.insert(id.to_string());
-                    }
-                    yes
-                }
-                // Inputs can survive a crash before the job declaration. Their
-                // exact hashed entry is still removed based on their own draft.
-                "analysis-input" => cites(&e.value["draft"]["cites"], binding, &targets)?,
-                "search-page" => {
-                    if e.value["version"] != 3 {
-                        return Err(Failure::Corrupt);
-                    }
-                    let docs = e.value["documents"].as_array().ok_or(Failure::Corrupt)?;
-                    selections(
-                        &Value::Array(
-                            docs.iter()
-                                .map(|d| d["record"]["selection"].clone())
-                                .collect(),
-                        ),
-                        binding,
-                        &targets,
-                    )?
-                }
-                "view" if e.value["kind"] == "import" => {
-                    let records = e.value["records"].as_array().ok_or(Failure::Corrupt)?;
-                    let mut yes = selections(
-                        &Value::Array(records.iter().map(|r| r["selection"].clone()).collect()),
-                        binding,
-                        &targets,
-                    )?;
-                    if let Some(controls) = e.value["query"]["view"].get("controls") {
-                        for control in controls.as_array().ok_or(Failure::Corrupt)? {
-                            for part in control["parts"].as_array().ok_or(Failure::Corrupt)? {
-                                yes |= selections(&part["selections"], binding, &targets)?;
-                            }
-                        }
                     }
                     yes
                 }

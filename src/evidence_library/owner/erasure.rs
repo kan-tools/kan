@@ -482,6 +482,7 @@ fn cleanup(
                     .map_err(invalid)?,
             )?;
             let mut removed = 0;
+            let mut pending = false;
             let mut checkpoints = Vec::new();
             for source in std::iter::once(history).chain(publications.iter().map(|p| &p.history)) {
                 let current = source.current()?;
@@ -492,6 +493,9 @@ fn cleanup(
                         {
                             local.apply_erasure(&plan)?;
                             removed += plan.targets.len();
+                            pending |= local
+                                .preview_source_erasure(&source.binding, erasure, record.id()?)?
+                                .is_some();
                         }
                     }
                 }
@@ -500,7 +504,7 @@ fn cleanup(
             local.reclaim_erased_pages()?;
 
             Ok(
-                json!({"database":workspace.database,"state":"reconciled","removed_or_fenced":removed,"checkpoints":checkpoints,"page_reclamation":"completed"}),
+                json!({"database":workspace.database,"state":if pending {"pending-batches"}else{"reconciled"},"removed_or_fenced":removed,"checkpoints":checkpoints,"page_reclamation":"completed"}),
             )
         };
         derived.push(match work() {

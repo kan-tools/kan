@@ -5540,3 +5540,78 @@ async fn owner_capture_erasure_revalidates_full_selection_and_resumes_offline_re
     assert_eq!(catalog["jobs"].as_array().unwrap().len(), 1);
     assert_eq!(catalog["jobs"][0]["attempts"], 7);
 }
+
+#[tokio::test]
+async fn workspace_source_cleanup_batches_large_cache_and_keeps_job_lineage_until_outputs_are_fenced(
+) {
+    use kan::evidence_workspace::Workspace;
+    let dir = private_workspace_directory();
+    let local = private_workspace_directory();
+    let f = fixture_requests(dir.path(), Profile::Admitted, encrypted);
+    let server = Server::start(&f).await;
+    let reader = server.client(&f);
+    let pin = reader.snapshot().await.unwrap();
+    let page = reader.page(&pin, None, 2).await.unwrap();
+    let binding = serde_json::from_value(json!({"profile":"admitted","archive":service::hex(&f.binding.archive),"scope":service::hex(&f.binding.scope),"issuer":f.binding.issuer})).unwrap();
+    let plan = attested::Archive::open(&f.root, f.binding.clone())
+        .unwrap()
+        .preview_erasure(&[1], "b".repeat(64), 200)
+        .unwrap();
+    let record = kan::evidence_store::erasure::Record::sign(plan, &identity(8)).unwrap();
+    let database = local.path().join("workspace.sqlite");
+    {
+        let workspace = Workspace::open(&database, identity(9), [84; 32]).unwrap();
+        for n in 0..9 {
+            workspace.put("search-page", &format!("large-{n}"), json!({"version":3,"documents":[{"record":page.records[0],"spans":[{"text":"x".repeat(8*1024*1024)}]}]})).unwrap();
+        }
+        workspace.put("search-page", "unrelated", json!({"version":3,"documents":[{"record":page.records[1],"spans":[{"text":"keep this"}]}]})).unwrap();
+        let cite = json!({"source":"source","pin":pin,"selection":page.records[0].selection});
+        workspace
+            .put(
+                "analysis-job",
+                "job",
+                json!({"id":"job","draft":{"cites":[cite]}}),
+            )
+            .unwrap();
+        workspace
+            .put("analysis-result", "job", json!({"text":"private output"}))
+            .unwrap();
+    }
+    let workspace = Workspace::open_for_erasure(&database, identity(9), [84; 32]).unwrap();
+    let first = workspace
+        .preview_source_erasure(&binding, &record, "c".repeat(64))
+        .unwrap()
+        .unwrap();
+    assert!(
+        !first.targets.iter().any(|t| t.kind == "analysis-job"),
+        "parent job remains until selected output/cache batches are covered"
+    );
+    workspace.apply_erasure(&first).unwrap();
+    assert!(workspace.get("analysis-result", "job").unwrap().is_none());
+    assert!(workspace.get("analysis-job", "job").unwrap().is_some());
+    let second = workspace
+        .preview_source_erasure(&binding, &record, "c".repeat(64))
+        .unwrap()
+        .unwrap();
+    workspace.apply_erasure(&second).unwrap();
+    assert!(workspace
+        .preview_source_erasure(&binding, &record, "c".repeat(64))
+        .unwrap()
+        .is_none());
+    assert!(workspace.get("analysis-job", "job").unwrap().is_none());
+    assert!(workspace.get("analysis-input", "job").unwrap().is_none());
+    for n in 0..9 {
+        assert!(workspace
+            .get("search-page", &format!("large-{n}"))
+            .unwrap()
+            .is_none());
+    }
+    assert!(workspace.get("search-page", "unrelated").unwrap().is_some());
+    drop(workspace);
+    let workspace = Workspace::open(&database, identity(9), [84; 32]).unwrap();
+    assert!(workspace
+        .put("analysis-result", "job", json!({"text":"late output"}))
+        .is_err());
+    assert!(workspace.get("search-page", "unrelated").unwrap().is_some());
+    server.stop().await;
+}
