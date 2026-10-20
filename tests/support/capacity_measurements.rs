@@ -16,7 +16,7 @@ fn binding() -> attested::Binding {
     }
 }
 
-fn signed(position: u64, previous: Option<String>) -> Vec<u8> {
+fn signed(writer: &Identity, audience: &str, position: u64, previous: Option<String>) -> Vec<u8> {
     // Actual random bytes, not sparse files, SQL padding, repeated CAS objects,
     // or compressible zeroes. This measures opaque storage, not an encryption job.
     let mut payload = vec![0; CHUNK];
@@ -25,8 +25,8 @@ fn signed(position: u64, previous: Option<String>) -> Vec<u8> {
         Request {
             version: 1,
             scope: service::hex(&[1; 32]),
-            principal: identity(6).did().to_string(),
-            audience: identity(8).did().to_string(),
+            principal: writer.did().to_string(),
+            audience: audience.to_string(),
             expires: None,
             command: Command::Append {
                 id: service::hex(&u128::from(position + 1).to_be_bytes()),
@@ -35,7 +35,7 @@ fn signed(position: u64, previous: Option<String>) -> Vec<u8> {
                 ciphertext: service::hex(&payload),
             },
         },
-        &identity(6),
+        writer,
     )
     .unwrap()
     .bytes()
@@ -44,15 +44,18 @@ fn signed(position: u64, previous: Option<String>) -> Vec<u8> {
 
 fn seed(root: &Path, chunks: u64) {
     assert!(chunks > 0);
+    let signer = identity(8);
+    let writer = identity(6);
+    let permission = grant();
     let mut archive = attested::Archive::create(root, binding()).unwrap();
-    archive.rebuild_serving_index(&identity(8)).unwrap();
+    archive.rebuild_serving_index(&signer).unwrap();
     let mut previous = None;
     for position in 0..chunks {
         let admitted = archive
             .admit_indexed(
-                &signed(position, previous),
-                &identity(8),
-                &grant(),
+                &signed(&writer, signer.did().as_str(), position, previous),
+                &signer,
+                &permission,
                 position + 1,
                 None,
             )
@@ -114,17 +117,24 @@ fn measured<T>(name: &str, operation: impl FnOnce() -> T) -> (T, Value) {
 
 fn probe(root: &Path, operation: &str) -> Value {
     let db = root.join("archive.sqlite");
+    let owner_binding = binding();
     match operation {
         "open" => {
             measured("open", || {
-                attested::Archive::open_indexed(root, binding(), None).unwrap()
+                attested::Archive::open_indexed(root, owner_binding, None).unwrap()
             })
             .1
         }
         "append" => {
-            let mut archive = attested::Archive::open_indexed(root, binding(), None).unwrap();
+            let mut archive =
+                attested::Archive::open_indexed(root, owner_binding.clone(), None).unwrap();
             let frontier = archive.indexed_frontier(None).unwrap();
-            let request = signed(frontier.through, frontier.manifest.map(|id| id.to_string()));
+            let request = signed(
+                &identity(6),
+                &owner_binding.issuer,
+                frontier.through,
+                frontier.manifest.map(|id| id.to_string()),
+            );
             let signer = identity(8);
             let permission = grant();
             measured("append", || {
@@ -142,7 +152,7 @@ fn probe(root: &Path, operation: &str) -> Value {
             let inventory = Inventory::open_indexed(
                 &db,
                 Profile::Admitted,
-                binding(),
+                owner_binding.clone(),
                 None,
                 None,
                 work.clone(),
@@ -171,7 +181,7 @@ fn probe(root: &Path, operation: &str) -> Value {
                     let Source::Available { bytes, .. } = inventory::source(
                         &db,
                         Profile::Admitted,
-                        binding(),
+                        owner_binding,
                         &selection,
                         service::MAX_REQUEST,
                         work,
