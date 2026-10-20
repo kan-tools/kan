@@ -767,3 +767,15 @@ destinations stay pending. Every retry reconciles current independent custody,
 including old restored workspace contents, before physical SQLite reclamation.
 This does not yet fence activation of unenrolled readers or erase queued and
 published copies. Those remain explicit product completion requirements.
+
+Managed reader workspaces may be enrolled through independently configured owner
+custody histories. Every workspace read/write/declaration operation holds current
+custody leases and verifies actual dependencies against all current non-genesis
+records. Successful audits may be reused only for the same custody heads and
+SQLite data_version, after establishing the operation's read transaction. Local
+writes invalidate this cache and must pass a prospective dependency audit before
+commit. Restored, externally changed, missing-history or rolled-back stores fail
+closed; a backup cannot choose its own acceptable history or assert that cleanup
+finished. Enrollment is explicit in independent Library configuration; unenrolled
+legacy API clients remain outside this guarantee. No new durable checkpoint or
+workspace schema is required for the freshness gate.

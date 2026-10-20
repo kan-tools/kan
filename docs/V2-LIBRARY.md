@@ -1079,3 +1079,14 @@ Active workspaces, unreadable records and orphan model outputs remain pending. N
 interpret archive payload removal as completed managed erasure. Backup purge
 is reported separately as `not-performed`; no historical backup is deleted,
 and service enrollment/activation remains explicit.
+
+Enroll a reader workspace with repeated `--workspace-erasure-history HISTORY.json`
+arguments to `kan-v2 library` (alongside `--workspace` / `--workspace-key`). Keep
+those history configurations independent of workspace backups. The reader checks
+current custody on every workspace operation; a custody advance fences reads and
+writes until dependencies are removed. An old restored workspace fails activation
+until the owner erasure job reconciles it. Successful audits are reused only while
+the custody heads and SQLite data version stay unchanged; local writes are checked
+before commit. Missing history, altered bytes or incomplete lineage fail closed.
+This flag does not enroll raw archive services or other reader deployments: their
+own custody configuration is still required.

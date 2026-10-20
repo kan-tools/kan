@@ -439,6 +439,7 @@ fn cleanup(target: &Target, record: custody::Record) -> Result<Value, Failure> {
                 }
             }
             local.reclaim_erased_pages()?;
+
             Ok(
                 json!({"database":workspace.database,"state":"reconciled","removed_or_fenced":removed,"owner_checkpoint":current.tip,"page_reclamation":"completed"}),
             )

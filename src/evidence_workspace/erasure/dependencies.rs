@@ -62,6 +62,21 @@ impl Workspace {
             return Err(Failure::Unavailable);
         }
         fixed(&authorization)?;
+        let ids = {
+            let conn = self.conn.lock().map_err(invalid)?;
+            self.erasure_dependency_ids(&conn, binding, record)?
+        };
+        if ids.is_empty() {
+            return Ok(None);
+        }
+        self.preview_erasure_ids(&ids, authorization).map(Some)
+    }
+    pub(in crate::evidence_workspace) fn erasure_dependency_ids(
+        &self,
+        conn: &Connection,
+        binding: &Binding,
+        record: &Record,
+    ) -> Result<Vec<(String, String)>> {
         record.validate(&binding.owner_binding()?, &record.plan.previous)?;
         let targets = record
             .plan
@@ -71,7 +86,6 @@ impl Workspace {
             .collect::<BTreeSet<_>>();
         let mut markers = BTreeSet::new();
         let entries = {
-            let conn = self.conn.lock().map_err(invalid)?;
             let mut q = conn
                 .prepare("SELECT kind,id,body FROM entries ORDER BY kind,id LIMIT 16385")
                 .map_err(invalid)?;
@@ -103,7 +117,7 @@ impl Workspace {
                     let target_kind = text(&value, "kind")?;
                     let target_id = text(&value, "id")?;
                     if id != marker_id(target_kind, target_id)
-                        || !erased(self, &conn, target_kind, target_id)?
+                        || !erased(self, conn, target_kind, target_id)?
                     {
                         return Err(Failure::Corrupt);
                     }
@@ -112,7 +126,7 @@ impl Workspace {
                 }
                 // Reintroduced raw bytes under a tombstone are corruption, never
                 // treated as an empty/clean destination by the coordinator.
-                if erased(self, &conn, &kind, &id)? {
+                if erased(self, conn, &kind, &id)? {
                     return Err(Failure::Corrupt);
                 }
                 entries.push(Entry {
@@ -315,10 +329,6 @@ impl Workspace {
             }
         }
         selected.retain(|id| !markers.contains(id));
-        if selected.is_empty() {
-            return Ok(None);
-        }
-        self.preview_erasure_ids(&selected.into_iter().collect::<Vec<_>>(), authorization)
-            .map(Some)
+        Ok(selected.into_iter().collect())
     }
 }

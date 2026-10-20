@@ -4130,7 +4130,10 @@ async fn owner_capture_erasure_revalidates_full_selection_and_resumes_offline_re
     let old_workspace = local.path().join("reader-before.sqlite");
     std::fs::copy(&derived_path, &old_workspace).unwrap();
     let held_workspace =
-        kan::evidence_workspace::Workspace::open(&derived_path, identity(9), PRIVATE).unwrap();
+        kan::evidence_workspace::Workspace::open(&derived_path, identity(9), PRIVATE)
+            .unwrap()
+            .with_erasure_histories(vec![history.clone()])
+            .unwrap();
     let state = local.path().join("owner.sqlite");
     let readers = || {
         let workspace =
@@ -4210,6 +4213,17 @@ async fn owner_capture_erasure_revalidates_full_selection_and_resumes_offline_re
         done["result"]["report"]["workspaces"][0]["state"], "pending",
         "active workspace must refuse cleanup"
     );
+    assert!(
+        held_workspace.get("annotation", &note).is_err(),
+        "live custody advance fences managed reads before physical cleanup"
+    );
+    assert!(held_workspace
+        .put(
+            "view",
+            "after-erasure",
+            json!({"name":"refused until reconciliation"})
+        )
+        .is_err());
     drop(held_workspace);
     ui.stop().await;
     std::fs::copy(&backup, replica.path().join("archive.sqlite")).unwrap();
@@ -4303,6 +4317,13 @@ async fn owner_capture_erasure_revalidates_full_selection_and_resumes_offline_re
     // A managed old workspace restoration is reconciled from independent custody,
     // not trusted just because it predates the tombstone schema.
     std::fs::copy(&old_workspace, &derived_path).unwrap();
+    assert!(
+        kan::evidence_workspace::Workspace::open(&derived_path, identity(9), PRIVATE)
+            .unwrap()
+            .with_erasure_histories(vec![history.clone()])
+            .is_err(),
+        "old managed restore refuses activation before reconciliation"
+    );
     let restored = owner_call(
         &ui,
         OWNER,
@@ -4321,6 +4342,60 @@ async fn owner_capture_erasure_revalidates_full_selection_and_resumes_offline_re
             .get("annotation", &note)
             .unwrap()
             .is_none()
+    );
+    {
+        let managed = kan::evidence_workspace::Workspace::open(&derived_path, identity(9), PRIVATE)
+            .unwrap()
+            .with_erasure_histories(vec![history.clone()])
+            .unwrap();
+        assert!(managed.get("annotation", &keep).unwrap().is_some());
+        let fresh = "7".repeat(64);
+        assert!(
+            managed
+                .put(
+                    "annotation",
+                    &fresh,
+                    json!({"id":fresh,"draft":{"cites":[cite],"text":"forbidden new derivative"}})
+                )
+                .is_err(),
+            "prospective writes must not recreate erased dependencies"
+        );
+        assert!(
+            managed.get("annotation", &fresh).unwrap().is_none(),
+            "failed prospective write rolls back atomically"
+        );
+        let old = rusqlite::Connection::open(&old_workspace).unwrap();
+        let bytes: Vec<(String, Vec<u8>)> = old
+            .prepare("SELECT id,body FROM entries WHERE kind='annotation'")
+            .unwrap()
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        let live = rusqlite::Connection::open(&derived_path).unwrap();
+        for (id, body) in bytes {
+            live.execute(
+                "INSERT OR REPLACE INTO entries VALUES('annotation',?,?)",
+                rusqlite::params![id, body],
+            )
+            .unwrap();
+        }
+        assert!(
+            managed.get("annotation", &keep).is_err(),
+            "external SQLite changes invalidate the successful audit cache"
+        );
+    }
+    std::fs::copy(&old_workspace, &derived_path).unwrap();
+    let repaired = owner_call(
+        &ui,
+        OWNER,
+        json!({"action":"resume-erasure","id":preview["digest"],"wait":true}),
+        200,
+    )
+    .await;
+    assert_eq!(
+        repaired["result"]["report"]["workspaces"][0]["state"], "reconciled",
+        "{repaired}"
     );
     {
         let damaged =
@@ -4346,9 +4421,9 @@ async fn owner_capture_erasure_revalidates_full_selection_and_resumes_offline_re
     );
     assert_eq!(
         refused["result"]["report"]["workspaces"][0]["error"],
-        "Corrupt"
+        "corrupt"
     );
     let catalog = owner_call(&ui, OWNER, json!({"action":"catalog"}), 200).await;
     assert_eq!(catalog["jobs"].as_array().unwrap().len(), 1);
-    assert_eq!(catalog["jobs"][0]["attempts"], 5);
+    assert_eq!(catalog["jobs"][0]["attempts"], 6);
 }

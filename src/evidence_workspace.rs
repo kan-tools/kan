@@ -21,6 +21,8 @@ pub struct Workspace {
     conn: Mutex<Connection>,
     _maintenance: std::fs::File,
     erasure_maintenance: bool,
+    erasure_histories: Vec<crate::evidence_erasure_history::Access>,
+    erasure_audit: Mutex<Option<(i64, Vec<String>)>>,
     path: std::path::PathBuf,
     signer: Identity,
     private: [u8; 32],
@@ -222,6 +224,8 @@ impl Workspace {
             conn: Mutex::new(conn),
             _maintenance: maintenance,
             erasure_maintenance: false,
+            erasure_histories: Vec::new(),
+            erasure_audit: Mutex::new(None),
             path: path.to_path_buf(),
             signer,
             private: private_key,
@@ -488,10 +492,12 @@ impl Workspace {
     pub fn get(&self, kind: &str, key: &str) -> Result<Option<Value>> {
         let id = Self::id(kind, key);
         let conn = self.conn.lock().map_err(invalid)?;
-        if erasure::erased(self, &conn, kind, &id)? {
+        let tx = conn.unchecked_transaction().map_err(invalid)?;
+        let _custody = self.check_erasure_histories(&tx)?;
+        if erasure::erased(self, &tx, kind, &id)? {
             return Ok(None);
         }
-        let bytes: Option<Vec<u8>> = conn
+        let bytes: Option<Vec<u8>> = tx
             .query_row(
                 "SELECT body FROM entries WHERE kind=? AND id=?",
                 params![kind, id],
@@ -539,6 +545,7 @@ impl Workspace {
         let tx = conn
             .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
             .map_err(invalid)?;
+        let custody = self.check_erasure_histories(&tx)?;
         if erasure::erased(self, &tx, kind, &id)? {
             return Err(Failure::AccessLimited);
         }
@@ -583,6 +590,10 @@ impl Workspace {
             )
             .map_err(invalid)?;
         }
+        // Local commits do not change this connection's data_version. Forget
+        // its positive cache before validating prospective rows or committing.
+        *self.erasure_audit.lock().map_err(invalid)? = None;
+        self.audit_erasure_snapshots(&tx, &custody)?;
         tx.commit().map_err(invalid)
     }
     /// Bounded view declarations only; cache pages are addressed explicitly.
@@ -600,7 +611,9 @@ impl Workspace {
     }
     fn declarations(&self, kind: &str, limit: usize) -> Result<Vec<Value>> {
         let conn = self.conn.lock().map_err(invalid)?;
-        let mut q = conn
+        let tx = conn.unchecked_transaction().map_err(invalid)?;
+        let _custody = self.check_erasure_histories(&tx)?;
+        let mut q = tx
             .prepare("SELECT id,body FROM entries WHERE kind=? ORDER BY id LIMIT ?")
             .map_err(invalid)?;
         let rows = q
@@ -611,7 +624,7 @@ impl Workspace {
         let mut out = Vec::new();
         for row in rows {
             let (id, b) = row.map_err(invalid)?;
-            if !erasure::erased(self, &conn, kind, &id)? {
+            if !erasure::erased(self, &tx, kind, &id)? {
                 out.push(self.unseal(kind, &id, &b)?);
             }
         }

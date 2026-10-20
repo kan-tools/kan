@@ -175,6 +175,9 @@ enum Command {
         workspace: Option<PathBuf>,
         #[arg(long, requires = "workspace")]
         workspace_key: Option<PathBuf>,
+        /// Independent current owner erasure custody; repeat for each managed source.
+        #[arg(long, requires = "workspace")]
+        workspace_erasure_history: Vec<PathBuf>,
         /// Mount existing operations with a separate read credential.
         #[arg(long, requires = "operations_token_file")]
         operations_journal: Option<PathBuf>,
@@ -688,6 +691,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             listen,
             workspace,
             workspace_key,
+            workspace_erasure_history,
             annotation_outbox,
             analysis_config,
             owner_config,
@@ -790,11 +794,28 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             };
             let mut reader = kan::evidence_library::Readers::new(legacy, proofs)?;
             if let (Some(path), Some(key)) = (workspace, workspace_key) {
-                reader = reader.with_workspace(kan::evidence_workspace::Workspace::open(
-                    &path,
-                    service_identity(&signing_key)?,
-                    recipient_private(&key)?,
-                )?);
+                let histories = workspace_erasure_history
+                    .iter()
+                    .map(
+                        |path| -> Result<
+                            kan::evidence_erasure_history::Access,
+                            Box<dyn std::error::Error>,
+                        > {
+                            Ok(serde_json::from_slice(&bounded_read(
+                                std::fs::File::open(path)?,
+                                65536,
+                            )?)?)
+                        },
+                    )
+                    .collect::<Result<Vec<_>, _>>()?;
+                reader = reader.with_workspace(
+                    kan::evidence_workspace::Workspace::open(
+                        &path,
+                        service_identity(&signing_key)?,
+                        recipient_private(&key)?,
+                    )?
+                    .with_erasure_histories(histories)?,
+                );
             }
             if let Some(path) = owner_config {
                 reader = reader.with_owner(load_owner(&path)?);
