@@ -253,7 +253,7 @@ mod tests {
                     nonce: "c".repeat(64),
                     recorded_at: 1,
                     targets: vec![storage::Target {
-                        sequence: n,
+                        sequence: n + 1,
                         manifest: manifest.clone(),
                         object: object.clone(),
                         length: 1,

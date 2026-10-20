@@ -4091,6 +4091,7 @@ async fn cold_host_restores_source_search_annotations_and_references_from_indepe
     let key_dir = private_workspace_directory();
     let local = private_workspace_directory();
     let backup = private_workspace_directory();
+    let independent_custody = private_workspace_directory();
     let restored_keys = private_workspace_directory();
     let restored_data = private_workspace_directory();
     let recovered_local = private_workspace_directory();
@@ -4107,6 +4108,23 @@ async fn cold_host_restores_source_search_annotations_and_references_from_indepe
         recovery_recipient: service::hex(&crypto::public_key(&[92; 32]).unwrap()),
         minimum: None,
     };
+    // Current owner custody is independently retained, never selected from the
+    // archive or workspace being restored.
+    let mut custody = kan::evidence_erasure_history::Access {
+        directory: independent_custody.path().to_owned(),
+        binding: history.binding.clone(),
+        owner: identity(9).did().to_string(),
+        minimum: None,
+    };
+    custody.initialize().unwrap();
+    let genesis = kan::evidence_erasure_history::Record::sign(
+        custody.preview(None, "d".repeat(64)).unwrap(),
+        &identity(9),
+    )
+    .unwrap();
+    let minimum = genesis.id().unwrap();
+    custody.append(genesis).unwrap();
+    custody.minimum = Some(minimum);
     history.initialize().unwrap();
     let change = history.preview(service::hex(&[1; 32])).unwrap();
     let recipient = crypto::public_key(&change.unlock(&[92; 32]).unwrap()).unwrap();
@@ -4285,9 +4303,95 @@ async fn cold_host_restores_source_search_annotations_and_references_from_indepe
     )
     .unwrap()
     .with_epochs(keys::ReaderAccess {
-        history: recovered_history,
-        recovery_key: new_key,
+        history: recovered_history.clone(),
+        recovery_key: new_key.clone(),
     })
+    .unwrap();
+    let write = |name: &str, bytes: &[u8]| {
+        let path = recovered_local.path().join(name);
+        std::fs::write(&path, bytes).unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).unwrap();
+        }
+        path
+    };
+    let signing = recovered_local.path().join("reader-signing.key");
+    identity(6).save(&signing).unwrap();
+    let workspace_key = write("workspace.key", &[97; 32]);
+    let fixed_key = write("fixed.key", &[0; 32]);
+    let custody_file = write("custody.json", &serde_json::to_vec(&custody).unwrap());
+    let guard = write("guard.json", &serde_json::to_vec(&json!({
+        "database":restored_workspace,"signing_key":signing,"recipient_key":workspace_key,"sources":[custody]
+    })).unwrap());
+    let deployment = write(
+        "deployment.json",
+        &serde_json::to_vec(&json!({"version":1,
+            "archives":[{"root":restored.root,"history":custody_file}],
+            "workspaces":[{"database":restored_workspace,"guard":guard}]
+        }))
+        .unwrap(),
+    );
+    let config = write(
+        "reader.json",
+        &serde_json::to_vec(&json!([{
+            "scope":recovered_history.binding.scope,"issuer":recovered_history.binding.issuer,
+            "profile":"admitted","archive":recovered_history.binding.archive,
+            "protocol":wire::PROTOCOL,"endpoint":server.endpoint,"private_key_file":fixed_key,
+            "epoch_keys":{"history":recovered_history,"recovery_key":new_key}
+        }]))
+        .unwrap(),
+    );
+    let request = write(
+        "request.json",
+        &serde_json::to_vec(&json!({"action":"resolve-reference","reference":reference})).unwrap(),
+    );
+    let managed = || {
+        let mut command = tokio::process::Command::new(env!("CARGO_BIN_EXE_kan-v2"));
+        command
+            .arg("--deployment")
+            .arg(&deployment)
+            .arg("library")
+            .arg("--config")
+            .arg(&config)
+            .arg("--signing-key")
+            .arg(&signing)
+            .arg("--workspace")
+            .arg(&restored_workspace)
+            .arg("--workspace-key")
+            .arg(&workspace_key)
+            .arg("--request")
+            .arg(&request)
+            .kill_on_drop(true);
+        command
+    };
+    let activated = tokio::time::timeout(Duration::from_secs(30), managed().output())
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(
+        activated.status.success(),
+        "{}",
+        String::from_utf8_lossy(&activated.stderr)
+    );
+    let activated: Value = serde_json::from_slice(&activated.stdout).unwrap();
+    assert_eq!(
+        activated["record"]["selection"],
+        page["records"][0]["selection"]
+    );
+    // Prepare exact custody while the restored archive is still intact. Publish
+    // only after the reader has stopped, simulating independent owner activity
+    // between a backup and a later activation.
+    let erasure = attested::Archive::open(&restored.root, restored.binding.clone())
+        .unwrap()
+        .preview_erasure(&[1, 2, 3], "e".repeat(64), 100)
+        .unwrap();
+    let erasure = kan::evidence_store::erasure::Record::sign(erasure, &identity(8)).unwrap();
+    let erase = kan::evidence_erasure_history::Record::sign(
+        custody.preview(Some(erasure), "f".repeat(64)).unwrap(),
+        &identity(9),
+    )
     .unwrap();
     let ui = Ui::start(
         kan::evidence_library::Readers::new(None, vec![r])
@@ -4346,6 +4450,23 @@ async fn cold_host_restores_source_search_annotations_and_references_from_indepe
         .unwrap()
         .is_empty());
     ui.stop().await;
+    // An independently advanced custody checkpoint fences the stale restored
+    // workspace before the CLI can serve its retained annotation/search data.
+    custody.append(erase).unwrap();
+    let refused = tokio::time::timeout(Duration::from_secs(30), managed().output())
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(!refused.status.success());
+    assert!(
+        refused.stdout.is_empty(),
+        "no stale derived bytes may be returned"
+    );
+    assert!(
+        String::from_utf8_lossy(&refused.stderr).contains("AccessLimited"),
+        "{}",
+        String::from_utf8_lossy(&refused.stderr)
+    );
     server.stop().await;
 }
 
