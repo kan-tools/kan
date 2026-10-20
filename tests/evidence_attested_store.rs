@@ -1030,8 +1030,15 @@ fn capture_erasure_scans_the_complete_archive_and_refuses_active_or_unknown_memb
         .scan_capture_erasure(selected.clone(), &[key], Some(page), 1, 1024 * 1024)
         .unwrap();
     assert!(page.complete());
+    let members = page.member_delta(0);
+    let small = page.checkpoint();
+    assert_eq!(small.member_count(), 0);
+    let restored = small.restore_members(members).unwrap();
+    let complete = archive.finish_capture_selection(restored.clone()).unwrap();
+    assert_eq!(complete.sequences, vec![1, 3]);
+    assert_eq!(complete.through, 3);
     let paged = archive
-        .finish_capture_erasure(page, hex(&[1; 32]), 101)
+        .finish_capture_erasure(restored, hex(&[1; 32]), 101)
         .unwrap();
     let preview = archive
         .preview_capture_erasure(selected.clone(), &[key], hex(&[1; 32]), 101)

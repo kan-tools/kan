@@ -578,6 +578,18 @@ pub struct CapturePreview {
     pub recording_gap: bool,
     pub coverage: String,
 }
+/// Complete capture membership, not a deletion authority. Native erasure plans
+/// can be prepared from bounded subsets after this selection is owner-approved.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CaptureSelection {
+    pub capture: Capture,
+    pub through: u64,
+    pub tip: String,
+    pub sequences: Vec<u64>,
+    pub recording_gap: bool,
+    pub coverage: String,
+}
 /// An authenticated owner-side discovery checkpoint, never a client-provided
 /// selection authority. Contains coordinates and framing state, not raw payloads.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -594,6 +606,92 @@ pub struct CaptureScan {
     terminal: Option<u64>,
 }
 impl CaptureScan {
+    /// Small header for authenticated owner checkpoints. Membership must be
+    /// restored from independently retained authenticated pages before resuming.
+    pub fn checkpoint(&self) -> Self {
+        Self {
+            capture: self.capture.clone(),
+            binding: self.binding.clone(),
+            through: self.through,
+            tip: self.tip.clone(),
+            next: self.next,
+            found: BTreeMap::new(),
+            gap: self.gap,
+            started: self.started,
+            terminal: self.terminal,
+        }
+    }
+    pub fn member_count(&self) -> usize {
+        self.found.len()
+    }
+    pub fn next_sequence(&self) -> u64 {
+        self.next
+    }
+    pub fn member_delta(&self, first_sequence: u64) -> Vec<(u64, u64)> {
+        self.found
+            .iter()
+            .filter_map(|(ordinal, sequence)| {
+                (*sequence >= first_sequence).then_some((*ordinal, *sequence))
+            })
+            .collect()
+    }
+    pub fn restore_members(
+        mut self,
+        members: impl IntoIterator<Item = (u64, u64)>,
+    ) -> Result<Self> {
+        if !self.found.is_empty() {
+            return Err(Error::Invalid("capture checkpoint already has members"));
+        }
+        let mut sequences = BTreeSet::new();
+        for (ordinal, sequence) in members {
+            if ordinal > evidence::MAX_SAFE_INTEGER as u64
+                || sequence == 0
+                || sequence >= self.next
+                || sequence > self.through
+                || !sequences.insert(sequence)
+                || self.found.insert(ordinal, sequence).is_some()
+            {
+                return Err(Error::Invalid("capture checkpoint membership"));
+            }
+        }
+        Ok(self)
+    }
+    fn selection(self, binding: &attested::Binding) -> Result<CaptureSelection> {
+        if !self.complete()
+            || self.binding
+                != (
+                    service::hex(&binding.archive),
+                    service::hex(&binding.scope),
+                    binding.issuer.clone(),
+                )
+        {
+            return Err(Error::Conflict("capture discovery incomplete"));
+        }
+        let terminal = self.terminal.ok_or(Error::Invalid(
+            "capture still active or terminal unavailable",
+        ))?;
+        if !self.started
+            || self.found.keys().next().copied() != Some(0)
+            || self.found.keys().next_back().copied() != Some(terminal)
+        {
+            return Err(Error::Invalid("capture closure unavailable"));
+        }
+        let gap = self.gap
+            || self.found.len() as u64
+                != terminal
+                    .checked_add(1)
+                    .ok_or(Error::Invalid("capture ordinal overflow"))?;
+        let mut sequences: Vec<_> = self.found.into_values().collect();
+        sequences.sort_unstable();
+        if sequences.first() == Some(&0)
+            || sequences.last().is_some_and(|n| *n > self.through)
+            || sequences.windows(2).any(|pair| pair[0] == pair[1])
+        {
+            return Err(Error::Invalid("capture checkpoint membership"));
+        }
+        Ok(CaptureSelection { capture:self.capture, through:self.through, tip:self.tip.ok_or_else(corrupt)?, sequences,
+            recording_gap:gap, coverage:"All retained records of this closed writer/observer/attempt in the pinned archive. Recording gaps remain disclosed. Other archives, spools, derivatives and backups require coordinated cleanup; this is a storage plan only.".into() })
+    }
     pub fn complete(&self) -> bool {
         self.next > self.through
     }
@@ -680,7 +778,6 @@ impl attested::Archive {
             || state.next == 0
             || state.next > state.through.saturating_add(1)
             || state.through > snap.through
-            || state.found.len() > MAX_TARGETS
         {
             return Err(Error::Conflict("capture scan checkpoint mismatch"));
         }
@@ -760,12 +857,8 @@ impl attested::Archive {
             if frame.header.attempt != capture.attempt || observer != capture.observer {
                 continue;
             }
-            if state.found.len() >= MAX_TARGETS
-                || state.found.insert(frame.header.ordinal, sequence).is_some()
-            {
-                return Err(Error::Invalid(
-                    "capture duplicate ordinal or selection limit",
-                ));
+            if state.found.insert(frame.header.ordinal, sequence).is_some() {
+                return Err(Error::Invalid("capture duplicate ordinal"));
             }
             state.gap |= frame.header.unconfirmed_before != 0;
             match frame.header.event {
@@ -794,42 +887,29 @@ impl attested::Archive {
         nonce: String,
         now: u64,
     ) -> Result<CapturePreview> {
-        if !state.complete()
-            || state.binding
-                != (
-                    service::hex(&self.binding.archive),
-                    service::hex(&self.binding.scope),
-                    self.binding.issuer.clone(),
-                )
-        {
-            return Err(Error::Conflict("capture discovery incomplete"));
-        }
-        let CaptureScan {
-            capture,
-            through,
-            tip,
-            found,
-            mut gap,
-            started,
-            terminal,
-            ..
-        } = state;
-        let terminal = terminal.ok_or(Error::Invalid(
-            "capture still active or terminal unavailable",
-        ))?;
-        if !started || found.keys().next_back().copied() != Some(terminal) {
-            return Err(Error::Invalid("capture closure unavailable"));
-        }
-        gap |= found.len() as u64
-            != terminal
-                .checked_add(1)
-                .ok_or(Error::Invalid("capture ordinal overflow"))?;
-        let sequences: Vec<_> = found.into_values().collect();
-        let plan = self.preview_erasure(&sequences, nonce, now)?;
-        if plan.through != through || Some(&plan.tip) != tip.as_ref() {
+        let selected = state.selection(&self.binding)?;
+        let plan = self.preview_erasure(&selected.sequences, nonce, now)?;
+        if plan.through != selected.through || plan.tip != selected.tip {
             return Err(Error::Conflict("archive advanced after capture scan"));
         }
-        Ok(CapturePreview {capture,plan,recording_gap:gap,coverage:"All retained records of this closed writer/observer/attempt in the pinned archive. Recording gaps remain disclosed. Other archives, spools, derivatives and backups require coordinated cleanup; this is a storage plan only.".into()})
+        Ok(CapturePreview {
+            capture: selected.capture,
+            plan,
+            recording_gap: selected.recording_gap,
+            coverage: selected.coverage,
+        })
+    }
+    /// Complete selection independent of the native per-authority target bound.
+    /// The input checkpoint must come from authenticated owner custody.
+    pub fn finish_capture_selection(&self, state: CaptureScan) -> Result<CaptureSelection> {
+        let selected = state.selection(&self.binding)?;
+        let current = self.verify()?;
+        if current.through != selected.through
+            || current.manifest.as_ref().map(ToString::to_string).as_ref() != Some(&selected.tip)
+        {
+            return Err(Error::Conflict("archive advanced after capture scan"));
+        }
+        Ok(selected)
     }
 }
 
@@ -844,4 +924,60 @@ pub fn read_history(
     let reader = RecoveryReader::open_profile(path, profile.number())?;
     attested::check_binding(&reader.ledger.conn, &expected)?;
     Ok(load(&reader.ledger.conn)?.package())
+}
+
+#[cfg(test)]
+mod selection_tests {
+    use super::*;
+    #[test]
+    fn complete_capture_membership_exceeds_native_batch_size_without_growing_checkpoint_header() {
+        let binding = attested::Binding {
+            archive: [1; 32],
+            scope: [2; 32],
+            issuer: "test-issuer".into(),
+        };
+        let scan = CaptureScan {
+            capture: Capture {
+                writer: "test-writer".into(),
+                observer: "gateway".into(),
+                attempt: "a".repeat(64),
+            },
+            binding: (
+                service::hex(&binding.archive),
+                service::hex(&binding.scope),
+                binding.issuer.clone(),
+            ),
+            through: 5000,
+            tip: Some("pinned-tip".into()),
+            next: 5001,
+            found: (0..5000).map(|n| (n, n + 1)).collect(),
+            gap: false,
+            started: true,
+            terminal: Some(4999),
+        };
+        assert!(bytes(&scan.checkpoint()).unwrap().len() < 1024);
+        let restored = scan
+            .checkpoint()
+            .restore_members(scan.member_delta(0))
+            .unwrap();
+        let selection = restored.selection(&binding).unwrap();
+        assert_eq!(selection.sequences.len(), 5000);
+        assert!(!selection.recording_gap);
+        let mut missing = scan.member_delta(0);
+        missing.remove(10);
+        assert!(
+            scan.checkpoint()
+                .restore_members(missing)
+                .unwrap()
+                .selection(&binding)
+                .unwrap()
+                .recording_gap
+        );
+        assert!(scan.checkpoint().restore_members([(0, 1), (1, 1)]).is_err());
+        assert!(scan.checkpoint().restore_members([(0, 1), (0, 2)]).is_err());
+        assert!(scan.checkpoint().restore_members([(0, 5001)]).is_err());
+        let mut active = scan.clone();
+        active.terminal = None;
+        assert!(active.selection(&binding).is_err());
+    }
 }

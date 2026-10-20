@@ -1,6 +1,7 @@
 //! Restartable owner authorization and archive cleanup. Secondary cleanup is
 //! explicit pending work, never inferred from successful primary deletion.
 use super::*;
+mod checkpoints;
 mod publications;
 use crate::{
     evidence_erasure_history as custody, evidence_store::erasure as storage, sign::Identity,
@@ -183,18 +184,11 @@ fn discover_capture(
     )?;
     let checkpoint = |n| format!("capture-discovery:{key}:{n}");
     let next = first_unused(|n| Ok(journal.get("owner-result", &checkpoint(n))?.is_some()))?;
-    let previous = if next == 0 {
-        None
-    } else {
-        Some(
-            serde_json::from_value::<storage::CaptureScan>(
-                journal
-                    .get("owner-result", &checkpoint(next - 1))?
-                    .ok_or(Failure::Corrupt)?,
-            )
-            .map_err(invalid)?,
-        )
-    };
+    let previous = checkpoints::read(journal, &key, next)?;
+    let first_sequence = previous
+        .as_ref()
+        .map(storage::CaptureScan::next_sequence)
+        .unwrap_or(1);
     let keys = files
         .iter()
         .map(|p| crate::evidence_crypto::read_private_key(p).map_err(invalid))
@@ -204,13 +198,8 @@ fn discover_capture(
     let now = crate::evidence_operations::now();
     // Each page is durable before constructing an erasure authority. A crash or
     // stale frontier therefore continues discovery instead of restarting it.
-    let retain = |scan: &storage::CaptureScan| -> Result<(), Failure> {
-        journal.put(
-            "owner-result",
-            &checkpoint(next),
-            serde_json::to_value(scan).map_err(invalid)?,
-        )
-    };
+    let retain =
+        |scan: &storage::CaptureScan| checkpoints::write(journal, &key, next, scan, first_sequence);
     let resolved = match history.binding.profile {
         Profile::Admitted => {
             let archive = store::attested::Archive::open(root, binding)?;

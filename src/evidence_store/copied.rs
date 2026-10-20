@@ -291,6 +291,17 @@ impl Archive {
         self.inner.finish_capture_erasure(scan, nonce, now)
     }
 
+    #[cfg(feature = "v2-crypto")]
+    pub fn finish_capture_selection(
+        &self,
+        scan: super::erasure::CaptureScan,
+    ) -> Result<super::erasure::CaptureSelection> {
+        if !self.verify()?.copy.source_copy_complete {
+            return Err(Error::Conflict("copy incomplete"));
+        }
+        self.inner.finish_capture_selection(scan)
+    }
+
     pub fn preview_erasure(
         &self,
         sequences: &[u64],
