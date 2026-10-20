@@ -1281,6 +1281,12 @@ fn initial_erased_admission_preserves_chain_without_staging_payload_and_retires_
     };
     let root = tempfile::tempdir().unwrap();
     let history_root = tempfile::tempdir().unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(history_root.path(), std::fs::Permissions::from_mode(0o700))
+            .unwrap();
+    }
     let queue_root = tempfile::tempdir().unwrap();
     let mut history:custody::Access=serde_json::from_value(serde_json::json!({"directory":history_root.path(),"binding":{"profile":"admitted","archive":hex(&binding().archive),"scope":hex(&binding().scope),"issuer":binding().issuer},"owner":identity(5).did().as_str()})).unwrap();
     history.initialize().unwrap();
@@ -1367,6 +1373,12 @@ fn initial_erased_admission_preserves_chain_without_staging_payload_and_retires_
     // archive must not complete this archive's cancellation.
     let elsewhere = tempfile::tempdir().unwrap();
     let other_custody = tempfile::tempdir().unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(other_custody.path(), std::fs::Permissions::from_mode(0o700))
+            .unwrap();
+    }
     let mut other_binding = binding();
     other_binding.archive = [99; 32];
     let mut other_history = history.clone();
@@ -1538,7 +1550,20 @@ fn initial_erasure_refuses_wrong_request_stale_tip_and_false_initial_disposition
     )
     .unwrap();
     assert!(archive
-        .admit_erased(&request(1, None), &identity(7), &grant(), &erasure)
+        .admit_erased(
+            &request(
+                1,
+                Some(
+                    kan::evidence_service::append_manifest(&raw)
+                        .unwrap()
+                        .cid()
+                        .to_string()
+                )
+            ),
+            &identity(7),
+            &grant(),
+            &erasure
+        )
         .is_err());
     assert!(archive
         .admit_erased(&raw, &identity(5), &grant(), &erasure)

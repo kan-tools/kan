@@ -553,6 +553,11 @@ fn erasure_custody(
     binding: &kan::evidence_store::attested::Binding,
 ) -> kan::evidence_erasure_history::Access {
     use kan::evidence_erasure_history::{Access, Record};
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(root, std::fs::Permissions::from_mode(0o700)).unwrap();
+    }
     let mut access:Access=serde_json::from_value(serde_json::json!({"directory":root,"binding":{"profile":"admitted","archive":service::hex(&binding.archive),"scope":service::hex(&binding.scope),"issuer":binding.issuer},"owner":erasure_identity(9).did().as_str()})).unwrap();
     access.initialize().unwrap();
     let genesis = Record::sign(
