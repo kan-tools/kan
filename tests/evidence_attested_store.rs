@@ -612,7 +612,7 @@ async fn queued_capture_reaches_profile_two_over_http_and_reads_through_proof_re
         issuer: binding().issuer,
     };
     let service = wire::Service::new(
-        root.clone(),
+        root.join("archive.sqlite"),
         pin.clone(),
         identity(7),
         vec![Grant {

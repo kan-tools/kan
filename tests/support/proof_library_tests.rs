@@ -617,7 +617,7 @@ async fn large_attempt_reads_over_ten_megabytes_with_all_chunk_citations() {
         &[],
     ));
     let dir = tempfile::tempdir().unwrap();
-    // Reuse only an explicitly supplied synthetic fixture. Normal CI still
+    // Reuse only an explicitly supplied synthetic fixture. The dedicated CI capacity job still
     // creates and admits every record. All real reads/proofs run in either case.
     let f = if let Some(path) = std::env::var_os("KAN_LARGE_ATTEMPT_FIXTURE") {
         use std::os::unix::fs::PermissionsExt;
