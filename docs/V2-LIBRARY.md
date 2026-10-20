@@ -1159,6 +1159,15 @@ with oversized synthetic identifiers); a codec regression guards that relationsh
 The plan budget is per pass, not a lifetime limit on selected publications.
 Structural lineage is still assembled from the authenticated page metadata; this
 is not a constant-memory graph implementation. Per-plan metadata limits remain.
+Workspace dependency discovery caches up to 65,536 reverse edges. Larger graphs
+use repeated passes over the same authenticated metadata snapshot until the
+selected closure stops changing; exceeding the cache size no longer refuses all
+cleanup. The 120-second work deadline returns unavailable without a partial
+selection. Long, deeply linked graphs can still exhaust that execution budget;
+minimal node metadata and selected identities remain in memory. Publication
+planning reads selected local annotation bodies one at a time, retaining only
+their validated identities before inspecting the next body. Existing cleanup
+batches and parent-job-last ordering still govern deletion.
 Configured workspaces also reconcile the publication histories, so caches that cite
 a removed publication are covered.
 

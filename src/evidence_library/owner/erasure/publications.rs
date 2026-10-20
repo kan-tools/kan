@@ -332,30 +332,34 @@ fn plan(
             Identity::load_existing(&workspace.signing_key).map_err(invalid)?,
             crate::evidence_crypto::read_private_key(&workspace.recipient_key).map_err(invalid)?,
         )?;
-        for mut declaration in
-            local.source_selection_annotations(&primary.binding, &parent.targets)?
-        {
-            if Instant::now() >= deadline {
-                return Err(Failure::Unavailable);
-            }
-            declaration
-                .as_object_mut()
-                .ok_or(Failure::Corrupt)?
-                .remove("recovered_from");
-            let author = declaration["author"]
-                .as_str()
-                .ok_or(Failure::Corrupt)?
-                .to_string();
-            let encoded =
-                serde_json::to_vec(&json!({"format":"kan-annotation/1","declaration":declaration}))
-                    .map_err(invalid)?;
-            let (declaration, draft) = knowledge::decode_publication(&encoded, &author)?;
-            identities.insert(identity_key(
-                &author,
-                declaration["id"].as_str().ok_or(Failure::Corrupt)?,
-                &draft.subject,
-            ));
-        }
+        local.visit_source_selection_annotations(
+            &primary.binding,
+            &parent.targets,
+            |mut declaration| {
+                if Instant::now() >= deadline {
+                    return Err(Failure::Unavailable);
+                }
+                declaration
+                    .as_object_mut()
+                    .ok_or(Failure::Corrupt)?
+                    .remove("recovered_from");
+                let author = declaration["author"]
+                    .as_str()
+                    .ok_or(Failure::Corrupt)?
+                    .to_string();
+                let encoded = serde_json::to_vec(
+                    &json!({"format":"kan-annotation/1","declaration":declaration}),
+                )
+                .map_err(invalid)?;
+                let (declaration, draft) = knowledge::decode_publication(&encoded, &author)?;
+                identities.insert(identity_key(
+                    &author,
+                    declaration["id"].as_str().ok_or(Failure::Corrupt)?,
+                    &draft.subject,
+                ));
+                Ok(())
+            },
+        )?;
     }
     let selected = closure(&nodes, &retained.coordinates, &identities);
     let mut more = selected.len() > MAX_SELECTED;

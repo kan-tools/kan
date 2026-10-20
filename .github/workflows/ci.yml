@@ -65,6 +65,7 @@ jobs:
       - run: cargo test --features v2-crypto --lib evidence_operations_collection::overview::tests
       - run: cargo test --features v2-crypto --lib evidence_library::budget_tests
       - run: cargo test --features v2-crypto --lib evidence_library::owner::erasure
+      - run: cargo test --features v2-crypto --lib evidence_workspace::erasure::dependencies::tests
       - run: cargo test --features v2-crypto --lib evidence_spool::tests
       - run: cargo test --features v2-crypto --lib evidence_store::inventory::tests
       - run: cargo test --features v2-crypto --lib evidence_store::erasure::selection_tests
@@ -76,6 +77,11 @@ jobs:
       - run: cargo clippy --workspace --all-targets -- -D warnings
       - run: cargo clippy --features v2-crypto --all-targets -- -D warnings
       - run: cargo fmt --all -- --check
+      # Compile the distributable, not just the checkout: optional v2 sources
+      # and embedded frontends must survive Cargo's package file selection.
+      - run: cargo package --locked --features v2-crypto
+        env:
+          CARGO_BUILD_JOBS: 4
 
   # Preserve realistic large-capture qualification without blocking every
   # short integration check on rebuilding the O(n²) admission fixture. Push

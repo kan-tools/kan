@@ -5,6 +5,7 @@ use crate::{
     evidence_proof_service::Binding, evidence_reader::proof::Token, evidence_store::erasure::Record,
 };
 use std::collections::{BTreeMap, VecDeque};
+use std::time::{Duration, Instant};
 
 struct Entry {
     kind: String,
@@ -12,10 +13,76 @@ struct Entry {
     value: Value,
     affected: bool,
 }
+
 fn text<'a>(v: &'a Value, key: &str) -> Result<&'a str> {
     v[key].as_str().ok_or(Failure::Corrupt)
 }
 type Node = (String, String);
+const EDGE_CACHE: usize = 65_536;
+type EdgeVisitor<'a> = dyn FnMut(Node, Node) -> Result<()> + 'a;
+
+/// Cache a bounded reverse adjacency map for the common case. Larger graphs
+/// use repeated passes over retained metadata, rather than refusing at a
+/// lifetime edge count or retaining an unbounded second copy of the graph.
+/// The caller's snapshot must remain fixed through every pass.
+fn reachable(
+    mut visit: impl FnMut(&mut EdgeVisitor<'_>) -> Result<()>,
+    mut seen: BTreeSet<Node>,
+    markers: &BTreeSet<Node>,
+    deadline: Instant,
+) -> Result<BTreeSet<Node>> {
+    let mut edges = Some(BTreeMap::<Node, Vec<Node>>::new());
+    let mut count = 0usize;
+    visit(&mut |parent, child| {
+        if Instant::now() >= deadline {
+            return Err(Failure::Unavailable);
+        }
+        if markers.contains(&(parent.0.clone(), Workspace::id(&parent.0, &parent.1))) {
+            seen.insert(parent.clone());
+        }
+        if count == EDGE_CACHE {
+            edges = None;
+        } else {
+            count += 1;
+        }
+        if let Some(edges) = &mut edges {
+            edges.entry(parent).or_default().push(child);
+        }
+        Ok(())
+    })?;
+    if let Some(edges) = edges {
+        let mut queue = seen.iter().cloned().collect::<VecDeque<_>>();
+        while let Some(node) = queue.pop_front() {
+            if Instant::now() >= deadline {
+                return Err(Failure::Unavailable);
+            }
+            if let Some(children) = edges.get(&node) {
+                for child in children {
+                    if seen.insert(child.clone()) {
+                        queue.push_back(child.clone());
+                    }
+                }
+            }
+        }
+    } else {
+        loop {
+            let before = seen.len();
+            visit(&mut |parent, child| {
+                if Instant::now() >= deadline {
+                    return Err(Failure::Unavailable);
+                }
+                if seen.contains(&parent) {
+                    seen.insert(child);
+                }
+                Ok(())
+            })?;
+            if seen.len() == before {
+                break;
+            }
+        }
+    }
+    Ok(seen)
+}
 fn parent(v: &Value, field: &str) -> Result<Option<String>> {
     match v.get(field) {
         None | Some(Value::Null) => Ok(None),
@@ -95,15 +162,18 @@ fn directly_affected(
 impl Workspace {
     /// Read-only dependency discovery over owner-verified selection coordinates;
     /// these coordinates are not accepted by any deletion operation.
-    pub(crate) fn source_selection_annotations(
+    /// Visit one declaration at a time while retaining the authenticated read
+    /// snapshot. The visitor must not reenter this workspace. Publication
+    /// planning needs identities, not a retained copy of every selected body.
+    pub(crate) fn visit_source_selection_annotations(
         &self,
         binding: &Binding,
         coordinates: &[crate::evidence_store::erasure::Target],
-    ) -> Result<Vec<Value>> {
+        mut visit: impl FnMut(Value) -> Result<()>,
+    ) -> Result<()> {
         let conn = self.conn.lock().map_err(invalid)?;
         let tx = conn.unchecked_transaction().map_err(invalid)?;
         let selected = self.selection_dependency_ids(&tx, binding, coordinates)?;
-        let mut annotations = Vec::new();
         for (kind, id) in selected {
             if kind != "annotation" {
                 continue;
@@ -117,10 +187,10 @@ impl Workspace {
                 .optional()
                 .map_err(invalid)?;
             if let Some(body) = body {
-                annotations.push(self.unseal(&kind, &id, &body)?);
+                visit(self.unseal(&kind, &id, &body)?)?;
             }
         }
-        Ok(annotations)
+        Ok(())
     }
     /// Resolve direct citations and transitive correction, promotion, retry and
     /// trigger edges under exclusive maintenance. The caller must independently
@@ -184,6 +254,7 @@ impl Workspace {
         binding: &Binding,
         coordinates: &[crate::evidence_store::erasure::Target],
     ) -> Result<Vec<(String, String)>> {
+        let deadline = Instant::now() + Duration::from_secs(120);
         let targets = coordinates
             .iter()
             .map(|t| (t.sequence.to_string(), t.manifest.clone()))
@@ -205,6 +276,9 @@ impl Workspace {
                 .map_err(invalid)?;
             let mut entries = Vec::new();
             for row in rows {
+                if Instant::now() >= deadline {
+                    return Err(Failure::Unavailable);
+                }
                 let (kind, id, bytes) = row.map_err(invalid)?;
                 if !allowed(&kind) && kind != "erasure" {
                     continue;
@@ -317,66 +391,49 @@ impl Workspace {
                 }
             }
         }
-        // Reverse declared edges give linear traversal, including descendants
-        // of minimal tombstones retained by an earlier cleanup attempt.
-        let mut edges: BTreeMap<Node, Vec<Node>> = BTreeMap::new();
-        let mut edge_count = 0usize;
-        let mut add = |kind: &str, id: String, child: Node| -> Result<()> {
-            edge_count += 1;
-            if edge_count > 65536 {
-                return Err(Failure::Unavailable);
-            }
-            edges.entry((kind.into(), id)).or_default().push(child);
-            Ok(())
-        };
-        for (id, e) in &annotation_entries {
-            let d = &e.value["draft"];
-            let child = ("annotation".into(), id.clone());
-            for field in ["supersedes", "withdraws"] {
-                if let Some(p) = parent(d, field)? {
-                    add("annotation", p, child.clone())?;
-                }
-            }
-            if let Some(parents) = d.get("derived_from") {
-                for p in parents.as_array().ok_or(Failure::Corrupt)? {
-                    add(
-                        "analysis-job",
-                        p.as_str().ok_or(Failure::Corrupt)?.into(),
-                        child.clone(),
-                    )?;
-                }
-            }
-        }
-        for (id, e) in &job_entries {
-            let d = &e.value["draft"];
-            let child = ("analysis-job".into(), id.clone());
-            if let Some(p) = parent(d, "retry_of")? {
-                add("analysis-job", p, child.clone())?;
-            }
-            if let Some(p) = parent(d, "trigger_annotation")? {
-                add("annotation", p, child)?;
-            }
-        }
-        let mut seen = annotations
+        let roots = annotations
             .iter()
             .map(|id| ("annotation".into(), id.clone()))
             .chain(jobs.iter().map(|id| ("analysis-job".into(), id.clone())))
             .collect::<BTreeSet<Node>>();
-        for node in edges.keys() {
-            if markers.contains(&(node.0.clone(), Self::id(&node.0, &node.1))) {
-                seen.insert(node.clone());
-            }
-        }
-        let mut queue = seen.iter().cloned().collect::<VecDeque<_>>();
-        while let Some(node) = queue.pop_front() {
-            if let Some(children) = edges.get(&node) {
-                for child in children {
-                    if seen.insert(child.clone()) {
-                        queue.push_back(child.clone());
+        let seen = reachable(
+            |add| {
+                for (id, e) in &annotation_entries {
+                    let d = &e.value["draft"];
+                    let child = ("annotation".into(), id.clone());
+                    for field in ["supersedes", "withdraws"] {
+                        if let Some(p) = parent(d, field)? {
+                            add(("annotation".into(), p), child.clone())?;
+                        }
+                    }
+                    if let Some(parents) = d.get("derived_from") {
+                        for p in parents.as_array().ok_or(Failure::Corrupt)? {
+                            add(
+                                (
+                                    "analysis-job".into(),
+                                    p.as_str().ok_or(Failure::Corrupt)?.into(),
+                                ),
+                                child.clone(),
+                            )?;
+                        }
                     }
                 }
-            }
-        }
+                for (id, e) in &job_entries {
+                    let d = &e.value["draft"];
+                    let child = ("analysis-job".into(), id.clone());
+                    if let Some(p) = parent(d, "retry_of")? {
+                        add(("analysis-job".into(), p), child.clone())?;
+                    }
+                    if let Some(p) = parent(d, "trigger_annotation")? {
+                        add(("annotation".into(), p), child)?;
+                    }
+                }
+                Ok(())
+            },
+            roots,
+            &markers,
+            deadline,
+        )?;
         for (kind, id) in seen {
             match kind.as_str() {
                 "annotation" => {
@@ -424,5 +481,119 @@ impl Workspace {
         }
         selected.retain(|id| !markers.contains(id));
         Ok(selected.into_iter().collect())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn node(kind: &str, id: &str) -> Node {
+        (kind.into(), id.into())
+    }
+    fn large_graph(add: &mut EdgeVisitor<'_>) -> Result<()> {
+        // These retained declarations do not depend on the erased source.
+        for n in 0..=EDGE_CACHE {
+            add(
+                node("analysis-job", "unrelated"),
+                node("annotation", &format!("other-{n}")),
+            )?;
+        }
+        // Reverse order forces more than one pass. The cycle must converge.
+        add(
+            node("annotation", "promotion"),
+            node("annotation", "withdrawal"),
+        )?;
+        add(
+            node("analysis-job", "retry"),
+            node("annotation", "promotion"),
+        )?;
+        add(
+            node("annotation", "withdrawal"),
+            node("analysis-job", "retry"),
+        )?;
+        add(node("annotation", "erased"), node("analysis-job", "retry"))?;
+        Ok(())
+    }
+    fn erased_marker() -> BTreeSet<Node> {
+        BTreeSet::from([("annotation".into(), Workspace::id("annotation", "erased"))])
+    }
+    #[test]
+    fn large_dependency_graph_preserves_tombstone_descendants_and_excludes_unrelated_edges() {
+        let selected = reachable(
+            large_graph,
+            BTreeSet::new(),
+            &erased_marker(),
+            Instant::now() + Duration::from_secs(30),
+        )
+        .unwrap();
+        assert_eq!(
+            selected,
+            BTreeSet::from([
+                node("annotation", "erased"),
+                node("analysis-job", "retry"),
+                node("annotation", "promotion"),
+                node("annotation", "withdrawal")
+            ])
+        );
+    }
+    #[test]
+    fn fallback_failure_and_expired_work_never_return_partial_dependency_closure() {
+        let mut passes = 0;
+        let result = reachable(
+            |add| {
+                passes += 1;
+                if passes == 2 {
+                    return Err(Failure::Corrupt);
+                }
+                large_graph(add)
+            },
+            BTreeSet::new(),
+            &erased_marker(),
+            Instant::now() + Duration::from_secs(30),
+        );
+        assert!(matches!(result, Err(Failure::Corrupt)));
+        assert_eq!(passes, 2);
+        assert!(matches!(
+            reachable(
+                large_graph,
+                BTreeSet::new(),
+                &erased_marker(),
+                Instant::now() - Duration::from_secs(1)
+            ),
+            Err(Failure::Unavailable)
+        ));
+    }
+    #[test]
+    fn cached_and_uncached_graphs_have_identical_dependency_closure() {
+        let edges = [
+            (node("annotation", "child"), node("analysis-job", "retry")),
+            (node("analysis-job", "root"), node("annotation", "child")),
+            (node("analysis-job", "retry"), node("annotation", "child")),
+        ];
+        let roots = BTreeSet::from([node("analysis-job", "root")]);
+        let run = |repeat| {
+            reachable(
+                |add| {
+                    for _ in 0..repeat {
+                        for (parent, child) in &edges {
+                            add(parent.clone(), child.clone())?;
+                        }
+                    }
+                    Ok(())
+                },
+                roots.clone(),
+                &BTreeSet::new(),
+                Instant::now() + Duration::from_secs(30),
+            )
+            .unwrap()
+        };
+        let expected = BTreeSet::from([
+            node("analysis-job", "root"),
+            node("annotation", "child"),
+            node("analysis-job", "retry"),
+        ]);
+        assert_eq!(run(1), expected);
+        assert_eq!(run(EDGE_CACHE / 3 + 1), expected);
     }
 }
