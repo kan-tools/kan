@@ -196,6 +196,103 @@ async fn library_cli_browses_authenticated_retained_source_without_storage_autho
     let html = client.get(base).send().await.unwrap().text().await.unwrap();
     assert!(html.contains("/theme.js"));
     assert!(html.contains("Source inspector"));
+    // The real stdio entry point uses these same Reader keys and remote grants,
+    // without creating an HTTP listener or requiring a browser token.
+    for writes in [false, true] {
+        use tokio::io::{AsyncWriteExt, BufReader as TokioBufReader};
+        let mut command = tokio::process::Command::new(env!("CARGO_BIN_EXE_kan-v2"));
+        command.args([
+            "library",
+            "--config",
+            config.to_str().unwrap(),
+            "--signing-key",
+            signer.to_str().unwrap(),
+            "--mcp",
+        ]);
+        if writes {
+            command.arg("--mcp-writes");
+        }
+        let mut process = command
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .kill_on_drop(true)
+            .spawn()
+            .unwrap();
+        let mut input = process.stdin.take().unwrap();
+        let mut output = TokioBufReader::new(process.stdout.take().unwrap());
+        let init=mcp_request(&mut input,&mut output,1,"initialize",serde_json::json!({"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"v2-test","version":"1"}})).await;
+        assert!(init["result"]["capabilities"]["tools"].is_object());
+        input
+            .write_all(b"{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\"}\n")
+            .await
+            .unwrap();
+        let tools = mcp_request(
+            &mut input,
+            &mut output,
+            2,
+            "tools/list",
+            serde_json::json!({}),
+        )
+        .await;
+        let names: Vec<_> = tools["result"]["tools"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|v| v["name"].as_str().unwrap())
+            .collect();
+        assert!(names.contains(&"kan_v2_read"));
+        assert_eq!(names.contains(&"kan_v2_write"), writes);
+        assert!(!names.contains(&"kan_v2_owner"));
+        let result=mcp_request(&mut input,&mut output,3,"tools/call",serde_json::json!({"name":"kan_v2_read","arguments":{"query":{"action":"source","pin":pin,"sequence":1,"offset":0,"length":100}}})).await;
+        assert_eq!(result["result"]["isError"], false);
+        assert_eq!(result["result"]["structuredContent"], source);
+        let refused=mcp_request(&mut input,&mut output,4,"tools/call",serde_json::json!({"name":"kan_v2_read","arguments":{"query":{"action":"annotation-drain","destination":"unapproved"}}})).await;
+        assert_eq!(refused["result"]["isError"], true);
+        assert_eq!(
+            refused["result"]["structuredContent"]["error"],
+            "capability-required"
+        );
+        let unknown=mcp_request(&mut input,&mut output,5,"tools/call",serde_json::json!({"name":"kan_v2_read","arguments":{"query":{"action":"unknown-future-action"}}})).await;
+        assert_eq!(unknown["result"]["isError"], true);
+        assert_eq!(
+            unknown["result"]["structuredContent"]["error"],
+            "invalid-request"
+        );
+        drop(input);
+        assert!(tokio::time::timeout(Duration::from_secs(5), process.wait())
+            .await
+            .unwrap()
+            .unwrap()
+            .success());
+    }
+}
+async fn mcp_request(
+    input: &mut tokio::process::ChildStdin,
+    output: &mut tokio::io::BufReader<tokio::process::ChildStdout>,
+    id: u64,
+    method: &str,
+    params: serde_json::Value,
+) -> serde_json::Value {
+    use tokio::io::{AsyncBufReadExt, AsyncWriteExt};
+    input
+        .write_all(
+            format!(
+                "{}\n",
+                serde_json::json!({"jsonrpc":"2.0","id":id,"method":method,"params":params})
+            )
+            .as_bytes(),
+        )
+        .await
+        .unwrap();
+    let mut line = String::new();
+    tokio::time::timeout(Duration::from_secs(10), output.read_line(&mut line))
+        .await
+        .unwrap()
+        .unwrap();
+    let value: serde_json::Value = serde_json::from_str(&line).unwrap();
+    assert_eq!(value["id"], id);
+    value
 }
 
 #[test]
@@ -270,6 +367,25 @@ fn owner_cli_initializes_and_applies_the_same_previewed_access_policy() {
         call(json!({"action":"access","target":"access"}))["snapshot"]["changes"],
         1
     );
+    let reader_config=write("mcp-reader.json",serde_json::to_vec(&json!([{"scope":svc::hex(&[2;32]),"endpoint":"http://127.0.0.1:1/v1/rpc","issuer":binding["issuer"],"private_key_file":recipient}])).unwrap());
+    tokio::runtime::Runtime::new().unwrap().block_on(async {
+        use tokio::io::{AsyncWriteExt,BufReader as TokioBufReader};
+        for enabled in [false,true] {
+            let mut command=tokio::process::Command::new(env!("CARGO_BIN_EXE_kan-v2"));
+            command.args(["library","--config",reader_config.to_str().unwrap(),"--signing-key",key.to_str().unwrap(),"--owner-config",config.to_str().unwrap(),"--mcp"]);
+            if enabled {command.arg("--mcp-owner");}
+            let mut child=command.stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::null()).kill_on_drop(true).spawn().unwrap();
+            let mut input=child.stdin.take().unwrap();let mut output=TokioBufReader::new(child.stdout.take().unwrap());
+            mcp_request(&mut input,&mut output,1,"initialize",json!({"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"owner-test","version":"1"}})).await;
+            input.write_all(b"{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\"}\n").await.unwrap();
+            let tools=mcp_request(&mut input,&mut output,2,"tools/list",json!({})).await;
+            assert_eq!(tools["result"]["tools"].as_array().unwrap().iter().any(|t|t["name"]=="kan_v2_owner"),enabled);
+            let result=mcp_request(&mut input,&mut output,3,"tools/call",json!({"name":"kan_v2_owner","arguments":{"query":{"action":"catalog"}}})).await;
+            if enabled {assert_eq!(result["result"]["structuredContent"]["owner"],signer.did().as_str());assert_eq!(result["result"]["structuredContent"]["targets"][0]["id"],"access");}
+            else {assert!(result["error"].is_object());}
+            drop(input);assert!(tokio::time::timeout(Duration::from_secs(5),child.wait()).await.unwrap().unwrap().success());
+        }
+    });
 }
 
 #[test]

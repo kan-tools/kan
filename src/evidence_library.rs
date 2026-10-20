@@ -1,5 +1,7 @@
 //! Human evidence Library. Loopback presentation with a separate read capability.
 mod download;
+mod mcp;
+pub use mcp::serve as serve_mcp;
 mod owner;
 mod proof;
 use crate::evidence_content::ContentError;

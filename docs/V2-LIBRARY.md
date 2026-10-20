@@ -969,3 +969,40 @@ native POST. It transports the previously exported, typed recovery package; it
 does not verify or activate that package. Restore retains its separate preview and
 validation. Native download routes require an exact same-origin header, accept no
 URL credentials, return no-store attachments, and create no server-side export cache.
+
+### Inspect configured administration targets
+
+Owner maintenance now shows **Target settings** for the selected archive, migration,
+health collection, recovery workspace, access policy or epoch history. These are the
+actual configured paths, destination pins, limits and credential-file references
+from the owner catalog; credential contents are never displayed. Reader-only access
+cannot load this catalog, and owner lock clears it. Access policy and epoch changes
+use the adjacent live preview/apply controls. Changing configured file locations,
+client connections or startup limits requires an explicit service restart.
+
+### Agent access over MCP
+
+Use the same explicit Reader configuration and signing key as the CLI/Library:
+
+```sh
+kan-v2 library --config /absolute/path/reader.json \
+  --signing-key /absolute/path/reader.identity --mcp
+```
+
+This starts stdio MCP without an HTTP listener or browser token. The default
+`kan_v2_read` tool accepts `{ "query": { "action": "catalog" } }` and the same
+read/preview requests documented above, returning the original JSON as structured
+content. Pins, citations, availability, coverage and separate trust judgments are
+preserved. Errors such as `access-limited`, `missing`, `corrupt`, `conflict`,
+`unavailable`, `busy` and `content-limit` remain explicit failed tool results.
+
+Add `--mcp-writes` to expose `kan_v2_write` for annotations, indexing, saved views,
+publication and analysis. Supply the ordinary workspace/outbox/analysis options
+needed by those operations. Existing preview digests and idempotency fields still
+apply. Calls through the read tool cannot write, including retries and cancellation.
+
+Owner administration is a separate opt-in: `--mcp-owner --owner-config <file>`.
+That exposes `kan_v2_owner`; merely configuring owner services or enabling ordinary
+writes does not advertise it. Grant this process only the configuration/custody
+needed by its intended agent. Captured content cannot enable tools or permissions.
+No MCP install command is run automatically and no agent configuration is changed.

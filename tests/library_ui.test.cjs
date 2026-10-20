@@ -815,3 +815,11 @@ test('withdrawal previews the inherited evidence and reason, labels retained his
  assert.equal(u.node('annotation-list').children.length,2);assert.ok(!u.node('annotation-list').children[1].children.some(n=>n.textContent==='Withdraw annotation'||n.textContent==='Append correction'));
  u.node('lock').click();assert.equal(u.node('annotation-list').children.length,0);assert.equal(u.node('annotation-subject').disabled,false);assert.equal(u.node('annotation-text').value,'');
 });
+
+test('owner settings expose configured targets only after owner authorization and clear on lock',async()=>{
+ const u=ui();await u.login();await u.respond({...proofCatalog,scopes:[proofEntry('archive-A')],capabilities:[...proofCatalog.capabilities,'owner-maintenance']});await u.respond(proofPage);
+ assert.equal(u.node('owner-settings').children.length,0);u.node('owner-token').value='synthetic-owner-token';u.node('owner-connect').events.submit({preventDefault(){}});await tick();
+ await u.respond({owner:'owner',limits:{jobs:10},jobs:[],targets:[{id:'archive',kind:'archive',root:'/private/synthetic/archive',output:'/private/synthetic/backup',binding:{scope:'scope',archive:'archive',issuer:'issuer'}}]});
+ const rows=u.node('owner-settings').children.map(row=>row.children.map(n=>n.textContent));assert.deepEqual(rows.find(row=>row[0]==='Archive directory'),['Archive directory','/private/synthetic/archive']);assert.match(rows.find(row=>row[0]==='Pinned archive identity')[1],/scope/);
+ u.node('owner-lock').click();assert.equal(u.node('owner-settings').children.length,0);assert.equal(u.node('library').hidden,false);
+});

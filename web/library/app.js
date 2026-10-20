@@ -649,7 +649,7 @@
     clearPolicy();clearKeys();
     ownerEpoch++;if(ownerController)ownerController.abort();ownerToken='';ownerTargets=[];ownerPreview=null;ownerRetry=null;
     $('owner-token').value='';$('owner-controls').hidden=true;$('owner-connect').hidden=false;$('owner-maintenance').hidden=true;$('owner-lock').disabled=true;$('owner-submit').disabled=true;
-    for(const id of ['owner-target','owner-operation','owner-jobs','owner-detail'])$(id).replaceChildren();$('owner-preview').textContent='';$('owner-status').textContent='Owner access locked. Running maintenance is not cancelled.';
+    for(const id of ['owner-target','owner-operation','owner-jobs','owner-detail','owner-settings'])$(id).replaceChildren();$('owner-preview').textContent='';$('owner-status').textContent='Owner access locked. Running maintenance is not cancelled.';
   }
   async function ownerRpc(body){
     const current=++ownerEpoch;if(ownerController)ownerController.abort();ownerController=new AbortController();
@@ -662,6 +662,13 @@
   function ownerOperations(){
     ownerPreview=null;$('owner-submit').disabled=true;$('owner-preview').textContent='';$('owner-operation').replaceChildren();
     const target=ownerTargets.find(t=>t.id===$('owner-target').value);
+    $('owner-settings').replaceChildren();
+    if(target){
+      const labels={id:'Target',kind:'Operation family',root:'Archive directory',output:'Output directory',database:'Source database',collection:'Health journal collection',source:'Import source directory',selection:'Import selection',source_id:'Import source identity',recipient:'Encryption recipient',spool:'Durable import queue',batch:'Import batch size',recovered:'Reconciliation directory',plan:'Import plan',scope:'Scope',writer:'Expected writer',max_records:'Restore record budget',signing_key:'Signing credential file',recipient_key:'Decryption credential file',recovery_key:'Recovery credential file',binding:'Pinned archive identity',history:'Epoch history and recovery custody',policy:'Access policy authority'};
+      for(const [key,value] of Object.entries(target)){
+        const row=document.createElement('div');row.append(textNode('dt',labels[key]||key));row.append(textNode('dd',value&&typeof value==='object'?JSON.stringify(value,null,2):String(value??'Not configured')));$('owner-settings').append(row);
+      }
+    }
     clearPolicy();clearKeys();$('key-controls').hidden=target?.kind!=='key-history';$('access-controls').hidden=target?.kind!=='access-policy';$('owner-maintenance-preview').disabled=['access-policy','key-history'].includes(target?.kind);$('owner-operation').disabled=['access-policy','key-history'].includes(target?.kind);
     const operations=['access-policy','key-history'].includes(target?.kind)?[]:target?.kind==='workspace-recovery'?['recover']:target?.kind==='import-recovery'?['restore-import']:target?.kind==='migration'?(target.recovered?['import','reconcile-import']:['import']):target?.kind==='operations'?['rotate']:['backup','recover'];
     for(const operation of operations){const option=textNode('option',operation);option.value=operation;$('owner-operation').append(option);}

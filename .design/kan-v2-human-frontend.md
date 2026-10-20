@@ -588,3 +588,21 @@ typed wrapped recovery package previously exported by the UI. It only delivers
 that package as a file, without restoring, activating, unwrapping or granting
 custody. Both forms are removed and cleared immediately after submission; responses
 remain no-store. These routes add no persistent cache or ticket authority.
+
+### Agent MCP adapter
+
+`kan-v2 library --mcp` runs the existing configured Reader/API over stdio instead
+of HTTP. `kan_v2_read` is the default tool; it accepts the same typed JSON requests
+and refuses mutations. `--mcp-writes` explicitly advertises `kan_v2_write` for
+annotations, indexing, saved views and analysis actions. `--mcp-owner` separately
+requires owner configuration and advertises `kan_v2_owner`; supplying owner config
+alone does not expose that authority to MCP. Read/write classification is exhaustive
+across the request enum, including retry/cancel/restore variants. Existing previews,
+idempotency, grants and bounded work remain authoritative. No new persistence path,
+automatic policy action, credential creation or extra server is introduced.
+
+Results retain the API's JSON as structured MCP content. Adapter failures preserve
+access-limited, missing, corrupt, conflict, unavailable, busy and content-limit
+states; none becomes an empty collection. Input lines are bounded before JSON
+parsing; four concurrent tool executions share the Reader's own worker limits.
+Stdio startup/shutdown creates no listener and writes no diagnostics to stdout.

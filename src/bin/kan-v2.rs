@@ -168,7 +168,7 @@ enum Command {
         #[arg(long)]
         signing_key: PathBuf,
         #[arg(long)]
-        #[arg(required_unless_present = "request")]
+        #[arg(required_unless_present_any = ["request", "mcp"])]
         token_file: Option<PathBuf>,
         /// Encrypted persistent search index and saved view declarations.
         #[arg(long, requires = "workspace_key")]
@@ -189,6 +189,15 @@ enum Command {
         /// Mount separately authorized owner maintenance with its own journal/keys.
         #[arg(long)]
         owner_config: Option<PathBuf>,
+        /// Serve the shared v2 API as a bounded stdio MCP server; read-only by default.
+        #[arg(long, conflicts_with = "request")]
+        mcp: bool,
+        /// Explicitly expose Library write tools (annotations, indexing, views, analysis).
+        #[arg(long, requires = "mcp")]
+        mcp_writes: bool,
+        /// Independently expose owner tools from the supplied owner configuration.
+        #[arg(long, requires_all = ["mcp", "owner_config"])]
+        mcp_owner: bool,
         /// Execute one shared Library API request from a JSON file and exit.
         #[arg(long)]
         request: Option<PathBuf>,
@@ -661,6 +670,9 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             operations_journal,
             operations_token_file,
             request,
+            mcp,
+            mcp_writes,
+            mcp_owner,
         } => {
             #[derive(serde::Deserialize)]
             #[serde(deny_unknown_fields)]
@@ -794,6 +806,12 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     .to_string();
                 reader =
                     reader.with_operations(kan::evidence_dashboard::Embedded::new(journal, token)?);
+            }
+            if mcp {
+                tokio::runtime::Runtime::new()?.block_on(kan::evidence_library::serve_mcp(
+                    reader, mcp_writes, mcp_owner,
+                ))?;
+                return Ok(());
             }
             if let Some(path) = request {
                 let bytes = kan::evidence_gateway::secret_file(&path)?;
