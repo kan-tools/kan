@@ -2035,3 +2035,70 @@ fn owner_cli_explicitly_initializes_the_index_without_changing_archive_evidence(
     assert_eq!(archive.indexed_frontier(None).unwrap(), Frontier::default());
     assert_eq!(archive.verify().unwrap(), Frontier::default());
 }
+
+#[test]
+fn custody_refresh_preserves_metadata_and_blocks_replay_without_a_payload_rescan() {
+    use kan::evidence_store::erasure::Record;
+    let temp = tempfile::tempdir().unwrap();
+    let mut archive = Archive::create(temp.path(), binding()).unwrap();
+    archive.rebuild_serving_index(&identity(7)).unwrap();
+    let first_bytes = request(0, None);
+    let first = archive
+        .admit_indexed(&first_bytes, &identity(7), &grant(), 100, None)
+        .unwrap();
+    let second = archive
+        .admit_indexed(
+            &request(1, Some(first.record.manifest.cid().to_string())),
+            &identity(7),
+            &grant(),
+            101,
+            None,
+        )
+        .unwrap();
+    let plan = archive.preview_erasure(&[1], hex(&[55; 32]), 102).unwrap();
+    let package = archive
+        .apply_erasure(Record::sign(plan, &identity(7)).unwrap())
+        .unwrap();
+    assert!(archive.indexed_frontier(package.tip.as_deref()).is_err());
+    assert!(archive
+        .refresh_serving_custody(&identity(5), package.tip.as_deref().unwrap())
+        .is_err());
+    assert!(archive
+        .refresh_serving_custody(&identity(7), &hex(&[0; 32]))
+        .is_err());
+    // Payload integrity belongs to selected reads/full audit. Refreshing a
+    // signed custody extension uses authenticated coordinates, not every blob.
+    connection(temp.path())
+        .execute("UPDATE objects SET bytes=x'00'", [])
+        .unwrap();
+    let fresh = archive
+        .refresh_serving_custody(&identity(7), package.tip.as_deref().unwrap())
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        archive.indexed_frontier(package.tip.as_deref()).unwrap(),
+        *second.attestation.frontier()
+    );
+    assert_eq!(
+        archive
+            .refresh_serving_custody(&identity(7), package.tip.as_deref().unwrap())
+            .unwrap()
+            .unwrap()
+            .bytes()
+            .unwrap(),
+        fresh.bytes().unwrap()
+    );
+    assert_eq!(
+        archive
+            .admit_indexed(
+                &first_bytes,
+                &identity(7),
+                &grant(),
+                103,
+                package.tip.as_deref()
+            )
+            .unwrap_err(),
+        Failure::AccessLimited
+    );
+    assert!(archive.verify().is_err());
+}

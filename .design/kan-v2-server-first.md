@@ -425,7 +425,12 @@ authenticates the signed checkpoint and selected path, then verifies the selecte
 native attestation. Its result certifies selected metadata only. Missing or corrupt
 payloads elsewhere do not turn that result into a whole-archive health claim.
 Changed custody makes an older checkpoint unusable until refreshed by verified
-rebuild or a fully audited admission. A checkpoint loaded from the archive alone
+maintenance. Owner erasure workers now refresh initialized maps after native
+reconciliation, including root batches, replicas and publication archives. The
+refresh verifies the native custody extension and unchanged authenticated metadata
+frontier, then publishes new erased-object commitments atomically; it neither
+rebuilds the source metadata map nor rescans lifetime payloads. Archives without
+an index remain unindexed. A checkpoint loaded from the archive alone
 cannot establish freshness. This initial integration supports admitted archives;
 copied-profile activation, bounded source availability/external custody checks,
 service routing and scale qualification remain implementation work.

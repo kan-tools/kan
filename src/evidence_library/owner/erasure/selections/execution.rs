@@ -5,13 +5,19 @@ fn reconcile(
     root: &Path,
     history: &custody::Access,
     current: &custody::Snapshot,
+    issuer: &Path,
 ) -> Result<(), Failure> {
     let package = current.package()?;
     if let Some(tip) = &package.tip {
         let binding = history.binding.owner_binding()?;
         match history.binding.profile {
             Profile::Admitted => {
-                store::attested::Archive::open(root, binding)?.reconcile_erasure(&package, tip)?;
+                let mut archive = store::attested::Archive::open(root, binding)?;
+                archive.reconcile_erasure(&package, tip)?;
+                archive.refresh_serving_custody(
+                    &Identity::load_existing(issuer).map_err(invalid)?,
+                    tip,
+                )?;
             }
             Profile::Copied => {
                 store::copied::Archive::open(root, binding)?.reconcile_erasure(&package, tip)?;
@@ -100,7 +106,7 @@ fn execute(target: &Target, journal: &Workspace, id: &str) -> Result<Value, Fail
         let current = history.current()?;
         // Recover any prior batch whose independent custody commit outlived the
         // worker before touching later batches or derived evidence.
-        reconcile(root, history, &current)?;
+        reconcile(root, history, &current, issuer)?;
         let sequences = selected.iter().map(|t| t.sequence).collect::<Vec<_>>();
         let actual = inspect(
             target,
@@ -116,7 +122,7 @@ fn execute(target: &Target, journal: &Workspace, id: &str) -> Result<Value, Fail
         history.append_prepared(|current| {
             // Rebase only chain coordinates under exclusive custody. Every
             // payload coordinate still comes from the signed complete consent.
-            reconcile(root, history, current)?;
+            reconcile(root, history, current, issuer)?;
             let selected = remaining(&manifest, &selected, current)?
                 .into_iter()
                 .take(batch)
@@ -167,7 +173,8 @@ fn execute(target: &Target, journal: &Workspace, id: &str) -> Result<Value, Fail
             )?;
             Ok(record)
         })?;
-        history.reconcile_archive(root)?;
+        let current = history.current()?;
+        reconcile(root, history, &current, issuer)?;
     }
     let left = {
         let current = history.current()?;

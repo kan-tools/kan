@@ -615,7 +615,15 @@ pub(super) fn cleanup(
                     let binding = target.history.binding.owner_binding()?;
                     Ok(match target.history.binding.profile {
                         Profile::Admitted => {
-                            store::attested::Archive::open(root, binding)?.reclaim_erased_pages()?
+                            let archive = store::attested::Archive::open(root, binding)?;
+                            if let Some(tip) = current.storage_tip()? {
+                                archive.refresh_serving_custody(
+                                    &Identity::load_existing(&target.issuer_key)
+                                        .map_err(invalid)?,
+                                    &tip,
+                                )?;
+                            }
+                            archive.reclaim_erased_pages()?
                         }
                         Profile::Copied => {
                             store::copied::Archive::open(root, binding)?.reclaim_erased_pages()?

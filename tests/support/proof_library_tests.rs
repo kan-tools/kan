@@ -6270,6 +6270,10 @@ async fn owner_complete_selection_resumes_batches_after_restart_and_intervening_
     // all retained payloads, whereas closed-capture selection must refuse it.
     let f = fixture_requests(source.path(), Profile::Admitted, captured_request);
     let server = Server::start(&f).await;
+    attested::Archive::open(&f.root, f.binding.clone())
+        .unwrap()
+        .rebuild_serving_index(&identity(8))
+        .unwrap();
     let mut history:Access=serde_json::from_value(json!({"directory":custody.path(),"binding":{"profile":"admitted","archive":service::hex(&f.binding.archive),"scope":service::hex(&f.binding.scope),"issuer":f.binding.issuer},"owner":identity(9).did().as_str()})).unwrap();
     history.initialize().unwrap();
     let genesis =
@@ -6372,6 +6376,15 @@ async fn owner_complete_selection_resumes_batches_after_restart_and_intervening_
     assert_eq!(done["result"]["report"]["backup_purge"], "not-performed");
     let current = history.current().unwrap();
     assert_eq!(current.history.len(), 5);
+    assert!(
+        attested::Archive::open_indexed(
+            &f.root,
+            f.binding.clone(),
+            current.storage_tip().unwrap().as_deref()
+        )
+        .is_ok(),
+        "completed owner erasure refreshes indexed ingest custody"
+    );
     let roots = current
         .history
         .iter()

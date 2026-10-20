@@ -589,6 +589,7 @@ fn cleanup_selected(
     let Configured {
         root,
         history,
+        issuer,
         replicas,
         workspaces,
         spools,
@@ -607,7 +608,14 @@ fn cleanup_selected(
             let binding = history.binding.owner_binding()?;
             Ok(match history.binding.profile {
                 Profile::Admitted => {
-                    store::attested::Archive::open(path, binding)?.reclaim_erased_pages()?
+                    let archive = store::attested::Archive::open(path, binding)?;
+                    if let Some(tip) = current.storage_tip()? {
+                        archive.refresh_serving_custody(
+                            &Identity::load_existing(issuer).map_err(invalid)?,
+                            &tip,
+                        )?;
+                    }
+                    archive.reclaim_erased_pages()?
                 }
                 Profile::Copied => {
                     store::copied::Archive::open(path, binding)?.reclaim_erased_pages()?

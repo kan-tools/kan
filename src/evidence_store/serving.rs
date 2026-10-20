@@ -704,3 +704,73 @@ impl attested::Archive {
         Ok(frontier)
     }
 }
+
+impl attested::Archive {
+    /// Owner maintenance after native erasure reconciliation. Refresh only the
+    /// erased-object map; source metadata and the archive frontier cannot change.
+    /// The caller holds independent custody through this operation. Legacy
+    /// archives without an index remain unindexed; no hidden initialization.
+    pub fn refresh_serving_custody(
+        &self,
+        signer: &Identity,
+        expected_tip: &str,
+    ) -> Result<Option<Checkpoint>> {
+        if signer.did().as_str() != self.binding.issuer || self.copy.is_some() {
+            return Err(Error::Invalid("serving custody signer/profile"));
+        }
+        let tx = rusqlite::Transaction::new_unchecked(
+            &self.ledger.conn,
+            TransactionBehavior::Immediate,
+        )?;
+        if !exists(&tx)? {
+            return Ok(None);
+        }
+        self.ledger.check_write_profile(true)?;
+        attested::check_binding(&tx, &self.binding)?;
+        let checkpoint = load(&tx, &self.binding)?;
+        let frontier = checkpoint.validate(&self.binding)?;
+        if self.ledger.snapshot()?
+            != (Snapshot {
+                through: frontier.through,
+                tip: frontier.manifest.clone(),
+            })
+        {
+            return Err(Error::Conflict("serving custody frontier changed"));
+        }
+        if frontier.through > 0 {
+            selected_metadata(&tx, &self.binding, &checkpoint, frontier.through)?;
+        }
+        let history = erasure::load(&tx)?;
+        if history.tip.as_deref() != Some(expected_tip)
+            || checkpoint.erasure_tip().is_some_and(|tip| {
+                !history
+                    .records
+                    .iter()
+                    .any(|record| record.id().ok().as_deref() == Some(tip))
+            })
+        {
+            return Err(Error::Conflict("serving custody is not an extension"));
+        }
+        if history
+            .records
+            .iter()
+            .any(|r| r.plan.through > frontier.through)
+        {
+            return Err(Error::Conflict("serving custody ahead of archive"));
+        }
+        if checkpoint.erasure_tip() == Some(expected_tip) {
+            return Ok(Some(checkpoint));
+        }
+        let mut map = Map::new(
+            SqlBlocks {
+                conn: &tx,
+                tx: Some(&tx),
+            },
+            checkpoint.root()?,
+        );
+        insert_erasures(&mut map, &history)?;
+        let next = publish(&tx, &self.binding, &frontier, map.root(), &history, signer)?;
+        tx.commit()?;
+        Ok(Some(next))
+    }
+}

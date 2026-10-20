@@ -147,7 +147,8 @@ it must verify the source archive before replacing derived index data.
 This option currently covers admitted-archive startup and ingestion. Proof Library
 reads and independent custody/policy histories still use their existing paths;
 copied archives and full 10 GiB / 100 GiB qualification remain work in progress.
-After an external erasure changes native custody, an old indexed checkpoint is
-refused until explicit verified rebuild (or a fully audited admission) refreshes
-it. Indexed startup/admission verify touched evidence and cannot stand in for the
+Owner erasure workers refresh initialized indexes under current custody after
+reconciliation, including replicas and dependent publication archives. An external
+erasure that bypasses those workers leaves the old checkpoint refused until
+explicit maintenance refreshes it. Indexed startup/admission verify touched evidence and cannot stand in for the
 full retained-byte audit exposed by `verify`.
