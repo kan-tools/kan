@@ -51,6 +51,7 @@ pub enum SurfaceWrite {
     EvidencePublicationSource,
     EvidenceRestore,
     EvidenceWorkspace,
+    EvidenceWorkspaceErasure,
     EvidenceWorkspaceRecovery,
     EvidenceErasureHistory,
     EvidencePolicy,
@@ -98,6 +99,7 @@ impl SurfaceWrite {
         Self::EvidencePublicationSource,
         Self::EvidenceRestore,
         Self::EvidenceWorkspace,
+        Self::EvidenceWorkspaceErasure,
         Self::EvidenceWorkspaceRecovery,
         Self::EvidenceErasureHistory,
         Self::EvidencePolicy,
@@ -239,6 +241,10 @@ impl SurfaceWrite {
                 "evidence-restore:files",
                 "evidence-restore:plan.json",
                 "evidence-restore:report.json",
+            ],
+            Self::EvidenceWorkspaceErasure => &[
+                "evidence-workspace-erasure:entries",
+                "evidence-workspace-erasure:profile",
             ],
             Self::EvidenceWorkspaceRecovery => &[
                 "evidence-workspace-recovery:database",
@@ -477,5 +483,39 @@ pub fn redact_evidence_object(
     id: &str,
 ) -> rusqlite::Result<()> {
     tx.execute("UPDATE objects SET bytes=x'00' WHERE cid=?", [id])?;
+    Ok(())
+}
+
+#[cfg(feature = "v2-crypto")]
+pub fn initialize_workspace_erasure(
+    _surface: SurfaceWrite,
+    tx: &rusqlite::Transaction<'_>,
+) -> rusqlite::Result<()> {
+    tx.execute_batch("PRAGMA user_version=2;")
+}
+#[cfg(feature = "v2-crypto")]
+pub fn insert_workspace_erasure(
+    _surface: SurfaceWrite,
+    tx: &rusqlite::Transaction<'_>,
+    id: &str,
+    bytes: &[u8],
+) -> rusqlite::Result<()> {
+    tx.execute(
+        "INSERT INTO entries VALUES('erasure',?,?)",
+        rusqlite::params![id, bytes],
+    )?;
+    Ok(())
+}
+#[cfg(feature = "v2-crypto")]
+pub fn delete_workspace_erased_entry(
+    _surface: SurfaceWrite,
+    tx: &rusqlite::Transaction<'_>,
+    kind: &str,
+    id: &str,
+) -> rusqlite::Result<()> {
+    tx.execute(
+        "DELETE FROM entries WHERE kind=? AND id=?",
+        rusqlite::params![kind, id],
+    )?;
     Ok(())
 }

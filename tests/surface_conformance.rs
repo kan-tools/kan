@@ -14,6 +14,7 @@ use sha2::{Digest, Sha256};
 
 const CATALOG: &str = include_str!("fixtures/read-write-surface.tsv");
 const RULE_EVIDENCE: &[(&str, &str)] = &[
+    ("workspace-erasure", "tests/evidence_workspace.rs"),
     ("signed-erasure-custody", "tests/evidence_attested_store.rs"),
     ("wrapped-key-epochs", "tests/evidence_keys.rs"),
     (
@@ -528,6 +529,24 @@ const PERSISTENCE_MODULES: &[&str] = &[
     "src/workspace.rs",
 ];
 const PERSISTENCE_MUTATION_SITES: &[(&str, &str, &str, usize)] = &[
+    (
+        "src/evidence_workspace/erasure.rs",
+        "initialize_workspace_erasure",
+        "EvidenceWorkspaceErasure",
+        1,
+    ),
+    (
+        "src/evidence_workspace/erasure.rs",
+        "insert_workspace_erasure",
+        "EvidenceWorkspaceErasure",
+        1,
+    ),
+    (
+        "src/evidence_workspace/erasure.rs",
+        "delete_workspace_erased_entry",
+        "EvidenceWorkspaceErasure",
+        1,
+    ),
     (
         "src/evidence_store/erasure.rs",
         "initialize_evidence_erasure",
@@ -1477,7 +1496,7 @@ fn every_persistence_facade_call_is_independently_inventoried() {
         if module == "src/persistence.rs" {
             assert_eq!(
                 format!("{:x}", Sha256::digest(source.as_bytes())),
-                "52d1bebe57e0010e432cb31a15602e7fcf1a4b7d29904b620ad5842b52367fbf",
+                "d52a24043ffb4ab7dbc38d3f3387f80074a040b7844412bb8b520157606bc4f9",
                 "the raw-mutation facade changed; review and update its committed implementation digest together with facade-call negative controls"
             );
             assert!(

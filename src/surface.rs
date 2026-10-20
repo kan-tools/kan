@@ -31,6 +31,8 @@ pub const EVIDENCE_VALUES: &[SurfaceValue] = &[
     SurfaceValue::new("evidence-policy:.pending-*", "*"),
     SurfaceValue::new("evidence-policy:policy-*.json", "*"),
     SurfaceValue::new("evidence-annotation:plaintext-frame", "*"),
+    SurfaceValue::new("evidence-workspace-erasure:entries", "*"),
+    SurfaceValue::new("evidence-workspace-erasure:profile", "*"),
     SurfaceValue::new("evidence-workspace:database", "*"),
     SurfaceValue::new("evidence-workspace:database-lock", "*"),
     SurfaceValue::new("evidence-workspace-recovery:database", "*"),

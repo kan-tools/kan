@@ -208,3 +208,183 @@ fn workspace_recovery_cli_preserves_history_and_rejects_corrupt_entries_and_jour
     .is_err());
     assert_eq!(std::fs::read(&journal).unwrap(), b"invalid journal");
 }
+
+#[test]
+fn owner_erasure_removes_ciphertexts_and_fences_delayed_results_across_restart_and_recovery() {
+    use kan::evidence_service::{hex, Failure};
+    let dir = private_directory();
+    let path = dir.path().join("workspace.sqlite");
+    let workspace = Workspace::open(&path, identity(6), [8; 32]).unwrap();
+    workspace
+        .put(
+            "annotation",
+            "remove",
+            json!({"body":"private derived content"}),
+        )
+        .unwrap();
+    workspace
+        .put(
+            "annotation",
+            "keep",
+            json!({"body":"unrelated retained note"}),
+        )
+        .unwrap();
+    let db = rusqlite::Connection::open(&path).unwrap();
+    let (removed_id, old_bytes): (String, Vec<u8>) = db
+        .query_row(
+            "SELECT id,body FROM entries WHERE kind='annotation' ORDER BY rowid LIMIT 1",
+            [],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .unwrap();
+    drop(db);
+    let selections = vec![
+        ("annotation".into(), "remove".into()),
+        ("analysis-result".into(), "running-job".into()),
+    ];
+    let plan = workspace
+        .preview_erasure(&selections, hex(&[7; 32]))
+        .unwrap();
+    assert!(workspace
+        .preview_erasure(&[("binding".into(), "binding".into())], hex(&[7; 32]))
+        .is_err());
+    assert!(workspace.put("erasure", "fake", json!({})).is_err());
+    assert!(
+        Workspace::open_for_erasure(&path, identity(6), [8; 32]).is_err(),
+        "active workspace users fence maintenance"
+    );
+    assert_eq!(
+        workspace.apply_erasure(&plan).unwrap_err(),
+        Failure::Unavailable
+    );
+    drop(workspace);
+    let workspace = Workspace::open_for_erasure(&path, identity(6), [8; 32]).unwrap();
+    assert!(Workspace::open(&path, identity(6), [8; 32]).is_err());
+    assert_eq!(
+        workspace.apply_erasure(&plan).unwrap()["state"],
+        "workspace-entries-erased"
+    );
+    workspace.apply_erasure(&plan).unwrap();
+    assert!(workspace.get("annotation", "remove").unwrap().is_none());
+    assert_eq!(
+        workspace.annotations().unwrap(),
+        vec![json!({"body":"unrelated retained note"})]
+    );
+    assert_eq!(
+        workspace
+            .put(
+                "analysis-result",
+                "running-job",
+                json!({"result":"late provider response"})
+            )
+            .unwrap_err(),
+        Failure::AccessLimited
+    );
+    assert_eq!(
+        workspace
+            .put(
+                "annotation",
+                "remove",
+                json!({"body":"private derived content"})
+            )
+            .unwrap_err(),
+        Failure::AccessLimited
+    );
+    drop(workspace);
+    let bytes = std::fs::read(&path).unwrap();
+    assert!(
+        !bytes.windows(old_bytes.len()).any(|b| b == old_bytes),
+        "deleted ciphertext is zeroed in the managed SQLite file"
+    );
+    let db = rusqlite::Connection::open(&path).unwrap();
+    assert_eq!(
+        db.query_row("PRAGMA user_version", [], |r| r.get::<_, u32>(0))
+            .unwrap(),
+        2,
+        "older binaries must refuse this profile"
+    );
+    assert_eq!(
+        db.query_row(
+            "SELECT count(*) FROM entries WHERE kind='erasure'",
+            [],
+            |r| r.get::<_, u32>(0)
+        )
+        .unwrap(),
+        2
+    );
+    // Simulate stale bytes reintroduced through unmanaged database manipulation.
+    db.execute(
+        "INSERT INTO entries VALUES('annotation',?,?)",
+        rusqlite::params![removed_id, old_bytes],
+    )
+    .unwrap();
+    drop(db);
+    let workspace = Workspace::open(&path, identity(6), [8; 32]).unwrap();
+    assert!(workspace.get("annotation", "remove").unwrap().is_none());
+    assert_eq!(workspace.annotations().unwrap().len(), 1);
+    drop(workspace);
+    assert!(Workspace::recover(
+        &path,
+        &dir.path().join("invalid-recovery.sqlite"),
+        identity(6),
+        [8; 32]
+    )
+    .is_err());
+    let workspace = Workspace::open_for_erasure(&path, identity(6), [8; 32]).unwrap();
+    workspace.apply_erasure(&plan).unwrap(); // retry scrubs authorized identities again
+    drop(workspace);
+    let recovered = dir.path().join("recovered.sqlite");
+    Workspace::recover(&path, &recovered, identity(6), [8; 32]).unwrap();
+    let workspace = Workspace::open(&recovered, identity(6), [8; 32]).unwrap();
+    assert!(workspace.get("annotation", "remove").unwrap().is_none());
+    assert_eq!(
+        workspace
+            .put("analysis-result", "running-job", json!({}))
+            .unwrap_err(),
+        Failure::AccessLimited
+    );
+    assert_eq!(workspace.annotations().unwrap().len(), 1);
+}
+
+#[test]
+fn workspace_erasure_refuses_a_stale_plan_without_partially_erasing_other_entries() {
+    let dir = private_directory();
+    let workspace =
+        Workspace::open(&dir.path().join("workspace.sqlite"), identity(6), [8; 32]).unwrap();
+    workspace
+        .put(
+            "annotation",
+            "note",
+            json!({"body":"retain on stale preview"}),
+        )
+        .unwrap();
+    let plan = workspace
+        .preview_erasure(
+            &[
+                ("annotation".into(), "note".into()),
+                ("analysis-result".into(), "job".into()),
+            ],
+            kan::evidence_service::hex(&[7; 32]),
+        )
+        .unwrap();
+    workspace
+        .put(
+            "analysis-result",
+            "job",
+            json!({"result":"arrived after preview"}),
+        )
+        .unwrap();
+    drop(workspace);
+    let workspace =
+        Workspace::open_for_erasure(&dir.path().join("workspace.sqlite"), identity(6), [8; 32])
+            .unwrap();
+    assert_eq!(
+        workspace.apply_erasure(&plan).unwrap_err(),
+        kan::evidence_service::Failure::Conflict
+    );
+    assert!(workspace.get("annotation", "note").unwrap().is_some());
+    assert!(workspace.get("analysis-result", "job").unwrap().is_some());
+    let mut foreign = plan;
+    foreign.scope = kan::evidence_service::hex(&[0; 32]);
+    assert!(workspace.apply_erasure(&foreign).is_err());
+}

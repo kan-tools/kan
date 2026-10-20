@@ -10,6 +10,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::{io::Read, path::Path, sync::Mutex};
+pub mod erasure;
+
 type Result<T> = std::result::Result<T, Failure>;
 const MAX: usize = 12 * 1024 * 1024;
 const SCHEMA: &str = "PRAGMA application_id=1264014129; PRAGMA user_version=1;
@@ -18,6 +20,7 @@ const DOMAIN: &[u8] = b"tools.kan.reader.workspace.v1\0";
 pub struct Workspace {
     conn: Mutex<Connection>,
     _maintenance: std::fs::File,
+    erasure_maintenance: bool,
     path: std::path::PathBuf,
     signer: Identity,
     private: [u8; 32],
@@ -181,11 +184,25 @@ impl Workspace {
                 .query_row("PRAGMA application_id", [], |r| r.get::<_, u32>(0))
                 .map_err(invalid)?
                 != 1264014129
-            || conn
-                .query_row("PRAGMA user_version", [], |r| r.get::<_, u32>(0))
-                .map_err(invalid)?
-                != 1
+            || !matches!(
+                conn.query_row("PRAGMA user_version", [], |r| r.get::<_, u32>(0))
+                    .map_err(invalid)?,
+                1 | 2
+            )
         {
+            return Err(Failure::Corrupt);
+        }
+        let profile: u32 = conn
+            .query_row("PRAGMA user_version", [], |r| r.get(0))
+            .map_err(invalid)?;
+        let has_erasure: bool = conn
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM entries WHERE kind='erasure')",
+                [],
+                |r| r.get(0),
+            )
+            .map_err(invalid)?;
+        if (profile == 2) != has_erasure {
             return Err(Failure::Corrupt);
         }
         conn.execute_batch(
@@ -204,6 +221,7 @@ impl Workspace {
         let workspace = Self {
             conn: Mutex::new(conn),
             _maintenance: maintenance,
+            erasure_maintenance: false,
             path: path.to_path_buf(),
             signer,
             private: private_key,
@@ -324,6 +342,9 @@ impl Workspace {
                 let kind: String = row.get(0).map_err(invalid)?;
                 let id: String = row.get(1).map_err(invalid)?;
                 let body: Vec<u8> = row.get(2).map_err(invalid)?;
+                if erasure::erased(&recovered, &conn, &kind, &id)? {
+                    return Err(Failure::Corrupt);
+                }
                 recovered.unseal(&kind, &id, &body)?;
                 *counts.entry(kind).or_default() += 1;
             }
@@ -467,6 +488,9 @@ impl Workspace {
     pub fn get(&self, kind: &str, key: &str) -> Result<Option<Value>> {
         let id = Self::id(kind, key);
         let conn = self.conn.lock().map_err(invalid)?;
+        if erasure::erased(self, &conn, kind, &id)? {
+            return Ok(None);
+        }
         let bytes: Option<Vec<u8>> = conn
             .query_row(
                 "SELECT body FROM entries WHERE kind=? AND id=?",
@@ -515,6 +539,9 @@ impl Workspace {
         let tx = conn
             .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
             .map_err(invalid)?;
+        if erasure::erased(self, &tx, kind, &id)? {
+            return Err(Failure::AccessLimited);
+        }
         let prior: Option<Vec<u8>> = tx
             .query_row(
                 "SELECT body FROM entries WHERE kind=? AND id=?",
@@ -584,7 +611,9 @@ impl Workspace {
         let mut out = Vec::new();
         for row in rows {
             let (id, b) = row.map_err(invalid)?;
-            out.push(self.unseal(kind, &id, &b)?);
+            if !erasure::erased(self, &conn, kind, &id)? {
+                out.push(self.unseal(kind, &id, &b)?);
+            }
         }
         if out.len() > limit {
             return Err(Failure::Invalid);

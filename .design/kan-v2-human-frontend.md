@@ -712,3 +712,22 @@ legacy service without `--erasure-history` does not acquire these managed restor
 guarantees. The full owner coordinator must enroll every managed read/ingest/restore
 path and keep custody current before it reports managed erasure complete. Coordinated
 spool, outbox, workspace, replica and backup cleanup and owner job/UI still remain.
+
+Workspace cleanup now has an exact bounded owner-side plan and atomic ciphertext
+removal plus encrypted, signed per-entry tombstones. A plan may fence an absent
+analysis output so a delayed completion cannot recreate it. It pins the workspace
+identity, owner authorization record ID, selected kinds/IDs and existing ciphertext
+digests. Stale previews fail atomically; exact retries scrub the same identities
+again. Minimal tombstones contain plan/authorization IDs and entry coordinates,
+never removed content. Reads and writes check them; recovery refuses reintroduced
+payload rows. Ordinary workspace writes cannot mint erasure records.
+
+This cleanup requires an exclusive maintenance handle with all workspace users
+stopped. First erasure changes the workspace profile to 2; earlier binaries refuse
+it, preventing an old writer from silently bypassing the new fences after restart.
+The unchanged encrypted entry schema preserves tombstones through recovery. SQLite
+secure deletion clears removed managed cells; page reclamation and old backup purge
+remain separate. The plan is bounded to 4,096 selected keys and 64 MiB of inspected
+ciphertexts. This is the physical cleanup primitive: the owner coordinator still
+must resolve the complete capture/derivative/outbox/replica dependency set, bind its
+independently signed authorization and reconcile old workspace backups before use.
