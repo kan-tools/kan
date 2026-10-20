@@ -187,3 +187,34 @@ Back up `CURRENT` with the independently retained control history. Restoring an
 old index database alone is refused; restoring the entire control directory still
 requires independently current custody. Uninitialized directories retain full
 history audits and do not qualify as bounded deployments.
+
+### Large-archive measurement
+
+`scripts/measure-v2-capacity.py` runs the Linux `evidence_inventory` test executable
+against a newly created 10 GiB or 100 GiB opaque-payload archive. Build that test
+in release mode on the selected remote host, then pass its executable path:
+
+```sh
+CARGO_BUILD_JOBS=4 cargo test --release --locked --features v2-crypto --test evidence_inventory --no-run
+python3 scripts/measure-v2-capacity.py --binary target/release/deps/evidence_inventory-EXECUTABLE_HASH --directory /chosen/scratch/kan-v2-10g --gib 10
+python3 scripts/measure-v2-capacity.py --binary target/release/deps/evidence_inventory-EXECUTABLE_HASH --directory /chosen/scratch/kan-v2-100g --gib 100
+```
+
+Use the executable printed by Cargo, and record the Git revision and build command
+with the resulting report. Destinations must not exist. The driver checks for
+32 GiB or 302 GiB free respectively before writing: current signed requests store
+opaque payload hex, so logical payload size and physical database size differ.
+It generates actual random payloads through indexed admission, records allocated
+database bytes, preserves raw worker logs and partial failure reports, and never
+deletes the fixture automatically.
+
+The initial instrument fixes concurrency at one, chunk size at 1 MiB and page size
+at one row. Each open/append/page/source sample uses a fresh process; fixture
+creation is outside the measurement. Reports contain p50/p95/p99/max latency,
+Linux syscall and physical read-byte counts, and process peak RSS, with a 512 MiB
+RSS gate. OS cache is retained and physical reads may therefore be zero; syscall
+counts include small harness reads. This is an admitted-storage baseline, not a
+16-stream server, HTTP, crypto, policy-history, cold-cache or full-application
+qualification. The source operation verifies one complete selected signed request.
+The ordinary CI suite exercises a two-chunk smoke fixture; only actual remote
+10/100 GiB reports can establish those measured size points.

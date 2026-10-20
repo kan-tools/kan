@@ -16,6 +16,9 @@ use std::{
     sync::{atomic::AtomicBool, Arc},
     time::Duration,
 };
+#[cfg(target_os = "linux")]
+#[path = "support/capacity_measurements.rs"]
+mod capacity_measurements;
 #[path = "support/proof_service_tests.rs"]
 mod proof_service_tests;
 fn identity(n: u8) -> Identity {
