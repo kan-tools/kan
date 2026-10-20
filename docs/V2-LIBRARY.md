@@ -1006,3 +1006,18 @@ That exposes `kan_v2_owner`; merely configuring owner services or enabling ordin
 writes does not advertise it. Grant this process only the configuration/custody
 needed by its intended agent. Captured content cannot enable tools or permissions.
 No MCP install command is run automatically and no agent configuration is changed.
+
+### Retention and planned erasure
+
+Payloads are retained until explicit owner erasure; storage pressure and age do
+not authorize deletion. The accepted erasure contract selects logical captures
+(including chunks and attachments), removes affected managed content/derivatives,
+and requires current erasure history to be applied before a restored archive can
+be exposed. Minimal signed provenance remains as “erased by owner,” without
+semantically retracting assertions.
+
+**Erasure is not implemented yet.** Backup purge will have its own destination
+status. Old backups with old recovery keys may still recover the content outside
+managed restore; epoch rotation does not provide selective cryptographic erasure.
+Do not delete SQLite objects manually to simulate this feature: current archive
+verification correctly treats that as missing evidence, not an authorized erasure.

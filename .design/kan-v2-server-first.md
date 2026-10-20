@@ -52,7 +52,7 @@ All criteria below are **implementation intent**, not claims that tests exist or
 - [ ] AC-16: Intent; witness `bare_host_restore`: restore the last verified checkpoint on a clean host using the independent key package; enumerate every committed event and dependency, rebuild projections, and show the exact uncovered interval after the checkpoint. Missing keys or objects fail visibly. (REQ-16)
 - [ ] AC-17: Intent; witness `legacy_import_idempotence`: import a mixed released/current/unknown corpus twice, compare original bytes and CIDs, preserve source mappings and counts, inject corruption, and verify source files remain untouched. (REQ-17)
 - [ ] AC-18: Intent; witness `uri_scope_continuity`: resolve old claim/scope fixtures before and after import; existing targets and four judgments agree, while new capture resources require explicit versioned URI semantics rather than overloading an existing resource. (REQ-18)
-- [ ] AC-19: Intent; witness `erasure_without_false_retraction`: prove time alone never expires a payload, remove authorized payload access, and exercise restore/index rebuild; the subject remains, missing evidence is disclosed, no semantic retraction is inferred, and policy forbids silent resurrection. The concrete key/backup erasure protocol remains conditional on Q4. (REQ-19)
+- [ ] AC-19: Intent; witness `erasure_without_false_retraction`: prove time alone never expires a payload, erase an owner-selected capture and affected managed derivatives, and exercise restore/index rebuild; the subject remains, erased evidence is disclosed, no semantic retraction is inferred, and restoration applies current erasure history before exposing evidence. Report backup purge separately; do not claim cryptographic irrecoverability from older backups and recovery keys. Policy is resolved in §10; the implementation remains required. (REQ-19)
 - [ ] AC-20: Intent; witness `multi_host_fault_campaign`: two collectors upload offline histories, duplicate chunks, forks, tampered ciphertext, truncated streams, and ambiguous provider attempts; committed evidence is retained, incompleteness is explicit, and no uncertain provider request is automatically executed again. (REQ-4, REQ-7, REQ-20)
 - [ ] AC-21: Intent; witness `local_migration_inventory`: discover a fixture tree with ordinary repositories, linked worktrees, separate stores in two checkouts of one project, a publication-only tree, an inaccessible directory, and a broken path. Preview names every discovered source and failure, performs no upload or source mutation, and does not merge stores merely because their Git remote or directory name matches. (REQ-21)
 - [ ] AC-22: Intent; witness `aggregate_import_resume`: import multiple snapshots, interrupt between batches, lose a receipt, restart, and rerun against a moved source directory. The destination contains one retained copy of each identical signed record within its permitted deduplication domain, all source-occurrence links, distinct legacy-local subject namespaces, and an explicit report of pending or conflicting records. No source bytes change. (REQ-17, REQ-21)
@@ -252,7 +252,54 @@ A restore starts on a clean host, verifies the checkpoint and ciphertext closure
 
 Back up committed manifests with their object closure, not an arbitrary copy of a live database file. Regular restore drills are part of acceptance, including corrupted objects and a missing-key failure. Specify recovery time and backup-lag objectives from measured deployment data before release; no numerical recovery promise is established here.
 
-The logical ledger retains subjects and provenance. Retain payloads indefinitely by default, until explicit owner erasure; storage pressure is an operational condition, not permission to expire history. Retraction changes a view; erasure removes access to retained payload material. Explicit erasure requires an authorization event, affected object/key set, confirmation of replicas/backups addressed, and an unavailable-evidence state. Retaining an immutable erasure marker does not retain the erased body. Key deletion works only to the extent all relevant wrapped keys and decrypted copies are removed; shared epoch keys alone do not permit selective cryptographic erasure. Backup retention and restore must honor erasure policy rather than silently resurrecting content. The concrete key/backup protocol remains Q4.
+The logical ledger retains subjects and provenance. Retain payloads indefinitely by default, until explicit owner erasure; storage pressure is an operational condition, not permission to expire history. Retraction changes a view; erasure removes access to retained payload material.
+
+**Owner decision, 2026-10-20:** granularity and irrecoverability are separate choices.
+The normal erasure unit is a logical capture (a request/response exchange including
+its chunks and attachments), with explicit bulk selection for sessions or archives.
+An encryption epoch is not the normal selection boundary: its shared key may cover
+unrelated captures. A preview resolves the logical selection into exact retained
+objects and affected copies/derivatives; a partial discovery window cannot claim
+to enumerate a complete capture.
+
+The v2 contract is removal from managed Kan plus prevention of resurrection through
+managed restore. It does **not** promise that old backups plus old recovery
+credentials become cryptographically unable to recover content. Per-capture
+cryptographic erasure is a separate future custody design, not a prerequisite for
+this contract and not something epoch rotation or ordinary wrapped-key backups
+already provide.
+
+The owner authorizes a concrete preview. Its durable signed erasure record retains
+minimal identifiers, attribution and disposition, never a copy of the erased body
+or a free-text excerpt. The ledger retains provenance and displays “erased by
+owner,” distinct from accidental missing/corrupt evidence and semantic retraction.
+The coordinated plan covers raw payloads, replicas, pending spools, indexes,
+normalized caches, excerpts, analysis inputs/outputs and summaries containing the
+material. Known lineage drives a conservative cascade; incomplete dependency
+knowledge must be disclosed, not treated as proof that no derivatives exist.
+Independent assertions or subjects are not semantically retracted by this cleanup.
+
+Completion is reported per destination: managed removal completed, pending purge,
+or outside Kan's control. Backups and recovery-key packages are listed explicitly.
+An acknowledged erasure must fence reads, retries, ingest replay, index rebuild and
+derived publication before asynchronous cleanup can report completion. Interrupted
+cleanup resumes from the signed authorization and cannot report a merely queued
+job as completed.
+
+A managed restore remains quarantined until it has validated and applied the
+current independently retained erasure history, including erasures newer than the
+backup. Restoring only the old backup's own erasure state is insufficient. If the
+current history or an adequate trusted checkpoint is unavailable, the restore
+cannot claim the no-resurrection guarantee or expose the restored evidence.
+As with receipt witnesses, loss of all independent erasure witnesses limits what
+can be proven; the UI must state that limitation.
+
+Removing live bytes does not prove removal from filesystem snapshots, old backups,
+distributed plaintext, or copied keys. Strong cryptographic erasure would require
+removal of every recoverable relevant key copy, including wrapped copies; shared
+epoch-key deletion would also sacrifice unrelated captures. Backup purge status
+therefore stays separate from managed erasure status. No production erasure is
+authorized by this architecture decision.
 
 ### 11. Compatibility and explicit departures
 
@@ -326,7 +373,16 @@ The first useful prototype is B; the first release trusted as the home-server ar
 <!-- OPEN: Q4 -->
 ### Q4: Key custody and recovery profile
 
-Choose the concrete archive-encryption/key-wrapping protocol, recovery custodians, reader grant mechanism, and erasure unit before implementing the wire format. Proposed direction is separate signing/encryption keys, per-scope encryption epochs, gateway encryption-only archive access, and an independently stored recovery package. Selective erasure may require per-object keys rather than only epoch keys. The operator must be able to restore without the original home server, while the backup principal remains unable to decrypt.
+The current build implements separate signing/encryption keys, per-scope encryption
+epochs, gateway encryption-only archive access, independently recoverable wrapped
+key history, reader grants and explicit custody transfer. The operator can restore
+without the original home server while the backup principal remains unable to
+decrypt. The owner resolved erasure granularity and guarantee in §10 on
+2026-10-20: logical captures, managed removal, restore enforcement, explicit backup
+purge status; no claim of cryptographic irrecoverability from old recovery material.
+The signed erasure protocol and integration with retained proof validation,
+derived cleanup, admission replay and recovery remain implementation work.
+Selective cryptographic erasure would require a separate future key-custody design.
 <!-- /OPEN -->
 
 <!-- OPEN: Q5 -->

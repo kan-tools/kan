@@ -606,3 +606,30 @@ access-limited, missing, corrupt, conflict, unavailable, busy and content-limit
 states; none becomes an empty collection. Input lines are bounded before JSON
 parsing; four concurrent tool executions share the Reader's own worker limits.
 Stdio startup/shutdown creates no listener and writes no diagnostics to stdout.
+
+### Owner erasure contract — accepted 2026-10-20, implementation pending
+
+The owner accepted logical-capture selection, managed removal and enforced
+no-resurrection on restore, with backup purge reported independently. The
+authoritative policy is §10 of `kan-v2-server-first.md`; stronger cryptographic
+irrecoverability from historical backups/keys is outside this guarantee.
+
+The owner workflow must resolve a capture or explicit bulk selection into an exact
+preview of raw records, chunks/attachments, affected derived material and managed
+destinations. Ordinary browsing never acquires erasure authority. Partial discovery
+or incomplete dependency enumeration must remain visible in the preview. After
+explicit authorization, a durable signed record fences access and replay while a
+restartable cleanup job reports each destination. An “erased by owner” source row
+retains minimal provenance; it does not mean the subject/assertion was retracted.
+Backups outside the active service remain visibly pending or outside Kan's control,
+and must not be counted as purged without evidence.
+
+Current storage verification requires every retained payload and its signed
+request; simply deleting an object would make the archive fail its audit. The
+implementation must introduce authenticated erased-evidence handling across
+verification, availability, admission/retry, copying/backup/recovery and derived
+workspaces together. A missing object without valid erasure authority remains
+damage. Cold restore must apply independently retained current erasure history
+before activation; replaying only the older checkpoint's history is insufficient.
+These are outstanding implementation/qualification requirements, not shipped
+behavior or authorization to erase existing data.
