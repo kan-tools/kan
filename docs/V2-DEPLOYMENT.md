@@ -73,6 +73,11 @@ kan-v2 --deployment /etc/kan/deployment.json spool-watch /srv/kan/annotation-que
   --journal /srv/kan/annotation-health.sqlite --endpoint http://127.0.0.1:7282/v1/rpc
 ```
 
+`serve-proof` accepts either the enrolled archive directory or its exact
+`archive.sqlite` path; both select the same independently configured custody.
+Other files under that directory are not enrolled implicitly. Unmanaged proof
+launches also retain the existing explicit-database form.
+
 `spool-head` and `spool-drain` inherit the same destination and source guards.
 `spool-status` inherits destination custody but emits only queue metadata.
 `queue-input` is available only for registered raw queues. Existing setup,

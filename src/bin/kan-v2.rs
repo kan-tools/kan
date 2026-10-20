@@ -489,6 +489,7 @@ enum Command {
     /// Serve proof metadata read-only, including archives with unavailable payloads.
     #[cfg(feature = "v2-service")]
     ServeProof {
+        /// Archive directory or explicit archive.sqlite file.
         archive: PathBuf,
         /// Require authenticated serving checkpoints and seekable payload storage.
         #[arg(long)]
@@ -1523,6 +1524,11 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             items,
             metadata_bytes,
         } => {
+            let archive = if archive.is_dir() {
+                archive.join("archive.sqlite")
+            } else {
+                archive
+            };
             let binding =
                 serde_json::from_slice(&bounded_read(std::fs::File::open(binding)?, 4096)?)?;
             let grants = match grants {

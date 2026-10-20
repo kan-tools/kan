@@ -327,8 +327,15 @@ impl Deployment {
                 archive,
                 erasure_history,
                 ..
+            } => {
+                let entry = self
+                    .archives
+                    .iter()
+                    .find(|a| a.root == *archive)
+                    .ok_or("archive is not registered in managed deployment")?;
+                select(erasure_history, &entry.history)?;
             }
-            | Command::ServeProof {
+            Command::ServeProof {
                 archive,
                 erasure_history,
                 ..
@@ -336,8 +343,12 @@ impl Deployment {
                 let entry = self
                     .archives
                     .iter()
-                    .find(|a| a.root == *archive)
+                    .find(|a| a.root == *archive || a.root.join("archive.sqlite") == *archive)
                     .ok_or("archive is not registered in managed deployment")?;
+                // The manifest enrolls a directory, while the read-only proof
+                // service opens its database. Preserve the legacy explicit-file
+                // CLI form without accepting another file under that directory.
+                *archive = entry.root.join("archive.sqlite");
                 select(erasure_history, &entry.history)?;
             }
             Command::SpoolHead {

@@ -225,6 +225,53 @@ async fn actual_proof_service_and_library_cli_restart_with_missing_payload() {
     for profile in [Profile::Admitted, Profile::Copied] {
         let dir = tempfile::tempdir().unwrap();
         let f = fixture_requests(dir.path(), profile, encrypted);
+        match profile {
+            Profile::Admitted => attested::Archive::open(&f.root, f.binding.clone())
+                .unwrap()
+                .rebuild_serving_index(&identity(8))
+                .unwrap(),
+            Profile::Copied => copied::Archive::open(&f.root, f.binding.clone())
+                .unwrap()
+                .rebuild_serving_index(&identity(8))
+                .unwrap(),
+        };
+        let custody_dir = private_workspace_directory();
+        let mut custody = kan::evidence_erasure_history::Access {
+            directory: custody_dir.path().to_owned(),
+            binding: binding(&f),
+            owner: identity(9).did().to_string(),
+            minimum: None,
+        };
+        custody.initialize().unwrap();
+        let genesis = kan::evidence_erasure_history::Record::sign(
+            custody.preview(None, "a".repeat(64)).unwrap(),
+            &identity(9),
+        )
+        .unwrap();
+        let minimum = genesis.id().unwrap();
+        custody.append(genesis).unwrap();
+        custody.minimum = Some(minimum);
+        custody.rebuild_serving_index(&identity(9)).unwrap();
+        let policy_dir = private_workspace_directory();
+        let policy = kan::evidence_policy::Access {
+            directory: policy_dir.path().to_owned(),
+            binding: binding(&f),
+            owner: identity(9).did().to_string(),
+            minimum: None,
+        };
+        policy.initialize().unwrap();
+        policy
+            .append(
+                kan::evidence_policy::Record::sign(
+                    policy.preview(vec![grant()], "b".repeat(64)).unwrap(),
+                    &identity(9),
+                )
+                .unwrap(),
+            )
+            .unwrap();
+        policy.rebuild_serving_index(&identity(9)).unwrap();
+        // Index initialization predates damage. Startup must read selected
+        // metadata and preserve a visible gap, not re-audit all retained bytes.
         f.remove(2);
         let owner = dir.path().join("owner.key");
         identity(8).save(&owner).unwrap();
@@ -232,18 +279,64 @@ async fn actual_proof_service_and_library_cli_restart_with_missing_payload() {
         identity(6).save(&principal).unwrap();
         let binding_file = dir.path().join("binding.json");
         std::fs::write(&binding_file, serde_json::to_vec(&binding(&f)).unwrap()).unwrap();
-        let grants = dir.path().join("grants.json");
-        std::fs::write(&grants, serde_json::to_vec(&vec![grant()]).unwrap()).unwrap();
-        let (service_process, endpoint) = start_cli(
-            &[
+        let policy_file = dir.path().join("policy.json");
+        let custody_file = dir.path().join("custody.json");
+        let deployment = dir.path().join("deployment.json");
+        std::fs::write(&policy_file, serde_json::to_vec(&policy).unwrap()).unwrap();
+        std::fs::write(&custody_file, serde_json::to_vec(&custody).unwrap()).unwrap();
+        std::fs::write(
+            &deployment,
+            serde_json::to_vec(
+                &json!({"version":1,"archives":[{"root":f.root,"history":custody_file}]}),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            for path in [&policy_file, &custody_file, &deployment] {
+                std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600)).unwrap();
+            }
+        }
+        let selected_path = if profile == Profile::Admitted {
+            f.root.clone()
+        } else {
+            f.db()
+        };
+        let unregistered = f.root.join("unregistered.sqlite");
+        let refused = std::process::Command::new(env!("CARGO_BIN_EXE_kan-v2"))
+            .args([
+                "--deployment",
+                deployment.to_str().unwrap(),
                 "serve-proof",
-                f.db().to_str().unwrap(),
+                unregistered.to_str().unwrap(),
+                "--indexed",
                 "--binding",
                 binding_file.to_str().unwrap(),
                 "--signing-key",
                 owner.to_str().unwrap(),
-                "--grants",
-                grants.to_str().unwrap(),
+                "--access-policy",
+                policy_file.to_str().unwrap(),
+            ])
+            .output()
+            .unwrap();
+        assert!(!refused.status.success());
+        assert!(String::from_utf8_lossy(&refused.stderr).contains("not registered"));
+        assert!(!unregistered.exists());
+        let (service_process, endpoint) = start_cli(
+            &[
+                "--deployment",
+                deployment.to_str().unwrap(),
+                "serve-proof",
+                selected_path.to_str().unwrap(),
+                "--indexed",
+                "--binding",
+                binding_file.to_str().unwrap(),
+                "--signing-key",
+                owner.to_str().unwrap(),
+                "--access-policy",
+                policy_file.to_str().unwrap(),
                 "--listen",
                 "127.0.0.1:0",
             ],
@@ -301,6 +394,18 @@ async fn actual_proof_service_and_library_cli_restart_with_missing_payload() {
         assert_eq!(page["records"][0]["availability"], "missing");
         let source:Value=call(json!({"action":"proof-source","source":entry["id"],"pin":entry["pin"],"selection":page["records"][1]["selection"],"offset":"0","length":"65536"})).await.unwrap().json().await.unwrap();
         assert_eq!(source["bytes_hex"], service::hex(RAW));
+        let revoke = kan::evidence_policy::Record::sign(
+            policy.preview(vec![], "c".repeat(64)).unwrap(),
+            &identity(9),
+        )
+        .unwrap();
+        policy.append_with_checkpoint(revoke, &identity(9)).unwrap();
+        let denied = call(json!({"action":"proof-source","source":entry["id"],"pin":entry["pin"],"selection":page["records"][1]["selection"],"offset":"0","length":"65536"})).await.unwrap();
+        assert_eq!(
+            denied.status(),
+            403,
+            "running managed service must observe indexed revocation"
+        );
         drop(library_process);
         drop(service_process);
     }
