@@ -9,10 +9,11 @@ use crate::{
 use serde_json::{json, Value};
 use std::{collections::BTreeMap, time::Duration};
 mod discovery;
+pub mod knowledge;
 pub mod search;
 
 pub struct Readers {
-    workspace: Option<crate::evidence_workspace::Workspace>,
+    workspace: Option<std::sync::Arc<crate::evidence_workspace::Workspace>>,
     legacy: Option<legacy::Reader>,
     proof: BTreeMap<String, proof::Reader>,
     workers: std::sync::Arc<tokio::sync::Semaphore>,
@@ -51,14 +52,59 @@ impl Readers {
         })
     }
     pub fn with_workspace(mut self, workspace: crate::evidence_workspace::Workspace) -> Self {
-        self.workspace = Some(workspace);
+        self.workspace = Some(std::sync::Arc::new(workspace));
         self
     }
     fn workspace(&self) -> Result<&crate::evidence_workspace::Workspace, Failure> {
-        self.workspace.as_ref().ok_or(Failure::Invalid)
+        self.workspace.as_deref().ok_or(Failure::Invalid)
     }
     fn selected(&self, id: &str) -> Result<&proof::Reader, Failure> {
         self.proof.get(id).ok_or(Failure::AccessLimited)
+    }
+    async fn declarations(&self, annotations: bool) -> Result<Vec<Value>, ContentError> {
+        let _permit = self
+            .workers
+            .clone()
+            .try_acquire_owned()
+            .map_err(|_| ContentError::Busy)?;
+        let workspace = self.workspace.clone().ok_or(Failure::Invalid)?;
+        tokio::task::spawn_blocking(move || {
+            let _permit = _permit;
+            if annotations {
+                workspace.annotations()
+            } else {
+                workspace.views()
+            }
+        })
+        .await
+        .map_err(|_| Failure::Unavailable)?
+        .map_err(Into::into)
+    }
+    async fn authorized_sources(&self) -> (std::collections::BTreeSet<String>, bool) {
+        let keys: Vec<_> = self.proof.keys().cloned().collect();
+        let mut authorized = std::collections::BTreeSet::new();
+        let mut partial = false;
+        for group in keys.chunks(4) {
+            let results = tokio::join!(
+                self.entry(group.first()),
+                self.entry(group.get(1)),
+                self.entry(group.get(2)),
+                self.entry(group.get(3))
+            );
+            for (source, result) in group
+                .iter()
+                .zip([results.0, results.1, results.2, results.3])
+            {
+                match result {
+                    Some(Ok(_)) => {
+                        authorized.insert(source.clone());
+                    }
+                    Some(Err(Failure::AccessLimited)) => (),
+                    _ => partial = true,
+                }
+            }
+        }
+        (authorized, partial)
     }
     async fn entry(&self, id: Option<&String>) -> Option<Result<Value, Failure>> {
         let id = id?;
@@ -85,6 +131,11 @@ impl Readers {
     }
     pub(super) async fn query(&self, request: Query) -> Result<Vec<u8>, ContentError> {
         let value = match request {
+            Query::AnnotationPreview { draft } => self.annotation_preview(draft).await?,
+            Query::AnnotationSave { draft, preview } => {
+                self.annotation_save(draft, preview).await?
+            }
+            Query::Annotations { subject, tag } => self.annotations(subject, tag).await?,
             Query::IndexPage { target, cursor } => {
                 search::index(
                     self.selected(&target.source)?,
@@ -143,18 +194,8 @@ impl Readers {
                 declaration
             }
             Query::Views => {
-                let declarations = self.workspace()?.views()?;
-                let mut authorized = std::collections::BTreeSet::new();
-                let mut partial = false;
-                for (source, reader) in &self.proof {
-                    match reader.snapshot().await {
-                        Ok(_) => {
-                            authorized.insert(source.as_str());
-                        }
-                        Err(Failure::AccessLimited) => (),
-                        Err(_) => partial = true,
-                    }
-                }
+                let declarations = self.declarations(false).await?;
+                let (authorized, partial) = self.authorized_sources().await;
                 let views: Vec<_> = declarations
                     .into_iter()
                     .filter(|v| {
@@ -246,14 +287,15 @@ impl Readers {
                     "capabilities":["snapshot-inventory","source-ranges","provenance","payload-availability","content-inspection","attempt-discovery","attempt-content","session-links"],
                     "unavailable":["semantic-search","normalized-sessions","annotations","saved-views","analysis","administrative-jobs"]});
                 if self.workspace.is_some() {
-                    catalog["capabilities"]
-                        .as_array_mut()
-                        .unwrap()
-                        .extend([json!("text-search"), json!("saved-views")]);
+                    catalog["capabilities"].as_array_mut().unwrap().extend([
+                        json!("text-search"),
+                        json!("saved-views"),
+                        json!("annotations"),
+                    ]);
                     catalog["unavailable"]
                         .as_array_mut()
                         .unwrap()
-                        .retain(|v| v != "saved-views");
+                        .retain(|v| v != "saved-views" && v != "annotations");
                 }
                 catalog
             }

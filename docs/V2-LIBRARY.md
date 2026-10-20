@@ -288,3 +288,27 @@ full workspace reports failure instead of deleting history. Keep old workspaces
 when moving to a new one. Hot journals are refused at startup pending explicit
 owner recovery; do not delete them to force startup. Source erasure must include
 affected derived workspaces in the owner erasure plan.
+
+## Notes, tags and correction history
+
+With an encrypted workspace configured, open a proof occurrence and choose
+**Annotate**. Enter a subject, note and comma-separated tags, then **Preview
+annotation** to inspect the signing author, evidence citations and their current
+availability. **Append annotation** rechecks the preview and appends a signed,
+encrypted declaration. It does not change the captured bytes. Editing or cancelling
+the form invalidates the preview. The configured reader identity signs these notes;
+a claimed human name inside the text is not another authenticated author.
+
+**Load annotations** supports exact subject and tag filters. Inspect cited evidence
+or append a correction from any entry. Corrections preserve earlier entries and
+inherit their evidence citations. Notes whose cited scopes are no longer authorized
+are hidden; missing payloads retain explicitly unavailable evidence references.
+The workspace supports 1,000 annotations with no automatic expiry. Include the
+workspace in backups to retain this authored history.
+
+The shared requests are `annotation-preview` with a `draft`, `annotation-save` with
+the checked `draft` and its `preview` digest, and `annotations` with optional
+`subject` and `tag`. A draft contains `subject`, `text`, `tags`, `cites` and nullable
+`supersedes`. Each citation contains an exact `source`, `pin` and `selection` from
+the proof reader. Saving the same declaration again returns the original entry.
+`recorded_at` is the reader server's observation time, not a source event timestamp.

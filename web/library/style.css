@@ -22,3 +22,8 @@
 #saved-views { display:grid;grid-template-columns:repeat(auto-fit,minmax(16rem,1fr));gap:1rem;margin-top:1rem; }
 #saved-views article { border:1px solid var(--line);padding:1rem;border-radius:.5rem;overflow-wrap:anywhere; }
 @media(max-width:700px){.search-workspace form{grid-template-columns:1fr}}
+.knowledge form { display:grid;gap:.7rem;margin-top:1rem; }
+.knowledge input,.knowledge textarea { min-width:0;padding:.65rem;color:inherit;background:transparent;border:1px solid var(--line);border-radius:.4rem;font:inherit; }
+.annotation { border-top:1px solid var(--line);padding:1rem 0;overflow-wrap:anywhere; }
+.annotation pre,#annotation-preview { white-space:pre-wrap;overflow-wrap:anywhere;font:inherit;line-height:1.6; }
+.annotation button { margin:.3rem .5rem .3rem 0; }

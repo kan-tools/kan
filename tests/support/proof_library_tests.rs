@@ -969,3 +969,120 @@ async fn encrypted_search_views_restart_exact_citations_loss_and_revocation() {
     first.stop().await;
     second.stop().await;
 }
+
+#[tokio::test]
+async fn annotations_preview_append_correction_preserve_cites_and_filter_revoked_sources() {
+    let dir = tempfile::tempdir().unwrap();
+    let local = tempfile::tempdir().unwrap();
+    let f = fixture_requests(dir.path(), Profile::Admitted, encrypted);
+    let server = Server::start(&f).await;
+    let ui = Ui::start(
+        kan::evidence_library::Readers::new(None, vec![server.client(&f)])
+            .unwrap()
+            .with_workspace(
+                kan::evidence_workspace::Workspace::open(
+                    &local.path().join("workspace.sqlite"),
+                    identity(6),
+                    [97; 32],
+                )
+                .unwrap(),
+            ),
+    )
+    .await;
+    let catalog = ui.call(json!({"action":"catalog"}), 200).await;
+    let entry = &catalog["scopes"][0];
+    let page=ui.call(json!({"action":"proof-page","source":entry["id"],"pin":entry["pin"],"cursor":null,"limit":3}),200).await;
+    let cite = |n: usize| json!({"source":entry["id"],"pin":entry["pin"],"selection":page["records"][n]["selection"]});
+    let draft = json!({"subject":"design/recording","text":"A human note <script>untrusted</script>","tags":["decision","decision"],"cites":[cite(0)],"supersedes":null});
+    let preview = ui
+        .call(json!({"action":"annotation-preview","draft":draft}), 200)
+        .await;
+    assert_eq!(preview["declaration"]["author"], identity(6).did().as_str());
+    assert_eq!(preview["declaration"]["draft"]["tags"], json!(["decision"]));
+    assert!(ui
+        .call(
+            json!({"action":"annotations","subject":null,"tag":null}),
+            200
+        )
+        .await["records"]
+        .as_array()
+        .unwrap()
+        .is_empty());
+    ui.call(
+        json!({"action":"annotation-save","draft":draft,"preview":"wrong-preview"}),
+        400,
+    )
+    .await;
+    let saved = ui
+        .call(
+            json!({"action":"annotation-save","draft":draft,"preview":preview["id"]}),
+            200,
+        )
+        .await;
+    assert_eq!(
+        saved,
+        ui.call(
+            json!({"action":"annotation-save","draft":draft,"preview":preview["id"]}),
+            200
+        )
+        .await
+    );
+    let correction = json!({"subject":"design/recording","text":"Correction with more evidence","tags":["decision","corrected"],"cites":[cite(1)],"supersedes":saved["id"]});
+    let preview = ui
+        .call(
+            json!({"action":"annotation-preview","draft":correction}),
+            200,
+        )
+        .await;
+    assert_eq!(
+        preview["declaration"]["draft"]["cites"]
+            .as_array()
+            .unwrap()
+            .len(),
+        2
+    );
+    ui.call(json!({"action":"annotation-save","draft":preview["declaration"]["draft"],"preview":preview["id"]}),200).await;
+    let history = ui
+        .call(
+            json!({"action":"annotations","subject":"design/recording","tag":"decision"}),
+            200,
+        )
+        .await;
+    assert_eq!(history["records"].as_array().unwrap().len(), 2);
+    assert!(history["records"].as_array().unwrap().contains(&saved));
+    assert_eq!(
+        ui.call(
+            json!({"action":"annotations","subject":null,"tag":"corrected"}),
+            200
+        )
+        .await["records"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+    f.remove(2);
+    let absent = ui
+        .call(json!({"action":"annotation-preview","draft":draft}), 200)
+        .await;
+    assert_eq!(absent["evidence"][0]["availability"], "missing");
+    server
+        .service
+        .lock()
+        .unwrap()
+        .replace_grants(vec![])
+        .unwrap();
+    assert!(ui
+        .call(
+            json!({"action":"annotations","subject":null,"tag":null}),
+            200
+        )
+        .await["records"]
+        .as_array()
+        .unwrap()
+        .is_empty());
+    ui.call(json!({"action":"annotation-preview","draft":draft}), 403)
+        .await;
+    ui.stop().await;
+    server.stop().await;
+}

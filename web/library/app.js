@@ -11,6 +11,7 @@
   const isProof = () => activeSource?.protocol === 'kan-proof-reader/1';
   const buttons = new Map(), exports = new Map(), contentSelection = new Set(), checks = new Map();
   let searchStates = [], searchRun = 0, searchFilter = null, searchHits = new Map(), searchPages = 0;
+  let annotationsEnabled=false, annotationCites=[], annotationSupersedes=null, annotationPreview=null;
   let attemptMode = false;
   let pinWire = null, contentEnabled = false, contentValue = null, returnItem = null;
   function releaseExport(url) { clearTimeout(exports.get(url)); exports.delete(url); URL.revokeObjectURL(url); }
@@ -27,6 +28,7 @@
   }
   function cancelWork() { epoch++; if (controller) controller.abort(); }
   function clearInspector() {
+    $('annotate-source').hidden=true;
     source = null; selected = null; $('download').disabled = true; $('more').disabled = true; $('source-tab').disabled = true; $('provenance-tab').disabled = true; $('inspection').hidden = true; $('source').textContent = '';
     $('provenance').replaceChildren(); $('range').textContent = ''; $('selection').textContent = 'Select an occurrence';
     $('source-hint').textContent = 'Read exact retained bytes alongside their provenance.'; $('close-inspector').hidden = true;
@@ -35,7 +37,7 @@
   function lock(message = 'Locked · connect to browse authorized evidence.') {
     for (const url of exports.keys()) releaseExport(url);
     epoch++; if (controller) controller.abort(); controller = null; token = ''; scopes = []; pin = null; history = []; after = 0; next = null;
-    clearSearch(true);
+    clearKnowledge(true);clearSearch(true);
     pinWire = null; contentEnabled = false; activeSource = null; clearDiscovery(); clearWorkspace(); selections.clear(); clearContent(); checks.clear(); clearInspector(); buttons.clear(); $('rows').replaceChildren(); $('scope').replaceChildren(); $('capability-list').replaceChildren(); $('coverage').textContent = '';
     $('catalog-status').textContent = ''; $('count').textContent = ''; $('page-position').textContent = ''; $('library').hidden = true; $('login').hidden = false;
     $('lock').disabled = true; $('token').value = ''; notice(message); $('token').focus();
@@ -75,6 +77,7 @@
     $('encoding').disabled = source.utf8 === null;
   }
   function showSource(value) {
+    $('annotate-source').hidden=!annotationsEnabled || !isProof();
     const unavailable = value.availability === 'missing' || value.availability === 'corrupt';
     source = unavailable ? null : value; $('download').disabled = unavailable; $('source-tab').disabled = false; $('provenance-tab').disabled = false; $('inspection').hidden = false; $('close-inspector').hidden = false;
     $('selection').textContent = `Occurrence ${value.record.sequence}`;
@@ -129,7 +132,7 @@
   function renderCapabilities(value) {
     if (!Array.isArray(value.capabilities) || !Array.isArray(value.unavailable)) throw new Error('Unsupported capability response.');
     const labels = {'text-search':'Persistent text search','attempt-content':'Large attempt Content','session-links':'Explicit session relationships','attempt-discovery':'Captured attempt discovery','snapshot-inventory':'Snapshot inventory','source-ranges':'Source ranges','provenance':'Provenance','content-inspection':'Selected Content','payload-availability':'Payload availability','semantic-search':'Search','normalized-sessions':'Sessions','annotations':'Annotations','saved-views':'Saved views','analysis':'Analysis','administrative-jobs':'Admin jobs'};
-    const supported = new Set(['text-search','saved-views','snapshot-inventory','source-ranges','provenance','content-inspection','payload-availability','attempt-discovery','attempt-content','session-links']), seen = new Set();
+    const supported = new Set(['text-search','saved-views','annotations','snapshot-inventory','source-ranges','provenance','content-inspection','payload-availability','attempt-discovery','attempt-content','session-links']), seen = new Set();
     $('capability-list').replaceChildren();
     for (const [items, available] of [[value.capabilities,true],[value.unavailable,false]]) {
       for (const capability of items) {
@@ -158,7 +161,7 @@
     }
   }
   async function catalog() {
-    clearSearch(true);
+    clearKnowledge(true);clearSearch(true);
     clearContent(); checks.clear(); clearInspector(); buttons.clear(); $('rows').replaceChildren(); $('scope').replaceChildren();
     pinWire = null; contentEnabled = false; activeSource = null; clearDiscovery(); clearWorkspace(); selections.clear();
     scopes = []; pin = null; history = []; after = 0; next = null;
@@ -171,6 +174,7 @@
     validateScopes(value.scopes, value.version);
     renderCapabilities(value);
     $('search-workspace').hidden = !value.capabilities.includes('text-search');
+    annotationsEnabled=value.capabilities.includes('annotations');$('knowledge').hidden=!annotationsEnabled;
     catalogContent = value.capabilities.includes('content-inspection');
     if (value.scopes.some(s => (s.capabilities?.includes('content-inspection') || (value.version === 1 && catalogContent)) && typeof s.pin_wire !== 'string')) throw new Error('Missing exact snapshot.');
     scopes = value.scopes;
@@ -481,6 +485,53 @@
     previous.addEventListener('click',()=>{page=Math.max(0,page-1);render();});next.addEventListener('click',()=>{page=Math.min(offsets.length-1,page+1);render();});
     controls.append(previous);controls.append(position);controls.append(next);parent.append(controls);render();
   }
+  function clearKnowledge(hide=false) {
+    annotationCites=[];annotationSupersedes=null;annotationPreview=null;
+    $('annotation-form').hidden=true;$('annotation-subject').value='';$('annotation-text').value='';$('annotation-tags').value='';$('annotation-target').textContent='';$('annotation-preview').textContent='';$('save-annotation').disabled=true;
+    if(hide){annotationsEnabled=false;$('knowledge').hidden=true;$('annotation-list').replaceChildren();$('annotation-status').textContent='';$('annotation-filter-subject').value='';$('annotation-filter-tag').value='';}
+  }
+  function editAnnotation(cites,subject='',supersedes=null) {
+    cancelWork();clearKnowledge();annotationCites=cites;annotationSupersedes=supersedes;
+    $('annotation-form').hidden=false;$('annotation-subject').value=subject;
+    $('annotation-target').textContent=`${cites.length} evidence citation${cites.length===1?'':'s'}${supersedes?` · correction of ${supersedes}`:''}`;
+    $('annotation-subject').focus();
+  }
+  $('annotate-source').addEventListener('click',()=>{
+    if(!isProof() || selected===null)return;
+    const request=sourceRequest(selected);editAnnotation([{source:request.source,pin:request.pin,selection:request.selection}]);
+  });
+  for(const id of ['annotation-subject','annotation-text','annotation-tags'])$(id).addEventListener('input',()=>{cancelWork();annotationPreview=null;$('save-annotation').disabled=true;$('annotation-preview').textContent='';});
+  $('annotation-form').addEventListener('submit',event=>{event.preventDefault();run(async()=>{
+    annotationPreview=null;$('save-annotation').disabled=true;$('annotation-preview').textContent='Verifying citations and authorship…';
+    const draft={subject:$('annotation-subject').value.trim(),text:$('annotation-text').value.trim(),tags:$('annotation-tags').value.split(',').map(t=>t.trim()).filter(Boolean),cites:annotationCites,supersedes:annotationSupersedes};
+    const checked=await rpc({action:'annotation-preview',draft});if(!checked)return;
+    if(typeof checked.id!=='string' || !checked.declaration?.draft || !Array.isArray(checked.evidence))throw new Error('Invalid annotation preview.');
+    annotationPreview=checked;$('annotation-preview').textContent=`Signed by ${checked.declaration.author}\n${checked.effect}\n${checked.evidence.map(e=>`${e.source} · occurrence ${e.record.sequence} · ${e.availability}`).join('\n')}\n\n${checked.declaration.draft.subject}\n${checked.declaration.draft.text}\nTags: ${checked.declaration.draft.tags.join(', ')}`;$('save-annotation').disabled=false;
+  });});
+  $('save-annotation').addEventListener('click',()=>run(async()=>{
+    if(!annotationPreview)return;const preview=annotationPreview;$('save-annotation').disabled=true;
+    const saved=await rpc({action:'annotation-save',draft:preview.declaration.draft,preview:preview.id});if(!saved)return;
+    clearKnowledge();$('annotation-status').textContent=`Annotation ${saved.id} appended. Earlier evidence and notes are preserved.`;await loadAnnotations();
+  }));
+  $('cancel-annotation').addEventListener('click',()=>{cancelWork();clearKnowledge();});
+  async function loadAnnotations() {
+    $('annotation-list').replaceChildren();
+    const value=await rpc({action:'annotations',subject:$('annotation-filter-subject').value.trim()||null,tag:$('annotation-filter-tag').value.trim()||null});if(!value)return;
+    if(!Array.isArray(value.records) || value.records.length>1000)throw new Error('Invalid annotations.');
+    $('annotation-status').textContent=`${value.records.length} authorized annotations · ${value.coverage==='partial'?'some source checks unavailable':'source access checked'}. Earlier revisions remain visible.`;
+    for(const note of value.records){
+      if(!note.draft || !Array.isArray(note.draft.cites) || !Array.isArray(note.draft.tags))throw new Error('Invalid annotation.');
+      const row=textNode('article','');row.className='annotation';row.append(textNode('h3',note.draft.subject));row.append(textNode('pre',note.draft.text));row.append(textNode('p',`Author: ${note.author} · recorded at Unix ${note.recorded_at || 'unknown'} · ${note.id}`));row.append(textNode('p',`Tags: ${note.draft.tags.join(', ')}${note.draft.supersedes?` · corrects ${note.draft.supersedes}`:''}`));
+      for(const cite of note.draft.cites){const open=textNode('button','Inspect cited evidence');open.addEventListener('click',()=>run(async()=>{
+        const entry=scopes.find(s=>sourceId(s)===cite.source);if(!entry)throw new Error('Source catalog changed.');
+        choose({...entry,pin:cite.pin,pin_wire:JSON.stringify(cite.pin)});clearContent();checks.clear();buttons.clear();selections.clear();$('rows').replaceChildren();$('previous').disabled=true;$('next').disabled=true;
+        const value=await rpc({action:'proof-source',...cite,offset:'0',length:'65536'});if(!value)return;
+        selected=value.record.sequence;selections.set(selected,cite.selection);showSource(value);tab('source');
+      }));row.append(open);}
+      const correct=textNode('button','Append correction');correct.addEventListener('click',()=>editAnnotation(note.draft.cites,note.draft.subject,note.id));row.append(correct);$('annotation-list').append(row);
+    }
+  }
+  $('load-annotations').addEventListener('click',()=>run(loadAnnotations));
   function clearSearch(hide = false) {
     searchRun++; searchStates=[]; searchFilter=null; searchHits.clear(); searchPages=0;
     $('search-results').replaceChildren();$('search-facets').replaceChildren();$('search-coverage').textContent='';

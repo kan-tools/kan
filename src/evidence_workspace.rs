@@ -253,10 +253,12 @@ impl Workspace {
     /// Immutable, idempotent installation. A second value under an existing key
     /// is refused. SQLite commits the encrypted value and its identity together.
     pub fn put(&self, kind: &str, key: &str, value: Value) -> Result<()> {
-        if !matches!(kind, "binding" | "search-page" | "view") {
+        if !matches!(kind, "binding" | "search-page" | "view" | "annotation") {
             return Err(Failure::Invalid);
         }
-        if kind == "view" && serde_json::to_vec(&value).map_err(invalid)?.len() > 262144 {
+        if matches!(kind, "view" | "annotation")
+            && serde_json::to_vec(&value).map_err(invalid)?.len() > 262144
+        {
             return Err(Failure::Invalid);
         }
         let id = Self::id(kind, key);
@@ -281,10 +283,22 @@ impl Workspace {
             if kind == "view"
                 && tx
                     .query_row("SELECT count(*) FROM entries WHERE kind='view'", [], |r| {
-                        r.get::<_, u64>(0)
+                        r.get::<_, i64>(0)
                     })
                     .map_err(invalid)?
                     >= 200
+            {
+                return Err(Failure::Invalid);
+            }
+            if kind == "annotation"
+                && tx
+                    .query_row(
+                        "SELECT count(*) FROM entries WHERE kind='annotation'",
+                        [],
+                        |r| r.get::<_, i64>(0),
+                    )
+                    .map_err(invalid)?
+                    >= 1000
             {
                 return Err(Failure::Invalid);
             }
@@ -298,21 +312,27 @@ impl Workspace {
     }
     /// Bounded view declarations only; cache pages are addressed explicitly.
     pub fn views(&self) -> Result<Vec<Value>> {
+        self.declarations("view", 200)
+    }
+    pub fn annotations(&self) -> Result<Vec<Value>> {
+        self.declarations("annotation", 1000)
+    }
+    fn declarations(&self, kind: &str, limit: usize) -> Result<Vec<Value>> {
         let conn = self.conn.lock().map_err(invalid)?;
         let mut q = conn
-            .prepare("SELECT id,body FROM entries WHERE kind='view' ORDER BY id LIMIT 201")
+            .prepare("SELECT id,body FROM entries WHERE kind=? ORDER BY id LIMIT ?")
             .map_err(invalid)?;
         let rows = q
-            .query_map([], |r| {
+            .query_map(params![kind, limit + 1], |r| {
                 Ok((r.get::<_, String>(0)?, r.get::<_, Vec<u8>>(1)?))
             })
             .map_err(invalid)?;
         let mut out = Vec::new();
         for row in rows {
             let (id, b) = row.map_err(invalid)?;
-            out.push(self.unseal("view", &id, &b)?);
+            out.push(self.unseal(kind, &id, &b)?);
         }
-        if out.len() > 200 {
+        if out.len() > limit {
             return Err(Failure::Invalid);
         }
         Ok(out)

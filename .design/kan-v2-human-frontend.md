@@ -203,3 +203,21 @@ workspace. Existing hot journals are refused until explicit recovery (owner reco
 workflow remains required). Back up the workspace and its key separately: deleting
 it loses view declarations. Source erasure must also clear affected projections in
 the eventual owner erasure plan; normal search does not serve cached deleted bytes.
+
+### Explicit annotations on verified evidence (integration)
+
+The reader workspace also stores signed, encrypted owner annotations. This is an
+explicit new record type, distinct from observed raw bytes, imported v1 claims and
+machine-generated outputs. `annotation-preview` verifies the exact supplied source
+selection tokens and reports current availability and the configured signing author;
+`annotation-save` rechecks the citations and requires the preview's content digest.
+The CLI and UI share these operations. Drafts contain subject, text, tags and up to
+eight whole-occurrence citations. Tags are deterministic sorted sets. `supersedes`
+adds a correction edge to an earlier annotation by the same author and subject,
+inheriting every earlier evidence citation. It never mutates or hides the original.
+Saves are content-addressed and idempotent; the annotation list displays all history
+and permits exact subject/tag filtering. All cited sources must remain authorized
+for the annotation to be displayed. Missing payloads remain citable as explicitly
+unavailable evidence. The private workspace has a 1,000 annotation declaration
+budget, with explicit capacity failure and no automatic expiry. Other relation
+kinds, imported-v1 claim rendering and tag-triggered analysis remain separate work.

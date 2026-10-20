@@ -10,6 +10,7 @@ use hyper::{
     Request, Response, StatusCode,
 };
 use hyper_util::rt::TokioIo;
+pub use proof::knowledge::{Citation as EvidenceCitation, Draft as AnnotationDraft};
 pub use proof::{
     search::{Filter as SearchFilter, Target as SearchTarget},
     Readers,
@@ -24,6 +25,17 @@ use tokio::{
 #[derive(Deserialize)]
 #[serde(tag = "action", rename_all = "kebab-case", deny_unknown_fields)]
 pub enum Query {
+    AnnotationPreview {
+        draft: AnnotationDraft,
+    },
+    AnnotationSave {
+        draft: AnnotationDraft,
+        preview: String,
+    },
+    Annotations {
+        subject: Option<String>,
+        tag: Option<String>,
+    },
     IndexPage {
         target: SearchTarget,
         cursor: Option<verified::Token>,
@@ -123,7 +135,10 @@ fn denied(code: StatusCode) -> Response<Full<Bytes>> {
 async fn query(reader: &Reader, query: Query) -> Result<Vec<u8>, ContentError> {
     use crate::evidence_content as content;
     let value: serde_json::Value = match query {
-        Query::IndexPage { .. }
+        Query::AnnotationPreview { .. }
+        | Query::AnnotationSave { .. }
+        | Query::Annotations { .. }
+        | Query::IndexPage { .. }
         | Query::SearchPage { .. }
         | Query::SaveView { .. }
         | Query::Views

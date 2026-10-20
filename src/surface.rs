@@ -23,6 +23,7 @@ pub const EVIDENCE_VALUES: &[SurfaceValue] = &[
     SurfaceValue::new("evidence-workspace:database-journal", "*"),
     SurfaceValue::new("evidence-workspace:search-page", "*"),
     SurfaceValue::new("evidence-workspace:view", "*"),
+    SurfaceValue::new("evidence-workspace:annotation", "*"),
     SurfaceValue::new("evidence-workspace:recipient-key", "*"),
     SurfaceValue::new("evidence-copy-plan:artifact", "*"),
     SurfaceValue::new("evidence-copy-sqlite:upgrade_plan", "singleton"),
