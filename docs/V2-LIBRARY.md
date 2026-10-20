@@ -1143,3 +1143,9 @@ Enroll sender processes separately as described in [V2-DELIVERY.md](V2-DELIVERY.
 Adding a spool path to an erasure target schedules cleanup; it does not modify the
 running sender's configuration. Every managed sender must use independent current
 custody, including annotation outboxes and a restarted or restored watcher.
+
+Use the [managed deployment manifest](V2-DEPLOYMENT.md) to supply these guards
+consistently on every service, sender and Library restart. Managed owner startup
+also rejects cleanup targets that omit registered replicas, senders, dependent
+workspaces or publication destinations. This is explicit configured coverage,
+not discovery of every running process or historical backup.

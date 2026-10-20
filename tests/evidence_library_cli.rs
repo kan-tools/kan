@@ -483,3 +483,115 @@ fn owner_cli_initializes_rotates_and_exports_wrapped_epoch_history() {
         1
     );
 }
+
+#[test]
+fn managed_owner_launch_requires_the_registered_cleanup_inventory() {
+    use kan::{
+        evidence_erasure_history as custody, evidence_store::attested,
+        evidence_workspace::Workspace,
+    };
+    use serde_json::json;
+    let dir = tempfile::tempdir().unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(dir.path(), std::fs::Permissions::from_mode(0o700)).unwrap();
+    }
+    let write = |name: &str, bytes: &[u8]| {
+        let path = dir.path().join(name);
+        std::fs::write(&path, bytes).unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).unwrap();
+        }
+        path
+    };
+    let signer = Identity::generate();
+    let key = dir.path().join("owner.key");
+    signer.save(&key).unwrap();
+    let private = write("recipient.key", &[37; 32]);
+    let root = dir.path().join("archive");
+    let offline = dir.path().join("offline-replica");
+    let binding = attested::Binding {
+        archive: [31; 32],
+        scope: [32; 32],
+        issuer: signer.did().to_string(),
+    };
+    attested::Archive::create(&root, binding.clone()).unwrap();
+    let history_dir = tempfile::Builder::new()
+        .prefix("custody-")
+        .tempdir_in(dir.path())
+        .unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(history_dir.path(), std::fs::Permissions::from_mode(0o700))
+            .unwrap();
+    }
+    let mut history:custody::Access = serde_json::from_value(json!({"directory":history_dir.path(),"binding":{
+        "profile":"admitted","archive":svc::hex(&binding.archive),"scope":svc::hex(&binding.scope),"issuer":binding.issuer},"owner":signer.did().as_str()})).unwrap();
+    history.initialize().unwrap();
+    let genesis =
+        custody::Record::sign(history.preview(None, "a".repeat(64)).unwrap(), &signer).unwrap();
+    let minimum = genesis.id().unwrap();
+    history.append(genesis).unwrap();
+    history.minimum = Some(minimum);
+    let history_file = write("custody.json", &serde_json::to_vec(&history).unwrap());
+    let database = dir.path().join("reader.sqlite");
+    drop(Workspace::open(&database, Identity::load_existing(&key).unwrap(), [37; 32]).unwrap());
+    let guard = write("workspace.json", &serde_json::to_vec(&json!({"database":database,"signing_key":key,"recipient_key":private,"sources":[history]})).unwrap());
+    let deployment = write(
+        "deployment.json",
+        &serde_json::to_vec(&json!({"version":1,
+        "archives":[{"root":root,"history":history_file},{"root":offline,"history":history_file}],
+        "workspaces":[{"database":database,"guard":guard}]}))
+        .unwrap(),
+    );
+    let journal = dir.path().join("owner.sqlite");
+    let mut config = json!({"journal":journal,"signing_key":key,"recipient_key":private,
+        "authority":{"token":"synthetic-managed-owner-cli-token-123","max_jobs":10,"targets":[{
+            "kind":"capture-erasure","id":"capture","root":root,"history":history,
+            "signing_key":key,"issuer_key":key,"private_keys":[private]}]}});
+    let request = write("request.json", br#"{"action":"catalog"}"#);
+    let run = |config: &serde_json::Value| {
+        let file = write("owner.json", &serde_json::to_vec(config).unwrap());
+        Process::new(env!("CARGO_BIN_EXE_kan-v2"))
+            .arg("--deployment")
+            .arg(&deployment)
+            .arg("owner")
+            .arg("--config")
+            .arg(file)
+            .arg("--request")
+            .arg(&request)
+            .output()
+            .unwrap()
+    };
+    let omitted_replica = run(&config);
+    assert!(!omitted_replica.status.success());
+    assert!(String::from_utf8_lossy(&omitted_replica.stderr)
+        .contains("omits a registered archive replica"));
+    assert!(
+        !journal.exists(),
+        "invalid coverage must not initialize an owner journal"
+    );
+    config["authority"]["targets"][0]["replicas"] = json!([offline]);
+    let omitted_workspace = run(&config);
+    assert!(!omitted_workspace.status.success());
+    assert!(String::from_utf8_lossy(&omitted_workspace.stderr)
+        .contains("omits a registered dependent workspace"));
+    config["authority"]["targets"][0]["workspaces"] =
+        json!([{"database":database,"signing_key":key,"recipient_key":private}]);
+    let complete = run(&config);
+    assert!(
+        complete.status.success(),
+        "{}",
+        String::from_utf8_lossy(&complete.stderr)
+    );
+    let catalog: serde_json::Value = serde_json::from_slice(&complete.stdout).unwrap();
+    assert_eq!(catalog["targets"][0]["id"], "capture");
+    assert!(
+        !offline.exists(),
+        "inventory validation does not fabricate an offline replica"
+    );
+}

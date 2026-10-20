@@ -1642,6 +1642,83 @@ async fn annotation_publication_is_explicit_destination_bound_and_exactly_retrie
     std::fs::copy(local.path().join("workspace.sqlite"), &old_workspace).unwrap();
     let old_queue = local.path().join("queue-before.sqlite");
     std::fs::copy(&spool, &old_queue).unwrap();
+    let signing = local.path().join("sender.key");
+    let recipient_key = local.path().join("workspace.key");
+    for (path, key) in [(&signing, [6; 32]), (&recipient_key, [97; 32])] {
+        std::fs::write(path, key).unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600)).unwrap();
+        }
+    }
+    let config = local.path().join("publication-guard.json");
+    std::fs::write(&config,serde_json::to_vec(&json!({"database":old_workspace,"signing_key":signing,"recipient_key":recipient_key,"sources":[history]})).unwrap()).unwrap();
+    let destination_custody = private_workspace_directory();
+    let mut destination: kan::evidence_erasure_history::Access = serde_json::from_value(json!({
+        "directory":destination_custody.path(),"binding":{"profile":"admitted","archive":service::hex(&binding.archive),"scope":service::hex(&binding.scope),"issuer":binding.issuer},"owner":identity(9).did().as_str()
+    })).unwrap();
+    destination.initialize().unwrap();
+    let genesis = kan::evidence_erasure_history::Record::sign(
+        destination.preview(None, "d".repeat(64)).unwrap(),
+        &identity(9),
+    )
+    .unwrap();
+    let minimum = genesis.id().unwrap();
+    destination.append(genesis).unwrap();
+    destination.minimum = Some(minimum);
+    let destination_file = local.path().join("destination-custody.json");
+    std::fs::write(&destination_file, serde_json::to_vec(&destination).unwrap()).unwrap();
+    let deployment = local.path().join("deployment.json");
+    std::fs::write(&deployment,serde_json::to_vec(&json!({"version":1,
+        "workspaces":[{"database":old_workspace,"guard":config}],
+        "spools":[{"database":old_queue,"history":destination_file,"kind":"annotation","publication_guard":config}]
+    })).unwrap()).unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        for file in [&config, &destination_file, &deployment] {
+            std::fs::set_permissions(file, std::fs::Permissions::from_mode(0o600)).unwrap();
+        }
+    }
+    let managed_head = std::process::Command::new(env!("CARGO_BIN_EXE_kan-v2"))
+        .arg("--deployment")
+        .arg(&deployment)
+        .arg("spool-head")
+        .arg(&old_queue)
+        .output()
+        .unwrap();
+    assert!(
+        managed_head.status.success(),
+        "{}",
+        String::from_utf8_lossy(&managed_head.stderr)
+    );
+    assert_eq!(
+        managed_head.stdout, retained,
+        "managed launch supplies destination and source guards"
+    );
+    for wrong_queue in [&spool, &local.path().join("unregistered.sqlite")] {
+        let denied = std::process::Command::new(env!("CARGO_BIN_EXE_kan-v2"))
+            .arg("--deployment")
+            .arg(&deployment)
+            .arg("spool-head")
+            .arg(wrong_queue)
+            .output()
+            .unwrap();
+        assert!(!denied.status.success());
+        assert!(denied.stdout.is_empty());
+    }
+    let override_guard = std::process::Command::new(env!("CARGO_BIN_EXE_kan-v2"))
+        .arg("--deployment")
+        .arg(&deployment)
+        .arg("spool-head")
+        .arg(&old_queue)
+        .arg("--publication-guard")
+        .arg(local.path().join("another-guard.json"))
+        .output()
+        .unwrap();
+    assert!(!override_guard.status.success());
+    assert!(override_guard.stdout.is_empty());
     let mut source = attested::Archive::open(&f.root, f.binding.clone()).unwrap();
     let sequence = page["records"][0]["sequence"]
         .as_str()
@@ -1669,37 +1746,26 @@ async fn annotation_publication_is_explicit_destination_bound_and_exactly_retrie
     );
     assert_eq!(sender.head().unwrap().as_ref(), Some(&retained));
     drop(sender);
-    let signing = local.path().join("sender.key");
-    let recipient_key = local.path().join("workspace.key");
-    for (path, key) in [(&signing, [6; 32]), (&recipient_key, [97; 32])] {
-        std::fs::write(path, key).unwrap();
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600)).unwrap();
-        }
-    }
-    let config = local.path().join("publication-guard.json");
-    std::fs::write(&config,serde_json::to_vec(&json!({"database":old_workspace,"signing_key":signing,"recipient_key":recipient_key,"sources":[history]})).unwrap()).unwrap();
     for action in ["spool-head", "spool-drain"] {
-        let mut command = std::process::Command::new(env!("CARGO_BIN_EXE_kan-v2"));
-        command
-            .arg(action)
-            .arg(&old_queue)
-            .arg("--publication-guard")
-            .arg(&config);
-        if action == "spool-drain" {
-            command.arg("--endpoint").arg(&endpoint);
+        for (flag, file) in [
+            ("--publication-guard", &config),
+            ("--deployment", &deployment),
+        ] {
+            let mut command = std::process::Command::new(env!("CARGO_BIN_EXE_kan-v2"));
+            command.arg(action).arg(&old_queue).arg(flag).arg(file);
+            if action == "spool-drain" {
+                command.arg("--endpoint").arg(&endpoint);
+            }
+            let output = command.output().unwrap();
+            assert!(
+                !output.status.success(),
+                "old workspace/queue restore cannot publish erased sources"
+            );
+            assert!(
+                output.stdout.is_empty(),
+                "raw request must not leak through guarded export"
+            );
         }
-        let output = command.output().unwrap();
-        assert!(
-            !output.status.success(),
-            "old workspace/queue restore cannot publish erased sources"
-        );
-        assert!(
-            output.stdout.is_empty(),
-            "raw request must not leak through guarded export"
-        );
     }
     source.apply_erasure(erasure.clone()).unwrap();
     ui.call(

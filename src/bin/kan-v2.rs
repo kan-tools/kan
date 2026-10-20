@@ -1,5 +1,8 @@
 //! Experimental archive, durable delivery and raw snapshot tools; no live cutover.
 use clap::{Parser, Subcommand};
+#[cfg(feature = "v2-crypto")]
+#[path = "kan-v2/managed.rs"]
+mod managed;
 use kan::{
     evidence_store::{Ledger, RecoveryReader},
     migration_preflight,
@@ -9,6 +12,10 @@ use std::path::PathBuf;
 #[derive(Parser)]
 #[command(about = "Experimental kan v2 archive and durable delivery tools")]
 struct Cli {
+    /// Independent host-local inventory; enroll registered services, senders and Library workspaces.
+    #[cfg(feature = "v2-crypto")]
+    #[arg(long, global = true)]
+    deployment: Option<PathBuf>,
     #[command(subcommand)]
     command: Command,
 }
@@ -639,7 +646,21 @@ fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
 fn run() -> Result<(), Box<dyn std::error::Error>> {
-    match Cli::parse().command {
+    #[allow(unused_mut)]
+    let mut cli = Cli::parse();
+    #[cfg(feature = "v2-crypto")]
+    let deployment = cli
+        .deployment
+        .as_deref()
+        .map(managed::Deployment::load)
+        .transpose()?;
+    #[cfg(feature = "v2-crypto")]
+    let managed_workspace = deployment
+        .as_ref()
+        .map(|d| d.enroll(&mut cli.command))
+        .transpose()?
+        .flatten();
+    match cli.command {
         #[cfg(feature = "v2-crypto")]
         Command::OpsInit { journal, spool } => {
             kan::evidence_operations::Journal::create(&journal, &spool)
@@ -750,7 +771,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         }
         #[cfg(feature = "v2-crypto")]
         Command::Owner { config, request } => {
-            let owner = load_owner(&config)?;
+            let owner = load_owner(&config, deployment.as_ref())?;
             let request = serde_json::from_slice(&kan::evidence_gateway::secret_file(&request)?)?;
             let value = tokio::runtime::Runtime::new()?.block_on(owner.execute(request))?;
             println!("{}", serde_json::to_string(&value)?);
@@ -841,6 +862,12 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                             },
                         )?
                         .with_historical_keys(keys)?;
+                        if let Some(managed) = &managed_workspace {
+                            let binding = reader.binding();
+                            if !managed.sources.iter().any(|h| &h.binding == binding) {
+                                return Err("Library source is absent from managed custody".into());
+                            }
+                        }
                         if let Some(epochs) = entry.epoch_keys {
                             reader = reader.with_epochs(epochs)?;
                         }
@@ -848,6 +875,9 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                         continue;
                     }
                     _ => return Err("unsupported or inconsistent reader protocol".into()),
+                }
+                if managed_workspace.is_some() {
+                    return Err("managed Library requires proof sources".into());
                 }
                 scopes.push(kan::evidence_reader::ScopeAccess {
                     scope: fixed_hex(&entry.scope)?,
@@ -866,20 +896,24 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             };
             let mut reader = kan::evidence_library::Readers::new(legacy, proofs)?;
             if let (Some(path), Some(key)) = (workspace, workspace_key) {
-                let histories = workspace_erasure_history
-                    .iter()
-                    .map(
-                        |path| -> Result<
-                            kan::evidence_erasure_history::Access,
-                            Box<dyn std::error::Error>,
-                        > {
-                            Ok(serde_json::from_slice(&bounded_read(
-                                std::fs::File::open(path)?,
-                                65536,
-                            )?)?)
-                        },
-                    )
-                    .collect::<Result<Vec<_>, _>>()?;
+                let histories = if let Some(managed) = &managed_workspace {
+                    managed.sources.clone()
+                } else {
+                    workspace_erasure_history
+                        .iter()
+                        .map(
+                            |path| -> Result<
+                                kan::evidence_erasure_history::Access,
+                                Box<dyn std::error::Error>,
+                            > {
+                                Ok(serde_json::from_slice(&bounded_read(
+                                    std::fs::File::open(path)?,
+                                    65536,
+                                )?)?)
+                            },
+                        )
+                        .collect::<Result<Vec<_>, _>>()?
+                };
                 reader = reader.with_workspace(
                     kan::evidence_workspace::Workspace::open(
                         &path,
@@ -890,7 +924,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 );
             }
             if let Some(path) = owner_config {
-                reader = reader.with_owner(load_owner(&path)?);
+                reader = reader.with_owner(load_owner(&path, deployment.as_ref())?);
             }
             if let Some(path) = analysis_config {
                 reader = reader.with_analysis(serde_json::from_slice(
@@ -907,10 +941,17 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     #[serde(default)]
                     erasure_history: Option<kan::evidence_erasure_history::Access>,
                 }
-                let config: Outbox =
+                let mut config: Outbox =
                     serde_json::from_slice(&kan::evidence_gateway::secret_file(&path)?)?;
                 if !config.spool.is_absolute() {
                     return Err("annotation spool must be absolute".into());
+                }
+                if let (Some(deployment), Some(workspace)) = (&deployment, &managed_workspace) {
+                    config.erasure_history = Some(deployment.outbox(
+                        &config.spool,
+                        workspace,
+                        config.erasure_history,
+                    )?);
                 }
                 let mut outbox = kan::evidence_library::AnnotationOutbox::new(
                     config.spool,
@@ -1918,6 +1959,7 @@ fn main() -> std::process::ExitCode {
 #[cfg(feature = "v2-crypto")]
 fn load_owner(
     path: &std::path::Path,
+    deployment: Option<&managed::Deployment>,
 ) -> Result<std::sync::Arc<kan::evidence_library::Owner>, Box<dyn std::error::Error>> {
     #[derive(serde::Deserialize)]
     #[serde(deny_unknown_fields)]
@@ -1933,6 +1975,9 @@ fn load_owner(
         || !config.recipient_key.is_absolute()
     {
         return Err("owner paths must be absolute".into());
+    }
+    if let Some(deployment) = deployment {
+        deployment.validate_owner(&config.authority)?;
     }
     let workspace = kan::evidence_workspace::Workspace::open(
         &config.journal,
