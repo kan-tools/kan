@@ -3769,6 +3769,17 @@ async fn owner_access_policy_previews_preserve_history_and_reject_reader_authori
         "already-applied"
     );
     owner_call(&ui,OWNER,json!({"action":"apply-access","target":"archive-access","change":stale["change"],"preview":stale["digest"]}),409).await;
+    let repair = owner_call(
+        &ui,
+        OWNER,
+        json!({"action":"preview","target":"archive-access","operation":"rebuild-control-index"}),
+        200,
+    )
+    .await;
+    let repaired = owner_call(&ui, OWNER, json!({"action":"submit","target":"archive-access","operation":"rebuild-control-index","nonce":repair["nonce"],"preview":repair["digest"],"wait":true}), 200).await;
+    assert_eq!(repaired["state"], "succeeded");
+    assert!(policy.current().unwrap().grants().unwrap()[0].inventory);
+
     let revoke = owner_call(
         &ui,
         OWNER,
@@ -3791,6 +3802,7 @@ async fn owner_access_policy_previews_preserve_history_and_reject_reader_authori
     )
     .await;
     assert_eq!(history["snapshot"]["changes"], 2);
+    assert!(policy.current().unwrap().grants().unwrap().is_empty());
     assert_eq!(history["records"][0]["change"]["grants"], grants);
     assert_eq!(
         history["snapshot"]["current"]["change"]["grants"],

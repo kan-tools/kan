@@ -671,9 +671,9 @@
         const row=document.createElement('div');row.append(textNode('dt',labels[key]||key));row.append(textNode('dd',value&&typeof value==='object'?JSON.stringify(value,null,2):String(value??'Not configured')));$('owner-settings').append(row);
       }
     }
-    clearPolicy();clearKeys();clearErasure();$('erasure-controls').hidden=target?.kind!=='capture-erasure';$('key-controls').hidden=target?.kind!=='key-history';$('access-controls').hidden=target?.kind!=='access-policy';$('owner-maintenance-preview').disabled=['access-policy','key-history','capture-erasure'].includes(target?.kind);$('owner-operation').disabled=['access-policy','key-history','capture-erasure'].includes(target?.kind);
-    const operations=['access-policy','key-history','capture-erasure'].includes(target?.kind)?[]:target?.kind==='workspace-recovery'?['recover']:target?.kind==='import-recovery'?['restore-import']:target?.kind==='migration'?(target.recovered?['import','reconcile-import']:['import']):target?.kind==='operations'?['rotate']:['backup','recover'];
-    for(const operation of operations){const option=textNode('option',operation);option.value=operation;$('owner-operation').append(option);}
+    clearPolicy();clearKeys();clearErasure();$('erasure-controls').hidden=target?.kind!=='capture-erasure';$('key-controls').hidden=target?.kind!=='key-history';$('access-controls').hidden=target?.kind!=='access-policy';$('owner-maintenance-preview').disabled=target?.kind==='key-history';$('owner-operation').disabled=target?.kind==='key-history';
+    const operations=target?.kind==='key-history'?[]:['access-policy','capture-erasure'].includes(target?.kind)?['rebuild-control-index']:target?.kind==='workspace-recovery'?['recover']:target?.kind==='import-recovery'?['restore-import']:target?.kind==='migration'?(target.recovered?['import','reconcile-import']:['import']):target?.kind==='operations'?['rotate']:['backup','recover'];
+    for(const operation of operations){const option=textNode('option',operation==='rebuild-control-index'?'Initialize or repair control reads':operation);option.value=operation;$('owner-operation').append(option);}
     $('owner-operation').value=operations[0]||'';
   }
   async function previewBackupPurge(backupJob){

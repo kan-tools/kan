@@ -737,7 +737,7 @@ test('import repository view separates reachability from trust and follows fold 
 });
 test('owner access controls preview an exact grant set and clear pending changes on edits or lock',async()=>{
  const u=ui();await u.login();await u.respond({...proofCatalog,scopes:[proofEntry('archive-A')]});await u.respond(proofPage);u.node('owner-token').value='owner-credential';u.node('owner-connect').events.submit({preventDefault(){}});await tick();
- await u.respond({owner:'owner',targets:[{kind:'access-policy',id:'policy'}],jobs:[],limits:{jobs:10}});assert.equal(u.node('access-controls').hidden,false);assert.equal(u.node('owner-maintenance-preview').disabled,true);
+ await u.respond({owner:'owner',targets:[{kind:'access-policy',id:'policy'}],jobs:[],limits:{jobs:10}});assert.equal(u.node('access-controls').hidden,false);assert.equal(u.node('owner-maintenance-preview').disabled,false);assert.equal(u.node('owner-operation').value,'rebuild-control-index');
  u.node('access-load').click();await tick();assert.deepEqual(JSON.parse(u.pending[0].opts.body),{action:'access',target:'policy',after:0});
  const grant={principal:'did:key:reader',append:true,inventory:true};const current={sequence:'0',recorded_at:'100',previous:null,grants:[grant]};
  await u.respond({target:'policy',owner:'owner',snapshot:{tip:'old',changes:1,current:{change:current}},records:[{change:current}],next:null});assert.equal(u.node('access-editor').hidden,false);
@@ -837,7 +837,7 @@ test('capture erasure requires exact preview, clears on edits and lock, and resu
  u.node('owner-token').value='owner-credential';u.node('owner-connect').events.submit({preventDefault(){}});await tick();
  const targets=[{kind:'capture-erasure',id:'capture',root:'/synthetic/archive'}];
  const catalog={owner:'owner',targets,jobs:[],limits:{jobs:10}};await u.respond(catalog);
- assert.equal(u.node('erasure-controls').hidden,false);assert.equal(u.node('owner-maintenance-preview').disabled,true);assert.equal(u.node('erasure-apply').disabled,true);
+ assert.equal(u.node('erasure-controls').hidden,false);assert.equal(u.node('owner-maintenance-preview').disabled,false);assert.equal(u.node('owner-operation').value,'rebuild-control-index');assert.equal(u.node('erasure-apply').disabled,true);
  u.node('erasure-writer').value='did:key:writer';u.node('erasure-attempt').value='a'.repeat(64);u.node('erasure-preview').click();await tick();
  assert.deepEqual(JSON.parse(u.pending[0].opts.body),{action:'preview-erasure-selection',target:'capture',selection:{kind:'capture',capture:{writer:'did:key:writer',observer:'collector',attempt:'a'.repeat(64)}}});
  const plan={selection:'a'.repeat(64)},preview={target:'capture',digest:'digest',plan,summary:{objects:2,bytes:'2048',pages:1,recording_gap:false},contract:{effect:'Erase selected capture',target:targets[0]}};
@@ -955,4 +955,20 @@ test('bulk erasure reviews retained coordinate pages and clears them on edits an
  u.node('erasure-inspect').click();await tick();u.node('owner-lock').click();
  await u.respond({selection:preview.plan.selection,page:0,targets:[{sequence:1,manifest:'late-private-coordinate'}],next:1});
  assert.equal(u.node('erasure-coordinates').textContent,'');assert.equal(u.node('erasure-next').disabled,true);assert.equal(u.node('erasure-kind').value,'capture');assert.equal(u.node('erasure-attempt').value,'');
+});
+
+test('policy and custody checkpoint repair use the shared preview-bound owner job',async()=>{
+ for(const kind of ['access-policy','capture-erasure']){
+  const u=ui();await ownerUI(u);u.node('owner-refresh').click();await tick();
+  await u.respond({owner:'owner',targets:[{id:'control',kind}],jobs:[],limits:{jobs:10}});
+  assert.equal(u.node('owner-operation').value,'rebuild-control-index');
+  assert.equal(u.node('owner-maintenance-preview').disabled,false);
+  u.node('owner-job-form').events.submit({preventDefault(){}});await tick();
+  assert.deepEqual(JSON.parse(u.pending[0].opts.body),{action:'preview',target:'control',operation:'rebuild-control-index',retry_of:null});
+  await u.respond({digest:'control-preview',nonce:'c'.repeat(64),contract:{target:{id:'control',kind},operation:'rebuild-control-index',effect:'Audit signed owner history; preserve original records.'}});
+  u.node('owner-submit').click();await tick();
+  assert.deepEqual(JSON.parse(u.pending[0].opts.body),{action:'submit',target:'control',operation:'rebuild-control-index',retry_of:null,nonce:'c'.repeat(64),preview:'control-preview',wait:false});
+  u.node('owner-lock').click();await u.respond({state:'succeeded'});
+  assert.equal(u.node('owner-jobs').children.length,0);
+ }
 });

@@ -174,6 +174,10 @@ kan-v2 rebuild-control-index /etc/kan/access-policy.json --signing-key /etc/kan/
 kan-v2 rebuild-control-index /etc/kan/erasure-history.json --erasure --signing-key /etc/kan/owner.key
 ```
 
+The Library owner panel also exposes “Initialize or repair control reads” for
+access-policy and capture-erasure targets. Preview and submit it as a retained
+maintenance job; reconnect to inspect its result after closing the browser.
+
 The live grant reader and indexed archive services then use bounded current/minimum
 checks. Existing owner actions update these checkpoints under their control lease.
 An interrupted update leaves `INDEX-DIRTY` and refuses indexed serving; rerun the

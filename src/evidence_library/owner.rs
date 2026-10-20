@@ -111,6 +111,7 @@ pub enum Operation {
     Import,
     RestoreImport,
     ReconcileImport,
+    RebuildControlIndex,
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -462,6 +463,11 @@ impl Owner {
             {
                 Some(output.join(format!("{nonce}.sqlite")))
             }
+            Target::AccessPolicy { .. } | Target::CaptureErasure { .. }
+                if operation == Operation::RebuildControlIndex =>
+            {
+                None
+            }
             Target::Operations { .. } if operation == Operation::Rotate => None,
             Target::Migration { .. } if operation == Operation::Import => None,
             Target::Migration {
@@ -488,6 +494,7 @@ impl Owner {
         Ok(
             json!({"version":1,"owner":self.workspace.author(),"target":selected,"operation":operation,"destination":destination,"nonce":nonce,"retry_of":retry_of,"import":migration_preview(selected)?,
             "effect":match operation{
+                Operation::RebuildControlIndex=>"Fully audit the configured independent owner history and rebuild its signed serving checkpoint. Preserve every raw record and current grant/erasure decision. Hold the owner lease; repair interrupted index publication before enabling current reads. A failed rebuild leaves a visible refusal until repaired.",
                 Operation::ReconcileImport=>"Read and hash the configured recovery files against this exact current source plan, then recheck the source inventory. Record remaining cutover preconditions; do not fence writers or activate stores.",
                 Operation::RestoreImport=>"Verify and reconstruct the pinned import into a new owner-private PLAINTEXT directory. Retain source and any failed output. This verifies selected file bytes, not repository semantics, independent backup or cutover.",
                 Operation::Import=>"Queue a bounded batch of this exact selected v1 snapshot into the configured encrypted durable spool. Retain originals. Sending, independent recovery verification and cutover are separate actions; a completed job may leave more batches to queue.",
@@ -873,6 +880,24 @@ fn perform(
 ) -> Result<Value, String> {
     let work = || -> Result<Value, Box<dyn std::error::Error + Send + Sync>> {
         match target {
+            Target::AccessPolicy {
+                policy,
+                signing_key,
+                ..
+            } if operation == Operation::RebuildControlIndex => {
+                policy
+                    .rebuild_serving_index(&crate::sign::Identity::load_existing(signing_key)?)?;
+                Ok(json!({"kind":"policy","current_reads":"indexed","raw_history":"retained"}))
+            }
+            Target::CaptureErasure {
+                history,
+                signing_key,
+                ..
+            } if operation == Operation::RebuildControlIndex => {
+                history
+                    .rebuild_serving_index(&crate::sign::Identity::load_existing(signing_key)?)?;
+                Ok(json!({"kind":"erasure","current_reads":"indexed","raw_history":"retained"}))
+            }
             Target::CaptureErasure { .. }
             | Target::KeyHistory { .. }
             | Target::AccessPolicy { .. } => {
