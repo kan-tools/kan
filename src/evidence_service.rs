@@ -94,6 +94,14 @@ pub struct RecordView {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
 pub enum Output {
+    /// Owner-side post-commit completion of one exact initial erasure, including
+    /// its archive binding. Ordinary RPC admission cannot produce this variant.
+    ErasedCommitted {
+        record: RecordView,
+        duplicate: bool,
+        archive: String,
+        erasure: String,
+    },
     Committed {
         record: RecordView,
         duplicate: bool,
@@ -381,9 +389,13 @@ pub fn admitted_manifest(request: &[u8], reply: &SignedReply, issuer: &str) -> R
 /// The independent erasure target binds the same raw SHA256 object commitment.
 pub(crate) fn admitted_erased_manifest(
     reply: &SignedReply,
-    target: &evidence_store::erasure::Target,
+    erasure: &evidence_store::erasure::Record,
     issuer: &str,
 ) -> Result<Record> {
+    let target = erasure.plan.targets.first().ok_or(Failure::Invalid)?;
+    if erasure.plan.initial_erasure.is_none() || erasure.plan.targets.len() != 1 {
+        return Err(Failure::Invalid);
+    }
     let digest = exact(&reply.reply.request, 32)?;
     let mut object = vec![1, 0x55, 0x12, 0x20];
     object.extend(digest);
@@ -395,9 +407,18 @@ pub(crate) fn admitted_erased_manifest(
         return Err(Failure::Invalid);
     }
     let verified = reply.verify_digest(&reply.reply.request, issuer)?;
-    let Output::Committed { record, .. } = verified.result.as_ref().map_err(Clone::clone)? else {
+    let Output::ErasedCommitted {
+        record,
+        archive,
+        erasure: authorization,
+        ..
+    } = verified.result.as_ref().map_err(Clone::clone)?
+    else {
         return Err(Failure::Invalid);
     };
+    if *archive != erasure.plan.archive || *authorization != erasure.id()? {
+        return Err(Failure::Invalid);
+    }
     if record.sequence != target.sequence {
         return Err(Failure::Invalid);
     }
@@ -641,7 +662,9 @@ impl AdmittingService {
             version: 1,
             request: hex(&Sha256::digest(bytes)),
             issuer: self.issuer(),
-            result: Ok(Output::Committed {
+            result: Ok(Output::ErasedCommitted {
+                archive: erasure.plan.archive.clone(),
+                erasure: erasure.id()?,
                 record: view(&admitted.record),
                 duplicate: admitted.record.duplicate,
             }),

@@ -1363,6 +1363,54 @@ fn initial_erased_admission_preserves_chain_without_staging_payload_and_retires_
     )
     .unwrap();
     let reply = completion.admit_erased(&raw, &erasure, &history).unwrap();
+    // A valid completion for identical bytes/issuer/scope/sequence in another
+    // archive must not complete this archive's cancellation.
+    let elsewhere = tempfile::tempdir().unwrap();
+    let other_custody = tempfile::tempdir().unwrap();
+    let mut other_binding = binding();
+    other_binding.archive = [99; 32];
+    let mut other_history = history.clone();
+    other_history.directory = other_custody.path().to_path_buf();
+    other_history.binding.archive = hex(&other_binding.archive);
+    other_history.minimum = None;
+    other_history.initialize().unwrap();
+    let genesis = custody::Record::sign(
+        other_history.preview(None, hex(&[4; 32])).unwrap(),
+        &identity(5),
+    )
+    .unwrap();
+    let pin = genesis.id().unwrap();
+    other_history.append(genesis).unwrap();
+    other_history.minimum = Some(pin);
+    let other_archive = Archive::create(elsewhere.path(), other_binding).unwrap();
+    let other_erasure = erasure::Record::sign(
+        other_archive
+            .preview_erased_admission(&raw, hex(&[5; 32]), 100)
+            .unwrap(),
+        &identity(7),
+    )
+    .unwrap();
+    other_history
+        .append(
+            custody::Record::sign(
+                other_history
+                    .preview(Some(other_erasure.clone()), hex(&[6; 32]))
+                    .unwrap(),
+                &identity(5),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+    let mut other =
+        kan::evidence_service::AdmittingService::new(other_archive, identity(7), vec![grant()])
+            .unwrap();
+    let foreign = other
+        .admit_erased(&raw, &other_erasure, &other_history)
+        .unwrap();
+    assert!(spool
+        .reconcile_erasure_with_admissions(&history, &[foreign])
+        .is_err());
+    assert_eq!(spool.head().unwrap(), Some(raw.clone()));
     let mut forged = reply.clone();
     forged.signature = hex(&[0; 64]);
     assert!(spool
@@ -1376,6 +1424,10 @@ fn initial_erased_admission_preserves_chain_without_staging_payload_and_retires_
         1
     );
     assert_eq!(spool.head().unwrap(), Some(next.clone()));
+    drop(spool);
+    let reopened = Spool::open(&queue_root.path().join("queue.sqlite")).unwrap();
+    assert_eq!(reopened.head().unwrap(), Some(next.clone()));
+    drop(reopened);
     archive.admit(&next, &identity(7), &grant(), 101).unwrap();
     assert_eq!(archive.verify().unwrap().through, 2);
     let backup = root.path().join("backup.sqlite");
@@ -1395,6 +1447,27 @@ fn initial_erased_admission_preserves_chain_without_staging_payload_and_retires_
             .verify()
             .unwrap(),
         archive.verify().unwrap()
+    );
+    let queue = rusqlite::Connection::open(queue_root.path().join("queue.sqlite")).unwrap();
+    let body: Vec<u8> = queue
+        .query_row(
+            "SELECT manifest FROM erased_operations WHERE position=0",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    let mut forged: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    forged["signature"] = serde_json::json!(hex(&[0; 64]));
+    queue
+        .execute(
+            "UPDATE erased_operations SET manifest=? WHERE position=0",
+            [serde_json::to_vec(&forged).unwrap()],
+        )
+        .unwrap();
+    drop(queue);
+    assert!(
+        Spool::open(&queue_root.path().join("queue.sqlite")).is_err(),
+        "restart audits the retained post-commit proof"
     );
 }
 

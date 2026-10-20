@@ -845,8 +845,8 @@ and published derivatives, owner job integration and whole-instance completion
 are still required.
 
 The sender treats an `initial_erasure` record as prospective intent. It must also
-receive a signed post-commit service acknowledgment for the exact request hash,
-manifest and archive sequence before retiring that operation. It retains that
+receive a signed post-commit `erased-committed` service acknowledgment for the exact
+archive ID, erasure-record ID, request hash, manifest and archive sequence before retiring that operation. It retains that
 minimal acknowledgment instead of raw request bytes; restart audits its signature
 and binding. Missing, forged or mismatched acknowledgments leave the queue intact
 and visibly blocked. The owner-side completion API signs only after the atomic
@@ -858,3 +858,9 @@ the network operation. A declaration removed by cleanup or a head that cannot be
 resolved to an authored annotation refuses publication. Source-custody leases also
 cover the local queueing transaction. This closes the Library action's race;
 standalone generic senders and complete cascade enrollment remain separate work.
+
+Source authorization is bound to the exact checked queue head. If another drainer
+advances that head, delivery refuses instead of applying the previous annotation's
+source checks to its successor. An ordinary admission acknowledgment, or a valid
+cancellation completion from another archive with the same issuer/scope/request,
+cannot retire an initial-erasure operation.

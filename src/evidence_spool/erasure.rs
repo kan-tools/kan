@@ -126,14 +126,7 @@ pub(super) fn frontier(conn: &Connection, st: &State) -> Result<Option<(u64, Str
             .collect::<BTreeMap<_, _>>();
         records.insert(
             id,
-            (
-                targets,
-                record
-                    .change
-                    .erasure
-                    .as_ref()
-                    .is_some_and(|r| r.plan.initial_erasure.is_some()),
-            ),
+            (targets, record.change.erasure.clone().ok_or_else(invalid)?),
         );
     }
     let mut maximum = None;
@@ -152,15 +145,16 @@ pub(super) fn frontier(conn: &Connection, st: &State) -> Result<Option<(u64, Str
         let body: Option<Vec<u8>> = row.get(2)?;
         let operation: String = row.get(3)?;
         let cid: String = row.get(4)?;
-        let (targets, initial) = records.get(&authorization).ok_or_else(invalid)?;
+        let (targets, erasure) = records.get(&authorization).ok_or_else(invalid)?;
+        let initial = erasure.plan.initial_erasure.is_some();
         let target = targets.get(&cid).ok_or_else(invalid)?;
         if let Some(bytes) = body {
-            let canonical = if *initial {
+            let canonical = if initial {
                 let reply: SignedReply = serde_json::from_slice(&bytes).map_err(|_| invalid())?;
                 if reply.bytes()? != bytes {
                     return Err(invalid());
                 }
-                service::admitted_erased_manifest(&reply, target, &st.audience)?
+                service::admitted_erased_manifest(&reply, erasure, &st.audience)?
                     .bytes()
                     .to_vec()
             } else {
@@ -169,7 +163,7 @@ pub(super) fn frontier(conn: &Connection, st: &State) -> Result<Option<(u64, Str
             manifest(&canonical, position, &operation, &cid, target, st, conn)?;
             maximum = Some((position, cid));
         } else {
-            if *initial {
+            if initial {
                 return Err(invalid());
             }
             partial.push(position);
@@ -310,7 +304,7 @@ impl Spool {
             if encoded.len() > 65536 || bytes > 16 * 1024 * 1024 {
                 return Err(invalid());
             }
-            let service::Output::Committed { record, .. } =
+            let service::Output::ErasedCommitted { record, .. } =
                 reply.reply.result.as_ref().map_err(Clone::clone)?
             else {
                 return Err(invalid());
@@ -359,19 +353,6 @@ impl Spool {
                         .entry(target.manifest.clone())
                         .or_insert((record, target));
                 }
-            }
-        }
-        if let Some(bytes) = &st.reply {
-            let reply: SignedReply = serde_json::from_slice(bytes).map_err(|_| invalid())?;
-            if let service::Output::Committed { record, .. } =
-                reply.reply.result.as_ref().map_err(Clone::clone)?
-            {
-                let Decoded::Known(m) = evidence::decode(&service::unhex(&record.manifest, 65536)?)
-                    .map_err(|_| invalid())?
-                else {
-                    return Err(invalid());
-                };
-                proofs.entry(m.cid().to_string()).or_insert(reply);
             }
         }
         let mut pending = tx.prepare("SELECT position,manifest FROM pending ORDER BY position")?;
@@ -440,7 +421,11 @@ impl Spool {
                     unconfirmed.insert(position);
                     continue;
                 };
-                let m = service::admitted_erased_manifest(reply, target, &st.audience)?;
+                let m = service::admitted_erased_manifest(
+                    reply,
+                    record.change.erasure.as_ref().ok_or_else(invalid)?,
+                    &st.audience,
+                )?;
                 manifest(m.bytes(), position, &id, cid, target, &st, &tx)?;
                 Some(reply.bytes()?)
             } else if let Some(raw) = raw {
