@@ -1573,7 +1573,7 @@ async fn epoch_rotation_changes_new_capture_and_history_failure_forwards_with_vi
         config(Route::new(&p).unwrap(), Observer::Gateway, dir.path(), true);
     cfg.key_history = Some(history.clone());
     let (url, _gateway) = start(tls(), cfg).await;
-    let client = client(true);
+    let client = client(CA, true);
     assert_eq!(
         client
             .post(&url)

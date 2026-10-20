@@ -716,7 +716,7 @@
   }));
   $('key-package').addEventListener('input',()=>{ownerEpoch++;if(ownerController)ownerController.abort();invalidateKeys();$('key-download').disabled=true;});
   $('key-download').addEventListener('click',()=>{
-    const url=URL.createObjectURL(new Blob([$('key-package').value],{type:'application/json'}));const link=document.createElement('a');link.href=url;link.download='kan-wrapped-key-recovery.json';link.click();URL.revokeObjectURL(url);
+    const url=URL.createObjectURL(new Blob([$('key-package').value],{type:'application/json'}));exports.set(url,setTimeout(()=>releaseExport(url),1000));const link=document.createElement('a');link.href=url;link.download='kan-wrapped-key-recovery.json';link.hidden=true;document.body.append(link);link.click();link.remove();
   });
   $('key-restore-preview').addEventListener('click',()=>ownerRun(async()=>{
     invalidateKeys();const target=$('owner-target').value,packageValue=JSON.parse($('key-package').value),value=await ownerRpc({action:'restore-keys',target,package:packageValue,preview:null});if(!value)return;
