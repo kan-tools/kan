@@ -178,3 +178,100 @@ fn partial_restore_retries_preserve_prefix_and_ignore_incomplete_publications() 
         Err(Failure::Conflict)
     ));
 }
+
+#[test]
+fn transferred_custody_preserves_origins_and_only_unlocks_explicit_epochs() {
+    use kan::evidence_keys::TransferPurpose;
+    let source_dir = directory();
+    let access = config(source_dir.path());
+    access.initialize().unwrap();
+    let first = rotate(&access, 1);
+    let second = rotate(&access, 2);
+    let ids = vec![first.id().unwrap(), second.id().unwrap()];
+    let recipient = service::hex(&crypto::public_key(&[94; 32]).unwrap());
+    let plan = access
+        .preview_transfer(
+            recipient.clone(),
+            vec![ids[1].clone()],
+            TransferPurpose::ShareEpochs,
+        )
+        .unwrap();
+    let preview = serde_json::to_value(&plan).unwrap();
+    assert!(!preview.to_string().contains("wrapped"));
+    assert!(access
+        .transfer(&plan, "wrong", &[92; 32], &identity())
+        .is_err());
+    assert!(access
+        .transfer(&plan, &plan.digest().unwrap(), &[93; 32], &identity())
+        .is_err());
+    let package: RecoveryPackage = serde_json::from_value(
+        access
+            .transfer(&plan, &plan.digest().unwrap(), &[92; 32], &identity())
+            .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(package.records.len(), 1);
+    assert_eq!(
+        package.records[0].change.origin.as_ref().unwrap().record,
+        ids[1]
+    );
+    let out = directory();
+    let mut dest = config(out.path());
+    dest.recovery_recipient = recipient.clone();
+    dest.minimum = package.tip.clone();
+    dest.initialize().unwrap();
+    dest.restore(&package).unwrap();
+    let keys = dest.read().unwrap().unlock(&[94; 32]).unwrap();
+    assert_eq!(keys, vec![second.change.unlock(&[92; 32]).unwrap()]);
+    assert!(dest.read().unwrap().unlock(&[92; 32]).is_err());
+    assert_eq!(access.read().unwrap().tip, Some(ids[1].clone()));
+    assert!(access
+        .preview_transfer(
+            recipient.clone(),
+            vec![ids[1].clone()],
+            TransferPurpose::ReplaceRecovery
+        )
+        .is_err());
+    for invalid in [
+        vec![],
+        vec![ids[0].clone(), ids[0].clone()],
+        vec![ids[1].clone(), ids[0].clone()],
+        vec![service::hex(&[11; 32])],
+    ] {
+        assert!(access
+            .preview_transfer(recipient.clone(), invalid, TransferPurpose::ShareEpochs)
+            .is_err());
+    }
+    let plan = access
+        .preview_transfer(recipient, ids, TransferPurpose::ReplaceRecovery)
+        .unwrap();
+    let complete: RecoveryPackage = serde_json::from_value(
+        access
+            .transfer(&plan, &plan.digest().unwrap(), &[92; 32], &identity())
+            .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(complete.records.len(), 2);
+    let out2 = directory();
+    let mut dest2 = dest.clone();
+    dest2.directory = out2.path().to_owned();
+    dest2.minimum = complete.tip.clone();
+    dest2.initialize().unwrap();
+    dest2.restore(&complete).unwrap();
+    assert_eq!(
+        dest2.read().unwrap().unlock(&[94; 32]).unwrap(),
+        access.read().unwrap().unlock(&[92; 32]).unwrap()
+    );
+    let fresh = dest2.preview(service::hex(&[10; 32])).unwrap();
+    assert!(fresh.unlock(&[92; 32]).is_err());
+    assert!(fresh.unlock(&[94; 32]).is_ok());
+    let mut tampered: RecoveryPackage =
+        serde_json::from_value(serde_json::to_value(&complete).unwrap()).unwrap();
+    tampered.records[0].change.origin.as_mut().unwrap().record = service::hex(&[31; 32]);
+    assert!(dest2.verify_package(&tampered).is_err());
+    rotate(&access, 3);
+    assert!(matches!(
+        access.transfer(&plan, &plan.digest().unwrap(), &[92; 32], &identity()),
+        Err(Failure::Conflict)
+    ));
+}

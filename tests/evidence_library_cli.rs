@@ -341,6 +341,18 @@ fn owner_cli_initializes_rotates_and_exports_wrapped_epoch_history() {
     let package = call(json!({"action":"export-keys","target":"keys"}));
     assert_eq!(package["package"]["version"], "kan-key-recovery/1");
     assert_eq!(package["package"]["records"].as_array().unwrap().len(), 1);
+    let epochs = call(json!({"action":"keys","target":"keys"}))["epoch_ids"].clone();
+    let preview = call(
+        json!({"action":"preview-key-transfer","target":"keys","recipient":svc::hex(&crypto::public_key(&[92;32]).unwrap()),"epochs":epochs,"purpose":"share-epochs"}),
+    );
+    let transferred = call(
+        json!({"action":"apply-key-transfer","target":"keys","plan":preview["plan"],"preview":preview["digest"]}),
+    );
+    let recovery: kan::evidence_keys::RecoveryPackage =
+        serde_json::from_value(transferred["package"].clone()).unwrap();
+    assert!(recovery.records[0].change.unlock(&[92; 32]).is_ok());
+    assert!(recovery.records[0].change.unlock(&[91; 32]).is_err());
+
     assert_eq!(
         call(json!({"action":"keys","target":"keys"}))["snapshot"]["epochs"],
         1

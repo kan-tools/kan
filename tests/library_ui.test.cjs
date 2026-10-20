@@ -779,3 +779,15 @@ test('imported current claims use explicit control evidence and preserve the fou
  assert.ok(walk(u.node('content-panel')).some(n=>n.textContent.includes('scopeAdmission')));walk(u.node('content-panel')).find(n=>n.textContent==='Inspect current claim current-claim').click();await tick();assert.equal(JSON.parse(u.pending[0].opts.body).after,3);
  u.node('lock').click();await u.respond(value);assert.equal(u.node('content-panel').children.length,0);
 });
+test('key transfer selects exact epochs and discards preview on recipient edit or lock',async()=>{
+ const u=ui();await u.login();await u.respond({...proofCatalog,scopes:[proofEntry('archive-A')]});await u.respond(proofPage);u.node('owner-token').value='owner-credential';u.node('owner-connect').events.submit({preventDefault(){}});await tick();await u.respond({owner:'owner',targets:[{kind:'key-history',id:'keys'}],jobs:[],limits:{jobs:10}});
+ u.node('key-load').click();await tick();const change={sequence:'0',recipient:'epoch',recorded_at:'100'};
+ await u.respond({target:'keys',epoch_ids:['id0','id1'],snapshot:{epochs:2,tip:'tip',history:[{change},{change:{...change,sequence:'1'}}]},custody:'verified'});
+ const checks=u.node('key-transfer-epochs').children.map(n=>n.children[0]);checks[0].checked=false;checks[0].events.change();u.node('key-recipient').value='ab'.repeat(32);u.node('key-transfer-purpose').value='share-epochs';
+ u.node('key-transfer-preview').click();await tick();assert.deepEqual(JSON.parse(u.pending[0].opts.body),{action:'preview-key-transfer',target:'keys',recipient:'ab'.repeat(32),epochs:['id1'],purpose:'share-epochs'});
+ const plan={recipient:'ab'.repeat(32),epochs:['id1'],purpose:'share-epochs',source_tip:'tip'};await u.respond({target:'keys',digest:'digest',plan,effect:'Transfer selected custody.'});assert.equal(u.node('key-transfer-apply').disabled,false);
+ u.node('key-recipient').events.input();assert.equal(u.node('key-transfer-apply').disabled,true);
+ u.node('key-transfer-preview').click();await tick();await u.respond({target:'keys',digest:'digest',plan,effect:'Transfer selected custody.'});u.node('key-transfer-apply').click();await tick();assert.deepEqual(JSON.parse(u.pending[0].opts.body),{action:'apply-key-transfer',target:'keys',plan,preview:'digest'});
+ const pkg={version:'kan-key-recovery/1',records:[]};await u.respond({target:'keys',package:pkg,custody:'No grants changed.'});assert.deepEqual(JSON.parse(u.node('key-package').value),pkg);assert.equal(u.node('key-download').disabled,false);
+ u.node('owner-lock').click();assert.equal(u.node('key-recipient').value,'');assert.equal(u.node('key-transfer-epochs').children.length,0);assert.equal(u.node('key-package').value,'');
+});

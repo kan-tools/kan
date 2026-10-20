@@ -3170,6 +3170,23 @@ async fn owner_key_epochs_require_owner_preview_and_restore_wrapped_history_afte
     .await;
     assert_eq!(export["package"]["records"].as_array().unwrap().len(), 1);
     let package = export["package"].clone();
+    let inspected = owner_call(&ui, OWNER, json!({"action":"keys","target":"keys"}), 200).await;
+    let request = json!({"action":"preview-key-transfer","target":"keys","recipient":service::hex(&kan::evidence_crypto::public_key(&[85;32]).unwrap()),"epochs":inspected["epoch_ids"],"purpose":"replace-recovery"});
+    owner_call(&ui, TOKEN, request.clone(), 401).await;
+    let transfer = owner_call(&ui, OWNER, request, 200).await;
+    assert!(transfer.get("package").is_none());
+    let exported=owner_call(&ui,OWNER,json!({"action":"apply-key-transfer","target":"keys","plan":transfer["plan"],"preview":transfer["digest"]}),200).await;
+    let transferred: kan::evidence_keys::RecoveryPackage =
+        serde_json::from_value(exported["package"].clone()).unwrap();
+    assert_eq!(
+        transferred.records[0].change.unlock(&[85; 32]).unwrap(),
+        history.read().unwrap().unlock(&[83; 32]).unwrap()[0]
+    );
+    assert!(transferred.records[0].change.unlock(&[83; 32]).is_err());
+    assert_eq!(
+        history.read().unwrap().tip.as_deref(),
+        package["tip"].as_str()
+    );
     let preview = owner_call(
         &ui,
         OWNER,

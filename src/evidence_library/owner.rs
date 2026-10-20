@@ -112,6 +112,17 @@ pub enum Request {
         change: Box<crate::evidence_keys::Change>,
         preview: String,
     },
+    PreviewKeyTransfer {
+        target: String,
+        recipient: String,
+        epochs: Vec<String>,
+        purpose: crate::evidence_keys::TransferPurpose,
+    },
+    ApplyKeyTransfer {
+        target: String,
+        plan: Box<crate::evidence_keys::TransferPlan>,
+        preview: String,
+    },
     ExportKeys {
         target: String,
     },
@@ -154,6 +165,8 @@ pub enum Request {
     },
 }
 enum KeyAction {
+    PreviewTransfer(String, Vec<String>, crate::evidence_keys::TransferPurpose),
+    ApplyTransfer(Box<crate::evidence_keys::TransferPlan>, String),
     Read,
     Preview,
     Apply(Box<crate::evidence_keys::Change>, String),
@@ -529,7 +542,8 @@ impl Owner {
                 KeyAction::Read => {
                     let snapshot=history.read()?;
                     snapshot.unlock(&private)?;
-                    Ok(json!({"target":target,"binding":history.binding,"recovery_recipient":history.recovery_recipient,"minimum":history.minimum,"snapshot":snapshot.value(),"custody":"Recovery key verified; no private key material returned."}))
+                    let epoch_ids=snapshot.history.iter().map(crate::evidence_keys::Record::id).collect::<Result<Vec<_>,_>>()?;
+                    Ok(json!({"target":target,"epoch_ids":epoch_ids,"binding":history.binding,"recovery_recipient":history.recovery_recipient,"minimum":history.minimum,"snapshot":snapshot.value(),"custody":"Recovery key verified; no private key material returned."}))
                 }
                 KeyAction::Preview => {
                     let change=history.preview(service::hex(&rand::random::<[u8;32]>()))?;
@@ -542,6 +556,14 @@ impl Owner {
                     let signer=crate::sign::Identity::load_existing(&signing_key).map_err(|_|Failure::Unavailable)?;
                     let mut result=history.append(crate::evidence_keys::Record::sign(*change,&signer)?)?;
                     result["target"]=json!(target);Ok(result)
+                }
+                KeyAction::PreviewTransfer(recipient,epochs,purpose) => {
+                    let plan=history.preview_transfer(recipient,epochs,purpose)?;
+                    Ok(json!({"target":target,"digest":plan.digest()?,"plan":plan,"effect":"Export the selected existing epoch keys wrapped to this recipient. This conveys decryption custody and cannot be recalled. It grants no storage access or future keys. Original history stays unchanged; restore and configuration activation are separate actions. Replacement requires all current epochs, followed by activation and a new epoch to protect future captures."}))
+                }
+                KeyAction::ApplyTransfer(plan,preview) => {
+                    let signer=crate::sign::Identity::load_existing(&signing_key).map_err(|_|Failure::Unavailable)?;
+                    Ok(json!({"target":target,"package":history.transfer(&plan,&preview,&private,&signer)?,"custody":"Transferred wrapped keys. Retain the original history as provenance and back up this package independently from its recipient private key. No service configuration or storage grants changed."}))
                 }
                 KeyAction::Export => Ok(json!({"target":target,"package":history.export()?,"custody":"Wrapped keys only. Store independently from the recovery private credential. This does not include archive ciphertext, reader workspace, or service grants."})),
                 KeyAction::Restore(package,preview) => {
@@ -571,6 +593,26 @@ impl Owner {
                 preview,
             } => {
                 self.key_action(target, KeyAction::Apply(change, preview))
+                    .await
+            }
+            Request::PreviewKeyTransfer {
+                target,
+                recipient,
+                epochs,
+                purpose,
+            } => {
+                self.key_action(
+                    target,
+                    KeyAction::PreviewTransfer(recipient, epochs, purpose),
+                )
+                .await
+            }
+            Request::ApplyKeyTransfer {
+                target,
+                plan,
+                preview,
+            } => {
+                self.key_action(target, KeyAction::ApplyTransfer(plan, preview))
                     .await
             }
             Request::ExportKeys { target } => self.key_action(target, KeyAction::Export).await,

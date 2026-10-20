@@ -829,3 +829,28 @@ These are conclusions relative to selected control history. A missing later
 revocation cannot be discovered from absent evidence; there is no implicit claim
 of globally current authority. The native verifier's unsupported identity or
 control versions remain explicitly unresolved, with raw source access preserved.
+
+### Replace recovery custody or share selected epochs
+
+Inspect the configured key-history target first (`keys`) to obtain `epoch_ids`.
+`preview-key-transfer` takes `target`, `recipient` (64-hex X25519 public key),
+`epochs` (exact ordered IDs) and `purpose` (`replace-recovery` or `share-epochs`).
+The preview contains no wrapped keys. `apply-key-transfer` takes its exact `plan`
+and `digest` as `preview`, then returns a signed `kan-key-recovery/1` package.
+These requests use the existing `kan-v2 owner --config … --request …` command,
+owner API and **Encryption epochs & recovery** controls in the application.
+
+Replacement requires every current epoch; sharing may select a subset. An
+intervening rotation refuses the stale preview. Restore the package with the
+existing preview/restore workflow into a separately initialized private directory
+pinned to the same archive and owner, the new recipient and the returned checkpoint.
+The new recipient private credential is configured locally, never pasted into the
+browser. The returned package retains signed origin references; retain the original
+history/backup for their source records. The active directory remains unchanged.
+
+For replacement, stop capture, export/restore and verify the complete package,
+update reader and gateway configurations together, and create a fresh epoch before
+resuming. Original credentials remain able to decrypt old retained packages and
+ciphertext. Sharing confers only selected epoch decryption custody; recipients
+still need current storage grants, and receive no later epochs or owner authority.
+Keep the wrapped package and recipient private credential in independent custody.

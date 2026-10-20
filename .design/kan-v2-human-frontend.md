@@ -502,3 +502,26 @@ resolution, Git ancestry, legacy subject remapping or cross-repository identity
 collapse occurs. Unknown/retired identity versions remain raw inspectable evidence
 if the current native verifier cannot authenticate them. These limitations are
 shown beside the human trust selectors and control provenance.
+
+### Recovery replacement and explicit epoch sharing
+
+The owner previews an exact current history tip, destination X25519 public key,
+and ordered epoch record IDs. Replacement requires every current epoch; sharing
+requires an explicit nonempty subset. The preview returns metadata only. Apply
+holds a source-history lease, checks the exact preview and tip, unlocks only the
+selected epochs, and returns an owner-signed recovery package wrapped to the new
+recipient. Each resulting record retains a signed origin reference to the old
+record, history tip, recovery recipient and transfer purpose. Original histories
+and their independent backup packages remain retained as provenance.
+
+The recipient restores into a separately initialized private directory using the
+existing API/CLI/UI. It must independently pin the archive, owner, new recipient
+and returned checkpoint; a package does not choose those trust anchors. No live
+reader or gateway config changes automatically. For replacement, stop capture,
+export/restore/verify the new complete history, update both configurations and
+rotate to a fresh epoch before resuming. An intervening rotation invalidates the
+preview. Old credentials still decrypt previously wrapped epochs and backups;
+replacement protects future epochs only after activation and a fresh rotation.
+Shared packages confer decryption custody of selected epochs, not storage grants,
+owner signing authority or future epoch keys. Keys already distributed cannot be
+recalled. Retain the returned wrapped package independently from its private key.

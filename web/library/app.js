@@ -1,7 +1,7 @@
 (() => {
   'use strict';
   const $ = id => document.getElementById(id);
-  let policyRows=[],policyPreview=null,keyPreview=null,keyRestore=null,importControls=[];
+  let policyRows=[],policyPreview=null,keyPreview=null,keyRestore=null,keyTransfer=null,keyEpochs=[],importControls=[];
   let ownerToken='',ownerEpoch=0,ownerController,ownerTargets=[],ownerPreview=null,ownerRetry=null;
   let token = '', epoch = 0, controller, scopes = [], pin, after = 0, next = null, history = [], selected = null, source = null, hexadecimal = false;
   const selections = new Map();
@@ -690,12 +690,14 @@
   }));
   $('owner-lock').addEventListener('click',()=>{lockOwner();$('owner-maintenance').hidden=false;});
 
-  function invalidateKeys(){keyPreview=null;keyRestore=null;$('key-apply').disabled=true;$('key-restore-apply').disabled=true;$('key-plan').textContent='';}
-  function clearKeys(){invalidateKeys();$('key-controls').hidden=true;$('key-status').textContent='';$('key-history').replaceChildren();$('key-package').value='';$('key-download').disabled=true;}
+  function invalidateKeys(){keyPreview=null;keyRestore=null;keyTransfer=null;$('key-transfer-apply').disabled=true;$('key-apply').disabled=true;$('key-restore-apply').disabled=true;$('key-plan').textContent='';}
+  function clearKeys(){invalidateKeys();keyEpochs=[];$('key-recipient').value='';$('key-transfer-epochs').replaceChildren();$('key-controls').hidden=true;$('key-status').textContent='';$('key-history').replaceChildren();$('key-package').value='';$('key-download').disabled=true;}
   async function loadKeys(){
     invalidateKeys();const target=$('owner-target').value,value=await ownerRpc({action:'keys',target});if(!value)return;
     if(value.target!==target||!value.snapshot||!Array.isArray(value.snapshot.history))throw new Error('Invalid key history.');
     $('key-status').textContent=`${value.snapshot.epochs} retained epochs · current recipient ${value.snapshot.current_recipient||'none'} · checkpoint ${value.snapshot.tip||'none'} · ${value.custody}`;
+    keyEpochs=Array.isArray(value.epoch_ids)&&value.epoch_ids.length===value.snapshot.history.length?value.epoch_ids:[];
+    $('key-transfer-epochs').replaceChildren();keyEpochs.forEach((id,index)=>{const label=document.createElement('label'),input=document.createElement('input');input.type='checkbox';input.value=id;input.checked=true;input.addEventListener('change',editKeyTransfer);label.append(input);label.append(textNode('span',` Epoch ${value.snapshot.history[index].change.sequence} · ${id}`));$('key-transfer-epochs').append(label);});
     $('key-history').replaceChildren();for(const record of value.snapshot.history){const c=record.change,article=document.createElement('article');article.append(textNode('h4',`Epoch ${c.sequence} · Unix ${c.recorded_at}`));article.append(textNode('p',`Recipient ${c.recipient}`));article.append(textNode('p',`Previous ${c.previous||'initial epoch'}`));$('key-history').append(article);}
   }
   $('key-load').addEventListener('click',()=>ownerRun(loadKeys));
@@ -708,6 +710,23 @@
     if(!keyPreview)return;const p=keyPreview;$('key-apply').disabled=true;
     const value=await ownerRpc({action:'apply-key-rotation',target:p.target,change:p.change,preview:p.digest});if(!value)return;
     if(!['applied','already-applied'].includes(value.state))throw new Error('Invalid key rotation result.');await loadKeys();$('owner-status').textContent='Epoch activated; previous evidence and keys retained. Export the updated wrapped recovery package.';
+  }));
+  function editKeyTransfer(){ownerEpoch++;if(ownerController)ownerController.abort();invalidateKeys();}
+  $('key-recipient').addEventListener('input',editKeyTransfer);
+  $('key-transfer-purpose').addEventListener('change',editKeyTransfer);
+  $('key-transfer-preview').addEventListener('click',()=>ownerRun(async()=>{
+    invalidateKeys();const target=$('owner-target').value,recipient=$('key-recipient').value.trim(),purpose=$('key-transfer-purpose').value;
+    const epochs=Array.from($('key-transfer-epochs').children).map(label=>label.children[0]).filter(input=>input.checked).map(input=>input.value);
+    if(!/^[0-9a-f]{64}$/.test(recipient)||!epochs.length)throw new Error('Enter the recipient public key and select epochs from the inspected history.');
+    const value=await ownerRpc({action:'preview-key-transfer',target,recipient,epochs,purpose});if(!value)return;
+    if(value.target!==target||!value.plan||typeof value.digest!=='string')throw new Error('Invalid key transfer preview.');keyTransfer=value;
+    $('key-plan').textContent=`${value.effect}\nRecipient ${value.plan.recipient}\n${value.plan.epochs.length} epochs · ${value.plan.purpose}\nSource checkpoint ${value.plan.source_tip}`;$('key-transfer-apply').disabled=false;
+  }));
+  $('key-transfer-apply').addEventListener('click',()=>ownerRun(async()=>{
+    if(!keyTransfer)return;const p=keyTransfer;$('key-transfer-apply').disabled=true;
+    const value=await ownerRpc({action:'apply-key-transfer',target:p.target,plan:p.plan,preview:p.digest});if(!value)return;
+    if(value.target!==p.target||value.package?.version!=='kan-key-recovery/1')throw new Error('Invalid transferred key package.');
+    invalidateKeys();$('key-package').value=JSON.stringify(value.package);$('key-download').disabled=false;$('key-status').textContent=value.custody;
   }));
   $('key-export').addEventListener('click',()=>ownerRun(async()=>{
     const target=$('owner-target').value,value=await ownerRpc({action:'export-keys',target});if(!value)return;

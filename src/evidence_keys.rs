@@ -40,6 +40,40 @@ pub struct Change {
     pub recorded_at: String,
     pub recipient: String,
     pub wrapped: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub origin: Option<KeyOrigin>,
+}
+/// Signed provenance retained when existing epoch custody is transferred.
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct KeyOrigin {
+    pub record: String,
+    pub tip: String,
+    pub recovery_recipient: String,
+    pub purpose: TransferPurpose,
+}
+#[derive(Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum TransferPurpose {
+    ReplaceRecovery,
+    ShareEpochs,
+}
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TransferPlan {
+    pub binding: Binding,
+    pub owner: String,
+    pub source_recipient: String,
+    pub source_tip: String,
+    pub recipient: String,
+    pub epochs: Vec<String>,
+    pub purpose: TransferPurpose,
+    pub nonce: String,
+}
+impl TransferPlan {
+    pub fn digest(&self) -> Result<String> {
+        Ok(digest(&serde_json::to_vec(self).map_err(invalid)?))
+    }
 }
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -276,6 +310,11 @@ impl Access {
         {
             return Err(Failure::Corrupt);
         }
+        if let Some(origin) = &change.origin {
+            fixed(&origin.record)?;
+            fixed(&origin.tip)?;
+            fixed(&origin.recovery_recipient)?;
+        }
         fixed(&change.nonce)?;
         let time: u64 = change.recorded_at.parse().map_err(|_| Failure::Invalid)?;
         if time.to_string() != change.recorded_at {
@@ -314,7 +353,116 @@ impl Access {
             recorded_at: crate::evidence_operations::now().to_string(),
             recipient: service::hex(&recipient),
             wrapped: service::hex(&wrapped),
+            origin: None,
         })
+    }
+    /// Preview is metadata only: it never distributes wrapped epoch keys.
+    pub fn preview_transfer(
+        &self,
+        recipient: String,
+        epochs: Vec<String>,
+        purpose: TransferPurpose,
+    ) -> Result<TransferPlan> {
+        let snapshot = self.read()?;
+        let plan = TransferPlan {
+            binding: self.binding.clone(),
+            owner: self.owner.clone(),
+            source_recipient: self.recovery_recipient.clone(),
+            source_tip: snapshot.tip.clone().ok_or(Failure::Invalid)?,
+            recipient,
+            epochs,
+            purpose,
+            nonce: service::hex(&rand::random::<[u8; 32]>()),
+        };
+        self.check_transfer(&snapshot, &plan)?;
+        Ok(plan)
+    }
+    fn check_transfer(&self, snapshot: &Snapshot, plan: &TransferPlan) -> Result<()> {
+        fixed(&plan.recipient)?;
+        fixed(&plan.nonce)?;
+        if plan.binding != self.binding
+            || plan.owner != self.owner
+            || plan.source_recipient != self.recovery_recipient
+            || plan.recipient == self.recovery_recipient
+            || snapshot.tip.as_ref() != Some(&plan.source_tip)
+        {
+            return Err(Failure::Conflict);
+        }
+        let all = snapshot
+            .history
+            .iter()
+            .map(Record::id)
+            .collect::<Result<Vec<_>>>()?;
+        let selected = all
+            .iter()
+            .filter(|id| plan.epochs.contains(id))
+            .cloned()
+            .collect::<Vec<_>>();
+        // Exact canonical order disallows duplicates, unknown IDs and silent omissions.
+        if plan.epochs.is_empty()
+            || selected != plan.epochs
+            || (plan.purpose == TransferPurpose::ReplaceRecovery && selected != all)
+        {
+            return Err(Failure::Invalid);
+        }
+        Ok(())
+    }
+    /// Export selected existing keys under new custody. Original history is
+    /// unchanged; activation and storage permissions are separate owner actions.
+    pub fn transfer(
+        &self,
+        plan: &TransferPlan,
+        preview: &str,
+        private: &[u8; 32],
+        signer: &Identity,
+    ) -> Result<Value> {
+        if plan.digest()? != preview || signer.did().as_str() != self.owner {
+            return Err(Failure::AccessLimited);
+        }
+        let snapshot = self.read()?; // Hold the lease through signing and wrapping.
+        self.check_transfer(&snapshot, plan)?;
+        let recipient: [u8; 32] = service::unhex(&plan.recipient, 32)?
+            .try_into()
+            .map_err(invalid)?;
+        let mut records = Vec::new();
+        let mut tip = None;
+        for source in &snapshot.history {
+            let id = source.id()?;
+            if !plan.epochs.contains(&id) {
+                continue;
+            }
+            let key = source.change.unlock(private)?;
+            let wrapped =
+                crate::evidence_crypto::seal(&recipient, &wrapping_scope(&self.binding)?, &key)
+                    .map_err(invalid)?;
+            let record = Record::sign(
+                Change {
+                    version: 1,
+                    binding: self.binding.clone(),
+                    owner: self.owner.clone(),
+                    recovery_recipient: plan.recipient.clone(),
+                    sequence: records.len().to_string(),
+                    previous: tip,
+                    nonce: plan.nonce.clone(),
+                    recorded_at: crate::evidence_operations::now().to_string(),
+                    recipient: source.change.recipient.clone(),
+                    wrapped: service::hex(&wrapped),
+                    origin: Some(KeyOrigin {
+                        record: id,
+                        tip: plan.source_tip.clone(),
+                        recovery_recipient: self.recovery_recipient.clone(),
+                        purpose: plan.purpose,
+                    }),
+                },
+                signer,
+            )?;
+            tip = Some(record.id()?);
+            records.push(record);
+        }
+        Ok(
+            json!({"version":"kan-key-recovery/1","binding":self.binding,"owner":self.owner,
+            "recovery_recipient":plan.recipient,"tip":tip,"records":records}),
+        )
     }
     /// The package contains only signed public metadata and wrapped private keys.
     pub fn export(&self) -> Result<Value> {
