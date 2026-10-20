@@ -161,17 +161,26 @@ impl Readers {
         // A destination ACK does not authorize publication of erased/revoked
         // source material. Hold enrolled source custody through the send.
         let workspace = self.workspace()?;
-        let _source_custody = workspace.publication_lease()?;
+        let source_custody = workspace.publication_lease()?;
         let mut spool = outbox.open()?;
         let _destination_custody = spool.erasure_lease().map_err(|_| Failure::AccessLimited)?;
         spool
             .reconcile_managed_erasure()
             .map_err(|_| Failure::Unavailable)?;
         let checked = spool.head().map_err(|_| Failure::AccessLimited)?;
-        if let Some(raw) = &checked {
+        let _complete_source_custody = if let Some(raw) = &checked {
             let id = workspace.publication_annotation(raw)?;
             self.annotation_delivery(&id).await?;
-        }
+            // Partial enrollment cannot make a managed publisher safe: every
+            // known ancestor source must have independent current custody.
+            if source_custody.is_empty() {
+                None
+            } else {
+                Some(workspace.authorize_publication(raw)?)
+            }
+        } else {
+            None
+        };
         let _permit = self
             .workers
             .clone()

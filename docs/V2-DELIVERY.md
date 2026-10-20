@@ -106,7 +106,11 @@ signed request to its annotation before the queue commit. The binding is
 encrypted in the workspace and joins source-dependent erasure cleanup. Managed
 senders check that binding, the retained annotation and correction/analysis
 ancestors, and hold current source custody through delivery and acknowledgment.
-They need the workspace key, not the destination's decryption key.
+They need the workspace key, not the destination's decryption key. Library
+workspaces with source-custody enrollment apply this same complete-ancestor check
+before draining their outbox; partially enrolling an unrelated source cannot
+authorize publication. Unenrolled Library workspaces retain their fresh remote
+access checks and are not represented as managed source-custody deployments.
 
 A missing binding, missing ancestor, uncovered source, erased dependency or stale
 restored workspace refuses publication. An old operation ID alone cannot

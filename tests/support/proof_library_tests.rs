@@ -1431,26 +1431,30 @@ async fn annotation_publication_is_explicit_destination_bound_and_exactly_retrie
         )
         .unwrap(),
     );
-    let readers = kan::evidence_library::Readers::new(None, vec![server.client(&f)])
-        .unwrap()
-        .with_workspace(
-            kan::evidence_workspace::Workspace::open(
-                &local.path().join("workspace.sqlite"),
-                identity(6),
-                [97; 32],
+    let readers = |histories| {
+        kan::evidence_library::Readers::new(None, vec![server.client(&f)])
+            .unwrap()
+            .with_workspace(
+                kan::evidence_workspace::Workspace::open(
+                    &local.path().join("workspace.sqlite"),
+                    identity(6),
+                    [97; 32],
+                )
+                .unwrap()
+                .with_erasure_histories(histories)
+                .unwrap(),
             )
-            .unwrap(),
-        )
-        .with_annotation_outbox(
-            kan::evidence_library::AnnotationOutbox::new(
-                spool.clone(),
-                endpoint.clone(),
-                recipient,
+            .with_annotation_outbox(
+                kan::evidence_library::AnnotationOutbox::new(
+                    spool.clone(),
+                    endpoint.clone(),
+                    recipient,
+                )
+                .unwrap(),
             )
-            .unwrap(),
-        )
-        .unwrap();
-    let ui = Ui::start(readers).await;
+            .unwrap()
+    };
+    let ui = Ui::start(readers(vec![history.clone()])).await;
     let catalog = ui.call(json!({"action":"catalog"}), 200).await;
     let entry = &catalog["scopes"][0];
     let page=ui.call(json!({"action":"proof-page","source":entry["id"],"pin":entry["pin"],"cursor":null,"limit":1}),200).await;
@@ -1489,6 +1493,44 @@ async fn annotation_publication_is_explicit_destination_bound_and_exactly_retrie
         .head()
         .unwrap()
         .unwrap();
+    let other_custody = private_workspace_directory();
+    let mut incomplete: kan::evidence_erasure_history::Access = serde_json::from_value(json!({
+        "directory":other_custody.path(),"binding":{"profile":"admitted","archive":service::hex(&binding.archive),"scope":service::hex(&binding.scope),"issuer":binding.issuer},"owner":identity(9).did().as_str()
+    })).unwrap();
+    incomplete.initialize().unwrap();
+    let genesis = kan::evidence_erasure_history::Record::sign(
+        incomplete.preview(None, "c".repeat(64)).unwrap(),
+        &identity(9),
+    )
+    .unwrap();
+    let minimum = genesis.id().unwrap();
+    incomplete.append(genesis).unwrap();
+    incomplete.minimum = Some(minimum);
+    let partially_enrolled = Ui::start(readers(vec![incomplete])).await;
+    partially_enrolled
+        .call(
+            json!({"action":"annotation-drain","destination":status["destination_digest"]}),
+            403,
+        )
+        .await;
+    assert_eq!(
+        attested::Archive::open(remote.path(), binding.clone())
+            .unwrap()
+            .verify()
+            .unwrap()
+            .through,
+        0,
+        "an enrolled publisher cannot send a source missing from its custody configuration"
+    );
+    assert_eq!(
+        kan::evidence_spool::Spool::open(&spool)
+            .unwrap()
+            .head()
+            .unwrap()
+            .as_ref(),
+        Some(&before)
+    );
+    partially_enrolled.stop().await;
     let guard = kan::evidence_workspace::Workspace::open(
         &local.path().join("workspace.sqlite"),
         identity(6),
