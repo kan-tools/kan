@@ -791,3 +791,12 @@ test('key transfer selects exact epochs and discards preview on recipient edit o
  const pkg={version:'kan-key-recovery/1',records:[]};await u.respond({target:'keys',package:pkg,custody:'No grants changed.'});assert.deepEqual(JSON.parse(u.node('key-package').value),pkg);assert.equal(u.node('key-download').disabled,false);
  u.node('owner-lock').click();assert.equal(u.node('key-recipient').value,'');assert.equal(u.node('key-transfer-epochs').children.length,0);assert.equal(u.node('key-package').value,'');
 });
+
+test('saved import views retain explicit trust and control selections when reopened',async()=>{
+ const u=ui();await openImported(u);u.node('search-workspace').hidden=false;await u.respond(importView);
+ const name=walk(u.node('content-panel')).find(n=>n.attrs['aria-label']==='Imported view name');name.value='Pinned trust';walk(u.node('content-panel')).find(n=>n.textContent==='Save import & trust view').click();await tick();const save=JSON.parse(u.pending[0].opts.body);assert.equal(save.action,'save-import-view');assert.equal(save.name,'Pinned trust');assert.deepEqual(save.selections,[proofRow.selection]);
+ const query={...save};delete query.action;delete query.name;query.view={trust:[],principals:['did:key:chosen'],controls:[],subjects_after:0,current_after:0};
+ const saved={kind:'import',id:'saved-import',name:'Pinned trust',query,records:[proofRow],targets:[{source:'archive-A',pin}],trust:'Pinned evidence and trust'};await u.respond(saved);
+ u.node('load-views').click();await tick();await u.respond({views:[saved],coverage:'complete'});walk(u.node('saved-views')).find(n=>n.textContent==='Open pinned import & trust view').click();await tick();let request=JSON.parse(u.pending[0].opts.body);assert.equal(request.action,'proof-import');assert.deepEqual(request.view,query.view);assert.deepEqual(request.pin,pin);
+ await u.respond(importView);walk(u.node('content-panel')).find(n=>n.textContent==='Read repo.car').click();await tick();request=JSON.parse(u.pending[0].opts.body);assert.deepEqual(request.view,query.view);u.node('lock').click();await u.respond({...importView,file:{index:0,path:'repo.car',state:'incomplete'}});assert.equal(u.node('saved-views').children.length,0);
+});

@@ -3323,9 +3323,20 @@ async fn imported_current_claims_keep_signature_scope_authority_and_selected_tru
             .unwrap();
         drop(archive);
         let server = Server::start(&f).await;
-        let ui =
-            Ui::start(kan::evidence_library::Readers::new(None, vec![server.client(&f)]).unwrap())
-                .await;
+        let local = private_workspace_directory();
+        let ui = Ui::start(
+            kan::evidence_library::Readers::new(None, vec![server.client(&f)])
+                .unwrap()
+                .with_workspace(
+                    kan::evidence_workspace::Workspace::open(
+                        &local.path().join("workspace.sqlite"),
+                        identity(6),
+                        [97; 32],
+                    )
+                    .unwrap(),
+                ),
+        )
+        .await;
         let catalog = ui.call(json!({"action":"catalog"}), 200).await;
         let entry = &catalog["scopes"][0];
         let page = ui
@@ -3371,6 +3382,30 @@ async fn imported_current_claims_keep_signature_scope_authority_and_selected_tru
                 1
             );
         }
+        if !damaged {
+            let mut save = query.clone();
+            save["action"] = json!("save-import-view");
+            save["name"] = json!("Pinned current claim authority");
+            let saved = ui.call(save.clone(), 200).await;
+            assert_eq!(saved["kind"], "import");
+            assert_eq!(
+                saved["query"]["view"]["principals"],
+                query["view"]["principals"]
+            );
+            assert_eq!(ui.call(save.clone(), 200).await, saved);
+            assert_eq!(
+                ui.call(json!({"action":"views"}), 200).await["views"][0],
+                saved
+            );
+            let mut replay = saved["query"].clone();
+            replay["action"] = json!("proof-import");
+            assert_eq!(
+                ui.call(replay, 200).await["file"]["car"]["repository"]["current"]["classes"],
+                current["classes"]
+            );
+            save["view"]["principals"] = json!([]);
+            assert_ne!(ui.call(save, 200).await["id"], saved["id"]);
+        }
         query["view"]["principals"] = json!([]);
         assert_eq!(
             ui.call(query.clone(), 200).await["file"]["car"]["repository"]["current"]
@@ -3384,6 +3419,10 @@ async fn imported_current_claims_keep_signature_scope_authority_and_selected_tru
             .replace_grants(vec![])
             .unwrap();
         ui.call(query, 403).await;
+        assert!(ui.call(json!({"action":"views"}), 200).await["views"]
+            .as_array()
+            .unwrap()
+            .is_empty());
         ui.stop().await;
         server.stop().await;
     }

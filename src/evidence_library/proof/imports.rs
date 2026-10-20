@@ -192,6 +192,7 @@ impl Readers {
                     }
                 }
             }
+            let records=frames.values().map(|f|f.record.clone()).chain(unavailable.iter().cloned()).collect::<Vec<_>>();
             let scope = reader.binding().scope.clone();
             let recipient = recipient.unwrap_or_default();
             let id = plan_id.to_owned();
@@ -218,6 +219,7 @@ impl Readers {
             value["source"] = json!(source);
             value["pin"] = json!(pin);
             value["unavailable"] = json!(unavailable);
+            value["records"] = json!(records);
             Ok(value)
         })
         .await

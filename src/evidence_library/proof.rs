@@ -240,6 +240,47 @@ impl Readers {
                     .await?;
                 value
             }
+            Query::SaveImportView {
+                name,
+                source,
+                pin,
+                selections,
+                plan,
+                file,
+                mut view,
+            } => {
+                if name.trim().is_empty() || name.len() > 160 {
+                    return Err(Failure::Invalid.into());
+                }
+                view.subjects_after = 0;
+                view.current_after = 0;
+                let verified = self
+                    .import_content(&source, &pin, &selections, &plan, file, 0, view.clone())
+                    .await?;
+                if verified["state"] != "inventory-verified"
+                    || (file.is_some() && verified["file"]["state"] != "verified")
+                {
+                    return Err(Failure::Missing.into());
+                }
+                let mut targets = vec![json!({"source":source,"pin":pin})];
+                let mut seen = std::collections::BTreeSet::from([source.clone()]);
+                for control in &view.controls {
+                    for part in &control.parts {
+                        if seen.insert(part.source.clone()) {
+                            targets.push(json!({"source":part.source,"pin":part.pin}));
+                        }
+                    }
+                }
+                let workspace = self.workspace()?;
+                let mut declaration = json!({"version":1,"kind":"import","name":name,"author":workspace.author(),"targets":targets,"query":{"source":source,"pin":pin,"selections":selections,"plan":plan,"file":file,"view":view},"records":verified["records"],"trust":"Exact selected repository and control evidence, explicit legacy authors and current principals. Reopening checks current access and source availability; no new authority or global freshness is inferred."});
+                use sha2::{Digest, Sha256};
+                let id = service::hex(&Sha256::digest(
+                    serde_json::to_vec(&declaration).map_err(|_| Failure::Invalid)?,
+                ));
+                declaration["id"] = json!(id);
+                workspace.put("view", &id, declaration.clone())?;
+                declaration
+            }
             Query::SaveView {
                 name,
                 targets,

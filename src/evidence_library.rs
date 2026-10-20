@@ -31,6 +31,16 @@ use tokio::{
 #[derive(Deserialize)]
 #[serde(tag = "action", rename_all = "kebab-case", deny_unknown_fields)]
 pub enum Query {
+    SaveImportView {
+        name: String,
+        source: String,
+        pin: verified::Pin,
+        selections: Vec<verified::Token>,
+        plan: String,
+        file: Option<usize>,
+        #[serde(default)]
+        view: ImportView,
+    },
     ProofImport {
         source: String,
         pin: verified::Pin,
@@ -228,6 +238,7 @@ async fn query(reader: &Reader, query: Query) -> Result<Vec<u8>, ContentError> {
         | Query::SearchPage { .. }
         | Query::SearchAttempt { .. }
         | Query::SaveView { .. }
+        | Query::SaveImportView { .. }
         | Query::Views
         | Query::ProofAttempt { .. }
         | Query::ResolveReference { .. }

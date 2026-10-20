@@ -543,3 +543,15 @@ tags must not truncate message chunks. Corpus facets, unavailable-source counts
 and reconstruction coverage stay separately labeled as unfiltered. Saved views
 retain the explicit filter and raw snapshot, while annotation membership is
 reevaluated against currently visible history and is not a historical trust pin.
+
+### Saved imported evidence and trust frames
+
+A saved import view records the exact archive binding/pin, selected occurrences,
+import plan/file, legacy author set, current principal set and selected control
+citations. Save verifies the selected import and controls with current grants;
+reopening reruns those same inputs rather than adopting the tab's newer control
+selection or newer archive records. Every referenced source must still be currently
+authorized before its saved name or inputs are listed. Loss remains explicit on
+reopen. Trust changes produce a new content-addressed declaration, retaining the
+old view. The encrypted workspace's existing view bounds apply (200 declarations,
+256 KiB each). Saving a view does not make its relative authority globally current.

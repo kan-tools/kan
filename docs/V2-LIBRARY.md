@@ -928,3 +928,22 @@ matching contributing occurrence; all chunks remain independently authorized and
 cited. Facet counts and reconstruction coverage describe the authorized corpus
 before annotation filtering. A saved view reruns its annotation filters against
 current visible history; it does not freeze old grants or annotation membership.
+
+### Save an imported repository's input and trust frame
+
+In an imported snapshot, name and **Save import & trust view** after selecting
+the desired repository, legacy authors, current principals and control records.
+**Saved views → Open pinned import & trust view** rechecks and replays those exact
+inputs. Pagination keeps the saved control selection; explicitly selecting new
+control evidence or changing trust creates a different view when saved again.
+The original remains retained. Missing evidence and revoked access never inherit
+an earlier successful result.
+
+The shared API/CLI action `save-import-view` accepts `name`, `source`, `pin`,
+`selections`, `plan`, `file` and `view` (the same selection/trust fields as
+`proof-import`). It returns a `kind: "import"` declaration through the existing
+`views` list. Its `query` can be replayed with `action: "proof-import"`. Save resets
+presentation offsets to zero, verifies the selected import, and preserves every
+control citation. It does not add trust in an author who was not selected.
+Only views whose complete source set is currently authorized are listed. This
+shares the encrypted workspace's 200-view and 256-KiB per-declaration bounds.

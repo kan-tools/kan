@@ -331,8 +331,8 @@
       root.append(list);
     }
   }
-  async function readImport(entry,items,file=null,after=0,view={trust:[],subjects_after:0}) {
-    view={...view,...(importControls.length?{controls:importControls.map(c=>c.evidence)}:{})};
+  async function readImport(entry,items,file=null,after=0,view={trust:[],subjects_after:0},lockedControls=false) {
+    view={...view,...(!lockedControls&&importControls.length?{controls:importControls.map(c=>c.evidence)}:{})};
     clearContent();clearInspector();notice('Verifying imported file commitments and retained claim records…');
     const request={action:'proof-import',source:sourceId(entry),pin:entry.pin,selections:items.map(i=>i.record.selection),plan:items[0].description.plan,file,after,view};
     const value=await rpc(request);if(!value)return;
@@ -348,7 +348,15 @@
         }));parent.append(button);
       }
     }
-    if(importControls.length){panel.append(textNode('p',`${importControls.length} explicitly selected public control records · conclusions are relative to this evidence set.`));const clear=textNode('button','Clear control evidence selection');clear.addEventListener('click',()=>{importControls=[];const next={...view};delete next.controls;run(()=>readImport(entry,items,file,after,next));});panel.append(clear);}
+    if(view.controls?.length){panel.append(textNode('p',`${view.controls.length} explicitly selected public control records · conclusions are relative to this evidence set.`));const clear=textNode('button','Clear control evidence selection');clear.addEventListener('click',()=>{importControls=[];const next={...view};delete next.controls;run(()=>readImport(entry,items,file,after,next));});panel.append(clear);}
+    if(!$('search-workspace').hidden && value.state==='inventory-verified'){
+      const saveRow=document.createElement('div'),name=document.createElement('input');name.maxLength=160;name.setAttribute('aria-label','Imported view name');name.placeholder='Name this input and trust view';saveRow.append(name);
+      const save=textNode('button','Save import & trust view');save.addEventListener('click',()=>run(async()=>{
+        if(!name.value.trim())throw new Error('Name this saved view.');
+        const saved=await rpc({action:'save-import-view',name:name.value.trim(),source:request.source,pin:request.pin,selections:request.selections,plan:request.plan,file,view});if(!saved)return;
+        if(saved.kind!=='import'||typeof saved.id!=='string')throw new Error('Invalid saved import view.');notice(`Saved “${saved.name}” with this exact input and trust frame. Reopen it from Saved views.`);
+      }));saveRow.append(save);panel.append(saveRow);
+    }
     panel.append(textNode('h2','Imported v1 snapshot'));panel.append(textNode('p',value.coverage,'content-coverage'));
     panel.append(textNode('p',`${value.state} · ${value.unavailable.length} unavailable selected records`,'content-identity'));
     if(value.state==='inventory-incomplete')panel.append(textNode('p','The complete inventory is not selected. Continue discovery to include its parts; file names and contents cannot yet be verified.','content-warning'));
@@ -356,11 +364,11 @@
     for(const f of value.files) {
       if(!Number.isSafeInteger(f.index)||typeof f.path!=='string'||typeof f.length!=='string')throw new Error('Invalid import file.');
       const row=document.createElement('article');row.append(textNode('h3',f.path));row.append(textNode('p',`${f.length} bytes · ${f.present_parts}/${f.parts} parts selected`));
-      const open=textNode('button',`Read ${f.path}`);open.addEventListener('click',()=>run(()=>readImport(entry,items,f.index,0,view)));row.append(open);panel.append(row);
+      const open=textNode('button',`Read ${f.path}`);open.addEventListener('click',()=>run(()=>readImport(entry,items,f.index,0,view,lockedControls)));row.append(open);panel.append(row);
     }
     if(value.file) {
       const f=value.file;if(!['verified','incomplete'].includes(f.state)||f.index!==file)throw new Error('Invalid file result.');
-      if(f.control){details(panel,'Public control record',JSON.stringify(f.control,null,2));const use=textNode('button','Use this control evidence');use.addEventListener('click',()=>{if(!importControls.some(c=>c.id===(f.control.proved_id||f.control.logical_id))){if(importControls.length>=128)throw new Error('Control evidence selection limit reached.');importControls.push({id:(f.control.proved_id||f.control.logical_id),evidence:{parts:f.sources.map(c=>({source:sourceId(entry),pin:entry.pin,selection:c.record.selection}))}});}notice(`Selected ${importControls.length} control records. Open an imported repository to resolve its current claims.`);});panel.append(use);}
+      if(f.control){details(panel,'Public control record',JSON.stringify(f.control,null,2));const use=textNode('button','Use this control evidence');use.addEventListener('click',()=>{lockedControls=false;if(!importControls.some(c=>c.id===(f.control.proved_id||f.control.logical_id))){if(importControls.length>=128)throw new Error('Control evidence selection limit reached.');importControls.push({id:(f.control.proved_id||f.control.logical_id),evidence:{parts:f.sources.map(c=>({source:sourceId(entry),pin:entry.pin,selection:c.record.selection}))}});}notice(`Selected ${importControls.length} control records. Open an imported repository to resolve its current claims.`);});panel.append(use);}
       panel.append(textNode('h2',`${f.path} · ${f.state}`));
       if(f.state==='incomplete')panel.append(textNode('p','Select the remaining file parts to verify and read this file.','content-warning'));
       else {
@@ -375,14 +383,14 @@
             sources(panel,repo.head_sources||[]);
             if(repo.state==='membership-verified') {
               panel.append(textNode('p',`HEAD ${repo.head} · ${repo.records} reachable records · commit ${repo.commit.signature}`,'content-identity'));
-              const openBlock=(parent,label,position)=>{if(!Number.isSafeInteger(position)||position<0||position>100000)throw new Error('Invalid repository source.');const button=textNode('button',label);button.addEventListener('click',()=>run(()=>readImport(entry,items,file,position,view)));parent.append(button);};
+              const openBlock=(parent,label,position)=>{if(!Number.isSafeInteger(position)||position<0||position>100000)throw new Error('Invalid repository source.');const button=textNode('button',label);button.addEventListener('click',()=>run(()=>readImport(entry,items,file,position,view,lockedControls)));parent.append(button);};
               openBlock(panel,'Inspect repository commit',repo.commit.after);
               if(!repo.fold||!Array.isArray(repo.authors)||repo.authors.length>128||!Array.isArray(repo.fold.classes)||repo.fold.classes.length>100)throw new Error('Invalid repository fold.');
               panel.append(textNode('p',repo.fold.coverage,'content-coverage'));
               const authors=document.createElement('fieldset');authors.append(textNode('legend','Authors included in this repository view'));
               const selectedAuthors=[];
               for(const author of repo.authors){const label=document.createElement('label'),input=document.createElement('input');input.type='checkbox';input.checked=view.trust.some(a=>JSON.stringify(a)===JSON.stringify(author));label.append(input);label.append(textNode('span',`${author.did}${author.agent?' · agent '+JSON.stringify(author.agent):' · direct author'}`));authors.append(label);selectedAuthors.push({author,input});}
-              const apply=textNode('button','Apply repository trust view');apply.addEventListener('click',()=>run(()=>readImport(entry,items,file,after,{...view,trust:selectedAuthors.filter(a=>a.input.checked).map(a=>a.author),subjects_after:0})));authors.append(apply);panel.append(authors);
+              const apply=textNode('button','Apply repository trust view');apply.addEventListener('click',()=>run(()=>readImport(entry,items,file,after,{...view,trust:selectedAuthors.filter(a=>a.input.checked).map(a=>a.author),subjects_after:0},lockedControls)));authors.append(apply);panel.append(authors);
               panel.append(textNode('p',`${repo.fold.verified_claims} verified legacy claims · ${repo.fold.uninterpreted_members} other or unsupported members · ${repo.fold.total_classes} visible subject groups`));
               if(repo.fold.excluded_by_trust?.length)details(panel,'Claims excluded by selected trust',JSON.stringify(repo.fold.excluded_by_trust,null,2));
               for(const group of repo.fold.classes){const article=document.createElement('article');article.className='conversation-attempt';article.append(textNode('h3',group.subjects.map(s=>s.Local||JSON.stringify(s)).join(' · ')));article.append(textNode('p',`${group.status.kind}${group.status.value?' · '+group.status.value:''}${group.flagged_oversized?' · unusually large identity group':''}`));
@@ -395,13 +403,13 @@
                 panel.append(textNode('p',`${current.verified_claims} cryptographically verified current claims · ${current.unresolved.length} unresolved · ${current.excluded_by_trust} excluded by selected trust`));
                 const frame=document.createElement('fieldset');frame.append(textNode('legend','Current principals included in this view'));const selectedPrincipals=[];
                 for(const principal of current.authors){const label=document.createElement('label'),input=document.createElement('input');input.type='checkbox';input.checked=(view.principals||[]).includes(principal);label.append(input);label.append(textNode('span',principal));frame.append(label);selectedPrincipals.push({principal,input});}
-                const applyCurrent=textNode('button','Apply current principal trust');applyCurrent.addEventListener('click',()=>run(()=>readImport(entry,items,file,after,{...view,principals:selectedPrincipals.filter(p=>p.input.checked).map(p=>p.principal),current_after:0})));frame.append(applyCurrent);panel.append(frame);
+                const applyCurrent=textNode('button','Apply current principal trust');applyCurrent.addEventListener('click',()=>run(()=>readImport(entry,items,file,after,{...view,principals:selectedPrincipals.filter(p=>p.input.checked).map(p=>p.principal),current_after:0},lockedControls)));frame.append(applyCurrent);panel.append(frame);
                 details(panel,'Identity, governance and control evidence',JSON.stringify({identities:current.identities,scopes:current.scopes,controls:current.controls},null,2));
                 for(const unresolved of current.unresolved){const row=document.createElement('article');row.append(textNode('p',`${unresolved.state} · ${unresolved.reason}`));openBlock(row,'Inspect unresolved current claim',unresolved.after);panel.append(row);}
                 for(const group of current.classes){const article=document.createElement('article');article.append(textNode('h4',group.subjects.map(s=>`${s.scope}: ${s.path}`).join(' · ')));article.append(textNode('p',`${group.status.kind}${group.status.value?' · '+group.status.value:''}`));for(const claim of group.claims){article.append(textNode('pre',JSON.stringify({content:claim.content,judgments:claim.judgments},null,2)));openBlock(article,`Inspect current claim ${claim.id}`,claim.source.after);}details(article,'Current identity witnesses and live status',JSON.stringify({witnesses:group.witnesses,live_status_claims:group.live_status_claims},null,2));panel.append(article);}
-                if(current.next!==null){const more=textNode('button','Next current subjects');more.addEventListener('click',()=>run(()=>readImport(entry,items,file,after,{...view,current_after:current.next})));panel.append(more);}
+                if(current.next!==null){const more=textNode('button','Next current subjects');more.addEventListener('click',()=>run(()=>readImport(entry,items,file,after,{...view,current_after:current.next},lockedControls)));panel.append(more);}
               }
-              if(repo.fold.next!==null){const more=textNode('button','Next repository subjects');more.addEventListener('click',()=>run(()=>readImport(entry,items,file,after,{...view,subjects_after:repo.fold.next})));panel.append(more);}
+              if(repo.fold.next!==null){const more=textNode('button','Next repository subjects');more.addEventListener('click',()=>run(()=>readImport(entry,items,file,after,{...view,subjects_after:repo.fold.next},lockedControls)));panel.append(more);}
             }
           }
           for(const record of f.car.records) {
@@ -412,7 +420,7 @@
             sources(article,record.sources);panel.append(article);
             if(annotationsEnabled&&record.state==='verified-claim'&&record.sources.length<=8){const note=textNode('button','Annotate this imported claim');note.addEventListener('click',()=>editAnnotation(record.sources.map(c=>({source:sourceId(entry),pin:entry.pin,selection:importSelections.get(c.record.sequence).record.selection})),`claim/${record.id}`));article.append(note);}
           }
-          if(f.car.next!==null){if(!Number.isSafeInteger(f.car.next)||f.car.next<=after)throw new Error('Invalid CAR continuation.');const more=textNode('button','Next imported blocks');more.addEventListener('click',()=>run(()=>readImport(entry,items,file,f.car.next,view)));panel.append(more);}
+          if(f.car.next!==null){if(!Number.isSafeInteger(f.car.next)||f.car.next<=after)throw new Error('Invalid CAR continuation.');const more=textNode('button','Next imported blocks');more.addEventListener('click',()=>run(()=>readImport(entry,items,file,f.car.next,view,lockedControls)));panel.append(more);}
         } else panel.append(textNode('pre',f.preview===null?'Binary bytes · inspect exact Source.':`${f.preview}${f.truncated?'\n[Preview truncated; exact bytes remain in Source.]':''}`));
       }
     }
@@ -1051,6 +1059,17 @@
     if(!Array.isArray(value.views) || value.views.length>200)throw new Error('Invalid views.');
     $('views-status').textContent=value.coverage==='partial'?'Some sources could not be checked. Only fully authorized views are shown.':'Views with current access to every source.';
     for(const view of value.views){
+      if(view.kind==='import'){
+        const q=view.query;
+        if(typeof view.name!=='string'||!q||!Array.isArray(view.records)||!view.records.length||view.records.length>1024||!Array.isArray(q.selections)||q.selections.length!==view.records.length||!q.view||!Array.isArray(q.view.controls))throw new Error('Invalid saved import view.');
+        const row=textNode('article','');row.append(textNode('h3',view.name));row.append(textNode('p',`${view.records.length} pinned occurrences · ${q.view.trust?.length||0} legacy authors · ${q.view.principals?.length||0} current principals · ${q.view.controls.length} controls`));row.append(textNode('p',view.trust));
+        const open=textNode('button','Open pinned import & trust view');open.addEventListener('click',()=>run(async()=>{
+          const entry=scopes.find(s=>sourceId(s)===q.source);if(!entry)throw new Error('Source catalog changed.');
+          const items=view.records.map(record=>({record,description:{plan:q.plan}}));
+          await readImport({...entry,pin:q.pin,pin_wire:JSON.stringify(q.pin)},items,q.file,0,q.view,true);
+        }));row.append(open);$('saved-views').append(row);continue;
+      }
+
       if(typeof view.name!=='string' || !Array.isArray(view.targets) || !view.targets.length || view.targets.length>16 || !view.filter)throw new Error('Invalid view.');
       const row=textNode('article','');row.append(textNode('h3',view.name));row.append(textNode('p',`${view.filter.text} · ${view.targets.length} pinned archives · ${view.author}`));
       const open=textNode('button','Run pinned view');open.addEventListener('click',()=>run(async()=>{
