@@ -367,3 +367,175 @@ pub(super) fn inspect(
     }
     Ok(value)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{
+        claim::{
+            CanonicalSet, Claim, ClaimBody, ClaimContent, ClaimSigningInput, RecordedAt,
+            StatusValue, SubjectPath, UniqueSequence,
+        },
+        identity::{
+            authorship::Author,
+            control::{self, Proof},
+            did_kan_state::{DidKanState, IdentityOperation},
+            did_kan_update::DidKanUpdate,
+            enrollment::DailyDeviceEnrollment,
+            system::CredentialReference,
+        },
+        sign::Identity,
+    };
+    fn proof(signer: &Identity, input: &control::SigningInput) -> Proof {
+        let did = signer.did();
+        Proof {
+            method: format!("{did}#{}", did.strip_prefix("did:key:").unwrap()),
+            controller_state: IdentityVersion::Static,
+            alg: "P256".into(),
+            sig: signer.sign(&input.canonical_bytes().unwrap()).unwrap(),
+        }
+    }
+    #[test]
+    fn current_import_identity_resolution_requires_invocation_and_excludes_recovery_checkpoints() {
+        for (invocation, recovery_checkpoint) in [(true, false), (false, false), (true, true)] {
+            let recovery = Identity::generate();
+            let daily = Identity::generate();
+            let enrollment = DailyDeviceEnrollment::new(
+                [77; 32],
+                "daily".into(),
+                &recovery,
+                CredentialReference::OwnerOnlyFile {
+                    path: "unused-recovery.key".into(),
+                },
+                &daily,
+                CredentialReference::OwnerOnlyFile {
+                    path: "unused-daily.key".into(),
+                },
+            )
+            .unwrap();
+            let genesis = enrollment.genesis();
+            let mut method = enrollment.daily_method().clone();
+            if !invocation {
+                method
+                    .purposes
+                    .retain(|p| *p != did_kan::VerificationPurpose::CapabilityInvocation);
+            }
+            let state0 = DidKanState::from_genesis(genesis).unwrap();
+            let update = DidKanUpdate::administration(
+                &state0,
+                vec![IdentityOperation::AddMethod {
+                    method: method.clone(),
+                }],
+            )
+            .unwrap();
+            let event = update
+                .proved_event(vec![proof(&recovery, &update.signing_input().unwrap())])
+                .unwrap();
+            let mut events = vec![event];
+            if recovery_checkpoint {
+                let restored = DidKanUpdate::recovery(
+                    update.resulting_state(),
+                    &state0,
+                    vec![IdentityOperation::SetMethodPurposes {
+                        id: method.id.clone(),
+                        purposes: method.purposes.clone(),
+                    }],
+                    vec![],
+                )
+                .unwrap();
+                events.push(
+                    restored
+                        .proved_event(vec![proof(&recovery, &restored.signing_input().unwrap())])
+                        .unwrap(),
+                );
+            }
+            let DidKanResolution::Active(state) =
+                did_kan_update::resolve(genesis, enrollment.genesis_event(), &events)
+            else {
+                panic!("fixture identity must resolve");
+            };
+            let inception = ScopeInception::new(
+                [78; 32],
+                vec!["imported".into()],
+                vec![state.did.clone()],
+                vec![],
+            )
+            .unwrap();
+            let input = inception.signing_input().unwrap();
+            let scope_event = inception
+                .proved_event_with_did_kan_state(
+                    &state,
+                    vec![Proof {
+                        method: method.id.clone(),
+                        controller_state: IdentityVersion::Event(state.active_event.clone()),
+                        alg: "P256".into(),
+                        sig: daily.sign(&input.canonical_bytes().unwrap()).unwrap(),
+                    }],
+                )
+                .unwrap();
+            let content = ClaimContent::new(
+                Author::new(
+                    state.did.clone(),
+                    method.id.clone(),
+                    IdentityVersion::Event(state.active_event.clone()),
+                )
+                .unwrap(),
+                inception.scope_id().unwrap(),
+                None,
+                SubjectPath::new("process/status".into()).unwrap(),
+                CanonicalSet::new(vec![]).unwrap(),
+                ClaimBody::Status {
+                    value: StatusValue::Blocked,
+                },
+                CanonicalSet::new(vec![]).unwrap(),
+                UniqueSequence::new(vec![]).unwrap(),
+                RecordedAt::new(100).unwrap(),
+            )
+            .unwrap();
+            let message = ClaimSigningInput::new(&content.id().unwrap())
+                .canonical_bytes()
+                .unwrap();
+            let claim =
+                Claim::verify_active_did_kan(content, daily.sign(&message).unwrap(), &state)
+                    .unwrap();
+            let bytes = codec::encode_claim(&claim, "3jzfcijpj2z2a").unwrap();
+            let cid = Cid::from(atproto_repo::compute_cid(&bytes));
+            let entries = vec![("tools.kan.claim/status".into(), cid.clone())];
+            let blocks = BTreeMap::from([(cid.to_string(), (bytes.as_slice(), 0))]);
+            let controls = std::iter::once(enrollment.genesis_event().clone())
+                .chain(events)
+                .chain(std::iter::once(scope_event))
+                .map(|event| Control {
+                    preserved: control::decode_preserving(&event.canonical_bytes().unwrap())
+                        .unwrap(),
+                    sources: vec![json!({"fixture":"explicit-control"})],
+                })
+                .collect::<Vec<_>>();
+            let options = View {
+                principals: vec![state.did.clone()],
+                ..View::default()
+            };
+            let missing = inspect(&entries, &blocks, &[], &options).unwrap();
+            assert_eq!(missing["verified_claims"], 0);
+            assert_eq!(missing["unresolved"].as_array().unwrap().len(), 1);
+            let result = inspect(&entries, &blocks, &controls, &options).unwrap();
+            assert_eq!(result["verified_claims"], 1, "{result}");
+            let expected = if invocation && !recovery_checkpoint {
+                "admitted"
+            } else {
+                "unadmitted"
+            };
+            let judgments = &result["classes"][0]["claims"][0]["judgments"];
+            assert_eq!(judgments["cryptographicValidity"], "valid");
+            assert_eq!(judgments["scopeAdmission"], expected, "{result}");
+            assert_eq!(
+                result["classes"][0]["status"]["kind"],
+                if invocation && !recovery_checkpoint {
+                    "settled"
+                } else {
+                    "unclassified"
+                }
+            );
+        }
+    }
+}

@@ -1578,6 +1578,7 @@ async fn epoch_rotation_changes_new_capture_and_history_failure_forwards_with_vi
         client
             .post(&url)
             .bearer_auth(TOKEN)
+            .header("x-kan-exchange", hex(&[7; 32]))
             .body("before rotation")
             .send()
             .await
@@ -1595,6 +1596,7 @@ async fn epoch_rotation_changes_new_capture_and_history_failure_forwards_with_vi
         client
             .post(&url)
             .bearer_auth(TOKEN)
+            .header("x-kan-exchange", hex(&[8; 32]))
             .body("after rotation")
             .send()
             .await
@@ -1604,6 +1606,23 @@ async fn epoch_rotation_changes_new_capture_and_history_failure_forwards_with_vi
             .unwrap(),
         "ok"
     );
+    tokio::time::timeout(Duration::from_secs(2), async {
+        loop {
+            if health
+                .lock()
+                .unwrap()
+                .iter()
+                .filter(|h| h.outcome == Some(Outcome::Completed))
+                .count()
+                >= 2
+            {
+                break;
+            }
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
     let count = {
         let c = rusqlite::Connection::open(dir.path().join("spool")).unwrap();
         let mut st = c
@@ -1634,6 +1653,7 @@ async fn epoch_rotation_changes_new_capture_and_history_failure_forwards_with_vi
         client
             .post(&url)
             .bearer_auth(TOKEN)
+            .header("x-kan-exchange", hex(&[9; 32]))
             .body("capture gap")
             .send()
             .await

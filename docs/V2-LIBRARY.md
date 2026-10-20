@@ -535,9 +535,9 @@ The same typed API is available through `kan-v2 owner --config PRIVATE_JSON
 `job`. For one-shot execution, submit with `wait: true`. Browser requests select
 configured IDs and operations; they cannot supply filesystem paths or commands.
 
-This maintenance API currently covers backup, derived recovery and operations
-rotation. Import/cutover, live access changes, key lifecycle, erasure and hot
-workspace-journal recovery remain separate implementation work.
+The following sections extend maintenance to migration/import recovery, encrypted
+workspace recovery, live access policies and key lifecycle. Payload erasure and
+live cutover remain separate; a completed backup job does not activate its output.
 
 ### Imported v1 snapshots
 
@@ -801,8 +801,8 @@ The format retains at most 64 epochs / 128 KiB of signed history and reports
 capacity rather than deleting keys. Rotation cannot recall already distributed
 keys or plaintext. Archive ciphertext, policy history, encrypted workspaces and
 independent credentials must also be backed up; this package alone is not an
-instance backup. Delegated per-reader wrapping, recovery-credential replacement
-and payload erasure remain distinct lifecycle work.
+instance backup. Recovery replacement and selected-epoch sharing are described
+below. Payload erasure remains a separate lifecycle operation.
 
 
 ### Current claims in imported repositories
@@ -854,3 +854,60 @@ resuming. Original credentials remain able to decrypt old retained packages and
 ciphertext. Sharing confers only selected epoch decryption custody; recipients
 still need current storage grants, and receive no later epochs or owner authority.
 Keep the wrapped package and recipient private credential in independent custody.
+
+### Whole-instance backup and cold-host recovery
+
+Treat a backup as a set of independently recoverable artifacts. Archive ciphertext
+alone does not contain reader notes, job history, policy authority or decryption
+credentials. Preserve the exact configured archive/profile/scope/issuer binding
+and signing identities alongside the following inventory:
+
+| Artifact | Backup and restore path | Independent custody needed |
+|---|---|---|
+| Archive ciphertext, receipts and attestation chain | Owner archive `backup`; verify the standalone output; `recover` to a new destination when rebuilding | Pinned binding and storage issuer signing credential |
+| Encryption epochs | Export signed wrapped package; initialize a new private history directory; preview/restore with a separately configured owner target | Recovery private credential, owner DID and latest witnessed tip |
+| Access policy | Copy the stopped immutable policy directory, including its lock and every published revision; preserve pending files for investigation | Configured policy owner and independently recorded latest revision ID |
+| Reader workspace | Stop the reader; owner `workspace-recovery` target makes a new authenticated copy including annotations, views, index and analysis lineage | Original reader signing credential and workspace encryption key |
+| Owner job journal | Stop its owner service; recover as a workspace using a separate maintenance instance | Original owner-journal signing credential and workspace encryption key |
+| Spool and operations | Stop their writers, preserve each complete database and necessary SQLite sidecars plus the full history collection | Existing spool identities, target configuration and credentials |
+| Instance configuration | Retain the exact service, reader, owner, analysis and delivery configurations privately | Secrets in independent custody; verify endpoint and certificate pins |
+
+Keep verified copies on independent storage before testing recovery. A copied
+SQLite main file from a live writer is not a qualified backup. Never delete an
+original or repair it in place to make the drill pass. Pending spool items remain
+pending until the configured destination returns its normal verified receipt.
+Restored job history does not silently resume interrupted analysis or owner jobs.
+
+For a cold host:
+
+1. Provision private directories and separately held credentials. Restore the
+   pinned configuration with new absolute paths and verify endpoint/certificate
+   choices before starting services. Restore current access policy and its external
+   checkpoint before making storage available; historical grants are not a safe
+   substitute for the latest owner policy.
+2. Verify the archive backup against the pinned binding and recover into a new
+   service directory. Keep the backup untouched. Restore key history from its
+   signed wrapped package and recorded tip; test decryption with the independently
+   held recovery key. A missing key must remain visible as `key-unavailable`.
+3. Recover stopped reader and owner workspaces into new private files. Preserve
+   their original signing identities so authored records and source references
+   remain attributable. Restore spool and operations state with their original
+   configuration and inspect pending/interrupted work before resuming.
+4. Start storage and the reader on the restored paths. Resolve a saved portable
+   reference and compare exact source bytes; inspect notes and correction history,
+   saved views and search coverage. Rebuild disposable indexes where needed.
+   Check that a currently revoked principal still cannot read restored evidence.
+5. For a replaced recovery credential, select the new history in both capture and
+   reader configuration and rotate to a fresh epoch before resuming capture.
+   Verify the first new retained request and a historical request. For ordinary
+   recovery, resume with the restored current history and drain pending delivery.
+6. Record the verified artifact locations and checkpoints in the instance's backup
+   inventory. A successful synthetic drill is software qualification; it does not
+   certify that a particular production backup set is complete or current.
+
+The automated cold-host regression composes archive backup/rebuild, independently
+wrapped key transfer/restore and encrypted workspace recovery, then verifies exact
+source, portable references, notes, saved views and search after removing the
+synthetic original directories. It also checks subsequent source loss and access
+revocation. Runtime qualification of that new combined drill is pending CI; the
+whole-product drill additionally covers capture, migration, analysis and operations.
