@@ -50,6 +50,7 @@ pub enum SurfaceWrite {
     EvidencePublicationSource,
     EvidenceRestore,
     EvidenceWorkspace,
+    EvidenceWorkspaceRecovery,
     Count,
 }
 
@@ -92,6 +93,7 @@ impl SurfaceWrite {
         Self::EvidencePublicationSource,
         Self::EvidenceRestore,
         Self::EvidenceWorkspace,
+        Self::EvidenceWorkspaceRecovery,
     ];
 
     /// Catalog artifacts a capability is permitted to mutate. This match is
@@ -226,7 +228,12 @@ impl SurfaceWrite {
                 "evidence-restore:plan.json",
                 "evidence-restore:report.json",
             ],
+            Self::EvidenceWorkspaceRecovery => &[
+                "evidence-workspace-recovery:database",
+                "evidence-workspace-recovery:database-journal",
+            ],
             Self::EvidenceWorkspace => &[
+                "evidence-workspace:database-lock",
                 "evidence-workspace:database",
                 "evidence-workspace:database-journal",
             ],

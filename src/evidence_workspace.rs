@@ -17,6 +17,7 @@ CREATE TABLE entries(kind TEXT NOT NULL, id TEXT NOT NULL, body BLOB NOT NULL, P
 const DOMAIN: &[u8] = b"tools.kan.reader.workspace.v1\0";
 pub struct Workspace {
     conn: Mutex<Connection>,
+    _maintenance: std::fs::File,
     path: std::path::PathBuf,
     signer: Identity,
     private: [u8; 32],
@@ -57,6 +58,43 @@ fn private(path: &Path, directory: bool) -> Result<()> {
     }
     Ok(())
 }
+fn sidecar(path: &Path, suffix: &str) -> std::path::PathBuf {
+    let mut name = path.as_os_str().to_os_string();
+    name.push(suffix);
+    name.into()
+}
+// Use a separate inode: flock and SQLite locks interact on macOS.
+fn lease(path: &Path, suffix: &str, exclusive: bool) -> Result<std::fs::File> {
+    let lock = sidecar(path, suffix);
+    match std::fs::symlink_metadata(&lock) {
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            // surface-write: evidence-workspace:database-lock
+            match crate::persistence::write_new_owner_only(
+                crate::persistence::SurfaceWrite::EvidenceWorkspace,
+                &lock,
+                &[],
+            ) {
+                Ok(()) => (),
+                Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => (),
+                Err(e) => return Err(invalid(e)),
+            }
+        }
+        Err(e) => return Err(invalid(e)),
+        Ok(_) => (),
+    }
+    private(&lock, false)?;
+    let file = std::fs::File::open(&lock).map_err(invalid)?;
+    if file.metadata().map_err(invalid)?.len() != 0 {
+        return Err(Failure::Invalid);
+    }
+    if exclusive {
+        fs4::FileExt::try_lock(&file)
+    } else {
+        fs4::FileExt::try_lock_shared(&file)
+    }
+    .map_err(|_| Failure::Unavailable)?;
+    Ok(file)
+}
 impl Workspace {
     /// Caller selects a private directory and dedicated recipient key. No source
     /// archive, repo checkout, or browser storage is used as the workspace.
@@ -67,7 +105,20 @@ impl Workspace {
                 .ok_or(Failure::Invalid)?,
             true,
         )?;
+        let maintenance = lease(path, ".maintenance-lock", false)?;
+        Self::open_locked(path, signer, private_key, maintenance, false)
+    }
+    fn open_locked(
+        path: &Path,
+        signer: Identity,
+        private_key: [u8; 32],
+        maintenance: std::fs::File,
+        recover_copy: bool,
+    ) -> Result<Self> {
         for suffix in ["-journal", "-wal", "-shm"] {
+            if suffix == "-journal" && recover_copy {
+                continue;
+            }
             let mut side = path.as_os_str().to_os_string();
             side.push(suffix);
             match std::fs::symlink_metadata(Path::new(&side)) {
@@ -109,7 +160,8 @@ impl Workspace {
         conn.set_limit(
             rusqlite::limits::Limit::SQLITE_LIMIT_LENGTH,
             (MAX + 8192) as i32,
-        );
+        )
+        .map_err(invalid)?;
         conn.execute_batch("PRAGMA trusted_schema=OFF;")
             .map_err(invalid)?;
         if fresh {
@@ -143,7 +195,7 @@ impl Workspace {
         let scope = Sha256::digest(
             [
                 DOMAIN,
-                signer.did().as_str().as_bytes(),
+                signer.did().as_bytes(),
                 &crypto::public_key(&private_key).map_err(invalid)?,
             ]
             .concat(),
@@ -151,6 +203,7 @@ impl Workspace {
         .into();
         let workspace = Self {
             conn: Mutex::new(conn),
+            _maintenance: maintenance,
             path: path.to_path_buf(),
             signer,
             private: private_key,
@@ -167,6 +220,146 @@ impl Workspace {
             return Err(Failure::Corrupt);
         }
         Ok(workspace)
+    }
+    /// Recover a stopped workspace on a new copy. The original database and
+    /// rollback journal remain byte-for-byte intact, including on failure.
+    /// Older processes without maintenance locking must be stopped by the owner.
+    pub fn recover(
+        source: &Path,
+        destination: &Path,
+        signer: Identity,
+        private_key: [u8; 32],
+    ) -> Result<Value> {
+        for path in [source, destination] {
+            private(
+                path.parent()
+                    .filter(|p| !p.as_os_str().is_empty())
+                    .ok_or(Failure::Invalid)?,
+                true,
+            )?;
+        }
+        private(source, false)?;
+        let _source_lease = lease(source, ".maintenance-lock", true)?;
+        let target_lease = lease(destination, ".maintenance-lock", true)?;
+        for suffix in ["", "-journal", "-wal", "-shm"] {
+            match std::fs::symlink_metadata(sidecar(destination, suffix)) {
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => (),
+                _ => return Err(Failure::Invalid),
+            }
+        }
+        for suffix in ["-wal", "-shm"] {
+            match std::fs::symlink_metadata(sidecar(source, suffix)) {
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => (),
+                _ => return Err(Failure::Invalid),
+            }
+        }
+        fn bytes(path: &Path) -> Result<Vec<u8>> {
+            private(path, false)?;
+            let mut data = Vec::new();
+            std::fs::File::open(path)
+                .map_err(invalid)?
+                .take(256 * 1024 * 1024 + 1)
+                .read_to_end(&mut data)
+                .map_err(invalid)?;
+            if data.len() > 256 * 1024 * 1024 {
+                return Err(Failure::Invalid);
+            }
+            Ok(data)
+        }
+        let journal = sidecar(source, "-journal");
+        let journal_present = match std::fs::symlink_metadata(&journal) {
+            Ok(_) => true,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => false,
+            Err(e) => return Err(invalid(e)),
+        };
+        let mut hashes = Vec::new();
+        for suffix in if journal_present {
+            vec!["", "-journal"]
+        } else {
+            vec![""]
+        } {
+            let input = sidecar(source, suffix);
+            let data = bytes(&input)?;
+            if suffix.is_empty() {
+                if data.len() < 20 || &data[..16] != b"SQLite format 3\0" || data[18..20] != [1, 1]
+                {
+                    return Err(Failure::Corrupt);
+                }
+            } else {
+                // This application never ATTACHes databases. Refuse super-journal
+                // pointers before SQLite can follow a path outside the new copy.
+                const MAGIC: &[u8] = &[0xd9, 0xd5, 0x05, 0xf9, 0x20, 0xa1, 0x63, 0xd7];
+                if data.len() < 28
+                    || (data[..8] != *MAGIC && data[..8] != [0; 8])
+                    || data.ends_with(MAGIC)
+                {
+                    return Err(Failure::Corrupt);
+                }
+            }
+            let digest = evidence_service::hex(&Sha256::digest(&data));
+            // surface-write: evidence-workspace-recovery:database,evidence-workspace-recovery:database-journal
+            crate::persistence::write_new_owner_only(
+                crate::persistence::SurfaceWrite::EvidenceWorkspaceRecovery,
+                &sidecar(destination, suffix),
+                &data,
+            )
+            .map_err(invalid)?;
+            hashes.push((suffix, digest));
+        }
+        let recovered = Self::open_locked(destination, signer, private_key, target_lease, true)?;
+        let mut counts = std::collections::BTreeMap::<String, u64>::new();
+        {
+            let conn = recovered.conn.lock().map_err(invalid)?;
+            let integrity: String = conn
+                .query_row("PRAGMA integrity_check", [], |r| r.get(0))
+                .map_err(invalid)?;
+            if integrity != "ok" {
+                return Err(Failure::Corrupt);
+            }
+            let mut query = conn
+                .prepare("SELECT kind,id,body FROM entries ORDER BY kind,id")
+                .map_err(invalid)?;
+            let mut rows = query.query([]).map_err(invalid)?;
+            while let Some(row) = rows.next().map_err(invalid)? {
+                let kind: String = row.get(0).map_err(invalid)?;
+                let id: String = row.get(1).map_err(invalid)?;
+                let body: Vec<u8> = row.get(2).map_err(invalid)?;
+                recovered.unseal(&kind, &id, &body)?;
+                *counts.entry(kind).or_default() += 1;
+            }
+        }
+        // Every original input must still match the retained copy's source bytes.
+        for (suffix, expected) in &hashes {
+            if evidence_service::hex(&Sha256::digest(bytes(&sidecar(source, suffix))?)) != *expected
+            {
+                return Err(Failure::Unavailable);
+            }
+        }
+        let author = recovered.author();
+        let _cleanup_lease = recovered._maintenance.try_clone().map_err(invalid)?;
+        drop(recovered);
+        // SQLite can leave an ignored, non-hot journal. Only the verified new
+        // copy's sidecar is removed; the original remains available for forensics.
+        let output_journal = sidecar(destination, "-journal");
+        if output_journal.exists() {
+            // surface-write: evidence-workspace-recovery:database-journal
+            crate::persistence::remove_file(
+                crate::persistence::SurfaceWrite::EvidenceWorkspaceRecovery,
+                &output_journal,
+            )
+            .map_err(invalid)?;
+        }
+        std::fs::File::open(destination)
+            .map_err(invalid)?
+            .sync_all()
+            .map_err(invalid)?;
+        std::fs::File::open(destination.parent().ok_or(Failure::Invalid)?)
+            .map_err(invalid)?
+            .sync_all()
+            .map_err(invalid)?;
+        Ok(
+            serde_json::json!({"source":source,"destination":destination,"author":author,"authenticated_entries":counts,"source_hashes":hashes,"rollback_journal_present":journal_present,"originals":"retained","activation":"not-performed","independent_backup":false,"coverage":"Authenticated entries present after SQLite rollback recovery. Compare an independent checkpoint to detect missing history."}),
+        )
     }
     /// Queue the immutable authored declaration, not a mutable browser draft.
     pub(crate) fn queue_import(
@@ -198,10 +391,7 @@ impl Workspace {
     /// A single analysis scheduler owns this workspace at a time. The advisory
     /// lifetime lock does not modify the database or replace SQLite transactions.
     pub(crate) fn analysis_lease(&self) -> Result<std::fs::File> {
-        private(&self.path, false)?;
-        let file = std::fs::File::open(&self.path).map_err(invalid)?;
-        fs4::FileExt::try_lock(&file).map_err(|_| Failure::Unavailable)?;
-        Ok(file)
+        lease(&self.path, ".scheduler-lock", true)
     }
     pub fn author(&self) -> String {
         self.signer.did().to_string()

@@ -193,6 +193,17 @@ enum Command {
         listen: std::net::SocketAddr,
     },
 
+    /// Recover a stopped encrypted reader/owner workspace to a new file; retain originals.
+    #[cfg(feature = "v2-crypto")]
+    RecoverWorkspace {
+        database: PathBuf,
+        destination: PathBuf,
+        #[arg(long)]
+        signing_key: PathBuf,
+        #[arg(long)]
+        recipient_key: PathBuf,
+    },
+
     /// Execute a separately authorized owner-maintenance API request.
     #[cfg(feature = "v2-crypto")]
     Owner {
@@ -592,6 +603,20 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     _=shutdown()=>Ok(())
                 }
             })?;
+        }
+        #[cfg(feature = "v2-crypto")]
+        Command::RecoverWorkspace {
+            database,
+            destination,
+            signing_key,
+            recipient_key,
+        } => {
+            print_json(&kan::evidence_workspace::Workspace::recover(
+                &database,
+                &destination,
+                service_identity(&signing_key)?,
+                recipient_private(&recipient_key)?,
+            )?)?;
         }
         #[cfg(feature = "v2-crypto")]
         Command::Owner { config, request } => {

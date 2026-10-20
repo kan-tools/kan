@@ -17,6 +17,13 @@ use std::{
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
 pub enum Target {
+    WorkspaceRecovery {
+        id: String,
+        database: PathBuf,
+        output: PathBuf,
+        signing_key: PathBuf,
+        recipient_key: PathBuf,
+    },
     ImportRecovery {
         id: String,
         database: PathBuf,
@@ -53,7 +60,8 @@ pub enum Target {
 impl Target {
     fn id(&self) -> &str {
         match self {
-            Self::Archive { id, .. }
+            Self::WorkspaceRecovery { id, .. }
+            | Self::Archive { id, .. }
             | Self::Operations { id, .. }
             | Self::Migration { id, .. }
             | Self::ImportRecovery { id, .. } => id,
@@ -143,6 +151,25 @@ impl Owner {
                 return Err(Failure::Invalid);
             }
             match &target {
+                Target::WorkspaceRecovery {
+                    database,
+                    output,
+                    signing_key,
+                    recipient_key,
+                    ..
+                } => {
+                    if !database.is_absolute()
+                        || !signing_key.is_absolute()
+                        || !recipient_key.is_absolute()
+                    {
+                        return Err(Failure::Invalid);
+                    }
+                    private_directory(output)?;
+                    crate::evidence_crypto::read_private_key(recipient_key)
+                        .map_err(|_| Failure::Invalid)?;
+                    crate::sign::Identity::load_existing(signing_key)
+                        .map_err(|_| Failure::Invalid)?;
+                }
                 Target::Archive {
                     root,
                     output,
@@ -249,6 +276,9 @@ impl Owner {
         }
         let selected = self.targets.get(target).ok_or(Failure::AccessLimited)?;
         let destination = match selected {
+            Target::WorkspaceRecovery { output, .. } if operation == Operation::Recover => {
+                Some(output.join(format!("{nonce}.sqlite")))
+            }
             Target::Archive { output, .. }
                 if matches!(operation, Operation::Backup | Operation::Recover) =>
             {
@@ -284,7 +314,7 @@ impl Owner {
                 Operation::RestoreImport=>"Verify and reconstruct the pinned import into a new owner-private PLAINTEXT directory. Retain source and any failed output. This verifies selected file bytes, not repository semantics, independent backup or cutover.",
                 Operation::Import=>"Queue a bounded batch of this exact selected v1 snapshot into the configured encrypted durable spool. Retain originals. Sending, independent recovery verification and cutover are separate actions; a completed job may leave more batches to queue.",
                 Operation::Backup=>"Copy and verify the current consistent archive snapshot into a new file. Retain the source; do not activate the output. The source may grow after preview.",
-                Operation::Recover=>"Rebuild derived lookups from retained evidence into a new file. Preserve source and any failed output; do not switch active services.",
+                Operation::Recover=>"Recover the configured archive or stopped encrypted workspace into a new file and verify its retained evidence. Workspace recovery requires stopped writers, including older versions. Preserve source and rollback journals and any failed output; do not switch active services.",
                 Operation::Rotate=>"Create a fresh operations generation while retaining sealed history. Active writers must stop; contention refuses rotation.",
             },
             "cancellation":"Once started, maintenance runs to its existing safe boundary. Closing this UI does not cancel or roll back writes."}),
@@ -449,6 +479,22 @@ fn perform(
 ) -> Result<Value, String> {
     let work = || -> Result<Value, Box<dyn std::error::Error + Send + Sync>> {
         match target {
+            Target::WorkspaceRecovery {
+                database,
+                signing_key,
+                recipient_key,
+                ..
+            } => {
+                if operation != Operation::Recover {
+                    return Err("invalid workspace recovery job".into());
+                }
+                Ok(Workspace::recover(
+                    database,
+                    destination.ok_or("missing recovery destination")?,
+                    crate::sign::Identity::load_existing(signing_key)?,
+                    crate::evidence_crypto::read_private_key(recipient_key)?,
+                )?)
+            }
             Target::ImportRecovery {
                 database,
                 binding,

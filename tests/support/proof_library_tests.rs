@@ -2305,3 +2305,84 @@ async fn search_normalizes_complete_json_with_enclosing_cites_and_reproducible_f
     ui.stop().await;
     server.stop().await;
 }
+
+#[tokio::test]
+async fn owner_workspace_recovery_is_previewed_separate_and_retains_authored_history() {
+    const OWNER: &str = "synthetic-workspace-recovery-owner-token";
+    let dir = private_workspace_directory();
+    let local = private_workspace_directory();
+    let output = private_workspace_directory();
+    let signing = local.path().join("reader.signing");
+    let key = local.path().join("reader.recipient");
+    for (path, bytes) in [(&signing, [6; 32]), (&key, [8; 32])] {
+        let mut file = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(path)
+            .unwrap();
+        std::io::Write::write_all(&mut file, &bytes).unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            file.set_permissions(std::fs::Permissions::from_mode(0o600))
+                .unwrap();
+        }
+    }
+    let source = local.path().join("reader.sqlite");
+    let reader = kan::evidence_workspace::Workspace::open(&source, identity(6), [8; 32]).unwrap();
+    reader
+        .put("view", "retained", json!({"title":"Preserved scope"}))
+        .unwrap();
+    let journal = kan::evidence_workspace::Workspace::open(
+        &local.path().join("owner.sqlite"),
+        identity(7),
+        [9; 32],
+    )
+    .unwrap();
+    let owner = kan::evidence_library::Owner::new(serde_json::from_value(json!({"token":OWNER,"max_jobs":10,"targets":[{"kind":"workspace-recovery","id":"reader","database":source,"output":output.path(),"signing_key":signing,"recipient_key":key}]})).unwrap(),journal).unwrap();
+    let f = fixture_requests(dir.path(), Profile::Admitted, encrypted);
+    let server = Server::start(&f).await;
+    let ui = Ui::start(
+        kan::evidence_library::Readers::new(None, vec![server.client(&f)])
+            .unwrap()
+            .with_owner(owner),
+    )
+    .await;
+    let preview = owner_call(
+        &ui,
+        OWNER,
+        json!({"action":"preview","target":"reader","operation":"recover"}),
+        200,
+    )
+    .await;
+    let request = json!({"action":"submit","target":"reader","operation":"recover","nonce":preview["nonce"],"preview":preview["digest"],"wait":true});
+    let blocked = owner_call(&ui, OWNER, request.clone(), 200).await;
+    assert_eq!(blocked["state"], "failed");
+    drop(reader);
+    // An exact retry preserves the failed job. A linked attempt performs recovery.
+    assert_eq!(owner_call(&ui, OWNER, request, 200).await, blocked);
+    let prior = &blocked["job"]["id"];
+    let preview = owner_call(
+        &ui,
+        OWNER,
+        json!({"action":"preview","target":"reader","operation":"recover","retry_of":prior}),
+        200,
+    )
+    .await;
+    let request = json!({"action":"submit","target":"reader","operation":"recover","retry_of":prior,"nonce":preview["nonce"],"preview":preview["digest"],"wait":true});
+    let done = owner_call(&ui, OWNER, request.clone(), 200).await;
+    assert_eq!(done["state"], "succeeded", "{done}");
+    assert_eq!(done["result"]["report"]["authenticated_entries"]["view"], 1);
+    assert_eq!(done["result"]["report"]["activation"], "not-performed");
+    assert_eq!(owner_call(&ui, OWNER, request, 200).await, done);
+    let destination = Path::new(done["result"]["report"]["destination"].as_str().unwrap());
+    let recovered =
+        kan::evidence_workspace::Workspace::open(destination, identity(6), [8; 32]).unwrap();
+    assert_eq!(
+        recovered.views().unwrap(),
+        vec![json!({"title":"Preserved scope"})]
+    );
+    assert!(source.exists());
+    ui.stop().await;
+    server.stop().await;
+}

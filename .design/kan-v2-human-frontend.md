@@ -199,8 +199,15 @@ bounded to 12 MiB and view declarations to 256 KiB, with at most 200 views. Capa
 exhaustion is an explicit failure without silent expiry or overwrite. View saves
 are content-addressed and idempotent; changed declarations retain prior versions.
 Index pages are disposable immutable projections and can be rebuilt into a new
-workspace. Existing hot journals are refused until explicit recovery (owner recovery
-workflow remains required). Back up the workspace and its key separately: deleting
+workspace. Normal open refuses hot journals. Explicit CLI or owner recovery copies
+a stopped database and its rollback journal into a new file, lets SQLite recover
+only that copy, then authenticates every retained entry. Originals and failed
+outputs remain. Maintenance and scheduler locks use separate owner-private inodes;
+older processes without these locks must also be stopped. WAL workspaces,
+malformed journals and super-journal references are refused. A separately functioning
+owner journal can recover a reader workspace; a damaged owner journal uses the CLI.
+A recovered file is never activated automatically. Entry authentication does not
+prove completeness against an independent checkpoint. Back up the workspace and its key separately: deleting
 it loses view declarations. Source erasure must also clear affected projections in
 the eventual owner erasure plan; normal search does not serve cached deleted bytes.
 

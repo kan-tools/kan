@@ -625,3 +625,35 @@ batch progress, verified file counts, output locations and those preconditions.
 Leave search text empty to browse by facets alone. These rows are labeled metadata
 filter matches and do not claim an exact text match. Import framing headers and
 UTF-8 inventory bodies are indexed separately from binary CAR bodies.
+
+### Recover an interrupted reader or owner workspace
+
+Stop all processes using the workspace, including older versions. Keep its database,
+`-journal` and keys together. The recovery command writes a new file, replays SQLite
+rollback there and authenticates every retained encrypted record:
+
+```sh
+kan-v2 recover-workspace /private/kan/reader.sqlite /private/kan/recovered.sqlite \
+  --signing-key /private/keys/reader.signing \
+  --recipient-key /private/keys/reader.recipient
+```
+
+The original database and journal remain unchanged. Failed copies are retained.
+A successful report lists authenticated entry counts and source hashes, without
+activating the result or claiming an independent backup. Compare your retained
+checkpoint and expected history before selecting the new path. WAL, malformed
+journals, super-journal pointers, wrong keys and corrupt signed entries are refused.
+Current clients hold shared maintenance locks; recovery requires exclusive access.
+
+For the browser, configure a separate functioning owner journal with a fixed target:
+
+```json
+{"kind":"workspace-recovery","id":"reader-history",
+ "database":"/private/kan/reader.sqlite","output":"/private/kan/recovery",
+ "signing_key":"/private/keys/reader.signing",
+ "recipient_key":"/private/keys/reader.recipient"}
+```
+
+The owner console previews and runs `recover` into a new nonce-named output. If the
+owner journal itself cannot open, use the CLI recovery path first. No key is sent
+to the browser. The output directory must already exist with owner-only permissions.

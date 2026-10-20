@@ -82,7 +82,7 @@ impl AnnotationOutbox {
             ]
             .concat(),
         );
-        Ok(hash[..16].try_into().map_err(|_| Failure::Invalid)?)
+        hash[..16].try_into().map_err(|_| Failure::Invalid)
     }
     fn status(&self, id: &str) -> Result<Value, Failure> {
         let operation = Self::operation(id)?;

@@ -683,3 +683,7 @@ test('import source inspection retains its selection for following bytes and fre
 test('owner offers reconciliation only when a fixed recovery directory is configured',async()=>{
  const u=ui();await ownerUI(u);u.node('owner-refresh').click();await tick();await u.respond({owner:'owner-did',targets:[{id:'legacy',kind:'migration',recovered:'/configured/recovery'}],jobs:[],limits:{jobs:10}});assert.deepEqual(u.node('owner-operation').children.map(n=>n.value),['import','reconcile-import']);
 });
+
+test('owner workspace recovery offers only the configured recovery operation',async()=>{
+ const u=ui();await ownerUI(u);u.node('owner-refresh').click();await tick();await u.respond({owner:'owner-did',targets:[{id:'reader-history',kind:'workspace-recovery'}],jobs:[],limits:{jobs:10}});assert.deepEqual(u.node('owner-operation').children.map(n=>n.value),['recover']);
+});

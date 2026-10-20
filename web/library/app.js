@@ -578,7 +578,7 @@
   function ownerOperations(){
     ownerPreview=null;$('owner-submit').disabled=true;$('owner-preview').textContent='';$('owner-operation').replaceChildren();
     const target=ownerTargets.find(t=>t.id===$('owner-target').value);
-    const operations=target?.kind==='import-recovery'?['restore-import']:target?.kind==='migration'?(target.recovered?['import','reconcile-import']:['import']):target?.kind==='operations'?['rotate']:['backup','recover'];
+    const operations=target?.kind==='workspace-recovery'?['recover']:target?.kind==='import-recovery'?['restore-import']:target?.kind==='migration'?(target.recovered?['import','reconcile-import']:['import']):target?.kind==='operations'?['rotate']:['backup','recover'];
     for(const operation of operations){const option=textNode('option',operation);option.value=operation;$('owner-operation').append(option);}
     $('owner-operation').value=operations[0];
   }

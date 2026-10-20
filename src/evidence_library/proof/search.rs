@@ -139,7 +139,7 @@ fn doc(source: Source) -> Document {
         match evidence_reconstruction::decode(&bytes) {
             Ok(Decoded::Capture(frame)) => {
                 d.kind = "capture".into();
-                d.observer = serde_json::to_value(&frame.header.observer)
+                d.observer = serde_json::to_value(frame.header.observer)
                     .ok()
                     .and_then(|v| v.as_str().map(str::to_owned));
                 d.attempt = Some(frame.header.attempt.clone());
