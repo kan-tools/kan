@@ -62,6 +62,7 @@ jobs:
       - run: cargo test --features v2-crypto --lib evidence_operations::projection::tests
       - run: cargo test --features v2-crypto --lib evidence_operations_collection::overview::tests
       - run: cargo test --features v2-crypto --lib evidence_library::budget_tests
+      - run: cargo test --features v2-crypto --lib evidence_library::owner::erasure::publications
       - run: cargo test --features v2-crypto --lib evidence_spool::tests
       - run: cargo test --features v2-crypto --lib evidence_store::inventory::tests
       - run: cargo test --features v2-crypto --lib evidence_store::attested::audit_cache_tests

@@ -3,6 +3,7 @@
 use super::*;
 mod discovery;
 mod queues;
+mod seeds;
 use crate::{
     evidence_library::proof::knowledge,
     evidence_store::inventory::{self, Availability, Budget, Inventory, PageBudget, Source},
@@ -271,8 +272,11 @@ struct Plan {
     prior_coordinates: Option<BTreeSet<String>>,
     #[serde(default)]
     more: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    seed_pages: Option<usize>,
 }
-#[derive(Default)]
+#[derive(Default, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 struct Seeds {
     coordinates: BTreeSet<String>,
     identities: BTreeSet<(String, String, String)>,
@@ -348,9 +352,6 @@ fn plan(
                 declaration["id"].as_str().ok_or(Failure::Corrupt)?,
                 &draft.subject,
             ));
-            if identities.len() > 4096 {
-                return Err(Failure::Unavailable);
-            }
         }
     }
     let selected = closure(&nodes, &retained.coordinates, &identities);
@@ -436,6 +437,7 @@ fn plan(
         identities,
         prior_coordinates: Some(retained.coordinates.clone()),
         more,
+        seed_pages: None,
     })))
 }
 pub(super) fn cleanup(
@@ -449,7 +451,7 @@ pub(super) fn cleanup(
     if targets.is_empty() {
         return Ok(json!({"state":"not-configured"}));
     }
-    let mut retained = Seeds::default();
+    let (mut retained, seed_pages) = Seeds::load(journal, job)?;
     retained.include(parent)?;
     queues::include_retained(journal, job, &mut retained)?;
     // Every new plan is written only after its predecessor's primary custody
@@ -487,7 +489,10 @@ pub(super) fn cleanup(
                 .ok_or(Failure::Corrupt)?,
         )
         .map_err(invalid)?;
-        if previous.version != 1
+        if previous
+            .seed_pages
+            .is_some_and(|required| required > seed_pages)
+            || previous.version != 1
             || previous.job != job
             || previous.parent != parent.id()?
             || previous.destinations.len() != targets.len()
@@ -514,7 +519,7 @@ pub(super) fn cleanup(
         job,
         round,
     };
-    let plan = match plan(targets, workspaces, primary, parent, &retained, &cache)? {
+    let mut plan = match plan(targets, workspaces, primary, parent, &retained, &cache)? {
         Planning::Pending(progress) => {
             return Ok(
                 json!({"state":"pending","reason":"publication-discovery","progress":progress,"pass":round}),
@@ -522,16 +527,27 @@ pub(super) fn cleanup(
         }
         Planning::Ready(plan) => *plan,
     };
-    let value = serde_json::to_value(&plan).map_err(invalid)?;
-    if serde_json::to_vec(&value).map_err(invalid)?.len() > 250 * 1024 {
-        return Err(Failure::Unavailable);
-    }
-    journal.put("owner-result", &key, value)?;
+    // Persist cumulative lineage in bounded immutable pages before removing any
+    // source. The authority record carries only a required page count, not an
+    // ever-growing copy of every earlier identity and coordinate.
+    retained
+        .identities
+        .extend(std::mem::take(&mut plan.identities));
+    retained
+        .coordinates
+        .extend(plan.prior_coordinates.take().unwrap_or_default());
     for selection in &plan.destinations {
         if let Some(record) = &selection.authorization {
             retained.include(record)?;
         }
     }
+    plan.seed_pages = Some(retained.persist(journal, job)?);
+    plan.prior_coordinates = Some(BTreeSet::new());
+    let value = serde_json::to_value(&plan).map_err(invalid)?;
+    if serde_json::to_vec(&value).map_err(invalid)?.len() > 250 * 1024 {
+        return Err(Failure::Unavailable);
+    }
+    journal.put("owner-result", &key, value)?;
     let mut reports = Vec::new();
     for (target, selection) in targets.iter().zip(plan.destinations) {
         if selection.binding != target.history.binding {
@@ -561,7 +577,7 @@ pub(super) fn cleanup(
                         path,
                         &mut spool,
                         &retained.coordinates,
-                        &plan.identities,
+                        &retained.identities,
                         journal,
                         job,
                     )?;

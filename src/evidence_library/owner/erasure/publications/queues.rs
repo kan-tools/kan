@@ -3,7 +3,6 @@
 use super::*;
 use crate::evidence_spool::{Error as SpoolError, Spool};
 
-const INTENTS: usize = 512;
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Intent {
@@ -18,10 +17,11 @@ fn key(job: &str, n: usize) -> String {
 }
 fn retained(journal: &Workspace, job: &str) -> Result<Vec<Intent>, Failure> {
     let mut intents = Vec::new();
-    for n in 0..INTENTS {
-        let Some(value) = journal.get("owner-result", &key(job, n))? else {
-            break;
-        };
+    let count = first_unused(|n| Ok(journal.get("owner-result", &key(job, n))?.is_some()))?;
+    for n in 0..count {
+        let value = journal
+            .get("owner-result", &key(job, n))?
+            .ok_or(Failure::Corrupt)?;
         let intent: Intent = serde_json::from_value(value).map_err(invalid)?;
         if intent.version != 1 || intent.job != job {
             return Err(Failure::Corrupt);
@@ -68,8 +68,9 @@ pub(super) fn cancel(
     }
     let keys = keyring(target)?;
     let mut identities = selected.clone();
-    for intent in retained(journal, job)? {
-        identities.insert(intent.identity);
+    let mut intents = retained(journal, job)?;
+    for intent in &intents {
+        identities.insert(intent.identity.clone());
     }
     let deadline = Instant::now() + Duration::from_secs(120);
     let mut processed = 0;
@@ -142,7 +143,6 @@ pub(super) fn cancel(
                     &Identity::load_existing(&target.signing_key).map_err(invalid)?,
                 )?
             };
-            let intents = retained(journal, job)?;
             if intents.iter().any(|i| {
                 i.request == object
                     && i.identity == lineage.identity
@@ -151,23 +151,21 @@ pub(super) fn cancel(
                 return Ok(record);
             }
             let n = intents.len();
-            if n >= INTENTS {
-                return Err(Failure::Unavailable);
-            }
             // Only minimal lineage and signed coordinates survive; no body or
             // signed raw request is copied into the owner journal.
+            let intent = Intent {
+                version: 1,
+                job: job.into(),
+                request: object.clone(),
+                identity: lineage.identity.clone(),
+                authorization: record.clone(),
+            };
             journal.put(
                 "owner-result",
                 &key(job, n),
-                serde_json::to_value(Intent {
-                    version: 1,
-                    job: job.into(),
-                    request: object.clone(),
-                    identity: lineage.identity.clone(),
-                    authorization: record.clone(),
-                })
-                .map_err(invalid)?,
+                serde_json::to_value(&intent).map_err(invalid)?,
             )?;
+            intents.push(intent);
             Ok(record)
         })?;
         let erasure = authorization
@@ -203,4 +201,117 @@ pub(super) fn cancel(
         processed += 1;
     }
     Ok(json!({"state":"pending-budget","processed":processed,"database":path}))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn restart_keeps_queue_lineage_after_the_former_512_intent_limit() {
+        let dir = tempfile::tempdir().unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(dir.path(), std::fs::Permissions::from_mode(0o700)).unwrap();
+        }
+        let signer = Identity::generate();
+        let signing = dir.path().join("signer.key");
+        signer.save(&signing).unwrap();
+        let database = dir.path().join("owner.sqlite");
+        let open = || {
+            Workspace::open(
+                &database,
+                Identity::load_existing(&signing).unwrap(),
+                [38; 32],
+            )
+            .unwrap()
+        };
+        let journal = open();
+        let author = signer.did().to_string();
+        let binding = Binding {
+            profile: Profile::Admitted,
+            archive: "a".repeat(64),
+            scope: "b".repeat(64),
+            issuer: author.clone(),
+        };
+        let manifest = store::ciphertext_cid(b"synthetic manifest").to_string();
+        let object = store::ciphertext_cid(b"synthetic request").to_string();
+        // Journal the same minimal signed intent representation used before
+        // retiring queue bytes. The final identity must select a later child
+        // after restart, even though its raw request is no longer available.
+        for n in 0..514 {
+            let erasure = storage::Record::sign(
+                storage::Plan {
+                    version: 1,
+                    archive: binding.archive.clone(),
+                    scope: binding.scope.clone(),
+                    issuer: author.clone(),
+                    through: n + 1,
+                    tip: manifest.clone(),
+                    previous: None,
+                    nonce: "c".repeat(64),
+                    recorded_at: 1,
+                    targets: vec![storage::Target {
+                        sequence: n,
+                        manifest: manifest.clone(),
+                        object: object.clone(),
+                        length: 1,
+                    }],
+                    initial_erasure: None,
+                },
+                &signer,
+            )
+            .unwrap();
+            let authorization = custody::Record::sign(
+                custody::Change {
+                    version: 1,
+                    binding: binding.clone(),
+                    owner: author.clone(),
+                    sequence: n.to_string(),
+                    previous: None,
+                    nonce: "d".repeat(64),
+                    recorded_at: "1".into(),
+                    erasure: Some(erasure),
+                },
+                &signer,
+            )
+            .unwrap();
+            let intent = Intent {
+                version: 1,
+                job: "job".into(),
+                request: object.clone(),
+                identity: (author.clone(), format!("{n:064x}"), "e".repeat(64)),
+                authorization,
+            };
+            journal
+                .put(
+                    "owner-result",
+                    &key("job", n as usize),
+                    serde_json::to_value(intent).unwrap(),
+                )
+                .unwrap();
+        }
+        drop(journal);
+        let journal = open();
+        let mut seeds = Seeds::default();
+        include_retained(&journal, "job", &mut seeds).unwrap();
+        assert_eq!(seeds.identities.len(), 514);
+        assert_eq!(seeds.coordinates.len(), 514);
+        let nodes = vec![Node {
+            destination: 0,
+            sequence: 900,
+            coordinate: "later-coordinate".into(),
+            identity: (author.clone(), "f".repeat(64), "e".repeat(64)),
+            cites: vec![],
+            parents: vec![(author, format!("{:064x}", 513), "e".repeat(64))],
+        }];
+        assert_eq!(
+            closure(&nodes, &seeds.coordinates, &seeds.identities),
+            BTreeSet::from([0])
+        );
+        let mut other = Seeds::default();
+        include_retained(&journal, "other-job", &mut other).unwrap();
+        assert!(closure(&nodes, &other.coordinates, &other.identities).is_empty());
+    }
 }

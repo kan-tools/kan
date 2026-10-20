@@ -1143,8 +1143,9 @@ only the resulting archive-bound signed completion can retire the sender bytes.
 A retry after interruption retrieves that same commitment. An unrelated head stays
 intact and reports `pending-unrelated-prefix`; normally deliver it before resuming
 cleanup of selected successors. No request is re-signed or silently skipped.
-Cancellation is bounded to 128 heads / 120 seconds per queue attempt and 512 retained
-intents per owner job. Missing policy, revoked append grants or unavailable custody
+Cancellation is bounded to 128 heads / 120 seconds per queue attempt. Retained
+intent history has no 512-intent lifetime cutoff; restart includes later intents
+when selecting correction descendants. Missing policy, revoked append grants or unavailable custody
 leave the queue pending. Running senders/ingest must independently enroll in custody
 for the admission fence; registering a path here does not enroll another process.
 
@@ -1228,9 +1229,12 @@ insertions that sort before an earlier cursor; this is not a snapshot traversal.
 Capture cleanup and backup purge retain immutable numbered attempt records without
 a 32-attempt lifetime ceiling. Status reads locate the current attempt with
 logarithmic authenticated lookups. Publication cleanup carries cumulative opaque
-identities and source coordinates in its newest plan; replay reconciles that plan
-before discovering more copies. Existing non-cumulative plans are replayed once
-when upgrading. A new plan can only be created after the preceding plan's primary
+identities and source coordinates in encrypted immutable journal pages. The newest
+plan binds the required page count; missing referenced pages prevent replay. Each
+page contains at most 32 identities and 32 coordinates, so cumulative lineage does
+not have to fit in one owner-result record. Replay reconciles the newest plan
+before discovering more copies. Existing embedded cumulative seeds are imported;
+older non-cumulative plans are replayed once when upgrading. A new plan can only be created after the preceding plan's primary
 custody and archive reconciliation succeed. Replica/queue work is still checked
 against current custody on each resume. These changes remove retry/history-count
 ceilings; per-operation discovery, journal-size and resource budgets remain and
