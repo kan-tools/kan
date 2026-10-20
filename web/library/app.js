@@ -200,6 +200,38 @@
     $('scan-window').disabled = false; $('stop-scan').disabled = true;
     $('scan-attempts').disabled = false; $('scan-attempts').textContent = 'Discover attempts';
   }
+  const fragmented = items => items.some(x=>x.description.event?.type==='http-metadata-chunk' && x.description.event.direction==='request');
+  function effectiveItems(items) {
+    return items.flatMap(item=>[item,...(item.resolved_metadata||[]).filter(m=>m.session_link).map(m=>({...item,description:{...item.description,session_link:m.session_link},link_sources:m.sources}))]);
+  }
+  async function resolveMetadata(entry,items,render) {
+    clearContent();clearInspector();notice('Verifying metadata fragments and their source coordinates…');
+    const value=await rpc({action:'proof-attempt',source:sourceId(entry),pin:entry.pin,selections:items.map(x=>x.record.selection),format:'anthropic-messages-json'});
+    if(!value)return;
+    if(value.version!=='kan-content/2'||value.pin_wire!==entry.pin_wire||!Array.isArray(value.groups)||!Array.isArray(value.occurrences)||value.occurrences.length!==items.length||value.occurrences.some((x,i)=>x.record.sequence!==items[i].record.sequence))throw new Error('Invalid metadata result.');
+    const resolved=[];
+    for(const group of value.groups)for(const m of group.metadata||[]) {
+      if(!m.fragmented)continue;
+      if(!['complete','incomplete','invalid','limited'].includes(m.state)||!Array.isArray(m.sources)||!m.sources.length||m.sources.length>items.length)throw new Error('Invalid metadata sources.');
+      const sources=m.sources.map(c=>{
+        if(typeof c.input!=='string'||!/^(0|[1-9][0-9]*)$/.test(c.input)||!items[Number(c.input)]||!Array.isArray(c.bytes)||c.bytes.length!==2||c.bytes.some(b=>typeof b!=='string'||!/^(0|[1-9][0-9]*)$/.test(b)))throw new Error('Invalid metadata coordinates.');
+        return {sequence:items[Number(c.input)].record.sequence,offset:c.bytes[0]};
+      });
+      if(m.state!=='complete'&&m.session_link!==null)throw new Error('Incomplete metadata cannot supply a link.');
+      resolved.push({anchor:Number(m.sources[0].input),state:m.state,session_link:m.session_link,sources});
+    }
+    for(const item of items){item.resolved_metadata=[];item.resolution_status=null;}
+    for(const m of resolved)items[m.anchor].resolved_metadata.push(m);
+    items[0].resolution_status=resolved.length?resolved.map(m=>`Metadata ${m.state}`).join(' · '):'No reconstructable request metadata in the currently available selection.';
+    render();notice('Metadata resolution updated. Incomplete or conflicting documents do not produce session links.');
+  }
+  function metadataControl(parent,entry,items,render) {
+    if(!fragmented(items))return;
+    if(entry.capabilities?.includes('attempt-content')) {
+      const b=textNode('button','Resolve chunked session links');b.addEventListener('click',()=>run(()=>resolveMetadata(entry,items,render)));parent.append(b);
+    }
+    for(const item of items)if(item.resolution_status)parent.append(textNode('p',item.resolution_status,'content-coverage'));
+  }
   function renderDiscovery() {
     const groups = new Map(), other = [];
     for (const item of discovered.values()) {
@@ -230,6 +262,7 @@
         const chunk = items.slice(i,i+step), b = textNode('button', step === 1024 ? `Read attempt · ${chunk.length} observed records` : `Read records ${i+1}–${i+chunk.length}`);
         b.addEventListener('click', () => readDiscoveredAttempt(chunk)); card.append(b);
       }
+      metadataControl(card,activeSource,items,renderDiscovery);
       const lineage = document.createElement('details'); lineage.append(textNode('summary','Observed events and source'));
       for (const item of items) { const row = textNode('p', `Ordinal ${item.description.ordinal} · ${item.description.event.type} `); sourceButton(row,item); lineage.append(row); }
       card.append(lineage); root.append(card);
@@ -277,7 +310,7 @@
   function renderSessions(groups) {
     const root = $('sessions'); root.replaceChildren();
     const sessions = new Map();
-    for (const [key,items] of groups) for (const item of items) {
+    for (const [key,items] of groups) for (const item of effectiveItems(items)) {
       const link = item.description.session_link; if (!link) continue;
       if (link.state !== 'claimed') {
         root.append(textNode('p',`Occurrence ${item.record.sequence}: explicit session headers could not be interpreted. Inspect Source for the original claim.`, 'content-warning'));
@@ -296,7 +329,9 @@
         const row=textNode('p',`${link.transition} · ${item.description.attempt} ← ${link.parent_attempt || (link.transition === 'membership' ? 'no parent claim' : 'start')} `,'content-identity');
         const read=textNode('button','Read linked attempt');
         read.addEventListener('click',()=>readDiscoveredAttempt(groups.get(key)));row.append(read);
-        const citation=textNode('button',`Session link source ${item.record.sequence}`);citation.addEventListener('click',()=>run(()=>inspect(item.record.sequence)));row.append(citation);
+        for(const c of item.link_sources||[{sequence:item.record.sequence,offset:'0'}]){
+          const citation=textNode('button',`Session link source ${c.sequence}`);citation.addEventListener('click',()=>run(()=>inspect(c.sequence,c.offset)));row.append(citation);
+        }
         if (link.parent_attempt) {
           const parentKey=JSON.stringify([sourceId(activeSource),item.writer,item.description.observer,link.parent_attempt]);
           const parents=groups.get(parentKey);
@@ -304,7 +339,7 @@
           row.append(textNode('span',parents?' Parent observed in this window; relationship remains a claim.':' Parent not observed in this window.'));
           if (link.parent_attempt===item.description.attempt) row.append(textNode('span',' Self-reference; no causal ordering inferred.'));
         }
-        const claims=groups.get(key).map(x=>x.description.session_link).filter(x=>x?.state==='claimed');
+        const claims=effectiveItems(groups.get(key)).map(x=>x.description.session_link).filter(x=>x?.state==='claimed');
         if(new Set(claims.map(x=>JSON.stringify([x.scheme,x.session,x.parent_attempt,x.transition]))).size>1)row.append(textNode('span',' Conflicting session claims retained.'));
         card.append(row);
       }
@@ -336,7 +371,7 @@
     }
     return groups;
   }
-  function openWorkspace(group, sourceItem=null) {
+  function openWorkspace(group, sourceItem=null, offset='0') {
     cancelWork(); workspaceRun++; $('stop-archives').disabled=true;
     $('scan-archives').disabled=workspaceStates.every(s=>s.complete);
     const entry=group.state.entry;
@@ -346,7 +381,7 @@
     $('count').textContent='Session selection';$('page-position').textContent='Choose an archive to browse its inventory';$('empty').hidden=true;$('coverage').textContent='Selected observed attempt; partial inventory coverage.';
     for(const item of group.items)discovered.set(item.record.sequence,item);
     scanCount=group.items.length;renderDiscovery();
-    if(sourceItem)run(()=>inspect(sourceItem.record.sequence));else readDiscoveredAttempt(group.items);
+    if(sourceItem)run(()=>inspect(sourceItem.record.sequence,offset));else readDiscoveredAttempt(group.items);
   }
   function renderWorkspace() {
     const root=$('workspace-sessions'), status=$('workspace-sources');root.replaceChildren();status.replaceChildren();
@@ -357,12 +392,16 @@
       status.append(textNode('p',`${state.entry.binding.archive} · ${state.inspected} inspected · ${state.records.length} in window · ${state.error?'unavailable; retry scan':state.complete?'inventory end reached':'partial inventory'}`,'content-coverage'));
       unassigned+=state.records.filter(x=>x.description.kind!=='capture').length;
     }
-    for(const group of groups)for(const item of group.items) {
+    for(const group of groups)for(const item of effectiveItems(group.items)) {
       const link=item.description.session_link;if(!link)continue;
       if(link.state!=='claimed'){invalid++;continue;}
       const id=JSON.stringify([item.writer,item.description.observer,link.scheme,link.session]);
       if(!sessions.has(id))sessions.set(id,{id,link,writer:item.writer,observer:item.description.observer,claims:[]});
       sessions.get(id).claims.push({group,item,link});
+    }
+    for(const group of groups)if(fragmented(group.items)) {
+      const row=textNode('p',`Fragmented metadata · ${group.items[0].description.attempt} · Archive ${group.state.entry.binding.archive} `,'content-identity');
+      metadataControl(row,group.state.entry,group.items,renderWorkspace);root.append(row);
     }
     $('workspace-coverage').textContent=`${count} records in this window · ${complete}/${workspaceStates.length} archive inventories finished · ${sessions.size} explicit session groups · ${unassigned} unassigned records · ${invalid} invalid link claims. Coverage is limited to authorized sources and this window; traffic completeness is unknown.`;
     $('scan-archives').textContent=count>=1000?'Continue in a new window':count?'Continue archive scan':'Scan authorized archives';
@@ -377,7 +416,9 @@
         if(group.state.entry.capabilities.includes('content-inspection')) {
           const read=textNode('button','Read attempt in this archive');read.addEventListener('click',()=>openWorkspace(group));row.append(read);
         }
-        const cite=textNode('button',`Link source ${item.record.sequence}`);cite.addEventListener('click',()=>openWorkspace(group,item));row.append(cite);
+        for(const c of item.link_sources||[{sequence:item.record.sequence,offset:'0'}]) {
+          const cite=textNode('button',`Link source ${c.sequence}`);cite.addEventListener('click',()=>openWorkspace(group,group.items.find(x=>x.record.sequence===c.sequence),c.offset));row.append(cite);
+        }
         if(link.parent_attempt) {
           const parents=groups.filter(g=>g.items[0].writer===item.writer && g.items[0].description.observer===item.description.observer && g.items[0].description.attempt===link.parent_attempt);
           row.append(textNode('span',parents.length?` ${parents.length} observed parent archive matches; relationship remains a claim. `:' Parent not observed in this window. '));
@@ -387,7 +428,7 @@
           }
           if(link.parent_attempt===item.description.attempt)row.append(textNode('span',' Self-reference; no causal ordering inferred.'));
         }
-        const claims=groups.filter(g=>g.key===group.key).flatMap(g=>g.items).map(x=>x.description.session_link).filter(x=>x?.state==='claimed');
+        const claims=groups.filter(g=>g.key===group.key).flatMap(g=>effectiveItems(g.items)).map(x=>x.description.session_link).filter(x=>x?.state==='claimed');
         if(new Set(claims.map(x=>JSON.stringify([x.scheme,x.session,x.parent_attempt,x.transition]))).size>1)row.append(textNode('span',' Conflicting session claims retained.'));
         card.append(row);
       }
@@ -499,6 +540,11 @@
       if(group.unexpected_starts.length){const row=textNode('p','Unexpected start events: ','content-warning');for(const input of group.unexpected_starts)sourceLink(row,value,input,`Unexpected start · Source ${value.occurrences[Number(input)].record.sequence}`);card.append(row);}
       const lineage=document.createElement('details');lineage.className='content-lineage';lineage.append(textNode('summary','Retained occurrence lineage'));
       for(const ordinal of group.ordinals){const row=document.createElement('p');row.append(textNode('span',`Observed ordinal ${ordinal.value}${ordinal.conflict?' · conflict':''} `));for(const input of ordinal.inputs)sourceLink(row,value,input,`Source ${value.occurrences[Number(input)].record.sequence}`);lineage.append(row);}card.append(lineage);
+      for(const m of group.metadata||[]) {
+        const row=textNode('p',`${m.fragmented?'Fragmented':'Inline'} request metadata · ${m.state}${m.session_link?.state==='claimed'?` · ${m.session_link.transition} · Session ${m.session_link.session}`:''} `,'content-coverage');
+        for(const c of m.sources)sourceLink(row,value,c.input,`Metadata source ${value.occurrences[Number(c.input)].record.sequence} · ${c.bytes.join('–')}`,c.bytes[0]);
+        card.append(row);
+      }
       for(const direction of ['request','response']){
         const stream=group[direction],citations=citationRenderer(value,stream),section=document.createElement('section');section.className='content-stream';section.append(textNode('h4',direction==='request'?'Request · supplied history':'Response · observed output'));
         section.append(textNode('p',`Contiguous selected bytes: ${stream.observed_bytes??'unavailable'} · Consistent observer length claim: ${stream.expected_bytes??'none'}`,'content-coverage'));

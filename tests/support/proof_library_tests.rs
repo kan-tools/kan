@@ -349,13 +349,18 @@ async fn proof_library_browser_fixture() {
             .cid()
             .to_string(),
     );
+    let chunked_metadata=serde_json::to_vec(&json!({"type":"http-metadata","direction":"request","headers":[["x-kan-session",service::hex("c".repeat(64).as_bytes())],["x-kan-parent-attempt",service::hex("a".repeat(64).as_bytes())],["x-kan-transition",service::hex(b"branch")],["x-large",service::hex(&vec![b'x';70000])]],"omitted":[]})).unwrap();
+    let metadata_chunks: Vec<_> = chunked_metadata
+        .chunks(kan::evidence_capture::CHUNK)
+        .collect();
     for n in 3..25 {
-        let bytes = if n == 3 {
+        let bytes = if n < 6 {
+            let index = (n - 3) as usize;
             let frame = frame_bytes(
                 &"d".repeat(64),
-                0,
-                json!({"type":"http-metadata","direction":"request","headers":[["x-kan-session",service::hex("c".repeat(64).as_bytes())],["x-kan-parent-attempt",service::hex("a".repeat(64).as_bytes())],["x-kan-transition",service::hex(b"branch")]],"omitted":[]}),
-                &[],
+                index as u64,
+                json!({"type":"http-metadata-chunk","direction":"request","offset":index*kan::evidence_capture::CHUNK,"total":chunked_metadata.len()}),
+                metadata_chunks[index],
             );
             encrypted_frame(n, 8, previous, &frame)
         } else {
@@ -757,4 +762,82 @@ async fn discovery_retains_explicit_session_edges_and_attempt_api_refuses_mixed_
     ui.call(json!({"action":"proof-attempt","source":entry["id"],"pin":entry["pin"],"selections":selections,"format":"anthropic-messages-json"}),400).await;
     ui.stop().await;
     server.stop().await;
+}
+
+#[tokio::test]
+async fn fragmented_session_metadata_crosses_pages_and_preserves_loss_and_revocation() {
+    let headers = json!({"type":"http-metadata","direction":"request","headers":[["x-kan-session",service::hex("c".repeat(64).as_bytes())],["x-kan-parent-attempt",service::hex("b".repeat(64).as_bytes())],["x-kan-transition",service::hex(b"branch")],["x-large",service::hex(&vec![b'x';70000])]],"omitted":[]});
+    let bytes = serde_json::to_vec(&headers).unwrap();
+    let chunks: Vec<_> = bytes.chunks(kan::evidence_capture::CHUNK).collect();
+    assert_eq!(chunks.len(), 3);
+    for profile in [Profile::Admitted, Profile::Copied] {
+        let dir = tempfile::tempdir().unwrap();
+        let f = fixture_requests(dir.path(), profile, |n, a, p| {
+            encrypted_frame(
+                n,
+                a,
+                p,
+                &frame_bytes(
+                    &"a".repeat(64),
+                    n as u64,
+                    json!({"type":"http-metadata-chunk","direction":"request","offset":n as usize*kan::evidence_capture::CHUNK,"total":bytes.len()}),
+                    chunks[n as usize],
+                ),
+            )
+        });
+        let server = Server::start(&f).await;
+        let ui =
+            Ui::start(kan::evidence_library::Readers::new(None, vec![server.client(&f)]).unwrap())
+                .await;
+        let catalog = ui.call(json!({"action":"catalog"}), 200).await;
+        let entry = &catalog["scopes"][0];
+        let mut cursor = Value::Null;
+        let mut selections = Vec::new();
+        for _ in 0..3 {
+            let page=ui.call(json!({"action":"proof-discover","source":entry["id"],"pin":entry["pin"],"cursor":cursor,"limit":1}),200).await;
+            assert_eq!(
+                page["records"][0]["description"]["event"]["direction"],
+                "request"
+            );
+            assert!(page["records"][0]["description"]["session_link"].is_null());
+            selections.push(page["records"][0]["record"]["selection"].clone());
+            cursor = page["next"].clone();
+        }
+        assert!(cursor.is_null());
+        let query = json!({"action":"proof-attempt","source":entry["id"],"pin":entry["pin"],"selections":selections,"format":"anthropic-messages-json"});
+        let content = ui.call(query.clone(), 200).await;
+        let m = &content["groups"][0]["metadata"][0];
+        assert_eq!(m["state"], "complete");
+        assert_eq!(m["session_link"]["transition"], "branch");
+        let sources = m["sources"].as_array().unwrap();
+        assert_eq!(sources.len(), 3);
+        for c in sources {
+            let input = c["input"].as_str().unwrap().parse::<usize>().unwrap();
+            let sequence = content["occurrences"][input]["record"]["sequence"]
+                .as_str()
+                .unwrap()
+                .parse::<usize>()
+                .unwrap();
+            let start = c["bytes"][0].as_str().unwrap().parse::<usize>().unwrap();
+            let end = c["bytes"][1].as_str().unwrap().parse::<usize>().unwrap();
+            assert_eq!(end - start, chunks[sequence - 1].len());
+            assert!(start > 9);
+        }
+        f.remove(1);
+        let lost = ui.call(query.clone(), 200).await;
+        assert!(lost["groups"][0]["metadata"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|m| m["state"] != "complete" && m["session_link"].is_null()));
+        server
+            .service
+            .lock()
+            .unwrap()
+            .replace_grants(Vec::new())
+            .unwrap();
+        ui.call(query, 403).await;
+        ui.stop().await;
+        server.stop().await;
+    }
 }

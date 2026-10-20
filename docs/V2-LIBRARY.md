@@ -87,6 +87,22 @@ current access. Lock clears the entire workspace. An absent parent means it was
 not found in this window; a finished inventory never proves complete traffic.
 These views do not persist an index or merge claims into authoritative identity.
 
+## Chunked metadata and session links
+
+Large captured HTTP headers can occupy several records and discovery pages. In
+an attempt or the cross-archive workspace, choose **Resolve chunked session links**
+after scanning the relevant window. Resolution rereads the selected attempt under
+current access, reconstructs complete request metadata, and adds its explicit
+session relationship with a source link for every fragment. Reading Content also
+shows reconstructed metadata and exact source ranges.
+
+Only complete, consistent documents yield links. Missing fragments, conflicting
+ordinals or extents, malformed metadata and documents over the 2 MiB interpretation
+limit show incomplete/invalid/limited states. Their raw records remain inspectable.
+Duplicate occurrences retain all citations. This is an explicit window operation;
+a missing link may mean that necessary fragments have not been scanned. Refresh,
+window replacement and lock discard derived links along with their input window.
+
 ## Batched proof acquisition
 
 Attempt Content and discovery negotiate optional `read-batch` support. A batch

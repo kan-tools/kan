@@ -465,3 +465,29 @@ test('workspace window bound preserves independent continuation without growing 
  await u.respond({version:'kan-discovery/1',records:[],next:null});assert.deepEqual(JSON.parse(u.pending[0].opts.body).cursor,{signature:'next-49'});
  await u.respond({version:'kan-discovery/1',records:[],next:null});assert.match(u.node('workspace-coverage').textContent,/0 records.*2\/2 archive inventories finished/);
 });
+
+test('fragmented links resolve across discovery pages and cite every original fragment',async()=>{
+ const u=ui();await openSessions(u);
+ const a=discoveredCapture('2'),b=discoveredCapture('1');
+ for(const item of [a,b])item.description.event={type:'http-metadata-chunk',direction:'request',offset:item===a?'50':'0',total:'100'};
+ u.node('scan-attempts').click();await tick();await u.respond({version:'kan-discovery/1',records:[a],next:{signature:'more'}});
+ u.node('scan-attempts').click();await tick();await u.respond({version:'kan-discovery/1',records:[b],next:null});
+ walk(u.node('attempts')).find(n=>n.textContent==='Resolve chunked session links').click();await tick();
+ const q=JSON.parse(u.pending[0].opts.body);assert.equal(q.action,'proof-attempt');assert.equal(q.selections.length,2);
+ const result={...contentResult,occurrences:[{record:{sequence:'2'}},{record:{sequence:'1'}}],groups:[{...contentResult.groups[0],metadata:[{state:'complete',fragmented:true,session_link:{state:'claimed',scheme:'kan-header',session:'c'.repeat(64),transition:'branch',parent_attempt:'b'.repeat(64)},sources:[{input:'1',bytes:['200','250']},{input:'0',bytes:['210','260']}]}]}]};
+ await u.respond(result);
+ assert.match(walk(u.node('sessions')).map(n=>n.textContent).join(' '),/branch/);
+ const links=walk(u.node('sessions')).filter(n=>n.textContent.startsWith('Session link source '));assert.equal(links.length,2);
+ links[0].click();await tick();assert.equal(JSON.parse(u.pending[0].opts.body).offset,'200');await u.respond(proofSource);
+ u.node('resnapshot').click();await tick();assert.equal(u.node('sessions').children.length,0);
+});
+test('workspace fragment resolution retains incomplete state without claiming a session',async()=>{
+ const u=ui();await openWorkspaceUI(u);u.node('scan-archives').click();await tick();
+ const item=discoveredCapture('3');item.description.event={type:'http-metadata-chunk',direction:'request',offset:'0',total:'100'};
+ await u.respond({version:'kan-discovery/1',records:[item],next:null});await u.respond({version:'kan-discovery/1',records:[],next:null});
+ walk(u.node('workspace-sessions')).find(n=>n.textContent==='Resolve chunked session links').click();await tick();
+ assert.equal(JSON.parse(u.pending[0].opts.body).source,'archive-A');
+ await u.respond({...contentResult,occurrences:[{record:{sequence:'3'}}],groups:[{metadata:[{state:'incomplete',fragmented:true,session_link:null,sources:[{input:'0',bytes:['210','260']}]}]}]});
+ assert.match(walk(u.node('workspace-sessions')).map(n=>n.textContent).join(' '),/Metadata incomplete/);assert.match(u.node('workspace-coverage').textContent,/0 explicit session groups/);
+ walk(u.node('workspace-sessions')).find(n=>n.textContent==='Resolve chunked session links').click();await tick();u.node('lock').click();await u.respond(contentResult);assert.equal(u.node('workspace-sessions').children.length,0);
+});

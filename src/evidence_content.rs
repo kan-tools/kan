@@ -615,13 +615,17 @@ fn render_selected(
             &mut budget,
             &mut after_item,
         )?;
+        let metadata =
+            crate::evidence_session::metadata(group, &assembled.observations, |bytes| {
+                budget.charge_scan(bytes as u64)
+            })?;
         groups.push(json!({"scope":service::hex(&group.scope),"writer":group.writer,"observer":match group.observer {Observer::Collector=>"collector",Observer::Gateway=>"gateway"},
             "attempt":group.attempt,"ordinals":group.ordinals.iter().map(|o|json!({"value":o.value.to_string(),"inputs":o.inputs.iter().map(|i|i.to_string()).collect::<Vec<_>>(),"conflict":o.conflict})).collect::<Vec<_>>(),
             "ordinal_gaps":group.ordinal_gaps.iter().map(|r|pair(r.start,r.end)).collect::<Vec<_>>(),
             "missing_start":group.missing_start,"unexpected_starts":group.unexpected_starts.iter().map(|i|i.to_string()).collect::<Vec<_>>(),
             "terminal":match group.terminal {assembly::Terminal::Unknown=>"unknown",assembly::Terminal::Conflicting=>"conflicting",assembly::Terminal::Claimed(Outcome::Completed)=>"claimed-completed",assembly::Terminal::Claimed(Outcome::OutcomeUnknown)=>"claimed-unknown"},
             "events_after_terminal":group.events_after_terminal,"unconfirmed_claim":group.unconfirmed_claim,
-            "request":request,"response":response}));
+            "request":request,"response":response,"metadata":metadata}));
     }
     let occurrences: Vec<_> = selected.iter().map(|a| &a.metadata).collect();
     let value = json!({"version":VERSION,"assembly_version":assembly::VERSION,"adapter_version":provider::VERSION,

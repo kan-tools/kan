@@ -345,3 +345,18 @@ the chosen archive's original pin and current access checks. A stopped or bounde
 scan remains partial; a new window retains continuation but discards prior window
 descriptions. Lock and catalog refresh clear the workspace. This is navigation over
 verified observations, not a persistent search index or authoritative session merge.
+
+### Fragmented request metadata (2026-10-19)
+
+Content reconstructs request HttpMetadataChunk documents within one verified
+writer/observer/attempt group, in ordinal order. Only consecutive ordinals with
+matching totals, exact offsets and a complete bounded document yield a link.
+Duplicate occurrences retain every source citation; conflicting ordinals, missing
+fragments, inconsistent extents/directions and malformed documents never yield a
+claimed link. Each document is limited to 2 MiB; larger documents remain Source-
+inspectable with a visible limit state. Inline metadata keeps its header citations.
+Discovery exposes chunk direction/offset/total and offers explicit resolution over
+an observed attempt window through the existing freshly authorized Content API.
+This also spans discovery pages without persisting plaintext fragments or granting
+a cursor authority. Resolution is a derived window result and clears with its
+window, refresh or lock. No missing fragment is reconstructed by inference.

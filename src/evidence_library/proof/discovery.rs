@@ -72,7 +72,13 @@ fn describe(bytes: &[u8]) -> Value {
                 Event::TransportLink { exchange } => {
                     json!({"type":"transport-link","exchange":exchange})
                 }
-                Event::HttpMetadataChunk { .. } => json!({"type":"http-metadata-chunk"}),
+                Event::HttpMetadataChunk {
+                    direction,
+                    offset,
+                    total,
+                } => {
+                    json!({"type":"http-metadata-chunk","direction":direction,"offset":offset.to_string(),"total":total.to_string()})
+                }
                 Event::HttpMetadata { .. } => json!({"type":"http-metadata"}),
                 Event::ResponseHead { status } => json!({"type":"response-head","status":status}),
                 Event::ResponseChunk { .. } => json!({"type":"response-chunk"}),

@@ -21,7 +21,7 @@ and reviews are foundations, not automatic end-to-end completion.
 | Work package | Completion means | Current position |
 |---|---|---|
 | Capture, storage and migration | Supported harness/provider traffic reaches the centralized encrypted ledger; spool/retry and visible recording gaps work; v1 imports reconcile against preserved originals; local and remote use the same server architecture | Substantial implementation; integrated completion still to verify. Capacity testing exposed repeated full-archive audits during append; write/read performance remains a concrete follow-up |
-| Library and sessions | Authorized cross-project browsing, readable complete supported conversations/tools/attachments/branches/compaction/gaps, exact source/provenance and working downloads; missing/corrupt evidence stays visible | Proof Library now includes resumable scans, large-attempt Content and explicit session/parent/branch/compaction navigation. Browser workflow passes. An encrypted 11 MiB / 179-record attempt passes end-to-end; debug write/read performance needs improvement. Cross-archive session workspace implemented; fragmented metadata and browser file delivery remain |
+| Library and sessions | Authorized cross-project browsing, readable complete supported conversations/tools/attachments/branches/compaction/gaps, exact source/provenance and working downloads; missing/corrupt evidence stays visible | Proof Library now includes resumable scans, large-attempt Content and explicit session/parent/branch/compaction navigation. Browser workflow passes. An encrypted 11 MiB / 179-record attempt passes end-to-end; debug write/read performance needs improvement. Cross-archive session workspace and bounded fragmented metadata resolution implemented; browser file delivery and complete normalized-session integration remain |
 | Search and views | Authorized search/facets, stable references, honest index coverage, reproducible saved scope/trust views and relation inspection | Foundations/designs; integrated build remains |
 | Knowledge and annotations | Imported v1 claims and raw/derived evidence remain distinguishable; human/agent tags, annotations, relations and corrections use shared attributed append-only records with citations/history | Foundations/designs; integrated build remains |
 | Analysis and day integration | Explicit and tag-triggered background extraction/summary/assessment jobs, grants/quotas, retries/cancellation, recipe/model/input/output lineage and inspectable results | Integrated build remains |
@@ -374,3 +374,27 @@ and the fixture stopped successfully.
 Next work remains fragmented metadata, persistent authorized search/views,
 annotations, analysis/day, owner administration and application integration;
 write/read performance and actual browser file delivery remain release work.
+
+## Fragmented metadata integration
+
+Request metadata now reconstructs across selected capture records and discovery
+pages. The human attempt/workspace controls resolve chunked session links under
+fresh authorization; Content and session views retain every contributing byte
+range. Incomplete, contradictory, malformed or over-limit documents yield visible
+states without an invented link. The interpretation bound is 2 MiB per metadata
+document; retained source does not inherit that limit.
+
+The real proof API passes for admitted and copied archives, including discovery
+on separate pages, exact citations, a removed middle fragment and revoked access.
+Three reconstruction unit tests, 72 Library UI tests and strict all-target Clippy
+pass. Browser verification resolved three fragments across scan pages, expanded
+the session from one to two archives, exposed all three citations, opened exact
+fragment bytes (298–65834) and cleared the derived data on lock. No console
+warnings/errors occurred. The test tab and fixture stopped.
+
+Persistent authorized search/indexing and reproducible saved views are the next
+substantial implementation target. They must keep encrypted derived storage
+separate from blind authoritative storage, report indexed versus ledger coverage,
+and check current grants before results/counts/snippets. That implementation,
+annotations, analysis/day, owner administration, performance and full application
+qualification remain required; no full-v2 completion or final review is claimed.
