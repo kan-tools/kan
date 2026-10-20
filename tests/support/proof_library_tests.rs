@@ -2316,6 +2316,8 @@ async fn owner_workspace_recovery_is_previewed_separate_and_retains_authored_his
     let signing = local.path().join("reader.signing");
     let key = local.path().join("reader.recipient");
     for (path, bytes) in [(&signing, [6; 32]), (&key, [8; 32])] {
+        // Synthetic private-key fixture, outside the production mutation surface.
+        #[allow(clippy::disallowed_types)]
         let mut file = std::fs::OpenOptions::new()
             .write(true)
             .create_new(true)
