@@ -604,10 +604,12 @@ async fn proof_library_browser_fixture() {
         previous = Some(service::append_manifest(&bytes).unwrap().cid().to_string());
         admitted.requests.push(bytes);
     }
-    admitted.remove(24);
+    // Inventory is newest-first: keep the initial page available for exact
+    // source/download checks and put both loss cases on the second page.
+    admitted.remove(0);
     admitted.edit(&format!(
         "UPDATE objects SET bytes=x'00' WHERE cid='{}'",
-        admitted.id(23)
+        admitted.id(1)
     ));
     let mut tasks = Vec::new();
     let mut clients = Vec::new();
