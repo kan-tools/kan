@@ -5,7 +5,9 @@ on:
   pull_request:
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  # Preserve any pre-optimization qualification already running when this
+  # build profile first lands. Subsequent pushes still supersede this profile.
+  group: ${{ github.workflow }}-${{ github.ref }}-v2-opt1
   cancel-in-progress: true
 
 jobs:
