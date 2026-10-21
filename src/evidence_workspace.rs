@@ -29,6 +29,7 @@ pub struct Workspace {
     erasure_maintenance: bool,
     erasure_histories: Vec<crate::evidence_erasure_history::Access>,
     erasure_audit: Mutex<Option<(i64, Vec<String>)>>,
+    annotation_lookup: Mutex<Option<annotations::Lookup>>,
     path: std::path::PathBuf,
     signer: Identity,
     private: [u8; 32],
@@ -229,6 +230,7 @@ impl Workspace {
             erasure_maintenance: false,
             erasure_histories: Vec::new(),
             erasure_audit: Mutex::new(None),
+            annotation_lookup: Mutex::new(None),
             path: path.to_path_buf(),
             signer,
             private: private_key,
@@ -622,11 +624,54 @@ impl Workspace {
             )
             .map_err(invalid)?;
         }
+        if kind == "annotation" {
+            *self.annotation_lookup.lock().map_err(invalid)? = None;
+        }
         // Local commits do not change this connection's data_version. Forget
         // its positive cache before validating prospective rows or committing.
         *self.erasure_audit.lock().map_err(invalid)? = None;
         self.audit_erasure_snapshots(&tx, &custody)?;
         tx.commit().map_err(invalid)
+    }
+    /// Replace only a disposable encrypted projection. Authored declarations
+    /// continue to use immutable put(), and custody still fences erased inputs.
+    pub(crate) fn replace_search_page(&self, key: &str, value: Value) -> Result<()> {
+        let id = Self::id("search-page", key);
+        let bytes = self.seal("search-page", &id, value)?;
+        let mut conn = self.conn.lock().map_err(invalid)?;
+        let tx = conn
+            .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
+            .map_err(invalid)?;
+        let custody = self.check_erasure_histories(&tx)?;
+        if erasure::erased(self, &tx, "search-page", &id)? {
+            return Err(Failure::AccessLimited);
+        }
+        tx.execute("INSERT INTO entries VALUES('search-page',?,?) ON CONFLICT(kind,id) DO UPDATE SET body=excluded.body", params![id,bytes]).map_err(invalid)?;
+        *self.erasure_audit.lock().map_err(invalid)? = None;
+        self.audit_erasure_snapshots(&tx, &custody)?;
+        tx.commit().map_err(invalid)
+    }
+    /// Explicit bounded cache maintenance. Freed pages are reusable by SQLite;
+    /// no annotation, saved view, job, custody history or source archive is erased.
+    pub(crate) fn prune_search_pages(&self) -> Result<Value> {
+        let mut conn = self.conn.lock().map_err(invalid)?;
+        let tx = conn
+            .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
+            .map_err(invalid)?;
+        let _custody = self.check_erasure_histories(&tx)?;
+        let removed = tx.execute("DELETE FROM entries WHERE kind='search-page' AND id IN (SELECT id FROM entries WHERE kind='search-page' ORDER BY id LIMIT 128)", []).map_err(invalid)?;
+        let remaining: bool = tx
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM entries WHERE kind='search-page')",
+                [],
+                |r| r.get(0),
+            )
+            .map_err(invalid)?;
+        *self.erasure_audit.lock().map_err(invalid)? = None;
+        tx.commit().map_err(invalid)?;
+        Ok(
+            serde_json::json!({"removed":removed,"more":remaining,"scope":"disposable search index only; freed SQLite pages reusable; authored history retained"}),
+        )
     }
     /// Bounded view declarations only; cache pages are addressed explicitly.
     pub fn views(&self) -> Result<Vec<Value>> {

@@ -2566,3 +2566,23 @@ fn serving_and_payload_catalogs_match_real_initialized_schema_columns() {
         .collect();
     assert_eq!(actual, declared);
 }
+
+#[test]
+fn disposable_search_cache_has_no_authored_history_authority() {
+    let catalog = rows();
+    let cache = catalog
+        .iter()
+        .find(|row| row.artifact == "evidence-workspace:search-page")
+        .unwrap();
+    assert_eq!(cache.authority, "derived");
+    assert_eq!(
+        cache.lifecycle,
+        "encrypted-disposable-occurrence-projection-explicit-bounded-prune"
+    );
+    let view = catalog
+        .iter()
+        .find(|row| row.artifact == "evidence-workspace:view")
+        .unwrap();
+    assert_eq!(view.authority, "authoritative-kan");
+    assert_eq!(view.lifecycle, "immutable-owner-declaration");
+}

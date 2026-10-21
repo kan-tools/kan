@@ -88,6 +88,20 @@ regressions and whole-application checks pass, prepare the sequenced merge/relea
 plan using the preserved draft history. Do not merge/deploy merely because review
 completed.
 
+### Final-review corrections — active
+
+The completed independent Opus 5.5 review of `58bea3b` did not accept full v2
+completion. All material findings remain in scope: F1 stable/incremental search
+and cache maintenance; F2 page-local annotation filtering; F3 independent backup
+checkpoints and restore gaps; F4 fenced final-delta migration/cutover/rollback;
+F5 complementary harness capture and reconstructed attachment exports; F6 accurate
+capability reporting. Capacity and broader browser/deployment acceptance also remain.
+F1/F2/F6 are now implemented with renewal/growth, 1,500 distinct annotation citations,
+cache retention and automatic browser scan regressions; Rust qualification is pending.
+The unchanged areas do not need another full review. Re-review material fixes after
+integration. The 100 GiB Modal runner is prepared; account authentication is still
+needed before a cloud measurement can run.
+
 ### Starting state and evidence reuse
 
 - Recovery/pinned inventory author qualification at a2666df passed 138 integrations,
@@ -127,9 +141,8 @@ encrypted synthetic evidence. Frontend unit checks alone do not close these rows
 | Actual browser rendering, authoring, search, native downloads and lock | `scripts/check-library-browser.cjs` starts the real Rust synthetic fixture and Chromium, checks exact downloaded bytes, both themes at desktop/tablet/390px, missing/corrupt states, keyboard focus, signed annotation preview/save, cross-archive search, reopening a pinned view, private-view clearing and no external resource loads. PR CI retains screenshots and the result. This new automation is pending execution; it supplements the earlier manual browser evidence and API/UI tests, not every administrative screen's visual acceptance. |
 | Archive growth and bounded ordinary operations | `scripts/measure-v2-capacity.py`: true 10/100 GiB fixtures, fresh-process open/append/page/source distributions and RSS/I/O. The 10 GiB hosted job passed at `9cd3adb` (CI 39518793836; raw report in `.design/measurements/kan-v2-10g-9cd3adb.json`); 100 GiB requires the owner-selected remote disk. Neither the 11 MiB regression nor synthetic small smoke closes the scale criterion. |
 
-Final independent review must assess the composition of these paths, the retained
-failure evidence and human workflows outside the automated browser slice. It has
-not started. No live capture, cutover, production migration or erasure is implied.
+The final independent review assessed these paths and reported the corrections
+listed above; it did not accept full completion. No live capture, cutover, production migration or erasure is implied.
 
 ## Historical checkpoint records
 

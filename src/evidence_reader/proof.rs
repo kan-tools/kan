@@ -640,29 +640,74 @@ impl Reader {
     /// Fresh metadata-only membership/erasure check. Captured bytes and keys are
     /// not required, and a foreign selection remains attribution rather than a grant.
     pub(crate) async fn citation_erased(&self, selection: &Token) -> Result<bool> {
-        let coordinate = self.citation_coordinate(selection)?;
-        let expected = coordinate.frontier(&self.access.binding)?;
+        Ok(self
+            .citations_erased(std::slice::from_ref(selection))
+            .await?[0])
+    }
+    /// Verify every attributed token, then check nearby citations together with
+    /// metadata pages under one fresh snapshot. No captured plaintext is read.
+    pub(crate) async fn citations_erased(&self, selections: &[Token]) -> Result<Vec<bool>> {
+        if selections.is_empty() || selections.len() > 800 {
+            return Err(Failure::Invalid);
+        }
+        let mut pending = std::collections::BTreeMap::new();
+        for (i, selection) in selections.iter().enumerate() {
+            let coordinate = self.citation_coordinate(selection)?;
+            let frontier = coordinate.frontier(&self.access.binding)?;
+            let entry = pending
+                .entry(frontier.through)
+                .or_insert_with(|| (coordinate.clone(), Vec::new()));
+            if entry.0 != coordinate {
+                return Err(Failure::Corrupt);
+            }
+            entry.1.push(i);
+        }
         let pin = self.snapshot().await?;
         let checked = self.check_pin(&pin)?;
-        if expected.through > checked.frontier.through {
-            return Err(Failure::Missing);
+        let mut output = vec![false; selections.len()];
+        while let Some((&through, (coordinate, _))) = pending.last_key_value() {
+            if through > checked.frontier.through {
+                return Err(Failure::Missing);
+            }
+            let low = through.saturating_sub(wire::PAGE_LIMIT as u64 - 1);
+            let last = *pending
+                .range(low..=through)
+                .next()
+                .ok_or(Failure::Corrupt)?
+                .0;
+            let limit = (through - last + 1) as usize;
+            let mut expected = coordinate.frontier(&self.access.binding)?;
+            let (_, reply) = self
+                .call(wire::Command::Page {
+                    pin: wire::Coordinate::from_frontier(&checked.frontier),
+                    next: coordinate.clone(),
+                    limit,
+                })
+                .await?;
+            let wire::Output::Page { records, next } = reply.reply.result? else {
+                return Err(Failure::Corrupt);
+            };
+            if records.len() != limit {
+                return Err(Failure::Missing);
+            }
+            for row in records {
+                let (_, proof) = self.verify_row(&checked, &expected, &row)?;
+                if let Some((coordinate, indices)) = pending.remove(&expected.through) {
+                    if coordinate != wire::Coordinate::from_frontier(&expected) {
+                        return Err(Failure::Corrupt);
+                    }
+                    for i in indices {
+                        output[i] = row.availability == wire::Availability::Erased;
+                    }
+                }
+                expected = proof.previous().clone();
+            }
+            if next != (expected.through > 0).then(|| wire::Coordinate::from_frontier(&expected)) {
+                return Err(Failure::Corrupt);
+            }
         }
-        let (_, reply) = self
-            .call(wire::Command::Page {
-                pin: wire::Coordinate::from_frontier(&checked.frontier),
-                next: coordinate,
-                limit: 1,
-            })
-            .await?;
-        let wire::Output::Page { mut records, .. } = reply.reply.result? else {
-            return Err(Failure::Corrupt);
-        };
-        if records.len() != 1 {
-            return Err(Failure::Missing);
-        }
-        let row = records.pop().ok_or(Failure::Missing)?;
-        self.verify_row(&checked, &expected, &row)?;
-        Ok(row.availability == wire::Availability::Erased)
+        self.page(&pin, None, 1).await?;
+        Ok(output)
     }
     pub(crate) async fn check_citation_access(&self, _pin: &Pin, selection: &Token) -> Result<()> {
         if self.citation_erased(selection).await? {

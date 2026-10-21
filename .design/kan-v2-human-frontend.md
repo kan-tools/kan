@@ -177,8 +177,8 @@ The Library accepts an optional dedicated encrypted workspace database and recip
 key, outside repositories. Its signer is the configured reader. Index pages and
 saved view declarations are signed with a separate workspace domain and encrypted
 in bounded HPKE chunks; no plaintext SQLite index or browser cache is created.
-A reader signature, exact source/pin/cursor binding and projection version are
-required on a cached page. Database identifiers expose kind, sizes and opaque
+A workspace signature, immutable source occurrence identity and projection version
+are required on a cached document; current pins/cursors are verified independently. Database identifiers expose kind, sizes and opaque
 hashes under the default rich-metadata policy. This is a reader-owned projection
 service, not a new authority for the blind evidence service.
 
@@ -194,12 +194,13 @@ returning snippets. Facets are labeled as indexed. Saved views pin membership an
 trust framing, not enduring access or current payload availability. Listing a view
 requires present access to all its sources; unavailable scopes reveal no titles.
 
-The database is owner-only, rollback-journal mode, capped at 256 MiB; a value is
-bounded to 12 MiB and view declarations to 256 KiB, with at most 200 views. Capacity
+The database is owner-only, rollback-journal mode, with SQLite's maximum page count;
+a value is bounded to 12 MiB and view declarations to 256 KiB. View lists paginate
+without a lifetime declaration cap. Capacity
 exhaustion is an explicit failure without silent expiry or overwrite. View saves
 are content-addressed and idempotent; changed declarations retain prior versions.
-Index pages are disposable immutable projections and can be rebuilt into a new
-workspace. Normal open refuses hot journals. Explicit CLI or owner recovery copies
+Search documents are disposable projections that can be refreshed or explicitly
+pruned without replacing authored history. Normal open refuses hot journals. Explicit CLI or owner recovery copies
 a stopped database and its rollback journal into a new file, lets SQLite recover
 only that copy, then authenticates every retained entry. Originals and failed
 outputs remain. Maintenance and scheduler locks use separate owner-private inodes;
@@ -887,3 +888,25 @@ advances that head, delivery refuses instead of applying the previous annotation
 source checks to its successor. An ordinary admission acknowledgment, or a valid
 cancellation completion from another archive with the same issuer/scope/request,
 cannot retire an initial-erasure operation.
+
+
+### Integrated-review corrections: disposable search and annotation filtering
+
+The raw-text/4 cache keys one encrypted document by immutable archive occurrence,
+not by signed snapshot or cursor envelopes. A freshly verified inventory supplies
+current selection tokens. Growing/renewing a snapshot reuses old documents; current
+source access and bytes remain required for a returned snippet. Search continues
+bounded requests automatically until completion, explicit stop or the 1,000-hit
+window. Explicit `prune-search-cache` removes at most 128 disposable entries per
+request, including old snapshot-based entries, with a continuation indication.
+Only the search projection can be replaced/pruned; append-only annotations, views,
+source evidence and custody histories retain their existing authority and lifecycle.
+
+Annotation search first restricts candidates to the result page's signed occurrence
+coordinates, then applies subject/tag and current-source checks in bounded batches.
+An authenticated, disposable in-memory inverse lookup stores hashes/entry IDs only;
+external commits and local annotation appends invalidate it. Beyond its 262,144-link
+budget, bounded scans preserve completeness. Metadata-page batches verify every
+citation token and membership/erasure against one fresh snapshot per source, with
+current grants checked again before returning. Corrections and withdrawals remain
+retained history rather than silently removing their original associations.

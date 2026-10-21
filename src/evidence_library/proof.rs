@@ -210,6 +210,20 @@ impl Readers {
                 self.annotations_page(subject, tag, after, limit.unwrap_or(100))
                     .await?
             }
+            Query::PruneSearchCache => {
+                let workspace = self.workspace.clone().ok_or(Failure::Invalid)?;
+                let permit = self
+                    .workers
+                    .clone()
+                    .try_acquire_owned()
+                    .map_err(|_| ContentError::Busy)?;
+                tokio::task::spawn_blocking(move || {
+                    let _permit = permit;
+                    workspace.prune_search_pages()
+                })
+                .await
+                .map_err(|_| Failure::Unavailable)??
+            }
             Query::IndexPage { target, cursor } => {
                 search::index(
                     self.selected(&target.source)?,
@@ -434,12 +448,16 @@ impl Readers {
                 }
                 let mut catalog = json!({"version":2,"scopes":scopes,"coverage":if partial {"partial"} else {"complete"},
                     "capabilities":["portable-references","snapshot-inventory","source-ranges","provenance","payload-availability","content-inspection","attempt-discovery","attempt-content","session-links","session-content","import-content"],
-                    "unavailable":["semantic-search","normalized-sessions","annotations","saved-views","analysis","administrative-jobs"]});
+                    "unavailable":["semantic-search","annotations","saved-views","analysis","owner-maintenance"]});
                 if self.owner.is_some() {
                     catalog["capabilities"]
                         .as_array_mut()
                         .unwrap()
                         .push(json!("owner-maintenance"));
+                    catalog["unavailable"]
+                        .as_array_mut()
+                        .unwrap()
+                        .retain(|v| v != "owner-maintenance");
                 }
                 if self.analysis.is_some() {
                     catalog["capabilities"]

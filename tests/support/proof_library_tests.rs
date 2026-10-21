@@ -1169,6 +1169,61 @@ async fn encrypted_search_views_restart_exact_citations_loss_and_revocation() {
         assert_eq!(indexed["indexed_occurrences"], 3);
         assert!(indexed["next"].is_null());
     }
+    // Renew the signed snapshot without changing the immutable frontier. Cache
+    // identity must not include its envelope or reader-local selection token.
+    let count_cache = || -> i64 {
+        rusqlite::Connection::open(&workspace)
+            .unwrap()
+            .query_row(
+                "SELECT count(*) FROM entries WHERE kind='search-page'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap()
+    };
+    assert_eq!(count_cache(), 6);
+    let renewed = ui.call(json!({"action":"catalog"}), 200).await;
+    for entry in renewed["scopes"].as_array().unwrap() {
+        let mut request = wire::SignedRequest::decode(
+            &service::unhex(entry["pin"]["request"].as_str().unwrap(), wire::MAX_REQUEST).unwrap(),
+        )
+        .unwrap()
+        .request;
+        request.expires += 1;
+        let bytes = wire::SignedRequest::sign(request.clone(), &identity(6))
+            .unwrap()
+            .bytes()
+            .unwrap();
+        let service = if request.binding == binding(&admitted) {
+            &first.service
+        } else {
+            &second.service
+        };
+        let reply = service
+            .lock()
+            .unwrap()
+            .dispatch(&bytes, kan::evidence_operations::now())
+            .unwrap();
+        let pin = json!({"request":service::hex(&bytes),"reply":reply});
+        assert_ne!(pin, entry["pin"]);
+        let target = json!({"source":entry["id"],"pin":pin});
+        let indexed = ui
+            .call(json!({"action":"index-page","target":target}), 200)
+            .await;
+        assert_eq!(indexed["reused_occurrences"], 3);
+        assert_eq!(indexed["newly_indexed_occurrences"], 0);
+        let result = ui
+            .call(
+                json!({"action":"search-page","target":target,"filter":filter}),
+                200,
+            )
+            .await;
+        assert_eq!(result["hits"].as_array().unwrap().len(), 3);
+        let hit = &result["hits"][0];
+        let source = ui.call(json!({"action":"proof-source","source":entry["id"],"pin":target["pin"],"selection":hit["record"]["selection"],"offset":"5","length":"6"}), 200).await;
+        assert_eq!(source["utf8"], "Needle");
+    }
+    assert_eq!(count_cache(), 6);
     let found = ui.call(query.clone(), 200).await;
     assert_eq!(found["hits"].as_array().unwrap().len(), 3);
     assert_eq!(found["hits"][0]["offset"], "5");
@@ -1225,6 +1280,26 @@ async fn encrypted_search_views_restart_exact_citations_loss_and_revocation() {
             .len(),
         1
     );
+    let pruned = ui.call(json!({"action":"prune-search-cache"}), 200).await;
+    assert_eq!(pruned["removed"], 6);
+    assert_eq!(pruned["more"], false);
+    assert_eq!(count_cache(), 0);
+    assert_eq!(
+        ui.call(json!({"action":"views"}), 200).await["views"][0],
+        saved
+    );
+    assert_eq!(
+        ui.call(json!({"action":"annotations"}), 200).await["records"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+    assert_eq!(ui.call(query.clone(), 200).await["state"], "not-indexed");
+    for target in &targets {
+        ui.call(json!({"action":"index-page","target":target}), 200)
+            .await;
+    }
     admitted.remove(2);
     let missing = ui.call(query.clone(), 200).await;
     assert_eq!(missing["hits"].as_array().unwrap().len(), 2);
@@ -7045,6 +7120,167 @@ async fn decision_adapters_retain_distinct_runs_and_read_history_after_provider_
         403,
     )
     .await;
+    ui.stop().await;
+    server.stop().await;
+}
+
+#[tokio::test]
+async fn annotation_search_with_1500_distinct_citations_is_page_local_and_refreshes() {
+    use kan::evidence_workspace::Workspace;
+    let archive_dir = tempfile::tempdir().unwrap();
+    let local = private_workspace_directory();
+    let f = fixture_requests(archive_dir.path(), Profile::Admitted, encrypted);
+    let author = identity(6);
+    let issuer = identity(8);
+    {
+        let archive = attested::Archive::open(&f.root, f.binding.clone()).unwrap();
+        archive.rebuild_serving_index(&issuer).unwrap();
+    }
+    let mut archive = attested::Archive::open_indexed(&f.root, f.binding.clone(), None).unwrap();
+    let mut previous = Some(
+        service::append_manifest(&f.requests[2])
+            .unwrap()
+            .cid()
+            .to_string(),
+    );
+    let ciphertext = service::hex(
+        &kan::evidence_crypto::seal(
+            &kan::evidence_crypto::public_key(&PRIVATE).unwrap(),
+            &[1; 32],
+            b"searchable evidence",
+        )
+        .unwrap(),
+    );
+    for n in 3..1500u64 {
+        let bytes = service::SignedRequest::sign(
+            service::Request {
+                version: 1,
+                scope: service::hex(&[1; 32]),
+                principal: author.did().to_string(),
+                audience: issuer.did().to_string(),
+                expires: None,
+                command: service::Command::Append {
+                    id: service::hex(&(n as u128 + 1).to_be_bytes()),
+                    position: n,
+                    previous,
+                    ciphertext: ciphertext.clone(),
+                },
+            },
+            &author,
+        )
+        .unwrap()
+        .bytes()
+        .unwrap();
+        let result = archive
+            .admit_indexed(&bytes, &issuer, &grant(), 100 + n, None)
+            .unwrap();
+        previous = Some(result.record.manifest.cid().to_string());
+    }
+    drop(archive);
+    let server = Server::start_initialized(&f).await;
+    let reader = server.client(&f);
+    let pin = reader.snapshot().await.unwrap();
+    let path = local.path().join("workspace.sqlite");
+    let workspace = Workspace::open(&path, identity(6), [72; 32]).unwrap();
+    let readers = || {
+        kan::evidence_library::Readers::new(None, vec![server.client(&f)])
+            .unwrap()
+            .with_workspace(Workspace::open(&path, identity(6), [72; 32]).unwrap())
+    };
+    let ui = Ui::start(readers()).await;
+    let catalog = ui.call(json!({"action":"catalog"}), 200).await;
+    let entry = &catalog["scopes"][0];
+    let mut cursor = None;
+    loop {
+        let page = reader
+            .page(&pin, cursor.as_ref(), wire::PAGE_LIMIT)
+            .await
+            .unwrap();
+        for row in page.records {
+            let id = format!("note-{}", row.sequence);
+            workspace.put("annotation", &id, json!({"id":id,"author":author.did().to_string(),"draft":{
+                "subject":"project/scale","text":"Historical assertion","tags":["selected"],"relations":[],
+                "cites":[{"source":entry["id"],"pin":pin,"selection":row.selection}],"supersedes":null
+            }})).unwrap();
+        }
+        cursor = page.next;
+        if cursor.is_none() {
+            break;
+        }
+    }
+    let target = json!({"source":entry["id"],"pin":entry["pin"]});
+    ui.call(json!({"action":"index-page","target":target}), 200)
+        .await;
+    let query = json!({"action":"search-page","target":target,"filter":{"text":"searchable","annotation_tag":"selected"}});
+    let result = ui.call(query.clone(), 200).await;
+    assert_eq!(result["hits"].as_array().unwrap().len(), 8);
+    assert_eq!(result["annotation_filter"]["coverage"], "complete");
+    assert_eq!(ui.call(query.clone(), 200).await["hits"], result["hits"]);
+    let mut changed = query.clone();
+    changed["filter"]["annotation_tag"] = json!("new-tag");
+    assert!(ui.call(changed.clone(), 200).await["hits"]
+        .as_array()
+        .unwrap()
+        .is_empty());
+    // A second connection's append must invalidate the inverse index. A local
+    // cache-write alone must not cause a whole-history rebuild on every page.
+    workspace.put("annotation", "new-note", json!({"id":"new-note","author":author.did().to_string(),"draft":{
+        "subject":"project/scale","text":"New declaration","tags":["new-tag"],"relations":[],
+        "cites":[{"source":entry["id"],"pin":entry["pin"],"selection":result["hits"][0]["record"]["selection"]}],"supersedes":null
+    }})).unwrap();
+    assert_eq!(
+        ui.call(changed, 200).await["hits"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+    // Growth only adds the unseen suffix, and old pinned searches still work.
+    let mut archive = attested::Archive::open_indexed(&f.root, f.binding.clone(), None).unwrap();
+    let bytes = service::SignedRequest::sign(
+        service::Request {
+            version: 1,
+            scope: service::hex(&[1; 32]),
+            principal: author.did().to_string(),
+            audience: issuer.did().to_string(),
+            expires: None,
+            command: service::Command::Append {
+                id: service::hex(&1501u128.to_be_bytes()),
+                position: 1500,
+                previous,
+                ciphertext,
+            },
+        },
+        &author,
+    )
+    .unwrap()
+    .bytes()
+    .unwrap();
+    archive
+        .admit_indexed(&bytes, &issuer, &grant(), 1600, None)
+        .unwrap();
+    drop(archive);
+    let grown = ui.call(json!({"action":"catalog"}), 200).await;
+    let indexed = ui.call(json!({"action":"index-page","target":{"source":grown["scopes"][0]["id"],"pin":grown["scopes"][0]["pin"]}}), 200).await;
+    assert_eq!(indexed["newly_indexed_occurrences"], 1);
+    assert_eq!(indexed["reused_occurrences"], 7);
+    let count: i64 = rusqlite::Connection::open(&path)
+        .unwrap()
+        .query_row(
+            "SELECT count(*) FROM entries WHERE kind='search-page'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(count, 9);
+    assert_eq!(ui.call(query.clone(), 200).await["hits"], result["hits"]);
+    server
+        .service
+        .lock()
+        .unwrap()
+        .replace_grants(vec![])
+        .unwrap();
+    ui.call(query, 403).await;
     ui.stop().await;
     server.stop().await;
 }

@@ -1104,10 +1104,10 @@
     if(searchHits.size>=1000)searchHits.clear();
     let pages=0;
     try {
-      // Round-robin bounded windows keep every chosen archive represented.
-      while(pages<25 && searchStates.some(s=>!s.complete)) {
+      // Continue bounded requests automatically until complete, stopped, or the result window is full.
+      while(searchStates.some(s=>!s.complete)) {
         for(const state of searchStates.filter(s=>!s.complete)) {
-          if(current!==searchRun || pages>=25 || searchHits.size>=1000)return;
+          if(current!==searchRun || searchHits.size>=1000)return;
           const target={source:sourceId(state.entry),pin:state.entry.pin};
           const indexed=await rpc({action:'index-page',target,cursor:state.cursor});if(!indexed || current!==searchRun)return;
           const result=await rpc({action:'search-page',target,cursor:state.cursor,filter:searchFilter});if(!result || current!==searchRun)return;
@@ -1159,6 +1159,11 @@
     if(!searchStates.length){notice('No proof archive is available for this search.',true);return;}
     await searchWindow();
   });});
+  $('clear-search-index').addEventListener('click',()=>run(async()=>{
+    searchRun++;cancelWork();clearSearch();
+    const value=await rpc({action:'prune-search-cache'});if(!value)return;
+    $('search-coverage').textContent=`Removed ${value.removed} disposable index entries. ${value.more?'More remain; clear another batch to continue.':'Index cleared.'} Saved views, annotations and evidence are retained. Freed database pages can be reused.`;
+  }));
   $('resume-search').addEventListener('click',()=>run(searchWindow));
   $('stop-search').addEventListener('click',()=>{searchRun++;cancelWork();$('stop-search').disabled=true;renderSearch();notice('Search stopped. Completed pages remain visible; Continue resumes the same pinned view.');});
   $('save-view').addEventListener('click',()=>run(async()=>{

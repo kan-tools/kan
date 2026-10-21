@@ -389,15 +389,13 @@ impl Readers {
             json!({"records":records,"erased":erased,"withdrawals":withdrawals,"coverage":if partial {"partial"} else {"complete"},"authority":"Reader-authored annotations; captured speaker claims and imported v1 claims are separate."}),
         )
     }
-    async fn authorize_annotations(
+    pub(super) async fn authorize_annotations(
         &self,
         declarations: Vec<Value>,
     ) -> Result<(Vec<Value>, Vec<Value>, bool), ContentError> {
         let (authorized, partial) = self.authorized_sources().await;
-        let mut records = Vec::new();
-        let mut erased = Vec::new();
-        let mut checked = std::collections::BTreeMap::new();
-        let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(20);
+        let mut candidates = Vec::new();
+        let mut grouped = std::collections::BTreeMap::<String, Vec<(usize, Token)>>::new();
         for declaration in declarations {
             let draft: Draft = serde_json::from_value(declaration["draft"].clone())
                 .map_err(|_| Failure::Corrupt)?;
@@ -409,33 +407,53 @@ impl Readers {
             {
                 continue;
             }
-            let mut affected = false;
-            for cite in &draft.cites {
-                let key = crate::evidence_service::hex(&Sha256::digest(
-                    serde_json::to_vec(cite).map_err(|_| Failure::Invalid)?,
-                ));
-                let is_erased = if let Some(value) = checked.get(&key) {
-                    *value
-                } else {
-                    let value = tokio::time::timeout_at(
-                        deadline,
-                        self.selected(&cite.source)?
-                            .citation_erased(&cite.selection),
-                    )
-                    .await
-                    .map_err(|_| ContentError::Limited)??;
-                    checked.insert(key, value);
-                    value
-                };
-                affected |= is_erased;
+            let index = candidates.len();
+            for cite in draft.cites {
+                grouped
+                    .entry(cite.source)
+                    .or_default()
+                    .push((index, cite.selection));
             }
-            if affected {
+            candidates.push(declaration);
+        }
+        let mut affected = std::collections::BTreeSet::new();
+        for (source, cites) in grouped {
+            for chunk in cites.chunks(800) {
+                let selections: Vec<_> = chunk.iter().map(|(_, token)| token.clone()).collect();
+                let erased = tokio::time::timeout(
+                    std::time::Duration::from_secs(120),
+                    self.selected(&source)?.citations_erased(&selections),
+                )
+                .await
+                .map_err(|_| ContentError::Limited)??;
+                for ((index, _), erased) in chunk.iter().zip(erased) {
+                    if erased {
+                        affected.insert(*index);
+                    }
+                }
+            }
+        }
+        // Access may have changed while another source was being checked.
+        let (current, now_partial) = self.authorized_sources().await;
+        let mut records = Vec::new();
+        let mut erased = Vec::new();
+        for (index, declaration) in candidates.into_iter().enumerate() {
+            let draft: Draft = serde_json::from_value(declaration["draft"].clone())
+                .map_err(|_| Failure::Corrupt)?;
+            if draft.cites.iter().any(|c| !current.contains(&c.source))
+                || declaration["recovered_from"]["source"]
+                    .as_str()
+                    .is_some_and(|s| !current.contains(s))
+            {
+                continue;
+            }
+            if affected.contains(&index) {
                 erased.push(json!({"id":declaration["id"],"state":"erased-source","cleanup":"pending-coordinated-erasure"}));
             } else {
                 records.push(declaration);
             }
         }
-        Ok((records, erased, partial))
+        Ok((records, erased, partial || now_partial))
     }
     /// Relations are attributed assertions with retained correction history.
     /// This view does not rewrite identity or collapse competing assertions.

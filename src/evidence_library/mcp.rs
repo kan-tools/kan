@@ -78,6 +78,7 @@ fn mutates(request: &Query) -> bool {
         Query::AnnotationSave { .. }
         | Query::AnnotationQueue { .. }
         | Query::AnnotationDrain { .. }
+        | Query::PruneSearchCache
         | Query::IndexPage { .. }
         | Query::SaveView { .. }
         | Query::SaveImportView { .. }

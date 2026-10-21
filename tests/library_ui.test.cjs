@@ -1006,3 +1006,19 @@ test('structured analysis answers retain model distributions and explicit promot
  u.node('annotation-form').events.submit({preventDefault(){}});await tick();const preview=JSON.parse(u.pending[0].opts.body);
  assert.deepEqual(preview.draft.derived_from,['decision-job']);assert.deepEqual(preview.draft.cites,request.draft.cites);
 });
+
+
+test('search continues beyond 25 pages and cache maintenance is separate from authored history', async()=>{
+ const u=ui();await openSearch(u);
+ for(let i=0;i<30;i++) {
+  assert.equal(JSON.parse(u.pending[0].opts.body).action,'index-page');
+  await u.respond(searchPage);
+  await u.respond({...searchPage,hits:[],next:i<28?{cursor:i}:null});
+ }
+ assert.equal(u.pending.length,0);assert.equal(u.node('resume-search').disabled,true);
+ assert.match(u.node('search-coverage').textContent,/30 index pages/);
+ u.node('clear-search-index').click();await tick();
+ assert.equal(JSON.parse(u.pending[0].opts.body).action,'prune-search-cache');
+ await u.respond({removed:128,more:true});
+ assert.match(u.node('search-coverage').textContent,/128/);
+});

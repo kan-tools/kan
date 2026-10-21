@@ -254,9 +254,9 @@ kan-v2 library --config /absolute/path/reader.json \
 ```
 
 Use **Index & search** to search across current authorized proof archives or just
-the selected archive. Each bounded window indexes and searches at most 25 pages
-of eight occurrences. Stop preserves completed pages; Continue resumes pinned
-coverage. Only 1,000 hits stay in a browser result window; continuing starts a new
+the selected archive. The browser automatically continues requests of eight
+occurrences until the pinned scan completes, you stop it, or the result window fills.
+Stop preserves completed pages; Continue resumes pinned coverage. Only 1,000 hits stay in a browser result window; continuing starts a new
 window when full. Search is ASCII case-insensitive; other Unicode matches exactly.
 The current projection searches headers and UTF-8 bodies separately, so binary
 spans and phrases crossing capture chunks are explicitly excluded. Facets describe
@@ -279,6 +279,15 @@ kan-v2 library --config /absolute/path/reader.json \
   --workspace-key /absolute/path/private/workspace.key \
   --request /absolute/path/private/library-request.json
 ```
+
+The encrypted disposable index uses immutable occurrence identity (archive binding,
+sequence, manifest, attestation and receipt), independently of snapshot envelopes.
+New snapshots reuse existing content and index only unseen occurrences. Current
+membership, availability and grants are still checked before returning source text.
+**Clear search index** / `prune-search-cache` removes up to 128 cache entries per
+request, returning `more` when another batch remains. This also clears obsolete
+snapshot-keyed indexes from earlier builds. SQLite reuses freed pages; this is not
+secure erasure or file compaction. Views, annotations, jobs and evidence are retained.
 
 Requests are `catalog`, `index-page` (`target: {source, pin}`, `cursor`),
 `search-page` (same fields plus `filter: {text, writer, kind}`), `save-view`
@@ -671,7 +680,7 @@ latter `attested_from` / `attested_to` as canonical unsigned millisecond strings
 the browser converts local date/time inputs. These are distinct from observer
 clock claims inside captures. Saved views retain the complete filter.
 
-The encrypted `raw-text/3` projection also indexes up to 2,048 string values from
+The encrypted `raw-text/4` projection also indexes up to 2,048 string values from
 each complete JSON span (bounded to 8,192 visited JSON values). Escaped string
 matches are marked `json-string` / `coarse` and cite the enclosing original span,
 not an invented exact substring. Current source is re-read before returning a hit.
@@ -999,6 +1008,15 @@ matching contributing occurrence; all chunks remain independently authorized and
 cited. Facet counts and reconstruction coverage describe the authorized corpus
 before annotation filtering. A saved view reruns its annotation filters against
 current visible history; it does not freeze old grants or annotation membership.
+
+Filtering selects only declarations citing occurrences on the current result page,
+materializing at most 100 candidate declarations / 1 MiB at a time. A disposable
+in-memory inverse lookup contains authenticated coordinate hashes and opaque entry
+IDs. It is built from encrypted declarations on first use and invalidated by local
+annotation writes or other connections' commits; it never grants source access.
+Above 262,144 citation links it falls back to bounded scans instead of dropping
+history. Nearby current citation checks share verified metadata pages and one fresh
+snapshot per source/batch, including checks on recovered publication origins.
 
 ### Save an imported repository's input and trust frame
 

@@ -111,6 +111,7 @@ pub enum Query {
         after: Option<String>,
         limit: Option<usize>,
     },
+    PruneSearchCache,
     IndexPage {
         target: SearchTarget,
         cursor: Option<verified::Token>,
@@ -243,6 +244,7 @@ async fn query(reader: &Reader, query: Query) -> Result<Vec<u8>, ContentError> {
         | Query::AnnotationPreview { .. }
         | Query::AnnotationSave { .. }
         | Query::Annotations { .. }
+        | Query::PruneSearchCache
         | Query::IndexPage { .. }
         | Query::SearchPage { .. }
         | Query::SearchAttempt { .. }

@@ -212,18 +212,40 @@ fn json_strings(value: &Value, strings: &mut Vec<String>, visited: &mut usize) {
     }
 }
 
-fn key(target: &Target, cursor: Option<&Token>) -> Result<String, Failure> {
-    serde_json::to_string(&("raw-text/3", target, cursor)).map_err(|_| Failure::Invalid)
+fn key(reader: &Reader, record: &Occurrence) -> Result<String, Failure> {
+    // Signed envelopes and reader-local tokens are not evidence identity.
+    // Each occurrence is indexed once even when snapshots grow or renew.
+    serde_json::to_string(&(
+        "raw-text/4",
+        crate::evidence_reader::proof::Reference::new(reader.binding(), record),
+    ))
+    .map_err(|_| Failure::Invalid)
 }
-fn load(
+fn load_document(
     workspace: &Workspace,
-    target: &Target,
-    cursor: Option<&Token>,
-) -> Result<Option<Page>, Failure> {
-    workspace
-        .get("search-page", &key(target, cursor)?)?
-        .map(|v| serde_json::from_value::<Page>(v).map_err(|_| Failure::Corrupt))
-        .transpose()
+    reader: &Reader,
+    record: &Occurrence,
+) -> Result<Option<Document>, Failure> {
+    if record.availability == crate::evidence_proof_service::Availability::Erased {
+        return Ok(Some(doc(Source::Erased {
+            record: record.clone(),
+        })));
+    }
+    let Some(value) = workspace.get("search-page", &key(reader, record)?)? else {
+        return Ok(None);
+    };
+    let mut page: Page = serde_json::from_value(value).map_err(|_| Failure::Corrupt)?;
+    if page.version != 3 || page.documents.len() != 1 || page.next.is_some() {
+        return Err(Failure::Corrupt);
+    }
+    let mut document = page.documents.pop().ok_or(Failure::Corrupt)?;
+    if key(reader, &document.record)? != key(reader, record)? {
+        return Err(Failure::Corrupt);
+    }
+    // The inventory verified membership and supplied a token bound to this pin.
+    // Never reuse the old token or its availability observation.
+    document.record = record.clone();
+    Ok(Some(document))
 }
 fn status(page: &Page) -> Value {
     let mut facets = BTreeMap::<String, usize>::new();
@@ -238,7 +260,7 @@ fn status(page: &Page) -> Value {
             *writers.entry(w.clone()).or_default() += 1;
         }
     }
-    json!({"indexed_occurrences":page.documents.len(),"indexed_at":page.indexed_at.to_string(),"next":page.next,"facets_as_indexed":{"kind":facets,"writer":writers,"observer":observers},"unsearchable_bytes":page.documents.iter().map(|d|d.unsearchable_bytes).sum::<usize>().to_string(),"coverage":"This pinned index page only. Raw UTF-8 and up to 2,048 decoded string values in each complete JSON span are indexed. Normalized hits cite the enclosing original span. Missing/corrupt sources, binary spans, and text crossing capture chunks are not searchable. A complete scan does not prove complete capture."})
+    json!({"indexed_occurrences":page.documents.len(),"checked_at":page.indexed_at.to_string(),"next":page.next,"facets_as_indexed":{"kind":facets,"writer":writers,"observer":observers},"unsearchable_bytes":page.documents.iter().map(|d|d.unsearchable_bytes).sum::<usize>().to_string(),"coverage":"This pinned index page only. Raw UTF-8 and up to 2,048 decoded string values in each complete JSON span are indexed. Normalized hits cite the enclosing original span. Missing/corrupt sources, binary spans, and text crossing capture chunks are not searchable. A complete scan does not prove complete capture."})
 }
 pub(super) async fn index(
     reader: &Reader,
@@ -251,20 +273,32 @@ pub(super) async fn index(
         .try_acquire_owned()
         .map_err(|_| ContentError::Busy)?;
     tokio::time::timeout(Duration::from_secs(25), async {
-        // Validate both the supplied pin and cursor even for an existing page.
+        // Fresh inventory validates the pin/cursor and each immutable identity.
         let inventory = reader.page(&target.pin, cursor, 8).await?;
-        if let Some(p) = load(workspace, target, cursor)? {
-            return Ok(status(&p));
-        }
-        let selections: Vec<_> = inventory.records.into_iter().map(|r| r.selection).collect();
         let mut documents = Vec::new();
-        let mut start = 0;
-        while start < selections.len() {
-            let sources = reader
-                .sources_prefix(&target.pin, &selections[start..])
-                .await?;
-            start += sources.len();
-            documents.extend(sources.into_iter().map(doc));
+        let mut reused = 0;
+        for record in inventory.records {
+            let prior = load_document(workspace, reader, &record)?;
+            let document = if let Some(prior) = prior
+                .filter(|d| !matches!(d.kind.as_str(), "key-unavailable" | "missing" | "corrupt"))
+            {
+                reused += 1;
+                prior
+            } else {
+                let document = doc(reader.source(&target.pin, &record.selection).await?);
+                let page = Page {
+                    version: 3,
+                    documents: vec![document],
+                    next: None,
+                    indexed_at: crate::evidence_operations::now(),
+                };
+                workspace.replace_search_page(
+                    &key(reader, &record)?,
+                    serde_json::to_value(&page).map_err(|_| Failure::Invalid)?,
+                )?;
+                page.documents.into_iter().next().ok_or(Failure::Corrupt)?
+            };
+            documents.push(document);
         }
         reader.page(&target.pin, None, 1).await?;
         let page = Page {
@@ -273,12 +307,10 @@ pub(super) async fn index(
             next: inventory.next,
             indexed_at: crate::evidence_operations::now(),
         };
-        workspace.put(
-            "search-page",
-            &key(target, cursor)?,
-            serde_json::to_value(&page).map_err(|_| Failure::Invalid)?,
-        )?;
-        Ok(status(&page))
+        let mut value = status(&page);
+        value["reused_occurrences"] = json!(reused);
+        value["newly_indexed_occurrences"] = json!(page.documents.len() - reused);
+        Ok(value)
     })
     .await
     .map_err(|_| ContentError::Limited)?
@@ -368,9 +400,13 @@ pub(super) async fn search(
         .try_acquire_owned()
         .map_err(|_| ContentError::Busy)?;
     tokio::time::timeout(Duration::from_secs(25),async {
-        reader.page(&target.pin,cursor,1).await?;
-        let Some(page)=load(workspace,target,cursor)? else {return Ok(json!({"state":"not-indexed","hits":[],"next":null}));};
-        if page.version!=3 || page.documents.len()>8 {return Err(Failure::Corrupt.into());}
+        let inventory=reader.page(&target.pin,cursor,8).await?;
+        let mut documents=Vec::new();
+        for record in inventory.records {
+            let Some(document)=load_document(workspace,reader,&record)? else {return Ok(json!({"state":"not-indexed","hits":[],"next":null}));};
+            documents.push(document);
+        }
+        let page=Page {version:3,documents,next:inventory.next,indexed_at:crate::evidence_operations::now()};
         let mut hits=Vec::new();let mut unavailable=0;
         for d in &page.documents {if matching(d,filter).is_some() {
             let current=doc(reader.source(&target.pin,&d.record.selection).await?);
@@ -527,63 +563,91 @@ impl super::Readers {
             return Ok(());
         }
         filter.validate()?;
-        let visible = self
-            .annotations(
-                filter.annotation_subject.clone(),
-                filter.annotation_tag.clone(),
-            )
-            .await?;
-        let records = visible["records"]
-            .as_array()
-            .ok_or(Failure::Corrupt)?
-            .clone();
         let reader = self
             .proof
             .get(&target.source)
             .ok_or(Failure::AccessLimited)?
             .clone();
-        let selected = reader.clone();
-        let source = target.source.clone();
-        let permit = self
-            .workers
-            .clone()
-            .try_acquire_owned()
-            .map_err(|_| ContentError::Busy)?;
-        let coordinates = tokio::task::spawn_blocking(move || -> Result<_, Failure> {
-            let _permit = permit;
-            let mut coordinates = std::collections::BTreeSet::new();
+        let record_key = |record: &Value| -> Result<_, Failure> {
+            crate::evidence_workspace::annotations::citation_key(
+                &target.source,
+                &crate::evidence_proof_service::Coordinate {
+                    through: record["sequence"].as_str().ok_or(Failure::Corrupt)?.into(),
+                    manifest: Some(record["manifest"].as_str().ok_or(Failure::Corrupt)?.into()),
+                    attestation: Some(
+                        record["attestation"]
+                            .as_str()
+                            .ok_or(Failure::Corrupt)?
+                            .into(),
+                    ),
+                },
+            )
+        };
+        let mut requested = std::collections::BTreeSet::new();
+        for hit in value["hits"].as_array().ok_or(Failure::Corrupt)? {
+            requested.insert(record_key(&hit["record"])?);
+            if let Some(cites) = hit["cites"].as_array() {
+                for cite in cites {
+                    requested.insert(record_key(&cite["record"])?);
+                }
+            }
+        }
+        let mut matched = std::collections::BTreeSet::new();
+        let mut after = None;
+        let mut partial = false;
+        while !requested.is_subset(&matched) {
+            let workspace = self.workspace.clone().ok_or(Failure::Invalid)?;
+            let keys = requested.clone();
+            let subject = filter.annotation_subject.clone();
+            let tag = filter.annotation_tag.clone();
+            let permit = self
+                .workers
+                .clone()
+                .try_acquire_owned()
+                .map_err(|_| ContentError::Busy)?;
+            let (declarations, next) = tokio::task::spawn_blocking(move || {
+                let _permit = permit;
+                workspace.search_annotations_page(
+                    &keys,
+                    after.as_deref(),
+                    subject.as_deref(),
+                    tag.as_deref(),
+                )
+            })
+            .await
+            .map_err(|_| Failure::Unavailable)??;
+            let (records, _, incomplete) = self.authorize_annotations(declarations).await?;
+            partial |= incomplete;
             for record in records {
                 let draft: super::knowledge::Draft =
                     serde_json::from_value(record["draft"].clone())
                         .map_err(|_| Failure::Corrupt)?;
-                for cite in draft.cites.iter().filter(|c| c.source == source) {
-                    let c = selected.citation_coordinate(&cite.selection)?;
-                    coordinates.insert((c.through, c.manifest, c.attestation));
+                for cite in draft.cites.iter().filter(|c| c.source == target.source) {
+                    let coordinate = reader.citation_coordinate(&cite.selection)?;
+                    matched.insert(crate::evidence_workspace::annotations::citation_key(
+                        &target.source,
+                        &coordinate,
+                    )?);
                 }
             }
-            Ok(coordinates)
-        })
-        .await
-        .map_err(|_| Failure::Unavailable)??;
-        let matches = |record: &Value| {
-            coordinates.contains(&(
-                record["sequence"].as_str().unwrap_or("").to_owned(),
-                record["manifest"].as_str().map(str::to_owned),
-                record["attestation"].as_str().map(str::to_owned),
-            ))
-        };
+            after = next;
+            if after.is_none() {
+                break;
+            }
+        }
         value["hits"]
             .as_array_mut()
             .ok_or(Failure::Corrupt)?
             .retain(|hit| {
-                matches(&hit["record"])
-                    || hit["cites"]
-                        .as_array()
-                        .is_some_and(|cites| cites.iter().any(|c| matches(&c["record"])))
+                record_key(&hit["record"]).is_ok_and(|key| matched.contains(&key))
+                    || hit["cites"].as_array().is_some_and(|cites| {
+                        cites.iter().any(|cite| {
+                            record_key(&cite["record"]).is_ok_and(|key| matched.contains(&key))
+                        })
+                    })
             });
-        // Repeat the current authorization check after resolving annotation visibility.
         reader.page(&target.pin, None, 1).await?;
-        value["annotation_filter"] = json!({"subject":filter.annotation_subject,"tag":filter.annotation_tag,"coverage":visible["coverage"],"basis":"Currently authorized annotation history, including corrections and withdrawn assertions. At least one cited occurrence must match. Corpus facets and attempt reconstruction coverage are independent of this filter; saved views re-evaluate current annotations."});
+        value["annotation_filter"] = json!({"subject":filter.annotation_subject,"tag":filter.annotation_tag,"coverage":if partial {"partial"} else {"complete"},"basis":"Currently authorized annotation history, including corrections and withdrawn assertions. At least one cited occurrence must match. Corpus facets and attempt reconstruction coverage are independent of this filter; saved views re-evaluate current annotations."});
         Ok(())
     }
 }
