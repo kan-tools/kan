@@ -632,7 +632,20 @@ async fn proof_library_browser_fixture() {
             .unwrap(),
         );
     }
-    let ui = Ui::start(kan::evidence_library::Readers::new(None, clients).unwrap()).await;
+    let workspace = private_workspace_directory();
+    let ui = Ui::start(
+        kan::evidence_library::Readers::new(None, clients)
+            .unwrap()
+            .with_workspace(
+                kan::evidence_workspace::Workspace::open(
+                    &workspace.path().join("browser-workspace.sqlite"),
+                    identity(6),
+                    [97; 32],
+                )
+                .unwrap(),
+            ),
+    )
+    .await;
     std::fs::write(&output,serde_json::to_vec(&json!({"url":ui.url.trim_end_matches("/api/library"),"token":TOKEN,"expected_hex":service::hex(RAW),"stop":stop})).unwrap()).unwrap();
     let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(600);
     while !stop.exists() && tokio::time::Instant::now() < deadline {
