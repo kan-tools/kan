@@ -241,3 +241,22 @@ It does not upload the synthetic database, which disappears with the hosted
 runner. This workflow cannot establish the 100 GiB point; that still requires
 the separately selected larger host/disk. Copy the reports into durable release
 evidence before their artifact retention expires.
+
+The first real 10 GiB run passed at `9cd3adb6b809a43e27a2ca927fd361099906c76f`
+on hosted Linux with Rust 1.99.1. Its 10,240 random 1 MiB payloads occupied
+21,661,548,544 allocated database bytes; seeding took 614.44 seconds. The
+[raw report](../.design/measurements/kan-v2-10g-9cd3adb.json) retains all 128
+samples, executable digest and environment. The [CI run](https://github.com/kan-tools/kan/actions/runs/39518793836)
+also retains the worker logs and exact compiler/revision record.
+
+| Operation | p50 / p95 / p99 latency (ms) | Peak RSS (MiB) | Maximum syscall reads (MiB) |
+|---|---:|---:|---:|
+| Open | 3.631 / 3.751 / 3.797 | 11.67 | 0.200 |
+| Append 1 MiB | 46.931 / 50.373 / 50.418 | 24.09 | 2.020 |
+| Page one row | 6.239 / 6.357 / 6.374 | 17.54 | 2.192 |
+| Read selected source | 23.246 / 23.759 / 25.860 | 20.08 | 2.368 |
+
+Every operation had 32 fresh-process samples and stayed below the 512 MiB gate.
+Physical read counters were zero with the retained OS cache. These measurements
+establish the specified 10 GiB storage workload only; they do not establish a
+100 GiB growth ratio, cold-cache behavior or whole-service concurrency/latency.
