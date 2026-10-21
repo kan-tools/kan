@@ -412,6 +412,8 @@ mod tests {
         f.write_all(&[n; 32]).unwrap();
         Identity::load_existing(f.path()).unwrap()
     }
+    // Synthetic private fixture setup, never a service mutation path.
+    #[allow(clippy::disallowed_methods)]
     fn directory(path: &Path) {
         // surface-write: container:workspace
         std::fs::create_dir(path).unwrap();
@@ -422,6 +424,8 @@ mod tests {
             std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o700)).unwrap();
         }
     }
+    // Deliberate raw fixture replacement exercises rollback/corruption refusal.
+    #[allow(clippy::disallowed_methods)]
     fn file(path: &Path, bytes: &[u8]) {
         // surface-write: evidence-control-index:serving.sqlite,evidence-control-index:CURRENT,evidence-policy:policy-*.json,evidence-erasure-history:erasure-*.json
         std::fs::write(path, bytes).unwrap();
