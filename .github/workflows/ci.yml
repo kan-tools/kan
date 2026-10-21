@@ -12,6 +12,17 @@ jobs:
   test:
     needs: msrv
     runs-on: ubuntu-latest
+    env:
+      CARGO_BUILD_JOBS: 4
+      CARGO_INCREMENTAL: 0
+      # Repeated authenticated-history tests spend substantial time in scalar
+      # arithmetic at opt-level 0. Keep the complete suite and debug/overflow
+      # assertions; optimize its code and retain line information for failures.
+      # The test profile inherits dev. This changes CI, not shipped profiles.
+      CARGO_PROFILE_DEV_OPT_LEVEL: '1'
+      CARGO_PROFILE_DEV_DEBUG: line-tables-only
+      CARGO_PROFILE_DEV_DEBUG_ASSERTIONS: 'true'
+      CARGO_PROFILE_DEV_OVERFLOW_CHECKS: 'true'
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -34,6 +45,8 @@ jobs:
       - run: python3 tests/test_revert_v2.py
 
       - uses: Swatinem/rust-cache@v2
+        with:
+          key: v2-optimized-integration
       - run: cargo package --list --locked > /dev/null
       - run: cargo build --workspace --all-targets
       - run: cargo test --workspace
