@@ -554,6 +554,30 @@ const PERSISTENCE_MODULES: &[&str] = &[
 const PERSISTENCE_MUTATION_SITES: &[(&str, &str, &str, usize)] = &[
     (
         "src/evidence_control_index.rs",
+        "create_dir_owner_only",
+        "Container",
+        1,
+    ),
+    (
+        "src/evidence_control_index.rs",
+        "write",
+        "EvidencePolicy",
+        1,
+    ),
+    (
+        "src/evidence_control_index.rs",
+        "write_new_owner_only",
+        "EvidencePolicy",
+        1,
+    ),
+    (
+        "src/evidence_control_index.rs",
+        "write",
+        "EvidenceControlIndex",
+        1,
+    ),
+    (
+        "src/evidence_control_index.rs",
         "write_new_owner_only",
         "EvidenceControlIndex",
         3,

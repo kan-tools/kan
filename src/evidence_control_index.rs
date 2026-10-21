@@ -413,27 +413,47 @@ mod tests {
         Identity::load_existing(f.path()).unwrap()
     }
     // Synthetic private fixture setup, never a service mutation path.
-    #[allow(clippy::disallowed_methods)]
     fn directory(path: &Path) {
         // surface-write: container:workspace
-        std::fs::create_dir(path).unwrap();
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            // surface-write: container:workspace
-            std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o700)).unwrap();
-        }
+        crate::persistence::create_dir_owner_only(
+            crate::persistence::SurfaceWrite::Container,
+            path,
+        )
+        .unwrap();
     }
-    // Deliberate raw fixture replacement exercises rollback/corruption refusal.
-    #[allow(clippy::disallowed_methods)]
+    // Deliberate fixture replacement exercises rollback/corruption refusal.
+    // Existing files retain their private permissions; new policy fixtures are
+    // created owner-only through the same persistence facade as service writes.
     fn file(path: &Path, bytes: &[u8]) {
-        // surface-write: evidence-control-index:serving.sqlite,evidence-control-index:CURRENT,evidence-policy:policy-*.json,evidence-erasure-history:erasure-*.json
-        std::fs::write(path, bytes).unwrap();
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            // surface-write: evidence-control-index:serving.sqlite,evidence-control-index:CURRENT,evidence-policy:policy-*.json,evidence-erasure-history:erasure-*.json
-            std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600)).unwrap();
+        let name = path.file_name().unwrap().to_str().unwrap();
+        if name.starts_with("policy-") && name.ends_with(".json") {
+            if path.exists() {
+                // surface-write: evidence-policy:policy-*.json
+                crate::persistence::write(
+                    crate::persistence::SurfaceWrite::EvidencePolicy,
+                    path,
+                    bytes,
+                )
+                .unwrap();
+            } else {
+                // surface-write: evidence-policy:policy-*.json
+                crate::persistence::write_new_owner_only(
+                    crate::persistence::SurfaceWrite::EvidencePolicy,
+                    path,
+                    bytes,
+                )
+                .unwrap();
+            }
+        } else {
+            assert!(matches!(name, DB | CURRENT));
+            assert!(path.is_file());
+            // surface-write: evidence-control-index:serving.sqlite,evidence-control-index:CURRENT
+            crate::persistence::write(
+                crate::persistence::SurfaceWrite::EvidenceControlIndex,
+                path,
+                bytes,
+            )
+            .unwrap();
         }
     }
     fn binding() -> Binding {
