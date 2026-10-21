@@ -260,3 +260,60 @@ Every operation had 32 fresh-process samples and stayed below the 512 MiB gate.
 Physical read counters were zero with the retained OS cache. These measurements
 establish the specified 10 GiB storage workload only; they do not establish a
 100 GiB growth ratio, cold-cache behavior or whole-service concurrency/latency.
+
+
+### Run the 100 GiB point on Modal
+
+The opt-in runner `scripts/modal_v2_capacity.py` uses a Modal **Function** with
+350 GiB ephemeral disk, four physical CPU cores (also the limit), 18 GiB requested
+RAM and a 24 GiB RAM limit. The storage-process RSS gate remains 512 MiB; container
+memory also covers compilation and OS cache. Disk, not RAM, is the fixture's main
+requirement. Modal currently charges large disk requests by raising the memory
+reservation at a 20:1 ratio; see [resource configuration](https://modal.com/docs/guide/resources)
+and [pricing](https://modal.com/pricing). At the documented rates the configured
+CPU/RAM request is about $0.33/hour, rising to about $0.38/hour at the RAM limit,
+plus image build/storage/network charges. The eight-hour function timeout bounds
+one attempt; these figures are estimates, not a billing guarantee.
+
+Preparation and launch (the final command starts paid remote compute):
+
+```sh
+# Small SDK only; no local Rust build or local large fixture.
+uv run --no-project --with-requirements scripts/requirements-modal-capacity.txt modal setup
+uv run --no-project --with-requirements scripts/requirements-modal-capacity.txt modal run --detach scripts/modal_v2_capacity.py --revision 58bea3b491759a5aa0d9c21425ffce12bec790ed --gib 100 --samples 32
+```
+
+Use the intended Modal profile/environment (`--profile`/`--env`) when more than
+one is configured. The revision is required and must be an exact published SHA;
+replace the example only when qualifying a different candidate. Only the runner
+file is uploaded; the job fetches public Git source at that SHA, verifies HEAD,
+compiles the existing release-mode measurement executable with Rust 1.99.1 and
+runs the existing driver unchanged. No production data or keys are used. It
+checks 320 GiB free before compilation and the driver checks 302 GiB afterward.
+There are no automatic application retries; each invocation has a unique run ID
+and refuses to overwrite a prior evidence directory.
+
+Small reports, raw worker/build logs, exact revision/compiler and runner/driver/
+executable digests are retained in the `kan-v2-capacity-results` Modal Volume.
+The runner checkpoints these artifacts every five minutes and on ordinary exit,
+including failures. Abrupt worker loss can leave only the last checkpoint; a
+`running` or absent report is **not** a successful measurement. Do not blindly
+restart a detached job when the local connection closes. Inspect its existing
+Modal app and results at intervals of at least 30 minutes.
+
+The printed result gives the unique evidence directory. Retrieve only that small
+directory, for example:
+
+```sh
+uv run --no-project --with-requirements scripts/requirements-modal-capacity.txt modal volume get kan-v2-capacity-results REVISION-100g-RUN_ID .local-state/capacity-modal-RUN_ID
+```
+
+Require `run.json` and `report.json` to both say `complete`, the intended revision,
+102,400 actual 1 MiB payloads / at least 100 GiB allocated, and all 128 operation
+samples before accepting a default run. Inspect the distributions and raw logs;
+retain the evidence with the release. The synthetic database stays on ephemeral
+SSD and disappears with the container; the durable Volume contains no archive.
+This establishes the same single-worker indexed-storage workload as the 10 GiB
+baseline, not full-service concurrency, encryption throughput or cold-cache
+performance. The Modal runner is prepared; a successful cloud run is still
+required before claiming the 100 GiB gate passed.
