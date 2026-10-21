@@ -904,7 +904,7 @@
   }
   function analysisResultText(result) {
     const parsed=result?.parsed;
-    if(parsed?.answers && typeof parsed.answers==='object' && !Array.isArray(parsed.answers))return JSON.stringify({model:parsed.model,answers:parsed.answers,usage:parsed.usage},null,2);
+    if(result?.adapter==='typesafe-system-one' && parsed?.answers && typeof parsed.answers==='object' && !Array.isArray(parsed.answers))return JSON.stringify({model:parsed.model,answers:parsed.answers,usage:parsed.usage},null,2);
     return (Array.isArray(parsed?.content)?parsed.content:[]).filter(b=>b.type==='text'&&typeof b.text==='string').map(b=>b.text).join('\n');
   }
   async function inspectAnalysis(id,cancel=false){

@@ -189,7 +189,7 @@ impl Adapter {
                     && questions.len() == answers.len()
                     && questions
                         .iter()
-                        .all(|(id, q)| answers.get(id).is_some_and(|a| q.accepts(a)))
+                        .all(|(id, q)| q.valid() && answers.get(id).is_some_and(|a| q.accepts(a)))
             }
         }
     }

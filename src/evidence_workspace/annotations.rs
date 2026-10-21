@@ -25,7 +25,10 @@ impl Workspace {
             .collect::<Result<_>>()?;
         let ids: BTreeSet<_> = selected.keys().cloned().collect();
         let mut related = Vec::new();
-        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
+        // This authenticates retained history, not just the displayed page.
+        // Use the long-read budget: the 1,003-declaration regression exhausts
+        // the short 20-second budget on a contended debug CI runner.
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(120);
         let mut related_bytes = 0usize;
         if !ids.is_empty() {
             let conn = self.conn.lock().map_err(invalid)?;

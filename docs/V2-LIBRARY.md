@@ -328,7 +328,7 @@ a non-null continuation. Restart from the first page to include concurrent inser
 that sort before an earlier cursor. Link discovery streams encrypted declarations
 and retains only matching attribution/citation metadata, not unrelated note bodies.
 Graph browsing uses these bounded declaration pages. Incoming-link discovery
-streams the workspace with a 20-second work budget and at most 8 MiB of matching
+streams the workspace with a 120-second work budget and at most 8 MiB of matching
 neighbor metadata; exhaustion refuses the page instead of omitting corrections
 or withdrawals. These are execution budgets, not retention limits. Whole-corpus
 search evaluations still grow with retained metadata. A draft contains `subject`, `text`, `tags`, `cites` and nullable

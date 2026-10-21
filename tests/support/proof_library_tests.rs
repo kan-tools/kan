@@ -54,7 +54,12 @@ impl Ui {
             .send()
             .await
             .unwrap();
-        assert_eq!(response.status().as_u16(), status);
+        assert_eq!(
+            response.status().as_u16(),
+            status,
+            "Library action {}",
+            value["action"]
+        );
         assert_eq!(response.headers()["cache-control"], "no-store");
         response.json().await.unwrap()
     }
@@ -5953,8 +5958,17 @@ async fn owner_capture_erasure_revalidates_full_selection_and_resumes_offline_re
         "failed planning preserves unresolved evidence for repair"
     );
     let catalog = owner_call(&ui, OWNER, json!({"action":"catalog"}), 200).await;
-    assert_eq!(catalog["jobs"].as_array().unwrap().len(), 1);
-    assert_eq!(catalog["jobs"][0]["attempts"], 7);
+    let jobs = catalog["jobs"].as_array().unwrap();
+    assert_eq!(
+        jobs.len(),
+        3,
+        "two index maintenance jobs and the erasure job remain retained"
+    );
+    let erasure_job = jobs
+        .iter()
+        .find(|item| item["job"]["id"] == preview["digest"])
+        .unwrap();
+    assert_eq!(erasure_job["attempts"], 7);
 }
 
 #[tokio::test]

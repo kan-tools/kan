@@ -338,7 +338,7 @@ applying subject or Day filters. Its opaque continuation survives reconnects;
 empty filtered pages retain continuation, and page-local counts never claim
 lifetime totals. Freshly authorized incoming corrections and withdrawals are
 resolved across pages. Related-metadata discovery streams the workspace with a
-20-second work budget and 8 MiB retained-metadata budget; exhaustion refuses the
+120-second work budget and 8 MiB retained-metadata budget; exhaustion refuses the
 page rather than inventing an uncorrected assertion. This is an execution limit,
 not an annotation retention quota. UI, API, CLI and MCP share the same request.
 

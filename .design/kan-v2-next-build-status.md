@@ -440,3 +440,14 @@ annotation bodies now stream individually into publication planning. Regressions
 cover large unrelated graphs, erased-parent lineage, cycles, repeated passes and
 failure before closure; remote qualification is pending. This is not a
 constant-memory graph implementation or a guarantee for arbitrarily deep graphs.
+
+At `0d67f28`, the real managed proof/Library CLI restart, indexed spool delivery,
+cold-host restore, copied-index continuation and capacity smoke regressions passed.
+The 11 MiB push job and migration matrix also passed. Broad qualification found
+an obsolete owner-catalog count (two index jobs are now retained alongside the
+erasure) and a 503 in the 1,003-annotation traversal after adding a short history
+scan deadline. The count now selects the erasure by immutable job ID; history
+scanning uses the existing 120-second long-read allowance and keeps the 8 MiB
+related-metadata bound. API test failures now name the requested action. These
+corrections and the queued adapter/graph work require requalification; this is not
+a new full-green baseline or a claim that history scanning is constant-time.
