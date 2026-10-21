@@ -83,6 +83,47 @@ jobs:
       - run: cargo package --locked --features v2-crypto
         env:
           CARGO_BUILD_JOBS: 4
+      - name: Real Library browser and download qualification
+        if: github.event_name == 'pull_request'
+        timeout-minutes: 15
+        shell: bash
+        run: |
+          df -h "$RUNNER_TEMP"
+          python3 - <<'PY'
+          import os, shutil
+          if shutil.disk_usage(os.environ['RUNNER_TEMP']).free < 2 * 1024 ** 3:
+              raise SystemExit('Need 2 GiB free for the isolated browser runtime')
+          PY
+          npm install --prefix "$RUNNER_TEMP/kan-playwright" --no-save --ignore-scripts playwright@1.64.1
+          "$RUNNER_TEMP/kan-playwright/node_modules/.bin/playwright" install --with-deps chromium
+          cargo test --locked --features v2-crypto --test evidence_inventory --no-run --message-format=json > "$RUNNER_TEMP/kan-browser-build.jsonl"
+          python3 - <<'PY'
+          import json, os, signal, subprocess
+          from pathlib import Path
+          root = Path(os.environ['RUNNER_TEMP'])
+          binaries = [e['executable'] for line in (root / 'kan-browser-build.jsonl').read_text().splitlines()
+                      if (e := json.loads(line)).get('reason') == 'compiler-artifact'
+                      and e['target']['name'] == 'evidence_inventory' and e.get('executable')]
+          if len(binaries) != 1:
+              raise SystemExit('Expected exactly one compiled evidence_inventory executable')
+          env = {**os.environ, 'NODE_PATH': str(root / 'kan-playwright/node_modules')}
+          command = ['node', 'scripts/check-library-browser.cjs', binaries[0], str(root / 'kan-library-browser')]
+          with subprocess.Popen(command, env=env, start_new_session=True) as process:
+              try:
+                  if process.wait(timeout=600):
+                      raise SystemExit('Real browser qualification failed; inspect the retained artifact')
+              except subprocess.TimeoutExpired:
+                  os.killpg(process.pid, signal.SIGKILL)
+                  process.wait()
+                  raise
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always() && github.event_name == 'pull_request'
+        with:
+          name: v2-library-browser-${{ github.sha }}
+          path: ${{ runner.temp }}/kan-library-browser/
+          if-no-files-found: ignore
+          retention-days: 30
 
   # Preserve realistic large-capture qualification without blocking every
   # short integration check on rebuilding the O(n²) admission fixture. Push

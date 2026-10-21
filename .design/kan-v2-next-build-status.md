@@ -107,6 +107,30 @@ completed.
   concise results. Git-first process recording remains in effect under day#168 /
   kan#197; do not reconstruct excluded claims or invent witnesses.
 
+### Integrated acceptance map
+
+These are executable paths through the product, not completion checkmarks. Unless
+qualified at a named revision above, their current outcome is still pending CI.
+The proof Library cases below live in `tests/support/proof_library_tests.rs` and
+run through `tests/evidence_inventory.rs`; they call real HTTP services and retain
+encrypted synthetic evidence. Frontend unit checks alone do not close these rows.
+
+| Human workflow / requirement boundary | Executable integration evidence |
+|---|---|
+| Capture without blocking inference; exact bytes and explicit gaps | `tests/evidence_capture.rs`: `binary_stream_above_ten_mib_has_exact_bodies_and_independent_frames`, `full_and_unavailable_capture_continue_with_visible_gap`; `tests/evidence_gateway.rs`: `two_hops_preserve_bytes_status_observers_and_exchange`, credential-separated provider profile cases |
+| Managed deployment, spool delivery, restart, current loss | `actual_proof_service_and_library_cli_restart_with_missing_payload` runs the managed CLI, independent custody/policy and indexed admitted/copied readers; admitted mode delivers the actual encrypted spool through HTTP |
+| Cross-archive sessions, search, pinned views, current grants | `session_content_preserves_archive_boundaries_membership_loss_and_revocation`, `search_reconstructs_chunked_messages_with_all_citations_and_rechecks_loss_and_access`, `saved_views_page_beyond_200_after_restart_and_recheck_current_access` |
+| Attributed annotations, correction history, imported judgments, portable references | `annotations_preview_append_correction_preserve_cites_and_filter_revoked_sources`, `annotation_pages_cross_1000_keep_off_page_history_and_recheck_access`, `imported_current_claims_keep_signature_scope_authority_and_selected_trust_distinct`, `portable_references_rebind_for_another_reader_without_granting_access_or_hiding_loss` |
+| Analysis and day assessment with immutable inputs/outputs | `analysis_retains_exact_lineage_quotas_retries_and_revoked_results`, `decision_adapters_retain_distinct_runs_and_read_history_after_provider_retirement`; TypeSafe responses are synthetic protocol fixtures, not a live accuracy/cost evaluation |
+| Backup, cold recovery and legacy import without source mutation | `cold_host_restores_source_search_annotations_and_references_from_independent_backups`, `owner_import_pins_source_batches_exact_retry_and_preserves_originals`; `tests/evidence_import.rs`: `cli_resumes_large_malformed_snapshot_and_independent_decoder_recovers_exact_bytes` |
+| Separate owner authority, access/key history, erasure and resumable cleanup | `owner_maintenance_uses_separate_authority_preview_exact_retry_and_new_outputs`, `owner_access_policy_previews_preserve_history_and_reject_reader_authority_and_stale_edits`, `owner_key_epochs_require_owner_preview_and_restore_wrapped_history_after_restart`, `owner_capture_erasure_revalidates_full_selection_and_resumes_offline_replica_after_restart`, `owner_complete_selection_resumes_batches_after_restart_and_intervening_custody` |
+| Actual browser rendering, keyboard inspection, native downloads and lock | `scripts/check-library-browser.cjs` starts the real Rust synthetic fixture and Chromium, checks exact downloaded bytes, both themes at desktop/tablet/390px, missing/corrupt states, focus return, private-view clearing and no external resource loads. PR CI retains screenshots and the result. This new automation is pending execution; it supplements the earlier manual browser evidence and API/UI tests, not every administrative screen's visual acceptance. |
+| Archive growth and bounded ordinary operations | `scripts/measure-v2-capacity.py`: true 10/100 GiB fixtures, fresh-process open/append/page/source distributions and RSS/I/O. The 10 GiB hosted job is running; 100 GiB requires the owner-selected remote disk. Neither the 11 MiB regression nor synthetic small smoke closes the scale criterion. |
+
+Final independent review must assess the composition of these paths, the retained
+failure evidence and human workflows outside the automated browser slice. It has
+not started. No live capture, cutover, production migration or erasure is implied.
+
 ## Historical checkpoint records
 
 ## Current continuation checkpoint (2026-10-19)
