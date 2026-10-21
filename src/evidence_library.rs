@@ -214,7 +214,7 @@ pub enum Query {
 fn response(code: StatusCode, mime: &'static str, body: impl Into<Bytes>) -> Response<Full<Bytes>> {
     let mut r = Response::new(Full::new(body.into()));
     *r.status_mut() = code;
-    for (key,value) in [("content-type",mime),("cache-control","no-store"),("x-content-type-options","nosniff"),("referrer-policy","no-referrer"),("content-security-policy","default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'"),("cross-origin-resource-policy","same-origin")] {
+    for (key,value) in [("content-type",mime),("cache-control","no-store"),("x-content-type-options","nosniff"),("referrer-policy",if mime == "text/html; charset=utf-8" { "same-origin" } else { "no-referrer" }),("content-security-policy","default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'"),("cross-origin-resource-policy","same-origin")] {
         r.headers_mut().insert(key,hyper::header::HeaderValue::from_static(value));
     }
     r

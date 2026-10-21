@@ -4752,6 +4752,11 @@ async fn native_source_download_rechecks_grants_and_origin_and_exports_only_exac
     let payload = json!({"token":TOKEN,"request":query});
     let origin = ui.url.trim_end_matches("/api/library");
     let client = reqwest::Client::builder().no_proxy().build().unwrap();
+    // Native form POSTs under no-referrer send Origin: null. The page must
+    // retain same-origin identity without permitting cross-origin referrers.
+    let document = client.get(origin).send().await.unwrap();
+    assert_eq!(document.status(), 200);
+    assert_eq!(document.headers()["referrer-policy"], "same-origin");
     let post = |payload: &Value| {
         client
             .post(format!("{}/download", ui.url))
@@ -4777,7 +4782,7 @@ async fn native_source_download_rechecks_grants_and_origin_and_exports_only_exac
         response.bytes().await.unwrap().as_ref(),
         service::unhex(retained["bytes_hex"].as_str().unwrap(), 262144).unwrap()
     );
-    for bad_origin in [None, Some("http://foreign.invalid")] {
+    for bad_origin in [None, Some("null"), Some("http://foreign.invalid")] {
         let mut req = client
             .post(format!("{}/download", ui.url))
             .header("content-type", "text/plain")

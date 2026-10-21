@@ -45,7 +45,8 @@ async function main() {
     page.setDefaultTimeout(30000);
     page.on('pageerror', e => errors.push(e.message));
     page.on('dialog', async dialog => { errors.push(`Unexpected dialog: ${dialog.message()}`); await dialog.dismiss(); });
-    await page.goto(fixture.url);
+    const documentResponse = await page.goto(fixture.url);
+    assert.equal(documentResponse.headers()['referrer-policy'], 'same-origin');
     assert.equal(await page.locator('#theme').inputValue(), 'system');
     assert.equal(await page.locator('html').getAttribute('data-theme'), 'dark');
     await page.emulateMedia({colorScheme: 'light'});
@@ -70,9 +71,16 @@ async function main() {
     await page.waitForFunction(() => document.activeElement.id === 'source-tab');
     assert.equal(await page.locator('#source').textContent(), fixture.expected_hex);
     assert.equal(await page.locator('#source script').count(), 0);
-    const downloadPromise = page.waitForEvent('download');
+    const downloadPromise = Promise.all([
+      page.waitForEvent('download'),
+      page.waitForResponse(response => response.url() === `${origin}/api/library/download`).then(async response => {
+        assert.equal(await response.request().headerValue('origin'), origin, 'native POST preserves same-origin identity');
+        assert.equal(response.status(), 200, 'native download HTTP response');
+        assert.match(response.headers()['content-disposition'] || '', /^attachment;/);
+      }),
+    ]);
     await page.locator('#download').click();
-    const download = await downloadPromise;
+    const [download] = await downloadPromise;
     assert.equal(await download.failure(), null);
     const downloadPath = path.join(output, 'source.bin');
     await download.saveAs(downloadPath);
