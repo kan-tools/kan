@@ -7495,7 +7495,7 @@ async fn destination_checkpoint_cold_restore_reports_independently_witnessed_gap
             .unwrap(),
         1
     );
-    let broken_references: u64 = conn
+    let broken_references: i64 = conn
         .query_row("SELECT count(*) FROM pragma_foreign_key_check", [], |row| {
             row.get(0)
         })
