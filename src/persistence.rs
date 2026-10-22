@@ -44,6 +44,7 @@ pub enum SurfaceWrite {
     EvidenceCopyPlan,
     EvidenceBackup,
     EvidenceBackupPurge,
+    EvidenceBackupCheckpoint,
     EvidenceRecovery,
     EvidenceRecoverySource,
     EvidenceBundleSource,
@@ -95,6 +96,7 @@ impl SurfaceWrite {
         Self::EvidenceCopyPlan,
         Self::EvidenceBackup,
         Self::EvidenceBackupPurge,
+        Self::EvidenceBackupCheckpoint,
         Self::EvidenceRecovery,
         Self::EvidenceRecoverySource,
         Self::EvidenceBundleSource,
@@ -219,6 +221,7 @@ impl SurfaceWrite {
                 "evidence-db:archive.sqlite-journal",
                 "evidence-db:archive.sqlite-shm",
             ],
+            Self::EvidenceBackupCheckpoint => &["evidence-backup-checkpoint:receipt"],
             Self::EvidenceBackupPurge => &[
                 "evidence-backup:archive.sqlite",
                 "evidence-backup-purge:directory",

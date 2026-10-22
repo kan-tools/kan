@@ -361,34 +361,6 @@ impl Readers {
         self.schedule_annotation(&declaration).await?;
         Ok(declaration)
     }
-    pub(super) async fn annotations(
-        &self,
-        subject: Option<String>,
-        tag: Option<String>,
-    ) -> Result<Value, ContentError> {
-        if subject.as_ref().is_some_and(|s| s.len() > 256)
-            || tag.as_ref().is_some_and(|s| s.len() > 64)
-        {
-            return Err(Failure::Invalid.into());
-        }
-        let declarations = self.declarations(true).await?;
-        let (mut records, erased, partial) = self.authorize_annotations(declarations).await?;
-        let mut withdrawals = linked_records(&records, "withdraws")?;
-        records.retain(|r| {
-            subject
-                .as_ref()
-                .is_none_or(|s| r["draft"]["subject"].as_str() == Some(s))
-                && tag.as_ref().is_none_or(|t| {
-                    r["draft"]["tags"]
-                        .as_array()
-                        .is_some_and(|tags| tags.iter().any(|v| v.as_str() == Some(t)))
-                })
-        });
-        withdrawals.retain(|id, _| records.iter().any(|r| r["id"].as_str() == Some(id)));
-        Ok(
-            json!({"records":records,"erased":erased,"withdrawals":withdrawals,"coverage":if partial {"partial"} else {"complete"},"authority":"Reader-authored annotations; captured speaker claims and imported v1 claims are separate."}),
-        )
-    }
     pub(super) async fn authorize_annotations(
         &self,
         declarations: Vec<Value>,

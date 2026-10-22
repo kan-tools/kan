@@ -561,6 +561,12 @@ impl Workspace {
             .map_err(invalid)?;
         bytes.map(|b| self.unseal(kind, &id, &b)).transpose()
     }
+    pub(crate) fn backup_checkpoint(
+        &self,
+        statement: crate::evidence_backup::Statement,
+    ) -> Result<crate::evidence_backup::Checkpoint> {
+        crate::evidence_backup::Checkpoint::sign(statement, &self.signer)
+    }
     /// Immutable, idempotent installation. A second value under an existing key
     /// is refused. SQLite commits the encrypted value and its identity together.
     pub fn put(&self, kind: &str, key: &str, value: Value) -> Result<()> {

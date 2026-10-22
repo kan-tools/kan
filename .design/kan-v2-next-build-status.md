@@ -96,10 +96,15 @@ and cache maintenance; F2 page-local annotation filtering; F3 independent backup
 checkpoints and restore gaps; F4 fenced final-delta migration/cutover/rollback;
 F5 complementary harness capture and reconstructed attachment exports; F6 accurate
 capability reporting. Capacity and broader browser/deployment acceptance also remain.
+F3 now includes signed destination-closure checkpoints, cold verification against
+an independently pinned owner, receipt-witness gap reporting and owner UI/API jobs;
+its synthetic cold-journal regression awaits Rust CI. Transfer and failure-domain
+independence remain operator-configured; key/workspace packages are separately required.
 F1/F2/F6 are now implemented with renewal/growth, 1,500 distinct annotation citations,
 cache retention and automatic browser scan regressions; Rust qualification is pending.
-The unchanged areas do not need another full review. Re-review material fixes after
-integration. The 100 GiB Modal runner is prepared; account authentication is still
+The owner now requests one fresh full adversarial review after all remaining
+features and release qualification are implemented. Use actual Claude Code Opus 5.5
+on the frozen integrated candidate; do not start it during feature construction. The 100 GiB Modal runner is prepared; account authentication is still
 needed before a cloud measurement can run.
 
 ### Starting state and evidence reuse

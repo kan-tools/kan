@@ -7284,3 +7284,128 @@ async fn annotation_search_with_1500_distinct_citations_is_page_local_and_refres
     ui.stop().await;
     server.stop().await;
 }
+
+#[tokio::test]
+async fn destination_checkpoint_cold_restore_reports_independently_witnessed_gap() {
+    let source = private_workspace_directory();
+    let destination = private_workspace_directory();
+    let local = private_workspace_directory();
+    let f = fixture_requests(source.path(), Profile::Admitted, encrypted);
+    let database = destination.path().join("backup.sqlite");
+    {
+        let mut archive = attested::Archive::open(&f.root, f.binding.clone()).unwrap();
+        archive.backup(&database).unwrap();
+        let previous = Some(
+            service::append_manifest(&f.requests[2])
+                .unwrap()
+                .cid()
+                .to_string(),
+        );
+        archive
+            .admit(&encrypted(3, 8, previous), &identity(8), &grant(), 110)
+            .unwrap();
+    }
+    let server = Server::start(&f).await;
+    let witness = server.client(&f).snapshot().await.unwrap();
+    let witness_path = local.path().join("witness.json");
+    std::fs::write(&witness_path, serde_json::to_vec(&witness).unwrap()).unwrap();
+    let mut config = json!({"database":database,"binding":binding(&f),"destination":"independent-synthetic-volume",
+        "independent":true,"checkpoints":destination.path(),"witnessed":witness_path});
+    const OWNER: &str = "synthetic-backup-owner-token-1234567";
+    let readers = |config: Value, state: &str| {
+        let owner = kan::evidence_library::Owner::new(
+            serde_json::from_value(json!({"token":OWNER,"max_jobs":8,
+            "targets":[{"kind":"backup-verification","id":"backup","config":config}]}))
+            .unwrap(),
+            kan::evidence_workspace::Workspace::open(
+                &local.path().join(state),
+                identity(9),
+                [84; 32],
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        kan::evidence_library::Readers::new(None, vec![])
+            .unwrap()
+            .with_owner(owner)
+    };
+    let ui = Ui::start(readers(config.clone(), "owner.sqlite")).await;
+    let catalog = ui.call(json!({"action":"catalog"}), 200).await;
+    assert!(!catalog["unavailable"]
+        .as_array()
+        .unwrap()
+        .contains(&json!("owner-maintenance")));
+    let preview = owner_call(
+        &ui,
+        OWNER,
+        json!({"action":"preview","target":"backup","operation":"verify-backup"}),
+        200,
+    )
+    .await;
+    let request = json!({"action":"submit","target":"backup","operation":"verify-backup","nonce":preview["nonce"],"preview":preview["digest"],"wait":true});
+    let done = owner_call(&ui, OWNER, request.clone(), 200).await;
+    assert_eq!(done["state"], "succeeded", "{done}");
+    assert_eq!(owner_call(&ui, OWNER, request, 200).await, done);
+    let report = &done["result"]["report"];
+    assert_eq!(report["state"], "backup-checkpointed");
+    assert_eq!(report["checkpoint_frontier"]["through"], "3");
+    assert_eq!(report["witnessed_frontier"]["through"], "4");
+    assert_eq!(
+        report["uncovered_interval"],
+        json!({"first":"4","last":"4","count":"1"})
+    );
+    let checkpoint: kan::evidence_backup::Checkpoint =
+        serde_json::from_value(report["checkpoint"].clone()).unwrap();
+    checkpoint.verify(identity(9).did().as_str()).unwrap();
+    assert!(checkpoint.verify(identity(7).did().as_str()).is_err());
+    config["checkpoint"] = report["checkpoint_file"].clone();
+    config["checkpoint_author"] = json!(identity(9).did().to_string());
+    ui.stop().await;
+    // Cold owner journal: only destination bytes, independent checkpoint and
+    // signed receipt witness are carried forward, not the original owner jobs.
+    let ui = Ui::start(readers(config.clone(), "cold-owner.sqlite")).await;
+    let preview = owner_call(
+        &ui,
+        OWNER,
+        json!({"action":"preview","target":"backup","operation":"verify-restore"}),
+        200,
+    )
+    .await;
+    let restored = owner_call(&ui,OWNER,json!({"action":"submit","target":"backup","operation":"verify-restore","nonce":preview["nonce"],"preview":preview["digest"],"wait":true}),200).await;
+    assert_eq!(restored["state"], "succeeded", "{restored}");
+    assert_eq!(
+        restored["result"]["report"]["uncovered_interval"],
+        report["uncovered_interval"]
+    );
+    let observed = kan::evidence_backup::inspect(
+        &database,
+        &binding(&f),
+        "independent-synthetic-volume",
+        true,
+    )
+    .unwrap();
+    let unknown =
+        kan::evidence_backup::coverage(&checkpoint, identity(9).did().as_str(), &observed, None)
+            .unwrap();
+    assert_eq!(
+        unknown["receipt_coverage"],
+        "unknown-no-independent-witness"
+    );
+    let mut forged = checkpoint.clone();
+    forged.statement.frontier.through = "4".into();
+    assert!(forged.verify(identity(9).did().as_str()).is_err());
+    ui.stop().await;
+    // Byte loss cannot result in a new signed checkpoint.
+    let conn = rusqlite::Connection::open(&database).unwrap();
+    conn.execute("DELETE FROM objects WHERE cid=?", [f.id(0)])
+        .unwrap();
+    drop(conn);
+    assert!(kan::evidence_backup::inspect(
+        &database,
+        &binding(&f),
+        "independent-synthetic-volume",
+        true
+    )
+    .is_err());
+    server.stop().await;
+}

@@ -86,25 +86,6 @@ impl Readers {
             .map(|reader| reader.as_ref())
             .ok_or(Failure::AccessLimited)
     }
-    async fn declarations(&self, annotations: bool) -> Result<Vec<Value>, ContentError> {
-        let _permit = self
-            .workers
-            .clone()
-            .try_acquire_owned()
-            .map_err(|_| ContentError::Busy)?;
-        let workspace = self.workspace.clone().ok_or(Failure::Invalid)?;
-        tokio::task::spawn_blocking(move || {
-            let _permit = _permit;
-            if annotations {
-                workspace.annotations()
-            } else {
-                workspace.views()
-            }
-        })
-        .await
-        .map_err(|_| Failure::Unavailable)?
-        .map_err(Into::into)
-    }
     async fn authorized_sources(&self) -> (std::collections::BTreeSet<String>, bool) {
         let keys: Vec<_> = self.proof.keys().cloned().collect();
         let mut authorized = std::collections::BTreeSet::new();

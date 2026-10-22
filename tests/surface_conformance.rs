@@ -23,6 +23,7 @@ const RULE_EVIDENCE: &[(&str, &str)] = &[
         "authenticated-serving-index",
         "tests/evidence_attested_store.rs",
     ),
+    ("backup-checkpoint", "tests/support/proof_library_tests.rs"),
     ("owner-backup-purge", "tests/support/proof_library_tests.rs"),
     (
         "authenticated-publication-binding",
@@ -726,6 +727,12 @@ const PERSISTENCE_MUTATION_SITES: &[(&str, &str, &str, usize)] = &[
         "src/evidence_erasure_history.rs",
         "rename",
         "EvidenceErasureHistory",
+        1,
+    ),
+    (
+        "src/evidence_library/owner/backup.rs",
+        "write_new_owner_only",
+        "EvidenceBackupCheckpoint",
         1,
     ),
     (

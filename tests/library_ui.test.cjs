@@ -1022,3 +1022,11 @@ test('search continues beyond 25 pages and cache maintenance is separate from au
  await u.respond({removed:128,more:true});
  assert.match(u.node('search-coverage').textContent,/128/);
 });
+
+test('backup verification exposes cold restore and an explicit uncovered interval',async()=>{
+ const u=ui();await ownerUI(u);u.node('owner-refresh').click();await tick();
+ const target={id:'vault',kind:'backup-verification',config:{checkpoint:'/independent/receipt.json'}};
+ await u.respond({owner:'owner',targets:[target],limits:{jobs:10},jobs:[{state:'succeeded',job:{id:'receipt',contract:{operation:'verify-restore',target}},result:{report:{state:'backup-checkpointed',checkpoint_frontier:{through:'3'},checkpoint_age_seconds:'90',receipt_coverage:'acknowledged-positions-not-covered',uncovered_interval:{first:'4',last:'8',count:'5'},scope:'Archive only; separate key recovery required'}}}]});
+ assert.deepEqual(u.node('owner-operation').children.map(n=>n.value),['verify-backup','verify-restore']);
+ assert.match(walk(u.node('owner-jobs')).map(n=>n.textContent).join(' '),/Uncovered acknowledged positions 4–8 \(5\)/);
+});

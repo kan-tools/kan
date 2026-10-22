@@ -672,7 +672,7 @@
       }
     }
     clearPolicy();clearKeys();clearErasure();$('erasure-controls').hidden=target?.kind!=='capture-erasure';$('key-controls').hidden=target?.kind!=='key-history';$('access-controls').hidden=target?.kind!=='access-policy';$('owner-maintenance-preview').disabled=target?.kind==='key-history';$('owner-operation').disabled=target?.kind==='key-history';
-    const operations=target?.kind==='key-history'?[]:target?.kind==='access-policy'?['rebuild-control-index']:target?.kind==='capture-erasure'?['rebuild-control-index','rebuild-archive-index']:target?.kind==='workspace-recovery'?['recover']:target?.kind==='import-recovery'?['restore-import']:target?.kind==='migration'?(target.recovered?['import','reconcile-import']:['import']):target?.kind==='operations'?['rotate']:['backup','recover'];
+    const operations=target?.kind==='backup-verification'?(target.config?.checkpoint?['verify-backup','verify-restore']:['verify-backup']):target?.kind==='key-history'?[]:target?.kind==='access-policy'?['rebuild-control-index']:target?.kind==='capture-erasure'?['rebuild-control-index','rebuild-archive-index']:target?.kind==='workspace-recovery'?['recover']:target?.kind==='import-recovery'?['restore-import']:target?.kind==='migration'?(target.recovered?['import','reconcile-import']:['import']):target?.kind==='operations'?['rotate']:['backup','recover'];
     for(const operation of operations){const option=textNode('option',operation==='rebuild-control-index'?'Initialize or repair control reads':operation==='rebuild-archive-index'?'Initialize or repair archive reads':operation);option.value=operation;$('owner-operation').append(option);}
     $('owner-operation').value=operations[0]||'';
   }
@@ -696,6 +696,12 @@
     $('owner-status').textContent=`Owner ${value.owner} · ${value.jobs.length} jobs on this page · one active job · ${value.limits.jobs_per_page??value.limits.jobs} jobs per page`;$('owner-jobs').replaceChildren();
     for(const status of value.jobs){const row=textNode('article','');row.className='content-item';row.append(textNode('h3',`${status.job.contract.operation} · ${status.job.contract.target.id} · ${status.state}`));row.append(textNode('p',status.job.id,'content-identity'));
       const report=status.result?.report;
+      if(report?.checkpoint_frontier){
+        row.append(textNode('p',`${report.state} · backup through ${report.checkpoint_frontier.through} · ${report.checkpoint_age_seconds} seconds old when checked · ${report.receipt_coverage}`));
+        if(report.uncovered_interval)row.append(textNode('p',`Uncovered acknowledged positions ${report.uncovered_interval.first}–${report.uncovered_interval.last} (${report.uncovered_interval.count})`,'content-warning'));
+        row.append(textNode('p',report.scope||'', 'content-coverage'));
+        if(report.checkpoint_file)row.append(textNode('p',`Retain independently: ${report.checkpoint_file}`));
+      }
       if(report?.progress?.erased_operations)row.append(textNode('p',`${report.progress.erased_operations} import operations were explicitly erased; queue coverage is incomplete.`, 'content-warning'));
       if(report?.progress)row.append(textNode('p',`${report.progress.retained_operations}/${report.progress.total_operations} import operations queued · ${report.progress.pending_operations} awaiting acknowledgment · ${report.progress.queue_coverage_complete?'queue coverage complete':'more batches remain'}`));
       if(report?.verified_selected_file_bytes)row.append(textNode('p',`${report.files} files recovered and verified · plaintext output at ${report.destination}`));

@@ -1379,3 +1379,30 @@ append requires a fresh preview, which continues from the retained checkpoint.
 Older previews without receipts still receive full membership revalidation.
 The former 100,000-record / 256 MiB whole-archive discovery ceilings are removed;
 individual signed erasure-plan and complete-capture selection limits remain.
+
+### Verify an independent backup and inspect restore coverage
+
+Copy the completed encrypted archive to the owner-selected backup destination first.
+Configure a `backup-verification` owner target with `config` containing `database`,
+`binding`, a non-semantic `destination` identifier, `independent`, and a private
+`checkpoints` directory. `independent` declares the operator's chosen failure domain;
+a second directory on the source disk should set it to false. Kan verifies bytes,
+not the physical independence of an operator-managed transfer.
+
+Choose **verify-backup**, preview, then submit. It fully verifies the retained
+ciphertext/provenance closure and writes a new owner-signed checkpoint only after
+verification, with archive frontier, SHA-256 of the standalone database, byte count,
+destination and verification time. The owner journal retains the result. Preserve
+the checkpoint independently; this is separate from the provider-neutral transfer
+and from the encrypted key/workspace recovery packages required for a whole instance.
+
+On a clean host, configure `checkpoint` and `checkpoint_author` from that independent
+record, plus optional `witnessed`, the JSON of an independently retained signed proof
+snapshot (`pin`). **verify-restore** checks the exact restored standalone backup
+before reconstruction/index repair. It reports checkpoint age and an inclusive
+uncovered interval from backup position + 1 to the witnessed acknowledged position.
+No witness means unknown loss coverage, not zero loss. Equal-position conflicting
+frontiers fail; a later signed high-water mark alone cannot prove ancestry of its
+lost tail. Both the raw report and these coverage states appear in owner jobs.
+Verification never activates a restored archive. Current erasure custody must still
+be applied before evidence is exposed; a historical checkpoint is not a read grant.

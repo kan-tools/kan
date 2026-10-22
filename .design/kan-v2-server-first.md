@@ -652,3 +652,17 @@ Primary interface checked against TypeSafe's [HTTP examples](https://docs.typesa
 and [question contracts](https://docs.typesafe.ai/primitives) on this date. Runtime
 qualification of the new protocol path remains pending; tests use synthetic
 responses and never upload production traces.
+
+#### Destination checkpoint implementation
+
+Owner `verify-backup` jobs audit a completed standalone archive at the configured
+destination before publishing a domain-separated owner signature over its binding,
+frontier, exact encrypted database digest/length, destination identity, declared
+independence and verification time. The immutable receipt is retained outside the
+source archive and in the encrypted owner journal. Transfers remain operator-driven.
+`verify-restore` authenticates that independent receipt and exact destination closure,
+then compares an optional independently retained service-signed snapshot witness.
+It reports the inclusive uncovered acknowledged position interval, unknown coverage
+when no witness exists, or a conflicting equal-position frontier. A high-water mark
+alone cannot prove ancestry of a lost suffix. This archive receipt does not replace
+independent key/workspace packages or current erasure custody, and grants no access.

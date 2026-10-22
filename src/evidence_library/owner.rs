@@ -1,5 +1,6 @@
 //! Separately authorized, configured owner maintenance. No browser paths or
 //! shell commands, and no automatic promotion of a recovered/backup artifact.
+mod backup;
 mod backup_purge;
 mod erasure;
 use crate::{
@@ -19,6 +20,10 @@ use std::{
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
 pub enum Target {
+    BackupVerification {
+        id: String,
+        config: backup::Config,
+    },
     CaptureErasure {
         id: String,
         root: PathBuf,
@@ -91,7 +96,8 @@ pub enum Target {
 impl Target {
     fn id(&self) -> &str {
         match self {
-            Self::CaptureErasure { id, .. }
+            Self::BackupVerification { id, .. }
+            | Self::CaptureErasure { id, .. }
             | Self::KeyHistory { id, .. }
             | Self::AccessPolicy { id, .. }
             | Self::WorkspaceRecovery { id, .. }
@@ -105,6 +111,8 @@ impl Target {
 #[derive(Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
 pub enum Operation {
+    VerifyBackup,
+    VerifyRestore,
     Backup,
     Recover,
     Rotate,
@@ -289,6 +297,7 @@ impl Owner {
             }
             match &target {
                 Target::CaptureErasure { .. } => erasure::validate_target(&target)?,
+                Target::BackupVerification { config, .. } => config.validate()?,
                 Target::KeyHistory {
                     history,
                     signing_key,
@@ -456,6 +465,14 @@ impl Owner {
         }
         let selected = self.targets.get(target).ok_or(Failure::AccessLimited)?;
         let destination = match selected {
+            Target::BackupVerification { config, .. } if operation == Operation::VerifyBackup => {
+                Some(config.checkpoints.join(format!("{nonce}.json")))
+            }
+            Target::BackupVerification { config, .. }
+                if operation == Operation::VerifyRestore && config.checkpoint.is_some() =>
+            {
+                None
+            }
             Target::WorkspaceRecovery { output, .. } if operation == Operation::Recover => {
                 Some(output.join(format!("{nonce}.sqlite")))
             }
@@ -496,6 +513,8 @@ impl Owner {
         Ok(
             json!({"version":1,"owner":self.workspace.author(),"target":selected,"operation":operation,"destination":destination,"nonce":nonce,"retry_of":retry_of,"import":migration_preview(selected)?,
             "effect":match operation{
+                Operation::VerifyBackup=>"Fully verify the completed destination archive and sign an immutable checkpoint only after closure verification. Record the configured failure-domain independence separately from byte verification. Transfer is operator-driven; retain this receipt independently with key and workspace packages.",
+                Operation::VerifyRestore=>"Verify the restored checkpoint bytes and archive closure against the independently pinned checkpoint author. Compare the supplied signed receipt witness and report uncovered acknowledged positions. Do not activate services, overwrite data or infer zero loss when no witness exists.",
                 Operation::RebuildControlIndex=>"Fully audit the configured independent owner history and rebuild its signed serving checkpoint. Preserve every raw record and current grant/erasure decision. Hold the owner lease; repair interrupted index publication before enabling current reads. A failed rebuild leaves a visible refusal until repaired.",
                 Operation::RebuildArchiveIndex=>"Fully audit the configured root archive against independently current erasure custody, then atomically initialize or rebuild its authenticated serving index. Preserve retained capture bytes and signed provenance. This may take time and serialize archive writes; it does not convert legacy payload layout, repair missing evidence, rebuild replicas or restart services.",
                 Operation::ReconcileImport=>"Read and hash the configured recovery files against this exact current source plan, then recheck the source inventory. Record remaining cutover preconditions; do not fence writers or activate stores.",
@@ -883,6 +902,9 @@ fn perform(
 ) -> Result<Value, String> {
     let work = || -> Result<Value, Box<dyn std::error::Error + Send + Sync>> {
         match target {
+            Target::BackupVerification { config, .. } => {
+                Ok(config.perform(operation, destination, workspace)?)
+            }
             Target::AccessPolicy {
                 policy,
                 signing_key,
