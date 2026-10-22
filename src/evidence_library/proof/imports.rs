@@ -497,3 +497,49 @@ fn bounded<T: serde::de::DeserializeOwned>(bytes: &[u8]) -> Result<T, atproto_da
         },
     )
 }
+
+/// Cold reconstructed files share the exact repository reader used by Library.
+/// Byte identity is established separately by the final-plan reconciliation.
+pub(crate) fn inspect_restored(root: &std::path::Path) -> Result<Value, ContentError> {
+    let plan: restore::Plan =
+        serde_json::from_slice(&std::fs::read(root.join("plan.json")).map_err(|_| invalid())?)
+            .map_err(|_| invalid())?;
+    let mut reports = Vec::new();
+    let mut verified = true;
+    for file in &plan.files {
+        if std::path::Path::new(&file.path)
+            .file_name()
+            .is_none_or(|n| n != "repo.car")
+        {
+            continue;
+        }
+        if file.length > 64 * 1024 * 1024 {
+            verified = false;
+            reports.push(json!({"path":file.path,"state":"repository-presentation-limit","raw_bytes":"verified by reconciliation"}));
+            continue;
+        }
+        let bytes = std::fs::read(root.join("files").join(&file.path)).map_err(|_| invalid())?;
+        let head_path = std::path::Path::new(&file.path).with_file_name("HEAD");
+        let head = plan
+            .files
+            .iter()
+            .find(|f| std::path::Path::new(&f.path) == head_path)
+            .map(|_| std::fs::read(root.join("files").join(&head_path)).map(|b| (b, vec![])))
+            .transpose()
+            .map_err(|_| invalid())?;
+        let report = match car(&bytes, 0, &[], head.as_ref(), &View::default(), &[]) {
+            Ok(v) => v,
+            Err(_) => {
+                verified = false;
+                reports.push(json!({"path":file.path,"state":"repository-view-unavailable","raw_bytes":"verified by reconciliation"}));
+                continue;
+            }
+        };
+        let repository = &report["repository"];
+        verified &= repository["state"] == "membership-verified";
+        reports.push(json!({"path":file.path,"state":repository["state"],"head":repository["head"],"records":repository["records"],"verified_claims":repository["fold"]["verified_claims"],"uninterpreted_members":repository["fold"]["uninterpreted_members"],"commit":repository["commit"],"scan":report["scan"],"notice":report["membership"]}));
+    }
+    Ok(
+        json!({"all_membership_verified":verified&&!reports.is_empty(),"repositories":reports,"trust":"No automatic trust promotion; signatures, membership, identity continuity and explicit trust retain their Library meanings"}),
+    )
+}

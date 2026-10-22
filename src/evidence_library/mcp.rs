@@ -98,6 +98,7 @@ fn mutates(request: &Query) -> bool {
         | Query::ProofSource { .. }
         | Query::CitationSource { .. }
         | Query::ProofContent { .. }
+        | Query::ProofAttachment { .. }
         | Query::ProofAttempt { .. }
         | Query::ProofSession { .. }
         | Query::ProofDiscover { .. }

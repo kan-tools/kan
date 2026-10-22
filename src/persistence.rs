@@ -45,6 +45,7 @@ pub enum SurfaceWrite {
     EvidenceBackup,
     EvidenceBackupPurge,
     EvidenceBackupCheckpoint,
+    EvidenceMigration,
     EvidenceRecovery,
     EvidenceRecoverySource,
     EvidenceBundleSource,
@@ -97,6 +98,7 @@ impl SurfaceWrite {
         Self::EvidenceBackup,
         Self::EvidenceBackupPurge,
         Self::EvidenceBackupCheckpoint,
+        Self::EvidenceMigration,
         Self::EvidenceRecovery,
         Self::EvidenceRecoverySource,
         Self::EvidenceBundleSource,
@@ -298,6 +300,7 @@ impl SurfaceWrite {
                 "evidence-policy:.pending-*",
                 "evidence-policy:policy-*.json",
             ],
+            Self::EvidenceMigration => &["evidence-migration:control"],
             Self::Count => &[],
         }
     }

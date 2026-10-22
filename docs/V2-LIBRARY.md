@@ -195,6 +195,43 @@ retry or selection of another scope. No failed page is presented as empty succes
 Validation and review are recorded with the implementation checkpoint; do not
 interpret this runbook as proof that uncompleted acceptance criteria passed.
 
+## Harness snapshots and decoded attachments
+
+`kan-v2 harness-capture --spool /absolute/queue --key /absolute/writer-key
+--recipient <archive-public-key-hex> --session <session-id> --input /absolute/transcript.jsonl`
+streams a transcript's observed prefix into encrypted 64 KiB capture frames. Omit
+`--input` to capture stdin. It does not send inference. Repeated snapshots retain
+separate attempts and the exact original bytes; snapshots do not certify that the
+harness exported every event. JSONL Content shows tools, compaction summaries,
+unknown records and exact enclosing line citations. Raw Source remains authoritative.
+
+For Claude Code, opt in to `scripts/capture-claude-hook.py` as a command hook with
+`--spool`, `--key`, `--recipient`, `--transcript-root` and optionally `--kan`.
+The configured transcript root must contain permitted transcript files. Set the
+harness command-hook timeout above the wrapper's configured `--timeout` (default
+60 seconds per capture); session shutdown defaults can otherwise terminate it.
+Use PostToolUse for tool payloads and Stop/PreCompact/PostCompact/SessionEnd for
+main transcript snapshots; SubagentStop captures its separate agent transcript.
+The wrapper preserves the hook JSON and captures snapshots when those paths are
+provided. It never changes harness settings automatically. Failure emits a visible
+recording gap and returns success to avoid blocking the harness. Hook invocation
+and transcript schemas follow [Claude Code's hook reference](https://code.claude.com/docs/en/hooks);
+unexported events and missed hooks remain unknown. No provider credentials are
+added, and no transcript source is modified. Supply the normal proxy configuration
+separately to retain provider transport traffic.
+
+For supported inline base64 image/document blocks in complete JSON requests or
+responses, Content offers **Verify & download attachment**. The shared
+`proof-attachment` query takes source, pin, selections, direction and pointer;
+it returns digest, media type, decoded length and enclosing source citations.
+The same-origin native download repeats verification and returns exact decoded
+bytes, with `X-Kan-Content-SHA256`, as an inert `.bin` file. This supports CLI/MCP
+inspection through the shared query and HTTP binary export. Export bounds are
+1,024 selected records, 40 MiB reconstructed input and 24 MiB decoded output.
+Missing chunks, erased payloads or revoked grants prevent export. External URL,
+JSONL and SSE attachment formats without a body-relative pointer remain available
+through original Source; no network fetch or invented attachment bytes occurs.
+
 ## Unavailable evidence and safe display
 
 Authorization failures lock and clear the Library. A missing response (404),
@@ -1406,3 +1443,63 @@ frontiers fail; a later signed high-water mark alone cannot prove ancestry of it
 lost tail. Both the raw report and these coverage states appear in owner jobs.
 Verification never activates a restored archive. Current erasure custody must still
 be applied before evidence is exposed; a historical checkpoint is not a read grant.
+
+
+## Fenced migration and reversible client cutover
+
+Add an owner target with `kind: "migration-cutover"`, a stable `id`, and `config`:
+
+```json
+{
+  "source": "/srv/legacy/project",
+  "selection": "workspace",
+  "source_id": "<64 lowercase hex>",
+  "recipient": "<archive public key hex>",
+  "spool": "/srv/kan/import-queue.sqlite",
+  "state": "/srv/kan/migrations/project",
+  "client_config": "/srv/kan/reader.json",
+  "candidate_config": "/srv/kan/reader-v2.json",
+  "backup_database": "/mnt/independent/kan-final.sqlite",
+  "backup_checkpoint": "/mnt/independent/kan-final-checkpoint.json",
+  "backup_author": "<independently pinned checkpoint signer DID>",
+  "binding": {"profile":"admitted","archive":"<archive hex>","scope":"<scope hex>","issuer":"<service DID>"},
+  "recipient_key": "/srv/kan/keys/archive.key",
+  "max_records": 100000,
+  "batch": 100,
+  "writers_quiesced": true,
+  "allow_uninterpreted": false
+}
+```
+
+Create the private `state` directory outside the legacy source. The candidate is
+an ordinary Library configuration selecting the exact destination binding; keep
+its key paths absolute. `writers_quiesced` acknowledges that old binaries and
+external publishers have stopped. Supported new v1 log writers also honor the
+persistent fence. This mechanism cannot constrain older software or arbitrary
+filesystem writers.
+
+In Administration, preview and apply **fence-migration**, then **finalize-migration**
+until all final-plan operations are queued. Deliver the queue normally. Create an
+independent backup containing that exact plan and use **verify-backup** to obtain
+its signed checkpoint. Preview and apply **activate-migration**: the job verifies
+backup closure and the pinned checkpoint, decrypts a fresh private recovery copy,
+compares every selected file against the fenced source, and inspects native
+repository membership before atomically replacing `client_config`. The Library
+loads that actual file on its next launch; restart configured clients explicitly.
+The operation neither restarts arbitrary services nor switches provider endpoints.
+A destination that lacks the final delta, wrong recovery key, stale source or
+changed previewed routing cannot activate.
+
+**rollback-migration** restores the saved prior config before removing its fence.
+An interruption may leave v1 fenced; retry completes that cleanup. Both client
+configurations, original stores, independent backups and recovery outputs remain.
+Post-cutover v2 writes are retained in v2 and are not replayed into v1. Reusing a
+control directory for a different candidate is refused; configure a new migration
+state directory for a later cutover. Do not delete backups to complete migration.
+
+Native views have explicit presentation bounds (including 64 MiB per reconstructed
+CAR in this activation inspection). Damaged, oversized or unsupported repositories
+can still be preserved byte-exactly. The default refuses unknown membership;
+`allow_uninterpreted: true` explicitly accepts that limitation and records it,
+without asserting that unsupported claims are valid. Ordinary Library import
+views retain their separate signature, identity, scope, membership and trust labels.

@@ -96,6 +96,8 @@ pub mod evidence_library;
 #[cfg(feature = "v2-crypto")]
 pub mod evidence_backup;
 #[cfg(feature = "v2-crypto")]
+pub mod evidence_harness;
+#[cfg(feature = "v2-crypto")]
 pub mod evidence_workspace;
 
 #[cfg(feature = "v2-storage")]

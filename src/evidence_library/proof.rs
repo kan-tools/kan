@@ -9,6 +9,7 @@ use crate::{
 use serde_json::{json, Value};
 use std::{collections::BTreeMap, time::Duration};
 pub mod analysis;
+pub(crate) mod attachments;
 mod discovery;
 pub(crate) mod imports;
 pub mod knowledge;
@@ -119,7 +120,7 @@ impl Readers {
                 let pin = reader.snapshot().await?;
                 Ok(json!({"id":id,"scope":reader.binding().scope,"binding":reader.binding(),
                     "protocol":wire::PROTOCOL,"pin_wire":serde_json::to_string(&pin).map_err(|_|Failure::Invalid)?,"pin":pin,
-                    "capabilities":["portable-references","snapshot-inventory","source-ranges","provenance","payload-availability","content-inspection","attempt-discovery","attempt-content","session-links","session-content","import-content"]}))
+                    "capabilities":["portable-references","snapshot-inventory","source-ranges","provenance","payload-availability","content-inspection","attempt-discovery","attempt-content","attachment-export","harness-jsonl","session-links","session-content","import-content"]}))
             } else {
                 let reader = self.legacy.as_ref().ok_or(Failure::Invalid)?;
                 let pin = reader.snapshot(id).await?;
@@ -190,6 +191,17 @@ impl Readers {
             } => {
                 self.annotations_page(subject, tag, after, limit.unwrap_or(100))
                     .await?
+            }
+            Query::ProofAttachment {
+                source,
+                pin,
+                selections,
+                direction,
+                pointer,
+            } => {
+                self.attachment(&source, &pin, &selections, direction, &pointer)
+                    .await?
+                    .metadata
             }
             Query::PruneSearchCache => {
                 let workspace = self.workspace.clone().ok_or(Failure::Invalid)?;
@@ -428,7 +440,7 @@ impl Readers {
                     }
                 }
                 let mut catalog = json!({"version":2,"scopes":scopes,"coverage":if partial {"partial"} else {"complete"},
-                    "capabilities":["portable-references","snapshot-inventory","source-ranges","provenance","payload-availability","content-inspection","attempt-discovery","attempt-content","session-links","session-content","import-content"],
+                    "capabilities":["portable-references","snapshot-inventory","source-ranges","provenance","payload-availability","content-inspection","attempt-discovery","attempt-content","attachment-export","harness-jsonl","session-links","session-content","import-content"],
                     "unavailable":["semantic-search","annotations","saved-views","analysis","owner-maintenance"]});
                 if self.owner.is_some() {
                     catalog["capabilities"]

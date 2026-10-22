@@ -1030,3 +1030,25 @@ test('backup verification exposes cold restore and an explicit uncovered interva
  assert.deepEqual(u.node('owner-operation').children.map(n=>n.value),['verify-backup','verify-restore']);
  assert.match(walk(u.node('owner-jobs')).map(n=>n.textContent).join(' '),/Uncovered acknowledged positions 4–8 \(5\)/);
 });
+
+test('attachment export verifies source selection before native download and refuses revoked evidence',async()=>{
+ const u=ui();await openProofContent(u);u.node('interpret').click();await tick();
+ const value=clone(contentResult);value.occurrences[0].record=proofRow;
+ value.groups[0].ordinals=[{value:'0',inputs:['0'],conflict:false}];
+ const item=value.groups[0].request.items[0];item.kind='attachment';item.attachment_export=true;item.pointer='/messages/0/content/0';
+ await u.respond(value);
+ const button=walk(u.node('content-panel')).find(n=>n.textContent==='Verify & download attachment');assert.ok(button);button.click();await tick();
+ assert.equal(u.pending[0].url,'/api/library/proof-attachment');
+ const request=JSON.parse(u.pending[0].opts.body);assert.deepEqual(request.selections,[proofRow.selection]);assert.equal(request.direction,'request');
+ await u.respond({decoded_sha256:'digest',decoded_bytes:'3145728',cites:[]});
+ assert.equal(u.forms.length,1);assert.equal(u.forms[0].action,'/api/library/download');assert.equal(JSON.parse(u.forms[0].payload).request.pointer,item.pointer);
+ button.click();await tick();await u.respond({},403);assert.equal(u.forms.length,1);assert.equal(u.node('library').hidden,true);
+});
+
+test('migration cutover exposes final delta and explicit rollback without hiding retained v2 writes',async()=>{
+ const u=ui();await ownerUI(u);u.node('owner-refresh').click();await tick();
+ await u.respond({owner:'owner-did',targets:[{id:'old',kind:'migration-cutover',config:{writers_quiesced:true}}],jobs:[{state:'succeeded',job:{id:'rollback',contract:{operation:'rollback-migration',target:{id:'old'}}},result:{report:{routing:'previous configuration restored; restart clients',source_writers_fenced:false,originals:'retained',v2_history:'retained; post-cutover writes are not replayed into v1'}}}],limits:{jobs:10}});
+ assert.deepEqual(u.node('owner-operation').children.map(n=>n.value),['fence-migration','finalize-migration','activate-migration','rollback-migration']);
+ const text=walk(u.node('owner-jobs')).map(n=>n.textContent).join(' ');assert.match(text,/restart clients/);assert.match(text,/post-cutover writes are not replayed/);
+ u.node('owner-operation').value='activate-migration';u.node('owner-job-form').events.submit({preventDefault(){}});await tick();assert.equal(JSON.parse(u.pending[0].opts.body).operation,'activate-migration');
+});

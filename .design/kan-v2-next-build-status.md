@@ -102,6 +102,16 @@ its synthetic cold-journal regression awaits Rust CI. Transfer and failure-domai
 independence remain operator-configured; key/workspace packages are separately required.
 F1/F2/F6 are now implemented with renewal/growth, 1,500 distinct annotation citations,
 cache retention and automatic browser scan regressions; Rust qualification is pending.
+F4 now implements the owner fence/final-snapshot/cold-backup-verified client cutover
+and rollback, retaining both configurations and both histories. Its native v1 writer
+refusal and final-delta regression await Rust CI. F5 now includes exact JSONL
+harness snapshots, an opt-in Claude hook wrapper, line-cited tool/compaction rendering
+and verified multi-frame attachment exports. The hook wrapper and all 124 Library
+UI checks pass locally; Rust integration remains pending. The previous F3 CI run
+stopped on an outdated persistence facade digest; the reviewed capability additions
+are now reflected in that inventory. These are implementation results, not release
+qualification or acceptance.
+
 The owner now requests one fresh full adversarial review after all remaining
 features and release qualification are implemented. Use actual Claude Code Opus 5.5
 on the frozen integrated candidate; do not start it during feature construction. The 100 GiB Modal runner is prepared; account authentication is still

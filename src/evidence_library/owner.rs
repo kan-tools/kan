@@ -3,6 +3,7 @@
 mod backup;
 mod backup_purge;
 mod erasure;
+mod migration;
 use crate::{
     evidence_proof_service::{Binding, Profile},
     evidence_service::{self as service, Failure},
@@ -20,6 +21,10 @@ use std::{
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
 pub enum Target {
+    MigrationCutover {
+        id: String,
+        config: migration::Config,
+    },
     BackupVerification {
         id: String,
         config: backup::Config,
@@ -96,7 +101,8 @@ pub enum Target {
 impl Target {
     fn id(&self) -> &str {
         match self {
-            Self::BackupVerification { id, .. }
+            Self::MigrationCutover { id, .. }
+            | Self::BackupVerification { id, .. }
             | Self::CaptureErasure { id, .. }
             | Self::KeyHistory { id, .. }
             | Self::AccessPolicy { id, .. }
@@ -111,6 +117,10 @@ impl Target {
 #[derive(Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
 pub enum Operation {
+    FenceMigration,
+    FinalizeMigration,
+    ActivateMigration,
+    RollbackMigration,
     VerifyBackup,
     VerifyRestore,
     Backup,
@@ -296,6 +306,7 @@ impl Owner {
                 return Err(Failure::Invalid);
             }
             match &target {
+                Target::MigrationCutover { config, .. } => config.validate()?,
                 Target::CaptureErasure { .. } => erasure::validate_target(&target)?,
                 Target::BackupVerification { config, .. } => config.validate()?,
                 Target::KeyHistory {
@@ -465,6 +476,17 @@ impl Owner {
         }
         let selected = self.targets.get(target).ok_or(Failure::AccessLimited)?;
         let destination = match selected {
+            Target::MigrationCutover { .. }
+                if matches!(
+                    operation,
+                    Operation::FenceMigration
+                        | Operation::FinalizeMigration
+                        | Operation::ActivateMigration
+                        | Operation::RollbackMigration
+                ) =>
+            {
+                None
+            }
             Target::BackupVerification { config, .. } if operation == Operation::VerifyBackup => {
                 Some(config.checkpoints.join(format!("{nonce}.json")))
             }
@@ -511,8 +533,12 @@ impl Owner {
             }
         }
         Ok(
-            json!({"version":1,"owner":self.workspace.author(),"target":selected,"operation":operation,"destination":destination,"nonce":nonce,"retry_of":retry_of,"import":migration_preview(selected)?,
+            json!({"version":1,"owner":self.workspace.author(),"target":selected,"operation":operation,"destination":destination,"nonce":nonce,"retry_of":retry_of,"import":migration_preview(selected)?,"migration":match selected {Target::MigrationCutover{config,..}=>config.preview(operation)?,_=>Value::Null},
             "effect":match operation{
+                Operation::FenceMigration=>"Retain the prior client configuration and fence supported v1 log writers. Older binaries and external publishers must already be stopped. Preserve every source byte; failures may leave a safe partial fence that can be retried or rolled back.",
+                Operation::FinalizeMigration=>"Queue a bounded batch of the exact fenced final source snapshot. Resume until complete, then deliver and verify an independent backup. No routing switch yet.",
+                Operation::ActivateMigration=>"Verify the independently signed backup, decrypt and reconcile the exact final import into a new private plaintext recovery directory, inspect native repository membership, then atomically replace the configured Library client config. Restart clients to adopt it. Keep sources fenced and retain rollback configurations and all evidence.",
+                Operation::RollbackMigration=>"Restore the prior client configuration first, then remove this migration's source fence. Restart clients. Retain v1 originals, v2 writes, backup and recovery data; new v2 writes are not replayed into v1.",
                 Operation::VerifyBackup=>"Fully verify the completed destination archive and sign an immutable checkpoint only after closure verification. Record the configured failure-domain independence separately from byte verification. Transfer is operator-driven; retain this receipt independently with key and workspace packages.",
                 Operation::VerifyRestore=>"Verify the restored checkpoint bytes and archive closure against the independently pinned checkpoint author. Compare the supplied signed receipt witness and report uncovered acknowledged positions. Do not activate services, overwrite data or infer zero loss when no witness exists.",
                 Operation::RebuildControlIndex=>"Fully audit the configured independent owner history and rebuild its signed serving checkpoint. Preserve every raw record and current grant/erasure decision. Hold the owner lease; repair interrupted index publication before enabling current reads. A failed rebuild leaves a visible refusal until repaired.",
@@ -902,6 +928,9 @@ fn perform(
 ) -> Result<Value, String> {
     let work = || -> Result<Value, Box<dyn std::error::Error + Send + Sync>> {
         match target {
+            Target::MigrationCutover { config, .. } => {
+                config.perform(operation, workspace, contract)
+            }
             Target::BackupVerification { config, .. } => {
                 Ok(config.perform(operation, destination, workspace)?)
             }

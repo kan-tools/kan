@@ -45,6 +45,7 @@ jobs:
       - run: python3 scripts/serving_index_reference.py --check
       - run: node --test tests/library_ui.test.cjs tests/operations_ui.test.cjs tests/operations_review_ui.test.cjs tests/operations_restart_review.test.cjs tests/theme_ui.test.cjs
       - run: python3 tests/test_revert_v2.py
+      - run: python3 tests/test_capture_claude_hook.py
 
       - uses: Swatinem/rust-cache@v2
         with:

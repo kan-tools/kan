@@ -128,6 +128,25 @@ Large or binary content is streamed into bounded chunks. A URL is not a retained
 
 The first integration must identify a real harness/provider pair and test supported hooks, streaming, and endpoint configuration. No broad transparent compatibility claim is made before that spike. Other adapters can follow independently because their output contract is the ledger event, not a particular provider schema.
 
+Implementation contract for the first complementary adapter: Claude Code hook
+payloads and explicit JSONL transcript snapshots enter `kan-harness-jsonl/1` as
+exact supplied bytes, chunked through the existing encrypted spool. The hook
+wrapper runs only when explicitly configured, records subagent transcript links,
+and returns success with a recording-gap diagnostic on failure. Snapshots are
+separate observations, never claimed as contemporaneous events or deduplicated
+source truth. The disposable reader retains unknown fields and exposes tool,
+summary/compaction and lineage records with enclosing original-line citations.
+Hidden events, missing hook delivery, externally referenced files and unsupported
+schema semantics remain unknown. The provider proxy remains independently needed.
+
+Reconstructed inline image/document exports accept currently authorized chunks
+from one attempt and a JSON pointer. Every source is verified again on export;
+missing, erased, contradictory or revoked chunks prevent a download. Canonical
+base64 decoding produces a binary attachment with its SHA-256 and source citations.
+This is a derived export, never replacement source authority. External URLs are
+not fetched. JSONL and SSE attachments without an unambiguous body pointer remain
+source-inspectable rather than advertising an invalid export location.
+
 ### 4. The evidence model
 
 Keep occurrence, content, observation, assertion, and projection distinct:
@@ -555,6 +574,29 @@ The proposed command family is `kan migrate` with discover, preview, import, sta
 4. **Import in bounded batches.** The importer runs locally, validates supported records, preserves unsupported bytes, encrypts them, and calls the ordinary v2 ingest boundary with an import principal and explicit destination grant. Retain original claim signatures, CIDs, author identities, source ordering, public identity/governance history, and all citation/retraction/relation edges. A signed import manifest records the importer, source snapshot, mappings, parser version, omissions, and receipts; it does not re-author historical claims.
 5. **Resume and verify.** Resume from service-confirmed batch receipts, not an unverified client counter. The job identity includes source snapshot commitment, destination scope mapping, and importer contract version. Re-importing an identical snapshot is idempotent; a path change alone does not create new claims. Byte/CID reconciliation and dependency checks must agree with the pinned inventory. Reports distinguish retained bytes, valid/admitted records, unsupported records, quarantined invalid records, unresolved references, and pending uploads. No "complete" result is available while inventoried evidence is unaccounted for.
 6. **Cut over explicitly.** After verification, route chosen clients to the service. Before recommending retirement of old stores, verify independent backup coverage and a restore drill. An optional final delta handles writes since the first snapshot; cutover requires a declared final source frontier, not a claim that two independently writable stores will stay synchronized. Preserve original files and prior client configuration. Rollback switches routing back; imported history remains in the ledger. Source deletion is not a migration-tool side effect.
+
+The implemented owner `migration-cutover` target exposes fence, final-snapshot,
+activation and rollback jobs through the shared API/CLI/MCP and human UI. The
+fence uses the v1 log's existing writer lock and a persistent source marker;
+new v1 writers refuse writes while it exists. The owner must separately stop old
+binaries and external publication writers that do not implement this fence.
+Final-snapshot batches retain complete selected bytes rather than rewriting a v1
+store or silently dropping unreachable blocks. Activation requires acknowledgment
+of every final-plan operation, independent signed backup closure verification,
+actual decryption/reconstruction from that backup, exact source reconciliation and
+native repository inspection. Unknown membership is refused by default; explicit
+`allow_uninterpreted` preserves damaged evidence without promoting it as valid.
+
+The target atomically replaces the actual Library `--config` file after checking
+its previewed prior and candidate digests; clients adopt it on restart. Both
+configurations and the v1 source remain. This is configured client routing, not a
+claim to reconfigure every harness or an already running process. Rollback restores
+the prior configuration before removing this migration's fence. If interrupted,
+retry leaves the safe state (prior routing with v1 still fenced) until cleanup
+finishes. V2 writes after activation stay in v2 on rollback; reverse replication
+is never implied. Every job's signed encrypted owner record retains the operation,
+preview and result. A private control directory retains rollback configurations,
+coordination lock and recovery outputs; none are raw evidence replacements.
 
 The existing seams are `src/store/log.rs` for read-only source access and mixed records, `src/claim/codec.rs` and `src/claim/compat.rs` for byte-preserving decode, `src/transport/git_tree.rs` for publication evidence, and `src/identity/ledger.rs` for public control history. Reuse their format semantics and fixtures, but do not make bulk import call `kan show --all` or build the current all-memory `Log`: the failure that made a source unusable must not also make it unmigratable. A streaming CAR decoder with a disk-backed lookup/reachability index is an implementation requirement for this path. Display trust filtering is not an inventory of stored evidence.
 

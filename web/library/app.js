@@ -61,14 +61,14 @@
   async function rpc(body) {
     const current = ++epoch; if (controller) controller.abort(); controller = new AbortController();
     try {
-    const response = await fetch(['proof-content','proof-attempt','proof-session','proof-import','search-attempt'].includes(body.action) ? `/api/library/${body.action}` : '/api/library', {method:'POST', headers:{'Authorization':`Bearer ${token}`, 'Content-Type':'application/json'}, body:JSON.stringify(body), credentials:'omit', cache:'no-store', signal:controller.signal});
+    const response = await fetch(['proof-attachment','proof-content','proof-attempt','proof-session','proof-import','search-attempt'].includes(body.action) ? `/api/library/${body.action}` : '/api/library', {method:'POST', headers:{'Authorization':`Bearer ${token}`, 'Content-Type':'application/json'}, body:JSON.stringify(body), credentials:'omit', cache:'no-store', signal:controller.signal});
     if (current !== epoch) return null;
     if (!response.ok) {
       const denied = response.status === 401 || response.status === 403;
-      const message = body.action === 'proof-discover' && [422,429].includes(response.status) ? 'Discovery reached a work limit or its workers are busy. Retry the same batch; existing scan coverage is unchanged.' : ['content','proof-content','proof-attempt','proof-session','proof-import','search-attempt'].includes(body.action) && response.status === 422 ? 'Content interpretation reached a presentation limit or deadline. Inspect Source or select fewer complete captures; retained bytes remain available.' : ['content','proof-content','proof-attempt','proof-session','proof-import','search-attempt'].includes(body.action) && response.status === 429 ? 'Content workers are busy. Wait for current interpretation to finish, then retry.' : denied ? 'Access unavailable or revoked. Reconnect with an authorized reader.' : response.status === 404
+      const message = body.action === 'proof-discover' && [422,429].includes(response.status) ? 'Discovery reached a work limit or its workers are busy. Retry the same batch; existing scan coverage is unchanged.' : ['proof-attachment','content','proof-content','proof-attempt','proof-session','proof-import','search-attempt'].includes(body.action) && response.status === 422 ? 'Content interpretation reached a presentation limit or deadline. Inspect Source or select fewer complete captures; retained bytes remain available.' : ['proof-attachment','content','proof-content','proof-attempt','proof-session','proof-import','search-attempt'].includes(body.action) && response.status === 429 ? 'Content workers are busy. Wait for current interpretation to finish, then retry.' : denied ? 'Access unavailable or revoked. Reconnect with an authorized reader.' : response.status === 404
         ? 'Retained source is unavailable for this request. Choose another occurrence or refresh the snapshot.'
         : 'This response could not be verified. Retry, refresh the snapshot, or choose another scope.';
-      const error = new Error(message); error.accessDenied = denied; error.keepContentSelection = ['content','proof-content','proof-attempt','proof-session','proof-import','search-attempt'].includes(body.action) && [422,429].includes(response.status); error.readerMessage = message; throw error;
+      const error = new Error(message); error.accessDenied = denied; error.keepContentSelection = ['proof-attachment','content','proof-content','proof-attempt','proof-session','proof-import','search-attempt'].includes(body.action) && [422,429].includes(response.status); error.readerMessage = message; throw error;
     }
     const value = await response.json(); if (current !== epoch) return null; return value;
     } catch (error) { if (current !== epoch) return null; throw error; }
@@ -672,7 +672,7 @@
       }
     }
     clearPolicy();clearKeys();clearErasure();$('erasure-controls').hidden=target?.kind!=='capture-erasure';$('key-controls').hidden=target?.kind!=='key-history';$('access-controls').hidden=target?.kind!=='access-policy';$('owner-maintenance-preview').disabled=target?.kind==='key-history';$('owner-operation').disabled=target?.kind==='key-history';
-    const operations=target?.kind==='backup-verification'?(target.config?.checkpoint?['verify-backup','verify-restore']:['verify-backup']):target?.kind==='key-history'?[]:target?.kind==='access-policy'?['rebuild-control-index']:target?.kind==='capture-erasure'?['rebuild-control-index','rebuild-archive-index']:target?.kind==='workspace-recovery'?['recover']:target?.kind==='import-recovery'?['restore-import']:target?.kind==='migration'?(target.recovered?['import','reconcile-import']:['import']):target?.kind==='operations'?['rotate']:['backup','recover'];
+    const operations=target?.kind==='migration-cutover'?['fence-migration','finalize-migration','activate-migration','rollback-migration']:target?.kind==='backup-verification'?(target.config?.checkpoint?['verify-backup','verify-restore']:['verify-backup']):target?.kind==='key-history'?[]:target?.kind==='access-policy'?['rebuild-control-index']:target?.kind==='capture-erasure'?['rebuild-control-index','rebuild-archive-index']:target?.kind==='workspace-recovery'?['recover']:target?.kind==='import-recovery'?['restore-import']:target?.kind==='migration'?(target.recovered?['import','reconcile-import']:['import']):target?.kind==='operations'?['rotate']:['backup','recover'];
     for(const operation of operations){const option=textNode('option',operation==='rebuild-control-index'?'Initialize or repair control reads':operation==='rebuild-archive-index'?'Initialize or repair archive reads':operation);option.value=operation;$('owner-operation').append(option);}
     $('owner-operation').value=operations[0]||'';
   }
@@ -702,6 +702,10 @@
         row.append(textNode('p',report.scope||'', 'content-coverage'));
         if(report.checkpoint_file)row.append(textNode('p',`Retain independently: ${report.checkpoint_file}`));
       }
+      if(report?.routing)row.append(textNode('p',report.routing,'content-warning'));
+      if(typeof report?.source_writers_fenced==='boolean')row.append(textNode('p',`v1 writers: ${report.source_writers_fenced?'fenced':'enabled'} · originals ${report.originals||'retained'}`));
+      if(report?.next)row.append(textNode('p',report.next));
+      if(report?.v2_history)row.append(textNode('p',report.v2_history,'content-coverage'));
       if(report?.progress?.erased_operations)row.append(textNode('p',`${report.progress.erased_operations} import operations were explicitly erased; queue coverage is incomplete.`, 'content-warning'));
       if(report?.progress)row.append(textNode('p',`${report.progress.retained_operations}/${report.progress.total_operations} import operations queued · ${report.progress.pending_operations} awaiting acknowledgment · ${report.progress.queue_coverage_complete?'queue coverage complete':'more batches remain'}`));
       if(report?.verified_selected_file_bytes)row.append(textNode('p',`${report.files} files recovered and verified · plaintext output at ${report.destination}`));
@@ -1330,7 +1334,7 @@
         card.append(row);
       }
       for(const direction of ['request','response']){
-        const stream=group[direction],citations=citationRenderer(value,stream),section=document.createElement('section');section.className='content-stream';section.append(textNode('h4',direction==='request'?'Request · supplied history':'Response · observed output'));
+        const stream=group[direction],citations=citationRenderer(value,stream),section=document.createElement('section');section.className='content-stream';section.append(textNode('h4',direction==='request'?(group.capture_surface==='kan-harness-jsonl/1'?'Harness snapshot · exported events':'Request · supplied history'):'Response · observed output'));
         section.append(textNode('p',`Contiguous selected bytes: ${stream.observed_bytes??'unavailable'} · Consistent observer length claim: ${stream.expected_bytes??'none'}`,'content-coverage'));
         if(stream.extent_claims.length){const claims=document.createElement('details');claims.append(textNode('summary','Observer length claims'));for(const claim of stream.extent_claims){const row=textNode('p',`Claimed bytes: ${claim.bytes} `);sourceLink(row,value,claim.input,`Length claim · Source ${value.occurrences[Number(claim.input)].record.sequence}`);claims.append(row);}section.append(claims);}
         if(stream.state!=='interpreted')section.append(textNode('p',`No readable stream: ${stream.issues.map(i=>i.kind+(i.bytes?' '+i.bytes.join('–'):'')).join(', ')||'absent, incomplete or contradictory selected bytes'}.`,'content-warning'));
@@ -1340,6 +1344,16 @@
             if(item.text!==null)appendPagedText(entry,item.text,'content-text');
             if(item.issues.length)entry.append(textNode('p',item.issues.join(' · '),'content-warning'));
             if(item.pointer!==null)entry.append(textNode('p',`Parsed JSON location ${item.pointer||'/'}`,'content-pointer'));
+            if(isProof() && item.attachment_export===true && item.pointer!==null) {
+              const request={action:'proof-attachment',source:sourceId(activeSource),pin,selections:[...new Set(group.ordinals.flatMap(o=>o.inputs))].map(i=>value.occurrences[Number(i)].record.selection),direction,pointer:item.pointer};
+              const download=textNode('button','Verify & download attachment');
+              download.addEventListener('click',()=>run(async()=>{
+                const info=await rpc(request);if(!info)return;
+                details(entry,'Decoded attachment digest and source provenance',JSON.stringify(info,null,2));
+                nativeDownload('/api/library/download',{token,request});
+                notice('Attachment export requested. Every retained chunk is reverified; missing or revoked evidence prevents download.');
+              }));entry.append(download);
+            }
             if(item.event_json!==null)details(entry,'Parsed event · numbers may be rounded; Source preserves exact bytes',item.event_json);
             if(item.tool){details(entry,'Accumulated tool input (derived)',item.tool.json);const refs=document.createElement('div');refs.className='content-citations';refs.append(textNode('span',`Enclosing tool block ${item.tool.region.join('–')} · coarse attribution · end exclusive`));citations.append(refs,item.tool.citation_set,'Tool input source');entry.append(refs);}
             const sources=document.createElement('div');sources.className='content-citations';sources.append(textNode('span',`Enclosing bytes ${item.region.join('–')} · ${item.coarse?'coarse attribution':'attribution'} · end exclusive`));

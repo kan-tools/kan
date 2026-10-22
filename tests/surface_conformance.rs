@@ -24,6 +24,7 @@ const RULE_EVIDENCE: &[(&str, &str)] = &[
         "tests/evidence_attested_store.rs",
     ),
     ("backup-checkpoint", "tests/support/proof_library_tests.rs"),
+    ("migration-cutover", "tests/support/proof_library_tests.rs"),
     ("owner-backup-purge", "tests/support/proof_library_tests.rs"),
     (
         "authenticated-publication-binding",
@@ -138,6 +139,11 @@ const RULE_EVIDENCE: &[(&str, &str)] = &[
     ("connection-config", ".design/medium-architecture.md"),
 ];
 const PERSISTENCE_PATH_EXPRESSIONS: &[(&str, &str, &str)] = &[
+    (
+        "src/store/log.rs",
+        "\"V2_FENCE\"",
+        "evidence-migration:control",
+    ),
     (
         "src/evidence_library/owner/erasure.rs",
         "\"archive.sqlite\"",
@@ -553,6 +559,30 @@ const PERSISTENCE_MODULES: &[&str] = &[
     "src/workspace.rs",
 ];
 const PERSISTENCE_MUTATION_SITES: &[(&str, &str, &str, usize)] = &[
+    (
+        "src/evidence_library/owner/migration.rs",
+        "write_new_owner_only",
+        "EvidenceMigration",
+        1,
+    ),
+    (
+        "src/evidence_library/owner/migration.rs",
+        "open_lock_file",
+        "EvidenceMigration",
+        1,
+    ),
+    (
+        "src/evidence_library/owner/migration.rs",
+        "rename",
+        "EvidenceMigration",
+        1,
+    ),
+    (
+        "src/evidence_library/owner/migration.rs",
+        "remove_file",
+        "EvidenceMigration",
+        1,
+    ),
     (
         "src/evidence_control_index.rs",
         "create_dir_owner_only",
@@ -1658,7 +1688,7 @@ fn every_persistence_facade_call_is_independently_inventoried() {
         if module == "src/persistence.rs" {
             assert_eq!(
                 format!("{:x}", Sha256::digest(source.as_bytes())),
-                "1e498551d581982e8ab0e4b462ca3989b61c8776e0096ca7f65d92ac6467c57d",
+                "6dac89c692b3fbe46205528538e3598aabc5f5eb1427fbec5fcf56655e0b8e45",
                 "the raw-mutation facade changed; review and update its committed implementation digest together with facade-call negative controls"
             );
             assert!(

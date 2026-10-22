@@ -38,7 +38,8 @@ impl Ui {
             .build()
             .unwrap()
             .post(
-                if value["action"] == "search-attempt"
+                if value["action"] == "proof-attachment"
+                    || value["action"] == "search-attempt"
                     || value["action"] == "proof-content"
                     || value["action"] == "proof-attempt"
                     || value["action"] == "proof-session"
@@ -7325,7 +7326,7 @@ async fn destination_checkpoint_cold_restore_reports_independently_witnessed_gap
             .unwrap(),
         )
         .unwrap();
-        kan::evidence_library::Readers::new(None, vec![])
+        kan::evidence_library::Readers::new(None, vec![server.client(&f)])
             .unwrap()
             .with_owner(owner)
     };
@@ -7407,5 +7408,274 @@ async fn destination_checkpoint_cold_restore_reports_independently_witnessed_gap
         true
     )
     .is_err());
+    server.stop().await;
+}
+
+#[tokio::test]
+async fn reconstructed_attachment_download_is_exact_across_pages_and_refuses_loss_and_revocation() {
+    use sha2::{Digest, Sha256};
+    let decoded = b"ABC".repeat(1024 * 1024);
+    let body=serde_json::to_vec(&json!({"messages":[{"role":"user","content":[{"type":"document","source":{"type":"base64","media_type":"application/octet-stream","data":"QUJD".repeat(1024*1024)}}]}]})).unwrap();
+    let attempt = "c".repeat(64);
+    let mut frames = vec![frame_bytes(
+        &attempt,
+        0,
+        json!({"type":"started","method":"POST","route":"/v1/messages"}),
+        &[],
+    )];
+    for (i, chunk) in body.chunks(kan::evidence_capture::CHUNK).enumerate() {
+        frames.push(frame_bytes(
+            &attempt,
+            (i + 1) as u64,
+            json!({"type":"request-chunk","offset":i*kan::evidence_capture::CHUNK}),
+            chunk,
+        ));
+    }
+    frames.push(frame_bytes(
+        &attempt,
+        frames.len() as u64,
+        json!({"type":"request-end","bytes":body.len()}),
+        &[],
+    ));
+    let dir = tempfile::tempdir().unwrap();
+    let mut f = fixture_requests(dir.path(), Profile::Admitted, |n, a, p| {
+        encrypted_frame(n, a, p, &frames[n as usize])
+    });
+    let mut archive = attested::Archive::open(&f.root, f.binding.clone()).unwrap();
+    archive.rebuild_serving_index(&identity(8)).unwrap();
+    for (n, frame) in frames.iter().enumerate().skip(3) {
+        let previous = Some(
+            service::append_manifest(f.requests.last().unwrap())
+                .unwrap()
+                .cid()
+                .to_string(),
+        );
+        let bytes = encrypted_frame(n as u8, 8, previous, frame);
+        archive
+            .admit_indexed(&bytes, &identity(8), &grant(), 200 + n as u64, None)
+            .unwrap();
+        f.requests.push(bytes);
+    }
+    drop(archive);
+    let server = Server::start_initialized(&f).await;
+    let ui = Ui::start(kan::evidence_library::Readers::new(None, vec![server.client(&f)]).unwrap())
+        .await;
+    let catalog = ui.call(json!({"action":"catalog"}), 200).await;
+    let entry = &catalog["scopes"][0];
+    let mut cursor = Value::Null;
+    let mut selections = Vec::new();
+    loop {
+        let page=ui.call(json!({"action":"proof-page","source":entry["id"],"pin":entry["pin"],"cursor":cursor,"limit":40}),200).await;
+        selections.extend(
+            page["records"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|r| r["selection"].clone()),
+        );
+        cursor = page["next"].clone();
+        if cursor.is_null() {
+            break;
+        }
+    }
+    let query = json!({"action":"proof-attachment","source":entry["id"],"pin":entry["pin"],"selections":selections,"direction":"request","pointer":"/messages/0/content/0"});
+    let metadata = ui.call(query.clone(), 200).await;
+    assert_eq!(
+        metadata["decoded_sha256"],
+        service::hex(&Sha256::digest(&decoded))
+    );
+    assert_eq!(metadata["decoded_bytes"], decoded.len().to_string());
+    assert!(metadata["cites"].as_array().unwrap().len() > 40);
+    let payload = json!({"token":TOKEN,"request":query});
+    let client = reqwest::Client::builder().no_proxy().build().unwrap();
+    let post = || {
+        client
+            .post(format!("{}/download", ui.url))
+            .header("origin", ui.url.trim_end_matches("/api/library"))
+            .header("content-type", "text/plain")
+            .body(format!("payload={payload}\r\n"))
+    };
+    let response = post().send().await.unwrap();
+    assert_eq!(response.status(), 200);
+    assert_eq!(
+        response.headers()["x-kan-content-sha256"],
+        metadata["decoded_sha256"].as_str().unwrap()
+    );
+    assert_eq!(response.bytes().await.unwrap().as_ref(), decoded);
+    f.remove(2);
+    assert_eq!(post().send().await.unwrap().status(), 404);
+    server
+        .service
+        .lock()
+        .unwrap()
+        .replace_grants(vec![])
+        .unwrap();
+    assert_eq!(post().send().await.unwrap().status(), 403);
+    ui.stop().await;
+    server.stop().await;
+}
+
+#[tokio::test]
+async fn migration_cutover_fences_final_delta_requires_verified_backup_and_rolls_back() {
+    use kan::{
+        claim::v1::{Anchor, AuthorId, ClaimBody, ClaimContent, SubjectRef},
+        store::log::Log,
+    };
+    let local = private_workspace_directory();
+    let sources = private_workspace_directory();
+    let control = private_workspace_directory();
+    let backups = private_workspace_directory();
+    let archive_dir = private_workspace_directory();
+    let fixture_dir = private_workspace_directory();
+    let source = sources.path().join("v1");
+    let mut log = Log::open_or_create(&source, &identity(6)).await.unwrap();
+    let claim = |text: &str| ClaimContent {
+        author: AuthorId {
+            did: identity(6).did().to_string(),
+            agent: None,
+        },
+        workspace: Anchor::Workspace("old-project".into()),
+        subject: SubjectRef::Local("telos/durable-evidence".into()),
+        body: ClaimBody::Observation { text: text.into() },
+        cites: vec![],
+        artifacts: vec![],
+        recorded_at: None,
+    };
+    log.append(claim("initial"), &identity(6)).await.unwrap();
+    let spool = local.path().join("spool.sqlite");
+    let mut queue = kan::evidence_spool::Spool::create(
+        &spool,
+        &service::hex(&[1; 32]),
+        identity(6).did().as_str(),
+        identity(8).did().as_str(),
+        16 * 1024 * 1024,
+    )
+    .unwrap();
+    let recipient = kan::evidence_crypto::public_key(&PRIVATE).unwrap();
+    let initial = kan::evidence_import::Plan::build(
+        &source,
+        kan::evidence_import::Selection::Store,
+        [44; 32],
+        recipient,
+        &mut queue,
+    )
+    .unwrap()
+    .id()
+    .to_string();
+    drop(queue);
+    log.append(claim("final delta"), &identity(6))
+        .await
+        .unwrap();
+    let original = std::fs::read(source.join("repo.car")).unwrap();
+    let key = local.path().join("reader.key");
+    std::fs::write(&key, PRIVATE).unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&key, std::fs::Permissions::from_mode(0o600)).unwrap();
+    }
+    let f = fixture_requests(fixture_dir.path(), Profile::Admitted, encrypted);
+    let server = Server::start(&f).await;
+    let binding = binding(&f);
+    let old = json!([{"scope":service::hex(&[9;32]),"endpoint":"http://127.0.0.1:1/v2","issuer":binding.issuer,"private_key_file":key}]);
+    let candidate = json!([{"scope":binding.scope,"archive":binding.archive,"issuer":binding.issuer,"profile":"admitted","protocol":"kan-proof-reader/1","endpoint":"http://127.0.0.1:2/v2/read","private_key_file":key}]);
+    let config_path = local.path().join("reader.json");
+    let candidate_path = local.path().join("candidate.json");
+    std::fs::write(&config_path, serde_json::to_vec(&old).unwrap()).unwrap();
+    std::fs::write(&candidate_path, serde_json::to_vec(&candidate).unwrap()).unwrap();
+    let database = backups.path().join("independent.sqlite");
+    let receipt = backups.path().join("checkpoint.json");
+    const OWNER: &str = "synthetic-owner-migration-cutover-token";
+    let config = json!({"source":source,"selection":"store","source_id":service::hex(&[44;32]),"recipient":service::hex(&recipient),"spool":spool,"state":control.path(),"client_config":config_path,"candidate_config":candidate_path,"backup_database":database,"backup_checkpoint":receipt,"backup_author":identity(9).did().to_string(),"binding":binding,"recipient_key":key,"max_records":100,"batch":100,"writers_quiesced":true,"allow_uninterpreted":false});
+    let owner=kan::evidence_library::Owner::new(serde_json::from_value(json!({"token":OWNER,"max_jobs":20,"targets":[{"kind":"migration-cutover","id":"old","config":config}]})).unwrap(),kan::evidence_workspace::Workspace::open(&local.path().join("owner.sqlite"),identity(6),[84;32]).unwrap()).unwrap();
+    let ui = Ui::start(
+        kan::evidence_library::Readers::new(None, vec![server.client(&f)])
+            .unwrap()
+            .with_owner(owner),
+    )
+    .await;
+    async fn job(ui: &Ui, operation: &str) -> Value {
+        let preview = owner_call(
+            ui,
+            OWNER,
+            json!({"action":"preview","target":"old","operation":operation}),
+            200,
+        )
+        .await;
+        owner_call(ui,OWNER,json!({"action":"submit","target":"old","operation":operation,"nonce":preview["nonce"],"preview":preview["digest"],"wait":true}),200).await
+    }
+    let fenced = job(&ui, "fence-migration").await;
+    assert_eq!(fenced["state"], "succeeded", "{fenced}");
+    assert_ne!(fenced["result"]["report"]["plan"], initial);
+    assert!(log
+        .append(claim("must refuse"), &identity(6))
+        .await
+        .unwrap_err()
+        .to_string()
+        .contains("fenced"));
+    let final_delta = job(&ui, "finalize-migration").await;
+    assert_eq!(final_delta["state"], "succeeded", "{final_delta}");
+    assert_eq!(
+        final_delta["result"]["report"]["progress"]["queue_coverage_complete"],
+        true
+    );
+    let refused = job(&ui, "activate-migration").await;
+    assert_eq!(refused["state"], "failed");
+    assert_eq!(
+        serde_json::from_slice::<Value>(&std::fs::read(&config_path).unwrap()).unwrap(),
+        old
+    );
+    let root = archive_dir.path().join("destination");
+    let mut destination = kan::evidence_service::AdmittingService::new(
+        attested::Archive::create(&root, f.binding.clone()).unwrap(),
+        identity(8),
+        vec![grant()],
+    )
+    .unwrap();
+    let mut queue = kan::evidence_spool::Spool::open(&spool).unwrap();
+    while let Some(bytes) = queue.head().unwrap() {
+        let reply = destination.dispatch(&bytes, 1000).unwrap();
+        assert!(reply.reply.result.is_ok(), "{:?}", reply.reply.result);
+        queue.acknowledge(&reply.bytes().unwrap()).unwrap();
+    }
+    drop(queue);
+    drop(destination);
+    attested::Archive::open(&root, f.binding.clone())
+        .unwrap()
+        .backup(&database)
+        .unwrap();
+    let statement =
+        kan::evidence_backup::inspect(&database, &binding, "independent-synthetic-volume", true)
+            .unwrap();
+    let checkpoint = kan::evidence_backup::Checkpoint::sign(statement, &identity(9)).unwrap();
+    std::fs::write(&receipt, serde_json::to_vec(&checkpoint).unwrap()).unwrap();
+    let activated = job(&ui, "activate-migration").await;
+    assert_eq!(activated["state"], "succeeded", "{activated}");
+    assert_eq!(
+        activated["result"]["report"]["semantics"]["all_membership_verified"],
+        true
+    );
+    assert_eq!(
+        serde_json::from_slice::<Value>(&std::fs::read(&config_path).unwrap()).unwrap(),
+        candidate
+    );
+    assert_eq!(std::fs::read(source.join("repo.car")).unwrap(), original);
+    // An external configuration edit must not be silently overwritten.
+    let preview = owner_call(
+        &ui,
+        OWNER,
+        json!({"action":"preview","target":"old","operation":"rollback-migration"}),
+        200,
+    )
+    .await;
+    std::fs::write(&config_path, serde_json::to_vec(&old).unwrap()).unwrap();
+    owner_call(&ui,OWNER,json!({"action":"submit","target":"old","operation":"rollback-migration","nonce":preview["nonce"],"preview":preview["digest"],"wait":true}),400).await;
+    let rollback = job(&ui, "rollback-migration").await;
+    assert_eq!(rollback["state"], "succeeded", "{rollback}");
+    assert!(!source.join("V2_FENCE").exists());
+    assert!(database.exists());
+    assert_eq!(std::fs::read(source.join("repo.car")).unwrap(), original);
+    log.append(claim("v1 resumed"), &identity(6)).await.unwrap();
+    ui.stop().await;
     server.stop().await;
 }

@@ -1043,6 +1043,23 @@ impl Log {
         let file = tokio::task::spawn_blocking(move || -> std::io::Result<std::fs::File> {
             let file = surface.open_lock(&lock_path)?;
             fs4::FileExt::lock(&file)?;
+            let directory = lock_path
+                .parent()
+                .ok_or_else(|| std::io::Error::other("missing log directory"))?;
+            let workspace_fence = directory
+                .parent()
+                .filter(|p| p.file_name().is_some_and(|n| n == ".kan"))
+                .map(|p| p.join("V2_FENCE"));
+            if directory.join("V2_FENCE").try_exists()?
+                || workspace_fence
+                    .map(|p| p.try_exists())
+                    .transpose()?
+                    .unwrap_or(false)
+            {
+                return Err(std::io::Error::other(
+                    "v1 writes fenced for Kan v2 migration; use owner rollback to resume",
+                ));
+            }
             Ok(file)
         })
         .await

@@ -509,7 +509,15 @@ fn stream(
             (None, None) => Value::Null,
             _ => return Err(Failure::Corrupt),
         };
-        items.push(json!({"kind":item_kind(item.kind),"region":pair(item.region.start,item.region.end),"coarse":item.coarse,
+        let attachment_export = item.kind == provider::Kind::Attachment
+            && item
+                .pointer
+                .as_deref()
+                .and_then(|p| document.json.as_ref()?.pointer(p))
+                .is_some_and(|v| {
+                    v["source"]["type"] == "base64" && v["source"]["data"].is_string()
+                });
+        items.push(json!({"attachment_export":attachment_export,"kind":item_kind(item.kind),"region":pair(item.region.start,item.region.end),"coarse":item.coarse,
             "role":item.role,"index":item.index.map(|n|n.to_string()),"text":item.text,"pointer":item.pointer,
             "event_json":item.event.map(|v|v.to_string()),"issues":item.issues.into_iter().map(issue_kind).collect::<Vec<_>>(),"citation_set":citation_set,"tool":tool}));
         after_item();
@@ -622,10 +630,17 @@ fn render_selected(
             Format::AnthropicMessagesJson => provider::Format::Response,
             Format::AnthropicMessagesSse => provider::Format::Sse,
         };
+        let harness = group.ordinals.iter().flat_map(|o| &o.inputs).any(|i|
+            matches!(&assembled.observations[*i], assembly::Observation::Capture(f)
+                if matches!(&f.header.event, crate::evidence_capture::Event::Started { route, .. } if route == "/kan/harness-jsonl/v1")));
         let request = stream(
             &group.request,
             &inputs,
-            provider::Format::Request,
+            if harness {
+                provider::Format::HarnessJsonl
+            } else {
+                provider::Format::Request
+            },
             &mut budget,
             &mut after_item,
         )?;
@@ -640,7 +655,7 @@ fn render_selected(
             crate::evidence_session::metadata(group, &assembled.observations, |bytes| {
                 budget.charge_scan(bytes as u64)
             })?;
-        groups.push(json!({"scope":service::hex(&group.scope),"writer":group.writer,"observer":match group.observer {Observer::Collector=>"collector",Observer::Gateway=>"gateway"},
+        groups.push(json!({"capture_surface":if harness {"kan-harness-jsonl/1"}else{"provider-proxy"},"scope":service::hex(&group.scope),"writer":group.writer,"observer":match group.observer {Observer::Collector=>"collector",Observer::Gateway=>"gateway"},
             "attempt":group.attempt,"ordinals":group.ordinals.iter().map(|o|json!({"value":o.value.to_string(),"inputs":o.inputs.iter().map(|i|i.to_string()).collect::<Vec<_>>(),"conflict":o.conflict})).collect::<Vec<_>>(),
             "ordinal_gaps":group.ordinal_gaps.iter().map(|r|pair(r.start,r.end)).collect::<Vec<_>>(),
             "missing_start":group.missing_start,"unexpected_starts":group.unexpected_starts.iter().map(|i|i.to_string()).collect::<Vec<_>>(),

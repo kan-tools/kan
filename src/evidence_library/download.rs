@@ -40,6 +40,27 @@ async fn source(
     if form.token != token {
         return Err(Failure::AccessLimited.into());
     }
+    if let Query::ProofAttachment {
+        source,
+        pin,
+        selections,
+        direction,
+        pointer,
+    } = &form.request
+    {
+        let value = reader
+            .attachment(source, pin, selections, *direction, pointer)
+            .await?;
+        let digest = value.metadata["decoded_sha256"]
+            .as_str()
+            .ok_or(Failure::Corrupt)?;
+        let mut response = attachment(value.bytes, &format!("kan-attachment-{digest}.bin"))?;
+        response.headers_mut().insert(
+            "x-kan-content-sha256",
+            digest.parse().map_err(|_| Failure::Corrupt)?,
+        );
+        return Ok(response);
+    }
     if !matches!(
         form.request,
         Query::Source { .. }
@@ -106,7 +127,7 @@ pub(super) async fn handle(
     }
     let body = match tokio::time::timeout(
         Duration::from_secs(3),
-        Limited::new(r.into_body(), 262144).collect(),
+        Limited::new(r.into_body(), 2 * 1024 * 1024).collect(),
     )
     .await
     {

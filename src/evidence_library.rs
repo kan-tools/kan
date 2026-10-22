@@ -16,6 +16,7 @@ use hyper::{
 use hyper_util::rt::TokioIo;
 pub use owner::{Config as OwnerConfig, Owner, Request as OwnerRequest};
 pub use proof::analysis::{Config as AnalysisConfig, Draft as AnalysisDraft};
+pub use proof::attachments::Direction as AttachmentDirection;
 pub use proof::imports::{ControlEvidence as ImportControlEvidence, View as ImportView};
 pub use proof::knowledge::{Citation as EvidenceCitation, Draft as AnnotationDraft};
 pub use proof::outbox::AnnotationOutbox;
@@ -31,9 +32,36 @@ use tokio::{
     sync::{OwnedSemaphorePermit, Semaphore},
     task::JoinSet,
 };
+/// Source configuration shared by the launcher and migration route validator.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SourceConfig {
+    pub scope: String,
+    pub endpoint: String,
+    pub issuer: String,
+    pub private_key_file: std::path::PathBuf,
+    #[serde(default)]
+    pub historical_key_files: Vec<std::path::PathBuf>,
+    #[serde(default)]
+    pub epoch_keys: Option<crate::evidence_keys::ReaderAccess>,
+    #[serde(default)]
+    pub protocol: Option<String>,
+    #[serde(default)]
+    pub profile: Option<crate::evidence_proof_service::Profile>,
+    #[serde(default)]
+    pub archive: Option<String>,
+}
+
 #[derive(Deserialize)]
 #[serde(tag = "action", rename_all = "kebab-case", deny_unknown_fields)]
 pub enum Query {
+    ProofAttachment {
+        source: String,
+        pin: verified::Pin,
+        selections: Vec<verified::Token>,
+        direction: proof::attachments::Direction,
+        pointer: String,
+    },
     SaveImportView {
         name: String,
         source: String,
@@ -244,6 +272,7 @@ async fn query(reader: &Reader, query: Query) -> Result<Vec<u8>, ContentError> {
         | Query::AnnotationPreview { .. }
         | Query::AnnotationSave { .. }
         | Query::Annotations { .. }
+        | Query::ProofAttachment { .. }
         | Query::PruneSearchCache
         | Query::IndexPage { .. }
         | Query::SearchPage { .. }
@@ -454,11 +483,13 @@ async fn handle(
     let search_attempt = path == Some("/api/library/search-attempt");
     let proof_content = path == Some("/api/library/proof-content");
     let proof_attempt = path == Some("/api/library/proof-attempt");
+    let proof_attachment = path == Some("/api/library/proof-attachment");
     let proof_import = path == Some("/api/library/proof-import");
     let proof_session = path == Some("/api/library/proof-session");
     if r.method() != hyper::Method::POST
         || (path != Some("/api/library")
             && !proof_content
+            && !proof_attachment
             && !proof_attempt
             && !proof_session
             && !proof_import
@@ -483,7 +514,8 @@ async fn handle(
         Duration::from_secs(3),
         Limited::new(
             r.into_body(),
-            if proof_attempt || proof_session || proof_import || search_attempt {
+            if proof_attempt || proof_attachment || proof_session || proof_import || search_attempt
+            {
                 2 * 1024 * 1024
             } else if proof_content {
                 65536
@@ -505,6 +537,7 @@ async fn handle(
     };
     if matches!(&request, Query::ProofContent { .. }) != proof_content
         || matches!(&request, Query::ProofAttempt { .. }) != proof_attempt
+        || matches!(&request, Query::ProofAttachment { .. }) != proof_attachment
         || matches!(&request, Query::ProofSession { .. }) != proof_session
         || matches!(&request, Query::ProofImport { .. }) != proof_import
         || matches!(&request, Query::SearchAttempt { .. }) != search_attempt

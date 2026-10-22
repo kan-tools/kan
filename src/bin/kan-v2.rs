@@ -276,6 +276,21 @@ enum Command {
         capture: ProxyCapture,
     },
     /// Experimental single POST: raw stdin/body stdout, capture health on stderr.
+    /// Capture exact supplied JSONL transcript bytes through the encrypted spool.
+    #[cfg(feature = "v2-crypto")]
+    HarnessCapture {
+        #[arg(long)]
+        spool: PathBuf,
+        #[arg(long)]
+        key: PathBuf,
+        #[arg(long)]
+        recipient: String,
+        #[arg(long)]
+        session: String,
+        /// Read stdin when omitted; explicit files are opened read-only.
+        #[arg(long)]
+        input: Option<PathBuf>,
+    },
     #[cfg(feature = "v2-crypto")]
     CapturePost {
         #[arg(long)]
@@ -821,24 +836,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             mcp_writes,
             mcp_owner,
         } => {
-            #[derive(serde::Deserialize)]
-            #[serde(deny_unknown_fields)]
-            struct SelectedScope {
-                scope: String,
-                endpoint: String,
-                issuer: String,
-                private_key_file: PathBuf,
-                #[serde(default)]
-                historical_key_files: Vec<PathBuf>,
-                #[serde(default)]
-                epoch_keys: Option<kan::evidence_keys::ReaderAccess>,
-                #[serde(default)]
-                protocol: Option<String>,
-                #[serde(default)]
-                profile: Option<kan::evidence_proof_service::Profile>,
-                #[serde(default)]
-                archive: Option<String>,
-            }
+            use kan::evidence_library::SourceConfig as SelectedScope;
             if !listen.ip().is_loopback() {
                 return Err("reader requires literal loopback".into());
             }
@@ -1074,6 +1072,68 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 capture,
                 None,
             )?;
+        }
+        #[cfg(feature = "v2-crypto")]
+        Command::HarnessCapture {
+            spool,
+            key,
+            recipient,
+            session,
+            input,
+        } => {
+            let signer = service_identity(&key)?;
+            let recipient = fixed_hex::<32>(&recipient)?;
+            let mut spool = kan::evidence_spool::Spool::open_for_capture(&spool).ok();
+            if let Some(queue) = spool.as_mut() {
+                if let Ok(status) = queue.status() {
+                    if status.writer != signer.did().as_str() {
+                        return Err("harness signing key does not match spool writer".into());
+                    }
+                }
+            }
+            let mut sink = kan::evidence_capture::EncryptedSpool {
+                spool: spool.as_mut(),
+                signer: &signer,
+                recipient,
+            };
+            let mut notify = |health: &kan::evidence_capture::Health| {
+                if health.recording_gap {
+                    eprintln!(
+                        "kan harness recording gap: {} unconfirmed frames",
+                        health.unconfirmed
+                    );
+                }
+            };
+            let report = if let Some(path) = input {
+                let metadata = std::fs::symlink_metadata(&path)?;
+                if !metadata.is_file() || metadata.file_type().is_symlink() {
+                    return Err("harness input must be a regular file".into());
+                }
+                let file = std::fs::File::open(&path)?;
+                // Read the observed prefix even if the active harness appends.
+                // A short read or mutation is reported; no completeness claim.
+                use std::io::Read;
+                let report = kan::evidence_harness::capture(
+                    file.take(metadata.len()),
+                    &session,
+                    &mut sink,
+                    &mut notify,
+                )?;
+                if report.bytes != metadata.len().to_string() {
+                    eprintln!(
+                        "kan harness input changed while reading; retained coverage is incomplete"
+                    );
+                }
+                report
+            } else {
+                kan::evidence_harness::capture(
+                    std::io::stdin().lock(),
+                    &session,
+                    &mut sink,
+                    &mut notify,
+                )?
+            };
+            println!("{}", serde_json::to_string(&report)?);
         }
         #[cfg(feature = "v2-crypto")]
         Command::CapturePost {

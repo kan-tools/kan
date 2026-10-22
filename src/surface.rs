@@ -117,6 +117,7 @@ pub const EVIDENCE_VALUES: &[SurfaceValue] = &[
     SurfaceValue::new("evidence-db:archive.sqlite-journal", "*"),
     SurfaceValue::new("evidence-db:archive.sqlite-shm", "*"),
     SurfaceValue::new("evidence-backup-checkpoint:receipt", "*"),
+    SurfaceValue::new("evidence-migration:control", "*"),
     SurfaceValue::new("evidence-backup-purge:directory", "*"),
     SurfaceValue::new("evidence-backup-purge:backup.sqlite", "*"),
     SurfaceValue::new("evidence-backup:archive.sqlite", "*"),
