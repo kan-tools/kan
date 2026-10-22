@@ -1564,28 +1564,9 @@ impl Log {
     ) -> Result<Option<crate::claim::codec::DecodedRecord>, Error> {
         let key = RecordPath::new(COLLECTION, claim_cid.to_string()).to_mst_key();
         if let Some(record_cid) = self.mst.get(&key).await? {
-            let Some(bytes) = self.mst.storage().get(&record_cid).await? else {
-                return Ok(None);
-            };
-            let decoded = match crate::claim::codec::decode_record(&bytes, verification) {
-                Ok(decoded) => decoded,
-                Err(codec_error) if legacy_at_claim_candidate(&bytes) => {
-                    let record: crate::at_claim::Record =
-                        atproto_dasl::from_slice(&bytes).map_err(|_| codec_error)?;
-                    let rev = record.rev.clone();
-                    crate::claim::codec::DecodedRecord {
-                        claim: crate::claim::codec::DecodedClaim::Supported(
-                            crate::claim::codec::SupportedClaim::V1(record.verify()?),
-                        ),
-                        rev,
-                    }
-                }
-                Err(codec_error) => return Err(codec_error.into()),
-            };
-            if decoded_claim_id(&decoded.claim)? != claim_cid {
-                return Err(Error::BadSignature);
-            }
-            return Ok(Some(decoded));
+            return self
+                .decode_collection_record(&claim_cid, &record_cid, verification)
+                .await;
         }
 
         let legacy_key = RecordPath::new(LEGACY_COLLECTION, claim_cid.to_string()).to_mst_key();
@@ -1616,6 +1597,38 @@ impl Log {
             ),
             rev: stored.rev,
         }))
+    }
+
+    // Shared by point reads and enumeration: bypassing a redundant tree lookup
+    // must never bypass envelope, authorship or path-to-content verification.
+    async fn decode_collection_record(
+        &self,
+        claim_cid: &Cid,
+        record_cid: &Cid,
+        verification: crate::claim::codec::VerificationContext<'_>,
+    ) -> Result<Option<crate::claim::codec::DecodedRecord>, Error> {
+        let Some(bytes) = self.mst.storage().get(record_cid).await? else {
+            return Ok(None);
+        };
+        let decoded = match crate::claim::codec::decode_record(&bytes, verification) {
+            Ok(decoded) => decoded,
+            Err(codec_error) if legacy_at_claim_candidate(&bytes) => {
+                let record: crate::at_claim::Record =
+                    atproto_dasl::from_slice(&bytes).map_err(|_| codec_error)?;
+                let rev = record.rev.clone();
+                crate::claim::codec::DecodedRecord {
+                    claim: crate::claim::codec::DecodedClaim::Supported(
+                        crate::claim::codec::SupportedClaim::V1(record.verify()?),
+                    ),
+                    rev,
+                }
+            }
+            Err(codec_error) => return Err(codec_error.into()),
+        };
+        if decoded_claim_id(&decoded.claim)? != *claim_cid {
+            return Err(Error::BadSignature);
+        }
+        Ok(Some(decoded))
     }
 
     /// Like `get`, but also returns the log-revision TID captured at append
@@ -1692,9 +1705,14 @@ impl Log {
     ) -> Result<Vec<(Cid, crate::claim::codec::DecodedRecord)>, Error> {
         let entries = self.mst.entries().await?;
         self.warn_once_if_claims_are_unreachable(&entries).await?;
+        // The walk already resolved each record CID. Re-searching from the
+        // root for every modern record decodes the same tree nodes N times.
+        // Retain ordered lookup for damaged pre-fix trees and legacy paths
+        // (which must still prefer a modern record with the same claim ID).
+        let ordered = entries.windows(2).all(|pair| pair[0].0 < pair[1].0);
         let mut out = Vec::with_capacity(entries.len());
         let mut seen = HashSet::new();
-        for (key, _) in entries {
+        for (key, record_cid) in entries {
             let path = RecordPath::from_mst_key(&key)?;
             if path.collection != COLLECTION && path.collection != LEGACY_COLLECTION {
                 continue;
@@ -1703,7 +1721,13 @@ impl Log {
             if !seen.insert(claim_cid.clone()) {
                 continue;
             }
-            if let Some(record) = self.get_decoded(claim_cid.clone(), verification).await? {
+            let record = if ordered && path.collection == COLLECTION {
+                self.decode_collection_record(&claim_cid, &record_cid, verification)
+                    .await?
+            } else {
+                self.get_decoded(claim_cid.clone(), verification).await?
+            };
+            if let Some(record) = record {
                 out.push((claim_cid, record));
             }
         }
@@ -1892,6 +1916,42 @@ mod claim_collection_migration_tests {
         log.commit_cid = Some(root.clone());
         log.persist_new_blocks(&root).await.unwrap();
         record_cid
+    }
+
+    #[tokio::test]
+    async fn ordered_enumeration_still_rejects_forged_records_and_wrong_claim_paths() {
+        use crate::claim::codec::VerificationContext;
+        for forged_signature in [false, true] {
+            let dir = tempfile::tempdir().unwrap();
+            let identity = Identity::generate();
+            let mut log = Log::open_or_create(dir.path(), &identity).await.unwrap();
+            let (cid, stored) = signed(&identity, "authentic", "3jzfcijpj2z2a");
+            let mut record = crate::at_claim::Record::from_claim(stored.claim, stored.rev).unwrap();
+            let path_id = if forged_signature {
+                record.signature[0] ^= 1;
+                cid
+            } else {
+                signed(&identity, "different", "3jzfcijpj2z2a").0
+            };
+            let bytes = atproto_dasl::to_vec(&record).unwrap();
+            let record_cid = Cid::from(compute_cid(&bytes));
+            log.mst.storage_mut().put(&record_cid, bytes).await.unwrap();
+            log.mst
+                .insert(
+                    &RecordPath::new(COLLECTION, path_id.to_string()).to_mst_key(),
+                    record_cid,
+                )
+                .await
+                .unwrap();
+            assert!(log
+                .get_decoded(path_id, VerificationContext::StaticDidKey)
+                .await
+                .is_err());
+            assert!(log
+                .iter_decoded(VerificationContext::StaticDidKey)
+                .await
+                .is_err());
+        }
     }
 
     #[tokio::test]

@@ -647,6 +647,7 @@ async fn proof_library_browser_fixture() {
     ));
     let mut tasks = Vec::new();
     let mut clients = Vec::new();
+    let mut catalog_clients = Vec::new();
     for f in [&admitted, &copied] {
         let listener = kan::evidence_http::bind("127.0.0.1:0".parse().unwrap())
             .await
@@ -656,6 +657,17 @@ async fn proof_library_browser_fixture() {
             listener,
             reader(f),
         )));
+        catalog_clients.push(
+            client::Reader::new(
+                identity(6),
+                client::Access {
+                    binding: binding(f),
+                    endpoint: endpoint.clone(),
+                    private_key: PRIVATE,
+                },
+            )
+            .unwrap(),
+        );
         clients.push(
             client::Reader::new(
                 identity(6),
@@ -709,13 +721,10 @@ async fn proof_library_browser_fixture() {
     const OPS: &str = "synthetic-browser-operations-credential-1234";
     let owner=kan::evidence_library::Owner::new(serde_json::from_value(json!({"token":OWNER,"max_jobs":10,"targets":[{"kind":"operations","id":"health","collection":collection}]})).unwrap(),kan::evidence_workspace::Workspace::open(&workspace.path().join("owner.sqlite"),identity(9),[84;32]).unwrap()).unwrap();
     let readers = kan::evidence_library::Readers::new(None, clients).unwrap();
-    let catalog: Value = serde_json::from_slice(
-        &readers
-            .query(kan::evidence_library::Query::Catalog)
-            .await
-            .unwrap(),
-    )
-    .unwrap();
+    let catalog_ui =
+        Ui::start(kan::evidence_library::Readers::new(None, catalog_clients).unwrap()).await;
+    let catalog = catalog_ui.call(json!({"action":"catalog"}), 200).await;
+    catalog_ui.stop().await;
     let sources: Vec<_> = catalog["scopes"]
         .as_array()
         .unwrap()

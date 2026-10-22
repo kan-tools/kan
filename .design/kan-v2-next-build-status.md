@@ -119,6 +119,17 @@ needed before a cloud measurement can run.
 
 ### Expanded release qualification — implementation prepared
 
+Qualification at `3b724d6` stopped at a private-method call in the browser
+fixture; migration passed and the performance grid exceeded the context/claims
+bound (8.4 versus 8). The fixture now uses the public HTTP catalog, and the
+representative capacity test's unused mutable binding is removed. Mixed-record
+enumeration now consumes record CIDs from its already completed ordered tree
+walk instead of repeating root lookups per record. It retains the shared decoder,
+signature and claim-path checks, current identity context, and lookup fallback for
+legacy paths or unordered damaged trees. Equivalence and rejection regressions
+cover this optimization. The performance bound is unchanged; compilation,
+behavior and the scaling improvement still require remote qualification.
+
 The real browser fixture now includes sessions/branches/compaction, imported v1
 claims, a decoded attachment, a synthetic analysis gateway and separately authorized
 owner/operations services. The browser script exercises those paths, day declarations,

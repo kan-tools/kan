@@ -119,6 +119,18 @@ async fn one_collection_reads_v1_and_v2_without_rewriting_v1() {
             )
     }));
 
+    // Enumeration reuses record CIDs from the ordered tree walk, but must
+    // produce exactly the same verified records as independent point reads.
+    for (id, record) in &records {
+        assert_eq!(
+            log.get_decoded(id.clone(), VerificationContext::StaticDidKey)
+                .await
+                .unwrap()
+                .as_ref(),
+            Some(record)
+        );
+    }
+
     // Legacy folds remain available during the ClaimView transition and do
     // not misdecode v2 as v1.
     let legacy_view = log.iter_all().await.unwrap();

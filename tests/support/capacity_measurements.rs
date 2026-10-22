@@ -253,7 +253,7 @@ async fn capacity_http_capture_sample() {
         .collect();
     let signer = identity(8);
     let owner_binding = binding();
-    let mut archive = attested::Archive::create(&root, owner_binding.clone()).unwrap();
+    let archive = attested::Archive::create(&root, owner_binding.clone()).unwrap();
     archive.rebuild_serving_index(&signer).unwrap();
     let service =
         service::AdmittingService::new_indexed(archive, signer, grants.clone(), None).unwrap();
