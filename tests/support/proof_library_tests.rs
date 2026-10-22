@@ -7486,8 +7486,21 @@ async fn destination_checkpoint_cold_restore_reports_independently_witnessed_gap
     ui.stop().await;
     // Byte loss cannot result in a new signed checkpoint.
     let conn = rusqlite::Connection::open(&database).unwrap();
-    conn.execute("DELETE FROM objects WHERE cid=?", [f.id(0)])
+    // Simulate storage loss, bypassing the constraint that correctly prevents
+    // ordinary SQL from removing a referenced object. This connection is only
+    // for deliberate damage to the independent synthetic backup.
+    conn.execute_batch("PRAGMA foreign_keys=OFF").unwrap();
+    assert_eq!(
+        conn.execute("DELETE FROM objects WHERE cid=?", [f.id(0)])
+            .unwrap(),
+        1
+    );
+    let broken_references: u64 = conn
+        .query_row("SELECT count(*) FROM pragma_foreign_key_check", [], |row| {
+            row.get(0)
+        })
         .unwrap();
+    assert!(broken_references > 0);
     drop(conn);
     assert!(kan::evidence_backup::inspect(
         &database,
