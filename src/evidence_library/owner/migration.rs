@@ -18,6 +18,7 @@ pub struct Config {
     /// Actual --config file read by the managed Library on its next launch.
     pub client_config: PathBuf,
     pub candidate_config: PathBuf,
+    pub client_signing_key: PathBuf,
     pub backup_database: PathBuf,
     pub backup_checkpoint: PathBuf,
     pub backup_author: String,
@@ -75,6 +76,7 @@ impl Config {
                 &self.state,
                 &self.client_config,
                 &self.candidate_config,
+                &self.client_signing_key,
                 &self.backup_database,
                 &self.backup_checkpoint,
                 &self.recipient_key,
@@ -296,6 +298,9 @@ impl Config {
         if operation != Operation::ActivateMigration {
             return Err("invalid cutover operation".into());
         }
+        if plan.summary()["inventory"]["selected_inventory_complete"] != true {
+            return Err("selected source inventory is incomplete; cutover refused".into());
+        }
         let progress = plan.progress(&mut spool)?;
         if !progress.queue_coverage_complete
             || progress.pending_operations != 0
@@ -363,9 +368,60 @@ impl Config {
             }
         }
         let reconciled = plan.reconcile(&recovery, &mut spool)?;
-        let semantics = super::super::proof::imports::inspect_restored(&recovery)?;
+        let semantics = super::super::proof::imports::inspect_restored(&recovery)
+            .map_err(|error| format!("restored repository inspection failed: {error:?}"))?;
         if semantics["all_membership_verified"] != true && !self.allow_uninterpreted {
             return Err("repository semantics need explicit uninterpreted-evidence acceptance; recovery retained".into());
+        }
+        // Verify that the actual routed endpoint authorizes this client and
+        // still contains the independently backed checkpoint. A copied config
+        // and a healthy backup alone do not prove the client route is usable.
+        let configured: Vec<super::super::SourceConfig> = serde_json::from_slice(&candidate)?;
+        let selected = configured
+            .iter()
+            .find(|s| {
+                s.archive.as_deref() == Some(self.binding.archive.as_str())
+                    && s.scope == self.binding.scope
+                    && s.issuer == self.binding.issuer
+            })
+            .ok_or("destination source absent")?;
+        let keys = std::iter::once(&selected.private_key_file)
+            .chain(selected.historical_key_files.iter())
+            .map(|p| crate::evidence_crypto::read_private_key(p))
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        if !keys.iter().any(|key| {
+            crate::evidence_crypto::public_key(key)
+                .ok()
+                .is_some_and(|public| service::hex(&public) == self.recipient)
+        }) {
+            return Err("routed client lacks final import decryption key".into());
+        }
+        let signer = crate::sign::Identity::load_existing(&self.client_signing_key)?;
+        let request = crate::evidence_proof_service::SignedRequest::sign(
+            crate::evidence_proof_service::Request {
+                version: 2,
+                binding: self.binding.clone(),
+                principal: signer.did().to_string(),
+                expires: crate::evidence_operations::now() + 120,
+                command: crate::evidence_proof_service::Command::Page {
+                    pin: checkpoint.statement.frontier.clone(),
+                    next: checkpoint.statement.frontier.clone(),
+                    limit: 1,
+                },
+            },
+            &signer,
+        )?
+        .bytes()?;
+        let live = tokio::runtime::Handle::current().block_on(crate::evidence_http::send_proof(
+            &selected.endpoint,
+            &self.binding.issuer,
+            &request,
+        ))?;
+        if !matches!(
+            live.reply.result,
+            Ok(crate::evidence_proof_service::Output::Page { .. })
+        ) {
+            return Err("routed service does not authorize the backed checkpoint".into());
         }
         // Recheck exact current bytes immediately before atomic publication.
         if read(&self.client_config, 1048576)? != current
@@ -375,7 +431,7 @@ impl Config {
         }
         self.replace_route(&candidate, nonce)?;
         Ok(
-            json!({"ready_for_cutover":true,"routing":"candidate installed; restart clients","source_writers_fenced":true,"final_plan":plan.id(),"reconciliation":{"verified_files":reconciled["verified_files"],"verified_bytes":reconciled["verified_bytes"],"current_source_matches":reconciled["current_source_matches"],"recovered_selected_bytes_match":reconciled["recovered_selected_bytes_match"]},"semantics":semantics,"backup":backup,"recovery":recovery,"originals":"retained","rollback_config":prior,"v2_post_cutover_writes":"remain in v2 if rolled back"}),
+            json!({"ready_for_cutover":true,"routing":"candidate installed; restart clients","live_checkpoint_read":"authorized and verified","source_writers_fenced":true,"final_plan":plan.id(),"reconciliation":{"verified_files":reconciled["verified_files"],"verified_bytes":reconciled["verified_bytes"],"current_source_matches":reconciled["current_source_matches"],"recovered_selected_bytes_match":reconciled["recovered_selected_bytes_match"]},"semantics":semantics,"backup":backup,"recovery":recovery,"originals":"retained","rollback_config":prior,"v2_post_cutover_writes":"remain in v2 if rolled back"}),
         )
     }
 }

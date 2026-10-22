@@ -224,3 +224,172 @@ fn capacity_worker() {
         probe(&root, &operation);
     }
 }
+
+/// Representative HTTP/crypto supplement, separate from the 10/100 GiB opaque
+/// storage sweep. Four independent writers; actual 64 KiB KANC2 frame payloads.
+#[cfg(feature = "v2-crypto")]
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+#[ignore = "remote qualification; emits a retained measurement report"]
+async fn capacity_http_capture_sample() {
+    use kan::{
+        evidence_crypto as crypto, evidence_proof_service as wire, evidence_reader::proof as client,
+    };
+    use sha2::{Digest, Sha256};
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path().join("archive");
+    let count: usize = std::env::var("KAN_HTTP_CAPTURE_FRAMES")
+        .ok()
+        .map(|s| s.parse().unwrap())
+        .unwrap_or(256);
+    assert!((32..=4096).contains(&count));
+    let writer_ids = [6u8, 7, 10, 11];
+    let grants: Vec<_> = writer_ids
+        .iter()
+        .map(|id| Grant {
+            principal: identity(*id).did().to_string(),
+            append: true,
+            inventory: true,
+        })
+        .collect();
+    let signer = identity(8);
+    let owner_binding = binding();
+    let mut archive = attested::Archive::create(&root, owner_binding.clone()).unwrap();
+    archive.rebuild_serving_index(&signer).unwrap();
+    let service =
+        service::AdmittingService::new_indexed(archive, signer, grants.clone(), None).unwrap();
+    let listener = kan::evidence_http::bind("127.0.0.1:0".parse().unwrap())
+        .await
+        .unwrap();
+    let endpoint = format!("http://{}/v1/rpc", listener.local_addr().unwrap());
+    let admission = tokio::spawn(kan::evidence_http::serve_admitted(listener, service));
+    let private = [73; 32];
+    let public = crypto::public_key(&private).unwrap();
+    let canary = b"KAN_BLIND_HTTP_CAPTURE_CANARY_7bbd2e9f";
+    let before = counters();
+    let started = Instant::now();
+    let mut senders = tokio::task::JoinSet::new();
+    for writer_id in writer_ids {
+        let endpoint = endpoint.clone();
+        let issuer = owner_binding.issuer.clone();
+        senders.spawn(async move {
+            let writer=identity(writer_id);let http=reqwest::Client::builder().no_proxy().timeout(Duration::from_secs(30)).build().unwrap();
+            let mut previous=None;let mut latencies=Vec::new();let mut digests=std::collections::BTreeSet::new();
+            for position in 0..count {
+                let begin=Instant::now();
+                let mut body=vec![0;kan::evidence_capture::CHUNK];rand::thread_rng().fill_bytes(&mut body);body[..canary.len()].copy_from_slice(canary);
+                let header=serde_json::to_vec(&json!({"version":2,"attempt":service::hex(&[writer_id;32]),"observer":"collector","ordinal":position,"observed_at_unix_micros":null,"elapsed_micros":0,"unconfirmed_before":0,"event":{"type":"request-chunk","offset":position*kan::evidence_capture::CHUNK}})).unwrap();
+                let mut frame=b"KANC2".to_vec();frame.extend_from_slice(&(header.len() as u32).to_be_bytes());frame.extend(header);frame.extend(body);
+                digests.insert(service::hex(&Sha256::digest(&frame)));
+                let request=SignedRequest::sign(Request{version:1,scope:service::hex(&[1;32]),principal:writer.did().to_string(),audience:issuer.clone(),expires:None,command:Command::Append{id:service::hex(&((position+1) as u128).to_be_bytes()),position:position as u64,previous,ciphertext:service::hex(&crypto::seal(&public,&[1;32],&frame).unwrap())}},&writer).unwrap().bytes().unwrap();
+                let response=http.post(&endpoint).header("content-type","application/json").body(request.clone()).send().await.unwrap();assert_eq!(response.status(),200);
+                let reply:service::SignedReply=response.json().await.unwrap();assert!(reply.verify(&request,&issuer).unwrap().result.is_ok());
+                previous=Some(service::append_manifest(&request).unwrap().cid().to_string());
+                latencies.push(begin.elapsed().as_micros() as u64);
+            }
+            (latencies,digests)
+        });
+    }
+    let mut writes = Vec::new();
+    let mut expected = std::collections::BTreeSet::new();
+    while let Some(result) = senders.join_next().await {
+        let (latencies, digests) = result.unwrap();
+        writes.extend(latencies);
+        expected.extend(digests);
+    }
+    let elapsed = started.elapsed().as_millis();
+    admission.abort();
+    let _ = admission.await;
+    let binding = wire::Binding {
+        profile: wire::Profile::Admitted,
+        archive: service::hex(&[2; 32]),
+        scope: service::hex(&[1; 32]),
+        issuer: owner_binding.issuer,
+    };
+    let listener = kan::evidence_http::bind("127.0.0.1:0".parse().unwrap())
+        .await
+        .unwrap();
+    let endpoint = format!("http://{}/v2/read", listener.local_addr().unwrap());
+    let mut read_budget = budget();
+    read_budget.items = 10000;
+    read_budget.duration = Duration::from_secs(30);
+    let service = wire::Service::new_indexed(
+        root.join("archive.sqlite"),
+        binding.clone(),
+        identity(8),
+        grants,
+        read_budget,
+        None,
+    )
+    .unwrap();
+    let reading = tokio::spawn(kan::evidence_http::serve_proof(listener, service));
+    let reader = client::Reader::new(
+        identity(6),
+        client::Access {
+            binding,
+            endpoint,
+            private_key: private,
+        },
+    )
+    .unwrap();
+    let pin = reader.snapshot().await.unwrap();
+    let page = reader.page(&pin, None, 40).await.unwrap();
+    let mut reads = Vec::new();
+    for row in page.records.iter().take(32) {
+        let begin = Instant::now();
+        let client::Source::Available { plaintext, .. } =
+            reader.source(&pin, &row.selection).await.unwrap()
+        else {
+            panic!("encrypted capture unavailable")
+        };
+        assert!(expected.contains(&service::hex(&Sha256::digest(&plaintext))));
+        assert!(matches!(
+            kan::evidence_reconstruction::decode(&plaintext).unwrap(),
+            kan::evidence_reconstruction::Decoded::Capture(_)
+        ));
+        reads.push(begin.elapsed().as_micros() as u64);
+    }
+    reading.abort();
+    let _ = reading.await;
+    let backup = temp.path().join("independent.sqlite");
+    attested::Archive::open(&root, self::binding())
+        .unwrap()
+        .backup(&backup)
+        .unwrap();
+    // Scan persisted storage and any sidecars with a bounded overlapping buffer.
+    // Searchable plaintext is held only at the authorized test reader.
+    use std::io::Read;
+    for path in std::fs::read_dir(&root)
+        .unwrap()
+        .map(|p| p.unwrap().path())
+        .filter(|p| p.is_file())
+        .chain(std::iter::once(backup))
+    {
+        let mut file = std::fs::File::open(path).unwrap();
+        let mut tail = Vec::new();
+        let mut block = [0u8; 65536];
+        loop {
+            let n = file.read(&mut block).unwrap();
+            if n == 0 {
+                break;
+            }
+            tail.extend_from_slice(&block[..n]);
+            assert!(
+                !tail.windows(canary.len()).any(|w| w == canary),
+                "plaintext canary leaked to storage"
+            );
+            tail = tail[tail.len().saturating_sub(canary.len() - 1)..].to_vec();
+        }
+    }
+    fn percentiles(mut v: Vec<u64>) -> Value {
+        v.sort_unstable();
+        json!({"count":v.len(),"p50_us":v[v.len().div_ceil(2)-1],"p95_us":v[(v.len()*95).div_ceil(100)-1],"p99_us":v[(v.len()*99).div_ceil(100)-1],"max_us":v.last()})
+    }
+    let after = counters();
+    let peak = rss_kib();
+    let report = json!({"version":1,"scope":"HTTP admission with signing/encryption, proof reading/decryption and blind-storage canary; combined in-process client/server RSS; OS cache retained","writers":4,"frames":count*4,"payload_bytes":count*4*kan::evidence_capture::CHUNK,"frame_chunk_bytes":kan::evidence_capture::CHUNK,"write_elapsed_ms":elapsed,"append":percentiles(writes),"source":percentiles(reads),"process_peak_rss_kib":peak,"syscall_read_bytes":after.0-before.0,"physical_read_bytes":after.1-before.1,"blind_storage_canary":"absent in database, sidecars and standalone backup","coverage":"Sample includes one scope and four independent writer streams; not a replacement for 100 GiB capacity qualification"});
+    println!("KAN_HTTP_CAPTURE_REPORT={report}");
+    if let Some(path) = std::env::var_os("KAN_HTTP_CAPTURE_REPORT") {
+        std::fs::write(path, serde_json::to_vec_pretty(&report).unwrap()).unwrap();
+    }
+    assert!(peak <= 512 * 1024, "combined HTTP sample exceeded 512 MiB");
+}

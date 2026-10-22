@@ -1459,6 +1459,7 @@ Add an owner target with `kind: "migration-cutover"`, a stable `id`, and `config
   "state": "/srv/kan/migrations/project",
   "client_config": "/srv/kan/reader.json",
   "candidate_config": "/srv/kan/reader-v2.json",
+  "client_signing_key": "/srv/kan/keys/reader-signing.key",
   "backup_database": "/mnt/independent/kan-final.sqlite",
   "backup_checkpoint": "/mnt/independent/kan-final-checkpoint.json",
   "backup_author": "<independently pinned checkpoint signer DID>",
@@ -1484,7 +1485,9 @@ independent backup containing that exact plan and use **verify-backup** to obtai
 its signed checkpoint. Preview and apply **activate-migration**: the job verifies
 backup closure and the pinned checkpoint, decrypts a fresh private recovery copy,
 compares every selected file against the fenced source, and inspects native
-repository membership before atomically replacing `client_config`. The Library
+repository membership, checks that the routed client holds the import key and
+reads the backed checkpoint from the actual destination endpoint with that client’s
+signing identity before atomically replacing `client_config`. The Library
 loads that actual file on its next launch; restart configured clients explicitly.
 The operation neither restarts arbitrary services nor switches provider endpoints.
 A destination that lacks the final delta, wrong recovery key, stale source or

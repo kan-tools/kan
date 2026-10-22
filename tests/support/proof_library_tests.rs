@@ -534,7 +534,10 @@ async fn proof_library_browser_fixture() {
     let a = tempfile::tempdir().unwrap();
     let b = tempfile::tempdir().unwrap();
     let mut admitted = fixture_requests(a.path(), Profile::Admitted, encrypted);
-    let mut copied = fixture_requests(b.path(), Profile::Copied, captured_request);
+    let body=serde_json::to_vec(&json!({"messages":[{"role":"user","content":[{"type":"text","text":"Hello proof archive"},{"type":"document","source":{"type":"base64","media_type":"application/octet-stream","data":"QUJD"}}]}]})).unwrap();
+    let mut copied = fixture_requests(b.path(), Profile::Copied, |n, a, p| {
+        captured_request_body(n, a, p, &body)
+    });
     let mut archive = copied::Archive::open(&copied.root, copied.binding.clone()).unwrap();
     for n in 3..6 {
         let attempt = if n == 3 {
@@ -571,6 +574,36 @@ async fn proof_library_browser_fixture() {
         let bytes = encrypted_frame(n as u8, 8, previous, &frame);
         archive
             .admit(&bytes, &identity(8), &grant(), 200 + n)
+            .unwrap();
+        copied.requests.push(bytes);
+    }
+    let (import_plan, import_frames, _) = imported_claim_frames(8);
+    for (n, frame) in import_frames.iter().enumerate() {
+        let previous = Some(
+            service::append_manifest(copied.requests.last().unwrap())
+                .unwrap()
+                .cid()
+                .to_string(),
+        );
+        let mut request = service::SignedRequest::decode(&import_request(
+            n as u8,
+            8,
+            previous,
+            &import_plan,
+            frame,
+            false,
+        ))
+        .unwrap()
+        .request;
+        if let service::Command::Append { position, .. } = &mut request.command {
+            *position = (6 + n) as u64;
+        }
+        let bytes = service::SignedRequest::sign(request, &identity(6))
+            .unwrap()
+            .bytes()
+            .unwrap();
+        archive
+            .admit(&bytes, &identity(8), &grant(), 300 + n as u64)
             .unwrap();
         copied.requests.push(bytes);
     }
@@ -636,25 +669,71 @@ async fn proof_library_browser_fixture() {
         );
     }
     let workspace = private_workspace_directory();
-    let ui = Ui::start(
-        kan::evidence_library::Readers::new(None, clients)
-            .unwrap()
-            .with_workspace(
-                kan::evidence_workspace::Workspace::open(
-                    &workspace.path().join("browser-workspace.sqlite"),
-                    identity(6),
-                    [97; 32],
-                )
-                .unwrap(),
-            ),
+    let provider_listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let endpoint = format!(
+        "http://{}/v1/messages",
+        provider_listener.local_addr().unwrap()
+    );
+    let provider = tokio::spawn(async move {
+        loop {
+            let (stream, _) = provider_listener.accept().await.unwrap();
+            let handler = hyper::service::service_fn(
+                |request: hyper::Request<hyper::body::Incoming>| async move {
+                    use http_body_util::BodyExt;
+                    assert_eq!(request.uri().path(), "/v1/messages");
+                    request.into_body().collect().await.unwrap();
+                    Ok::<_,std::convert::Infallible>(hyper::Response::new(http_body_util::Full::new(hyper::body::Bytes::from_static(br#"{"type":"message","content":[{"type":"text","text":"Synthetic browser assessment; inspect source before accepting."}]}"#))))
+                },
+            );
+            let _ = hyper::server::conn::http1::Builder::new()
+                .serve_connection(hyper_util::rt::TokioIo::new(stream), handler)
+                .await;
+        }
+    });
+    let spool = workspace.path().join("queue.sqlite");
+    drop(
+        kan::evidence_spool::Spool::create(
+            &spool,
+            &service::hex(&[1; 32]),
+            identity(6).did().as_str(),
+            identity(8).did().as_str(),
+            1024 * 1024,
+        )
+        .unwrap(),
+    );
+    let journal = workspace.path().join("operations.sqlite");
+    drop(kan::evidence_operations::Journal::create(&journal, &spool).unwrap());
+    let collection = workspace.path().join("operations");
+    kan::evidence_operations_collection::adopt(&journal, &collection).unwrap();
+    const OWNER: &str = "synthetic-browser-owner-credential-1234";
+    const OPS: &str = "synthetic-browser-operations-credential-1234";
+    let owner=kan::evidence_library::Owner::new(serde_json::from_value(json!({"token":OWNER,"max_jobs":10,"targets":[{"kind":"operations","id":"health","collection":collection}]})).unwrap(),kan::evidence_workspace::Workspace::open(&workspace.path().join("owner.sqlite"),identity(9),[84;32]).unwrap()).unwrap();
+    let readers = kan::evidence_library::Readers::new(None, clients).unwrap();
+    let catalog: Value = serde_json::from_slice(
+        &readers
+            .query(kan::evidence_library::Query::Catalog)
+            .await
+            .unwrap(),
     )
-    .await;
-    std::fs::write(&output,serde_json::to_vec(&json!({"url":ui.url.trim_end_matches("/api/library"),"token":TOKEN,"expected_hex":service::hex(RAW),"stop":stop})).unwrap()).unwrap();
+    .unwrap();
+    let sources: Vec<_> = catalog["scopes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|s| s["id"].clone())
+        .collect();
+    let readers=readers.with_workspace(kan::evidence_workspace::Workspace::open(&workspace.path().join("browser-workspace.sqlite"),identity(6),[97;32]).unwrap())
+        .with_analysis(serde_json::from_value(json!({"endpoint":endpoint,"token":"synthetic-browser-analysis-credential","model":"synthetic-browser-model","sources":sources,"recipes":[{"id":"assess","revision":"1","purpose":"day-assessment","instructions":"Assess only cited synthetic evidence."}],"max_input_bytes":4096,"max_output_tokens":128,"max_jobs":10})).unwrap()).unwrap()
+        .with_owner(owner).with_operations(kan::evidence_dashboard::Embedded::new(collection,OPS.into()).unwrap());
+    let ui = Ui::start(readers).await;
+    std::fs::write(&output,serde_json::to_vec(&json!({"url":ui.url.trim_end_matches("/api/library"),"token":TOKEN,"owner_token":OWNER,"operations_token":OPS,"expected_hex":service::hex(RAW),"import_plan":import_plan,"stop":stop})).unwrap()).unwrap();
     let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(600);
     while !stop.exists() && tokio::time::Instant::now() < deadline {
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
     }
     ui.stop().await;
+    provider.abort();
+    let _ = provider.await;
     for task in tasks {
         task.abort();
         assert!(task.await.unwrap_err().is_cancelled());
@@ -7541,7 +7620,10 @@ async fn migration_cutover_fences_final_delta_requires_verified_backup_and_rolls
         artifacts: vec![],
         recorded_at: None,
     };
-    log.append(claim("initial"), &identity(6)).await.unwrap();
+    let telos_id = log.append(claim("initial"), &identity(6)).await.unwrap();
+    let mut atom = claim("Preserve original evidence; derive summaries with citations");
+    atom.subject = SubjectRef::Local("atom/cited-summary".into());
+    let atom_id = log.append(atom, &identity(6)).await.unwrap();
     let spool = local.path().join("spool.sqlite");
     let mut queue = kan::evidence_spool::Spool::create(
         &spool,
@@ -7577,8 +7659,14 @@ async fn migration_cutover_fences_final_delta_requires_verified_backup_and_rolls
     let f = fixture_requests(fixture_dir.path(), Profile::Admitted, encrypted);
     let server = Server::start(&f).await;
     let binding = binding(&f);
-    let old = json!([{"scope":service::hex(&[9;32]),"endpoint":"http://127.0.0.1:1/v2","issuer":binding.issuer,"private_key_file":key}]);
-    let candidate = json!([{"scope":binding.scope,"archive":binding.archive,"issuer":binding.issuer,"profile":"admitted","protocol":"kan-proof-reader/1","endpoint":"http://127.0.0.1:2/v2/read","private_key_file":key}]);
+    let live_listener = kan::evidence_http::bind("127.0.0.1:0".parse().unwrap())
+        .await
+        .unwrap();
+    let live_endpoint = format!("http://{}/v2/read", live_listener.local_addr().unwrap());
+    let client_signing_key = local.path().join("reader-signing.key");
+    identity(6).save(&client_signing_key).unwrap();
+    let old = json!([{"scope":service::hex(&[9;32]),"endpoint":"http://127.0.0.1:1/v1/rpc","issuer":binding.issuer,"private_key_file":key}]);
+    let candidate = json!([{"scope":binding.scope,"archive":binding.archive,"issuer":binding.issuer,"profile":"admitted","protocol":"kan-proof-reader/1","endpoint":live_endpoint,"private_key_file":key}]);
     let config_path = local.path().join("reader.json");
     let candidate_path = local.path().join("candidate.json");
     std::fs::write(&config_path, serde_json::to_vec(&old).unwrap()).unwrap();
@@ -7586,7 +7674,7 @@ async fn migration_cutover_fences_final_delta_requires_verified_backup_and_rolls
     let database = backups.path().join("independent.sqlite");
     let receipt = backups.path().join("checkpoint.json");
     const OWNER: &str = "synthetic-owner-migration-cutover-token";
-    let config = json!({"source":source,"selection":"store","source_id":service::hex(&[44;32]),"recipient":service::hex(&recipient),"spool":spool,"state":control.path(),"client_config":config_path,"candidate_config":candidate_path,"backup_database":database,"backup_checkpoint":receipt,"backup_author":identity(9).did().to_string(),"binding":binding,"recipient_key":key,"max_records":100,"batch":100,"writers_quiesced":true,"allow_uninterpreted":false});
+    let config = json!({"source":source,"selection":"store","source_id":service::hex(&[44;32]),"recipient":service::hex(&recipient),"spool":spool,"state":control.path(),"client_config":config_path,"candidate_config":candidate_path,"client_signing_key":client_signing_key,"backup_database":database,"backup_checkpoint":receipt,"backup_author":identity(9).did().to_string(),"binding":binding,"recipient_key":key,"max_records":100,"batch":100,"writers_quiesced":true,"allow_uninterpreted":false});
     let owner=kan::evidence_library::Owner::new(serde_json::from_value(json!({"token":OWNER,"max_jobs":20,"targets":[{"kind":"migration-cutover","id":"old","config":config}]})).unwrap(),kan::evidence_workspace::Workspace::open(&local.path().join("owner.sqlite"),identity(6),[84;32]).unwrap()).unwrap();
     let ui = Ui::start(
         kan::evidence_library::Readers::new(None, vec![server.client(&f)])
@@ -7649,6 +7737,15 @@ async fn migration_cutover_fences_final_delta_requires_verified_backup_and_rolls
             .unwrap();
     let checkpoint = kan::evidence_backup::Checkpoint::sign(statement, &identity(9)).unwrap();
     std::fs::write(&receipt, serde_json::to_vec(&checkpoint).unwrap()).unwrap();
+    let live_service = kan::evidence_proof_service::Service::new(
+        root.join("archive.sqlite"),
+        binding.clone(),
+        identity(8),
+        vec![grant()],
+        budget(),
+    )
+    .unwrap();
+    let live_task = tokio::spawn(kan::evidence_http::serve_proof(live_listener, live_service));
     let activated = job(&ui, "activate-migration").await;
     assert_eq!(activated["state"], "succeeded", "{activated}");
     assert_eq!(
@@ -7660,6 +7757,12 @@ async fn migration_cutover_fences_final_delta_requires_verified_backup_and_rolls
         candidate
     );
     assert_eq!(std::fs::read(source.join("repo.car")).unwrap(), original);
+    let recovered =
+        std::path::Path::new(activated["result"]["report"]["recovery"].as_str().unwrap())
+            .join("files");
+    let native = Log::open_read_only(&recovered).await.unwrap();
+    assert!(native.contains(&telos_id).await.unwrap());
+    assert!(native.contains(&atom_id).await.unwrap());
     // An external configuration edit must not be silently overwritten.
     let preview = owner_call(
         &ui,
@@ -7677,5 +7780,68 @@ async fn migration_cutover_fences_final_delta_requires_verified_backup_and_rolls
     assert_eq!(std::fs::read(source.join("repo.car")).unwrap(), original);
     log.append(claim("v1 resumed"), &identity(6)).await.unwrap();
     ui.stop().await;
+    live_task.abort();
+    let _ = live_task.await;
+    server.stop().await;
+}
+
+#[tokio::test]
+async fn proof_reader_forwarded_transport_keeps_identity_source_and_current_grants() {
+    let directory = tempfile::tempdir().unwrap();
+    let f = fixture_requests(directory.path(), Profile::Admitted, encrypted);
+    let server = Server::start(&f).await;
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let upstream = reqwest::Url::parse(&server.endpoint).unwrap();
+    let upstream = format!(
+        "{}:{}",
+        upstream.host_str().unwrap(),
+        upstream.port().unwrap()
+    );
+    let relay = tokio::spawn(async move {
+        let mut connections = tokio::task::JoinSet::new();
+        loop {
+            tokio::select! {
+                accepted=listener.accept()=>{let (mut inbound,_)=accepted.unwrap();let target=upstream.clone();connections.spawn(async move {let mut outbound=tokio::net::TcpStream::connect(target).await.unwrap();tokio::io::copy_bidirectional(&mut inbound,&mut outbound).await.unwrap();});}
+                _=connections.join_next(),if !connections.is_empty()=>{}
+            }
+        }
+    });
+    let direct = server.client(&f);
+    let forwarded = client::Reader::new(
+        identity(6),
+        client::Access {
+            binding: binding(&f),
+            endpoint: format!("http://{address}/v2/read"),
+            private_key: PRIVATE,
+        },
+    )
+    .unwrap();
+    let a = direct.snapshot().await.unwrap();
+    let b = forwarded.snapshot().await.unwrap();
+    let first = direct.page(&a, None, 1).await.unwrap();
+    let second = forwarded.page(&b, None, 1).await.unwrap();
+    assert_eq!(first.records[0].manifest, second.records[0].manifest);
+    assert_eq!(direct.binding(), forwarded.binding());
+    let client::Source::Available { plaintext, .. } = forwarded
+        .source(&b, &second.records[0].selection)
+        .await
+        .unwrap()
+    else {
+        panic!("forwarded source unavailable")
+    };
+    assert_eq!(plaintext, RAW);
+    server
+        .service
+        .lock()
+        .unwrap()
+        .replace_grants(vec![])
+        .unwrap();
+    assert!(matches!(
+        forwarded.source(&b, &second.records[0].selection).await,
+        Err(Failure::AccessLimited)
+    ));
+    relay.abort();
+    let _ = relay.await;
     server.stop().await;
 }

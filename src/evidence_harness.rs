@@ -33,9 +33,18 @@ pub fn capture<R: Read>(
         )
         .map_err(io::Error::other)?;
     let session_digest = crate::evidence_service::hex(&Sha256::digest(session.as_bytes()));
-    recorder.record(Event::HttpMetadata{direction:"request".into(),headers:vec![
-        ("x-kan-session".into(),session_digest),("x-kan-capture-adapter".into(),"kan-harness-jsonl/1".into()),
-        ("x-kan-capture-coverage".into(),"Supplied transcript/hook bytes only; unexported internal events and unattached subagent transcripts unknown".into())],omitted:vec![]},&[]).map_err(io::Error::other)?;
+    let headers=[("x-kan-session", session_digest.as_str()),("x-kan-capture-adapter","kan-harness-jsonl/1"),("x-kan-capture-coverage","Supplied transcript/hook bytes only; unexported internal events and unattached subagent transcripts unknown")]
+        .into_iter().map(|(name,value)|(name.to_string(),crate::evidence_service::hex(value.as_bytes()))).collect();
+    recorder
+        .record(
+            Event::HttpMetadata {
+                direction: "request".into(),
+                headers,
+                omitted: vec![],
+            },
+            &[],
+        )
+        .map_err(io::Error::other)?;
     let mut buffer = [0u8; capture::CHUNK];
     let mut count = 0u64;
     let mut hash = Sha256::new();

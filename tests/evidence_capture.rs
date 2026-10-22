@@ -989,6 +989,26 @@ fn harness_snapshot_preserves_raw_bytes_context_and_visible_gaps() {
             |h| matches!(&h.event,Event::Started{route,..} if route=="/kan/harness-jsonl/v1")
         ));
         assert!(headers.iter().any(|h|matches!(&h.event,Event::HttpMetadata{headers,..} if headers.iter().any(|(k,_)| k=="x-kan-session"))));
+        for h in &headers {
+            if let Event::HttpMetadata { headers, .. } = &h.event {
+                for (_, value) in headers {
+                    assert!(
+                        String::from_utf8(kan::evidence_service::unhex(value, 4096).unwrap())
+                            .is_ok()
+                    );
+                }
+                let session = headers
+                    .iter()
+                    .find(|(name, _)| name == "x-kan-session")
+                    .unwrap();
+                assert_eq!(
+                    kan::evidence_service::unhex(&session.1, 4096)
+                        .unwrap()
+                        .len(),
+                    64
+                );
+            }
+        }
         if reject.is_empty() {
             assert_eq!(bodies(&sink.frames).0, raw.as_bytes());
         } else {

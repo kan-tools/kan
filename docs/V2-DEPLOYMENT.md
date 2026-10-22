@@ -317,3 +317,35 @@ This establishes the same single-worker indexed-storage workload as the 10 GiB
 baseline, not full-service concurrency, encryption throughput or cold-cache
 performance. The Modal runner is prepared; a successful cloud run is still
 required before claiming the 100 GiB gate passed.
+
+
+### Representative encrypted HTTP measurement
+
+The PR CI step `HTTP encrypted capture qualification at 64 KiB and four writers`
+runs `capacity_measurements::capacity_http_capture_sample` and retains
+`v2-http-capture-<revision>/kan-http-capture.json`. It measures four independent
+writer chains and 1,024 actual encrypted 64 KiB KANC2 frames (64 MiB of bodies),
+including signing, encryption, HTTP admission and proof-source decryption. It
+also scans storage, indexes/sidecars and a standalone backup for a plaintext
+canary. This is a representative-path supplement to the real 10/100 GiB sweep;
+combined client/server process RSS and retained OS cache are disclosed explicitly.
+Use `KAN_HTTP_CAPTURE_FRAMES` (32–4,096 per writer) and
+`KAN_HTTP_CAPTURE_REPORT` for an explicit remote rerun. Do not run the fixture
+on the shared laptop merely to obtain another report.
+
+### Service placement and tunnels
+
+The same configured proof service and Library run on a local or remote host.
+Listeners bind literal loopback. For cross-host use, place the Library alongside
+the service and forward its loopback port through an authenticated tunnel, or
+forward the proof service's loopback port to a reader on the client machine.
+The reader's endpoint may change; archive/scope/issuer bindings and reader keys
+do not. Keep reader and owner credentials separate and preserve same-origin
+browser delivery. Never expose the loopback-only service by changing its bind
+check or stripping its authentication. Provision the tunnel and host security
+explicitly; Kan does not configure SSH or deploy credentials automatically.
+
+The forwarding regression exercises identical signed reads and current revocation
+through a TCP relay. Gateway mTLS tests cover the separate trusted plaintext hop.
+These synthetic checks do not claim that an owner-specific production tunnel,
+backup destination or host installation has been deployed or qualified.

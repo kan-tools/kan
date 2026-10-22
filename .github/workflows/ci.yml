@@ -99,6 +99,17 @@ jobs:
       - run: cargo package --locked --features v2-crypto
         env:
           CARGO_BUILD_JOBS: 4
+      - name: HTTP encrypted capture qualification at 64 KiB and four writers
+        if: github.event_name == 'pull_request'
+        env:
+          KAN_HTTP_CAPTURE_REPORT: ${{ runner.temp }}/kan-http-capture.json
+        run: cargo test --locked --features v2-crypto --test evidence_inventory capacity_measurements::capacity_http_capture_sample -- --ignored --exact --nocapture
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: v2-http-capture-${{ github.sha }}
+          path: ${{ runner.temp }}/kan-http-capture.json
+          retention-days: 30
       - name: Real Library browser and download qualification
         if: github.event_name == 'pull_request'
         timeout-minutes: 15

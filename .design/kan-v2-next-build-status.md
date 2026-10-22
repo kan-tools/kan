@@ -117,6 +117,39 @@ features and release qualification are implemented. Use actual Claude Code Opus 
 on the frozen integrated candidate; do not start it during feature construction. The 100 GiB Modal runner is prepared; account authentication is still
 needed before a cloud measurement can run.
 
+### Expanded release qualification — implementation prepared
+
+The real browser fixture now includes sessions/branches/compaction, imported v1
+claims, a decoded attachment, a synthetic analysis gateway and separately authorized
+owner/operations services. The browser script exercises those paths, day declarations,
+analysis preview/submission/lineage and history-preserving rotation at desktop and
+390px. No browser result is claimed until the remote run completes.
+
+`capacity_http_capture_sample` supplements the preserved 10 GiB opaque baseline:
+four concurrent signed writer chains, 1,024 actual 64 KiB encrypted capture frames,
+HTTP admission, authenticated source reads/decryption, latency distributions,
+combined client/server RSS and a plaintext canary scan of database/sidecars/backup.
+It is a 64 MiB representative-path sample, not a substitute for the 100 GiB gate.
+The same test can take 32–4,096 frames per writer via `KAN_HTTP_CAPTURE_FRAMES`.
+The remote PR workflow retains its JSON report, including the exact checkout in
+artifact identity. No local heavy build is authorized or performed.
+
+The migration regression now verifies preserved native day `atom/*` and `telos/*`
+claim CIDs after cold recovery, as well as writer refusal, final-delta delivery,
+backup and live endpoint verification, stale routing refusal and rollback.
+`proof_reader_forwarded_transport_keeps_identity_source_and_current_grants` adds a
+byte-forwarding relay between reader and service; binding, source bytes and live
+revocation remain unchanged. This qualifies placement transparency, not a real
+cross-host SSH installation. Existing mTLS gateway tests cover transport trust.
+The existing identity-governed import and portable-reference regressions remain
+applicable; they are not replaced by the new legacy day fixture.
+
+The sole external execution prerequisite remains Modal authentication and workspace
+selection for the 100 GiB measurement. After current Rust/browser/measurement gates
+pass and their artifacts are inspected, freeze the candidate for the requested
+fresh full Claude Code Opus 5.5 adversarial review. Do not infer release readiness
+from prepared scripts or a partial CI result.
+
 ### Starting state and evidence reuse
 
 - Recovery/pinned inventory author qualification at a2666df passed 138 integrations,
