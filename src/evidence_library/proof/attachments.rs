@@ -39,7 +39,7 @@ fn decode_base64(text: &str) -> Result<Vec<u8>, Failure> {
         return Err(Failure::Invalid);
     }
     let mut out = Vec::with_capacity(text.len() / 4 * 3);
-    for (i, c) in text.as_bytes().chunks_exact(4).enumerate() {
+    for (i, c) in text.as_bytes().as_chunks::<4>().0.iter().enumerate() {
         let padding = if c[2] == b'=' {
             if c[3] != b'=' {
                 return Err(Failure::Invalid);

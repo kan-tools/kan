@@ -83,7 +83,7 @@ pub struct Journal {
     schema: u8,
     read_only: bool,
     _file_lock: std::fs::File,
-    pub(crate) collection_lock: Option<std::fs::File>,
+    pub(crate) collection_lock: Option<crate::evidence_operations_collection::CollectionLock>,
     pub(crate) scope: String,
     pub(crate) active_generation: Option<String>,
 }
