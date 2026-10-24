@@ -281,3 +281,28 @@ fn independent_sender_and_maximum_receiver_interoperate() {
         }
     }
 }
+
+#[cfg(unix)]
+#[test]
+fn explicit_recipient_key_requires_private_single_link_regular_file() {
+    use std::os::unix::fs::{symlink, PermissionsExt};
+    let dir = tempfile::tempdir().unwrap();
+    let key = dir.path().join("key");
+    assert!(crypto::read_private_key(&key).is_err());
+    assert!(!key.exists());
+    std::fs::write(&key, [73; 32]).unwrap();
+    std::fs::set_permissions(&key, std::fs::Permissions::from_mode(0o600)).unwrap();
+    assert_eq!(crypto::read_private_key(&key).unwrap(), [73; 32]);
+    let link = dir.path().join("link");
+    symlink(&key, &link).unwrap();
+    assert!(crypto::read_private_key(&link).is_err());
+    let hard = dir.path().join("hard");
+    std::fs::hard_link(&key, &hard).unwrap();
+    assert!(crypto::read_private_key(&key).is_err());
+    std::fs::remove_file(hard).unwrap();
+    std::fs::set_permissions(&key, std::fs::Permissions::from_mode(0o644)).unwrap();
+    assert!(crypto::read_private_key(&key).is_err());
+    std::fs::set_permissions(&key, std::fs::Permissions::from_mode(0o600)).unwrap();
+    std::fs::write(&key, [73; 33]).unwrap();
+    assert!(crypto::read_private_key(&key).is_err());
+}

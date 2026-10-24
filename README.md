@@ -9,6 +9,29 @@ without a central authority deciding what's true.
 
 Nothing is overwritten. Nothing is flattened. Nothing is lost.
 
+## Kan v2 development build
+
+The v2 branch adds a centralized encrypted evidence service and a human Library
+with conversations, search, annotations, background analysis, Operations and
+owner administration. Local hosting runs the same services as remote hosting.
+The integrated build is still being qualified; it is not a production release.
+The Quickstart below describes the existing repository-based `kan` interface.
+
+From the v2 source checkout, install the separate service/reader executable with:
+
+```sh
+cargo install --path . --locked --features v2-crypto --bin kan-v2
+kan-v2 --help
+```
+
+Start with [managed deployment and restore activation](docs/V2-DEPLOYMENT.md),
+then configure [capture and the harness gateway](docs/V2-GATEWAY.md),
+[v1 import](docs/V2-IMPORT.md), the [Library](docs/V2-LIBRARY.md) and
+[Operations](docs/V2-OPERATIONS.md). The Library runbook covers independent
+backup/key recovery, current access, and owner-triggered erasure. Provision
+credentials and independent custody before launching services; importing or
+restoring a copy does not activate it automatically.
+
 ## Quickstart
 
 ```sh

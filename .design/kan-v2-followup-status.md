@@ -1,5 +1,11 @@
 # Kan v2 follow-up ledger — 2026-10-18
 
+> Development flow update (owner decision, 2026-10-19): complete the full v2
+> feature set with continuous integration, then conduct one thorough integrated
+> Opus 5.5 review campaign. The active checklist and policy are in
+> [kan-v2-next-build-status.md](kan-v2-next-build-status.md). This supersedes older
+> per-checkpoint review/reversion instructions below, without reducing product scope.
+
 This is a navigation aid to implementation and review evidence, not an authority
 for acceptance. The complete human frontend remains required by
 `kan-v2-human-frontend.md`; partial slices do not close that design.

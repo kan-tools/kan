@@ -15,6 +15,8 @@ pub const PROTOCOL: &str = "kan-proof-reader/1";
 pub const MAX_REQUEST: usize = 32 * 1024;
 pub const MAX_REPLY: usize = 12 * 1024 * 1024;
 pub const PAGE_LIMIT: usize = 40;
+pub const READ_BATCH_LIMIT: usize = 8;
+const READ_BATCH_BYTES: usize = 4 * 1024 * 1024;
 const REQUEST_DOMAIN: &[u8] = b"tools.kan.proof-read.request.v2\0";
 const REPLY_DOMAIN: &[u8] = b"tools.kan.proof-read.reply.v2\0";
 type Result<T> = std::result::Result<T, Failure>;
@@ -120,6 +122,10 @@ pub enum Command {
         pin: Coordinate,
         selected: Coordinate,
     },
+    ReadBatch {
+        pin: Coordinate,
+        selections: Vec<Coordinate>,
+    },
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -137,6 +143,19 @@ impl Request {
         }
         self.binding.owner_binding()?;
         service::author(&self.principal)?;
+        if let Command::ReadBatch { pin, selections } = &self.command {
+            if selections.is_empty() || selections.len() > READ_BATCH_LIMIT {
+                return Err(Failure::Invalid);
+            }
+            let pin = pin.frontier(&self.binding)?;
+            for selected in selections {
+                let selected = selected.frontier(&self.binding)?;
+                if selected.through == 0 || selected.through > pin.through {
+                    return Err(Failure::Invalid);
+                }
+            }
+            return Ok(());
+        }
         let (pin, next) = match &self.command {
             Command::Page { pin, next, limit } => {
                 if *limit == 0 || *limit > PAGE_LIMIT {
@@ -224,6 +243,7 @@ impl SignedRequest {
 #[serde(rename_all = "kebab-case")]
 pub enum Availability {
     Available,
+    Erased,
     Missing,
     Corrupt,
 }
@@ -231,6 +251,7 @@ impl From<inventory::Availability> for Availability {
     fn from(value: inventory::Availability) -> Self {
         match value {
             inventory::Availability::Available => Self::Available,
+            inventory::Availability::Erased => Self::Erased,
             inventory::Availability::Missing => Self::Missing,
             inventory::Availability::Corrupt => Self::Corrupt,
         }
@@ -257,6 +278,7 @@ fn view(row: &inventory::Occurrence) -> RecordView {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "state", rename_all = "kebab-case", deny_unknown_fields)]
 pub enum Source {
+    Erased,
     Available {
         signed_request: String,
         writer: String,
@@ -284,6 +306,15 @@ pub enum Output {
         record: RecordView,
         source: Source,
     },
+    EvidenceBatch {
+        records: Vec<EvidenceRecord>,
+    },
+}
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct EvidenceRecord {
+    pub record: RecordView,
+    pub source: Source,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -340,6 +371,9 @@ impl SignedReply {
 
 /// Owner configuration, never populated from a remote request. No append API.
 pub struct Service {
+    indexed: bool,
+    erasure_history: Option<crate::evidence_erasure_history::Access>,
+    policy: Option<crate::evidence_policy::Access>,
     path: PathBuf,
     binding: Binding,
     signer: Identity,
@@ -354,24 +388,103 @@ impl Service {
         grants: Vec<Grant>,
         budget: inventory::Budget,
     ) -> Result<Self> {
+        Self::configured(path, binding, signer, grants, budget, false, None)
+    }
+    /// Serve initialized archives through bounded authenticated metadata
+    /// and selected payload reads. Current custody remains an external input.
+    pub fn new_indexed(
+        path: PathBuf,
+        binding: Binding,
+        signer: Identity,
+        grants: Vec<Grant>,
+        budget: inventory::Budget,
+        current_erasure_tip: Option<&str>,
+    ) -> Result<Self> {
+        Self::configured(
+            path,
+            binding,
+            signer,
+            grants,
+            budget,
+            true,
+            current_erasure_tip,
+        )
+    }
+    fn configured(
+        path: PathBuf,
+        binding: Binding,
+        signer: Identity,
+        grants: Vec<Grant>,
+        budget: inventory::Budget,
+        indexed: bool,
+        current_erasure_tip: Option<&str>,
+    ) -> Result<Self> {
         if signer.did().as_str() != binding.issuer {
             return Err(Failure::Invalid);
         }
         let grants = Self::permissions(grants)?;
         // Valid metadata admits browsing, never admission or payload completeness.
-        inventory::Inventory::open(
-            &path,
-            binding.profile.inventory(),
-            binding.owner_binding()?,
-            budget.clone(),
-        )?;
+        if indexed {
+            inventory::Inventory::open_indexed(
+                &path,
+                binding.profile.inventory(),
+                binding.owner_binding()?,
+                None,
+                current_erasure_tip,
+                budget.clone(),
+            )?;
+        } else {
+            inventory::Inventory::open(
+                &path,
+                binding.profile.inventory(),
+                binding.owner_binding()?,
+                budget.clone(),
+            )?;
+        }
         Ok(Self {
+            indexed,
+            erasure_history: None,
+            policy: None,
             path,
             binding,
             signer,
             grants,
             budget,
         })
+    }
+    /// Enroll in independently owner-authenticated erasure custody. Every read
+    /// fails closed until the local archive matches the current history.
+    pub fn with_erasure_history(
+        mut self,
+        history: crate::evidence_erasure_history::Access,
+    ) -> Result<Self> {
+        if history.binding != self.binding {
+            return Err(Failure::Invalid);
+        }
+        let current = history.serving(self.indexed)?;
+        if self.indexed {
+            inventory::Inventory::open_indexed(
+                &self.path,
+                self.binding.profile.inventory(),
+                self.binding.owner_binding()?,
+                None,
+                current.storage_tip()?.as_deref(),
+                self.budget.clone(),
+            )?;
+        } else {
+            current.check_archive(&self.path, &self.binding)?;
+        }
+        drop(current);
+        self.erasure_history = Some(history);
+        Ok(self)
+    }
+    pub fn with_policy(mut self, policy: crate::evidence_policy::Access) -> Result<Self> {
+        if policy.binding != self.binding {
+            return Err(Failure::Invalid);
+        }
+        self.replace_grants(policy.current()?.grants()?)?;
+        self.policy = Some(policy);
+        Ok(self)
     }
     fn permissions(grants: Vec<Grant>) -> Result<BTreeMap<String, Grant>> {
         let mut selected = BTreeMap::new();
@@ -392,11 +505,51 @@ impl Service {
         if bytes.len() > MAX_REQUEST {
             return Err(Failure::Invalid);
         }
+        // Hold the custody lease through reply signing. Owner publication waits
+        // for earlier reads; later reads cannot expose an unreconciled backup.
+        let custody = self
+            .erasure_history
+            .as_ref()
+            .map(|history| history.serving(self.indexed))
+            .transpose()?;
+        let storage_tip = custody
+            .as_ref()
+            .map(|current| current.storage_tip())
+            .transpose()?
+            .flatten();
+        if let Some(current) = &custody {
+            if self.indexed {
+                inventory::Inventory::open_indexed(
+                    &self.path,
+                    self.binding.profile.inventory(),
+                    self.binding.owner_binding()?,
+                    None,
+                    storage_tip.as_deref(),
+                    self.budget.clone(),
+                )?;
+            } else {
+                current.check_archive(&self.path, &self.binding)?;
+            }
+        }
+        let policy = self
+            .policy
+            .as_ref()
+            .map(crate::evidence_policy::Access::current)
+            .transpose()?;
+        let current = policy
+            .as_ref()
+            .map(|s| Self::permissions(s.grants()?))
+            .transpose()?;
         let reply = Reply {
             version: 2,
             request: service::hex(&Sha256::digest(bytes)),
             issuer: self.binding.issuer.clone(),
-            result: self.execute(bytes, now),
+            result: self.execute(
+                bytes,
+                now,
+                current.as_ref().unwrap_or(&self.grants),
+                storage_tip.as_deref(),
+            ),
         };
         let signature = self
             .signer
@@ -419,8 +572,24 @@ impl Service {
             ..self.budget.clone()
         })
     }
-    fn open(&self, pin: Option<&Coordinate>, deadline: Instant) -> Result<inventory::Inventory> {
+    fn open(
+        &self,
+        pin: Option<&Coordinate>,
+        deadline: Instant,
+        current_erasure_tip: Option<&str>,
+    ) -> Result<inventory::Inventory> {
         let binding = self.binding.owner_binding()?;
+        if self.indexed {
+            let selected = pin.map(|pin| pin.frontier(&self.binding)).transpose()?;
+            return Ok(inventory::Inventory::open_indexed(
+                &self.path,
+                self.binding.profile.inventory(),
+                binding,
+                selected.as_ref(),
+                current_erasure_tip,
+                self.remaining(deadline)?,
+            )?);
+        }
         Ok(if let Some(pin) = pin {
             inventory::Inventory::open_at(
                 &self.path,
@@ -445,16 +614,55 @@ impl Service {
             payload_bytes: PAGE_LIMIT * service::MAX_REQUEST,
         }
     }
-    fn execute(&self, bytes: &[u8], now: u64) -> Result<Output> {
+    fn read_row(&self, row: &inventory::Occurrence, deadline: Instant) -> Result<EvidenceRecord> {
+        let fresh = inventory::source(
+            &self.path,
+            self.binding.profile.inventory(),
+            self.binding.owner_binding()?,
+            &row.selection,
+            service::MAX_REQUEST,
+            self.remaining(deadline)?,
+        )?;
+        let mut record = view(row);
+        let source = match fresh {
+            inventory::Source::Available { bytes, writer } => {
+                record.availability = Availability::Available;
+                Source::Available {
+                    signed_request: service::hex(&bytes),
+                    writer,
+                }
+            }
+            inventory::Source::Unavailable(inventory::Availability::Erased) => {
+                record.availability = Availability::Erased;
+                Source::Erased
+            }
+            inventory::Source::Unavailable(inventory::Availability::Missing) => {
+                record.availability = Availability::Missing;
+                Source::Missing
+            }
+            inventory::Source::Unavailable(inventory::Availability::Corrupt) => {
+                record.availability = Availability::Corrupt;
+                Source::Corrupt
+            }
+            inventory::Source::Unavailable(inventory::Availability::Available) => {
+                return Err(Failure::Corrupt)
+            }
+        };
+        Ok(EvidenceRecord { record, source })
+    }
+    fn execute(
+        &self,
+        bytes: &[u8],
+        now: u64,
+        grants: &BTreeMap<String, Grant>,
+        current_erasure_tip: Option<&str>,
+    ) -> Result<Output> {
         let signed = SignedRequest::decode(bytes)?;
         let request = signed.request;
         if request.binding != self.binding
             || request.expires < now
             || request.expires.saturating_sub(now) > 300
-            || !self
-                .grants
-                .get(&request.principal)
-                .is_some_and(|g| g.inventory)
+            || !grants.get(&request.principal).is_some_and(|g| g.inventory)
         {
             return Err(Failure::AccessLimited);
         }
@@ -464,12 +672,12 @@ impl Service {
         match request.command {
             Command::Capabilities => Ok(Output::Capabilities {
                 protocol: PROTOCOL.into(),
-                operations: ["capabilities", "snapshot", "page", "read"]
+                operations: ["capabilities", "snapshot", "page", "read", "read-batch"]
                     .map(String::from)
                     .to_vec(),
             }),
             Command::Snapshot => {
-                let inventory = self.open(None, deadline)?;
+                let inventory = self.open(None, deadline, current_erasure_tip)?;
                 Ok(Output::Snapshot {
                     frontier: Coordinate::from_frontier(inventory.frontier()),
                     plan: inventory.copy_plan().map(|p| service::hex(p.bytes())),
@@ -477,7 +685,7 @@ impl Service {
                 })
             }
             Command::Page { pin, next, limit } => {
-                let inventory = self.open(Some(&pin), deadline)?;
+                let inventory = self.open(Some(&pin), deadline, current_erasure_tip)?;
                 let page = inventory.page_from(
                     &next.frontier(&self.binding)?,
                     Self::page_budget(limit),
@@ -494,8 +702,32 @@ impl Service {
                     next,
                 })
             }
+            Command::ReadBatch { pin, selections } => {
+                let inventory = self.open(Some(&pin), deadline, current_erasure_tip)?;
+                let mut records = Vec::new();
+                let mut payload_bytes = 0;
+                for selected in selections {
+                    let mut page = inventory.page_from(
+                        &selected.frontier(&self.binding)?,
+                        Self::page_budget(1),
+                        self.remaining(deadline)?,
+                    )?;
+                    // Return an ordered prefix that fits both memory and wire bounds.
+                    // Every legal single request fits this byte allowance.
+                    if payload_bytes + page.payload_budget_used > READ_BATCH_BYTES {
+                        break;
+                    }
+                    payload_bytes += page.payload_budget_used;
+                    let row = page.records.pop().ok_or(Failure::Missing)?;
+                    records.push(self.read_row(&row, deadline)?);
+                }
+                if records.is_empty() {
+                    return Err(Failure::Corrupt);
+                }
+                Ok(Output::EvidenceBatch { records })
+            }
             Command::Read { pin, selected } => {
-                let inventory = self.open(Some(&pin), deadline)?;
+                let inventory = self.open(Some(&pin), deadline, current_erasure_tip)?;
                 let mut page = inventory.page_from(
                     &selected.frontier(&self.binding)?,
                     Self::page_budget(1),
@@ -503,35 +735,7 @@ impl Service {
                 )?;
                 let row = page.records.pop().ok_or(Failure::Missing)?;
                 drop(inventory);
-                let fresh = inventory::source(
-                    &self.path,
-                    self.binding.profile.inventory(),
-                    self.binding.owner_binding()?,
-                    &row.selection,
-                    service::MAX_REQUEST,
-                    self.remaining(deadline)?,
-                )?;
-                let mut record = view(&row);
-                let source = match fresh {
-                    inventory::Source::Available { bytes, writer } => {
-                        record.availability = Availability::Available;
-                        Source::Available {
-                            signed_request: service::hex(&bytes),
-                            writer,
-                        }
-                    }
-                    inventory::Source::Unavailable(inventory::Availability::Missing) => {
-                        record.availability = Availability::Missing;
-                        Source::Missing
-                    }
-                    inventory::Source::Unavailable(inventory::Availability::Corrupt) => {
-                        record.availability = Availability::Corrupt;
-                        Source::Corrupt
-                    }
-                    inventory::Source::Unavailable(inventory::Availability::Available) => {
-                        return Err(Failure::Corrupt)
-                    }
-                };
+                let EvidenceRecord { record, source } = self.read_row(&row, deadline)?;
                 Ok(Output::Evidence { record, source })
             }
         }

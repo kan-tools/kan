@@ -222,8 +222,18 @@ pub fn scan_car(file: &mut File) -> CarScan {
     result
 }
 fn scan_car_inner(file: &mut File, result: &mut CarScan) -> io::Result<()> {
-    file.rewind()?;
     let total = file.metadata()?.len();
+    scan_car_stream(file, total, result, |_, _, _| Ok(()))
+}
+/// Same framing/hash checks for bounded in-memory browsing. The visitor only
+/// receives verified SHA256 blocks; it confers no graph membership authority.
+pub(crate) fn scan_car_stream(
+    file: &mut (impl Read + Seek),
+    total: u64,
+    result: &mut CarScan,
+    mut visit: impl FnMut(u64, u64, u64) -> io::Result<()>,
+) -> io::Result<()> {
+    file.rewind()?;
     let header_length = required_varint(file)?;
     if header_length == 0 || header_length > BUFFER as u64 {
         return Err(io::Error::other("CAR header length"));
@@ -261,6 +271,7 @@ fn scan_car_inner(file: &mut File, result: &mut CarScan) -> io::Result<()> {
         if frame_length == 0 || frame_length > total.saturating_sub(file.stream_position()?) {
             return Err(io::Error::other("truncated or zero CAR frame"));
         }
+        let start = file.stream_position()?;
         let mut frame = (&mut *file).take(frame_length);
         let version = required_varint(&mut frame)?;
         if version != 1 {
@@ -276,6 +287,7 @@ fn scan_car_inner(file: &mut File, result: &mut CarScan) -> io::Result<()> {
         }
         let mut expected = vec![0; digest_length as usize];
         frame.read_exact(&mut expected)?;
+        let body = start + frame_length - frame.limit();
         let mut digest = Sha256::new();
         loop {
             let n = frame.read(&mut buffer)?;
@@ -291,6 +303,7 @@ fn scan_car_inner(file: &mut File, result: &mut CarScan) -> io::Result<()> {
             if digest.finalize().as_slice() != expected {
                 return Err(io::Error::other("CAR block digest mismatch"));
             }
+            visit(start, body, start + frame_length)?;
             result.verified_blocks += 1;
         } else {
             result.unsupported_blocks += 1;

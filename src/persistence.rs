@@ -37,9 +37,15 @@ pub enum SurfaceWrite {
     EvidenceOperationsCollection,
     EvidenceArchive,
     EvidenceAttestation,
+    EvidenceServingIndex,
+    EvidenceControlIndex,
+    EvidenceErasure,
     EvidenceCopy,
     EvidenceCopyPlan,
     EvidenceBackup,
+    EvidenceBackupPurge,
+    EvidenceBackupCheckpoint,
+    EvidenceMigration,
     EvidenceRecovery,
     EvidenceRecoverySource,
     EvidenceBundleSource,
@@ -49,6 +55,12 @@ pub enum SurfaceWrite {
     EvidencePublication,
     EvidencePublicationSource,
     EvidenceRestore,
+    EvidenceWorkspace,
+    EvidenceWorkspaceErasure,
+    EvidenceWorkspaceRecovery,
+    EvidenceErasureHistory,
+    EvidencePolicy,
+    EvidenceKeys,
     Count,
 }
 
@@ -78,9 +90,15 @@ impl SurfaceWrite {
         Self::EvidenceOperationsCollection,
         Self::EvidenceArchive,
         Self::EvidenceAttestation,
+        Self::EvidenceServingIndex,
+        Self::EvidenceControlIndex,
+        Self::EvidenceErasure,
         Self::EvidenceCopy,
         Self::EvidenceCopyPlan,
         Self::EvidenceBackup,
+        Self::EvidenceBackupPurge,
+        Self::EvidenceBackupCheckpoint,
+        Self::EvidenceMigration,
         Self::EvidenceRecovery,
         Self::EvidenceRecoverySource,
         Self::EvidenceBundleSource,
@@ -90,6 +108,12 @@ impl SurfaceWrite {
         Self::EvidencePublication,
         Self::EvidencePublicationSource,
         Self::EvidenceRestore,
+        Self::EvidenceWorkspace,
+        Self::EvidenceWorkspaceErasure,
+        Self::EvidenceWorkspaceRecovery,
+        Self::EvidenceErasureHistory,
+        Self::EvidencePolicy,
+        Self::EvidenceKeys,
     ];
 
     /// Catalog artifacts a capability is permitted to mutate. This match is
@@ -164,9 +188,27 @@ impl SurfaceWrite {
                 "evidence-spool:database-shm",
                 "evidence-spool:database-journal",
             ],
+            Self::EvidenceControlIndex => &[
+                "evidence-control-index:serving.sqlite",
+                "evidence-control-index:serving.sqlite-journal",
+                "evidence-control-index:CURRENT",
+                "evidence-control-index:INDEX-DIRTY",
+                "evidence-control-index:.index-head-*",
+                "evidence-control-index:.index-db-*",
+                "evidence-control-index:serving_nodes",
+                "evidence-control-index:serving_checkpoint",
+            ],
+            Self::EvidenceServingIndex => &[
+                "evidence-serving-sqlite:serving_nodes",
+                "evidence-serving-sqlite:serving_checkpoint",
+            ],
             Self::EvidenceAttestation => &[
                 "evidence-proof-sqlite:archive_identity",
                 "evidence-proof-sqlite:attestations",
+            ],
+            Self::EvidenceErasure => &[
+                "evidence-erasure-sqlite:erasures",
+                "evidence-erasure-sqlite:objects",
             ],
             Self::EvidenceCopyPlan => &["evidence-copy-plan:artifact"],
             Self::EvidenceCopy => &[
@@ -180,6 +222,12 @@ impl SurfaceWrite {
                 "evidence-db:archive.sqlite-wal",
                 "evidence-db:archive.sqlite-journal",
                 "evidence-db:archive.sqlite-shm",
+            ],
+            Self::EvidenceBackupCheckpoint => &["evidence-backup-checkpoint:receipt"],
+            Self::EvidenceBackupPurge => &[
+                "evidence-backup:archive.sqlite",
+                "evidence-backup-purge:directory",
+                "evidence-backup-purge:backup.sqlite",
             ],
             Self::EvidenceBackup => &[
                 "evidence-backup:archive.sqlite",
@@ -224,6 +272,35 @@ impl SurfaceWrite {
                 "evidence-restore:plan.json",
                 "evidence-restore:report.json",
             ],
+            Self::EvidenceWorkspaceErasure => &[
+                "evidence-workspace-erasure:entries",
+                "evidence-workspace-erasure:profile",
+            ],
+            Self::EvidenceWorkspaceRecovery => &[
+                "evidence-workspace-recovery:database",
+                "evidence-workspace-recovery:database-journal",
+            ],
+            Self::EvidenceWorkspace => &[
+                "evidence-workspace:database-lock",
+                "evidence-workspace:database",
+                "evidence-workspace:database-journal",
+            ],
+            Self::EvidenceKeys => &[
+                "evidence-keys:LOCK",
+                "evidence-keys:.pending-*",
+                "evidence-keys:epoch-*.json",
+            ],
+            Self::EvidenceErasureHistory => &[
+                "evidence-erasure-history:LOCK",
+                "evidence-erasure-history:.pending-*",
+                "evidence-erasure-history:erasure-*.json",
+            ],
+            Self::EvidencePolicy => &[
+                "evidence-policy:LOCK",
+                "evidence-policy:.pending-*",
+                "evidence-policy:policy-*.json",
+            ],
+            Self::EvidenceMigration => &["evidence-migration:control"],
             Self::Count => &[],
         }
     }
@@ -406,4 +483,174 @@ pub fn open_sqlite_bundle_mutation(
     path: &Path,
 ) -> rusqlite::Result<rusqlite::Connection> {
     rusqlite::Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_WRITE)
+}
+
+/// Fixed spool retirement writes; the caller validates current owner custody
+/// and exact admitted manifest commitments before invoking these mutations.
+#[cfg(feature = "v2-storage")]
+pub fn initialize_spool_erasure(
+    _surface: SurfaceWrite,
+    tx: &rusqlite::Transaction<'_>,
+) -> rusqlite::Result<()> {
+    tx.execute_batch(crate::evidence_spool::erasure::SCHEMA)
+}
+#[cfg(feature = "v2-storage")]
+pub fn insert_spool_erasure_authorization(
+    _surface: SurfaceWrite,
+    tx: &rusqlite::Transaction<'_>,
+    id: &str,
+    body: &[u8],
+) -> rusqlite::Result<()> {
+    tx.execute(
+        "INSERT INTO erasure_authorizations VALUES(?,?)",
+        rusqlite::params![id, body],
+    )?;
+    Ok(())
+}
+#[cfg(feature = "v2-storage")]
+pub fn insert_spool_erasure_operation(
+    _surface: SurfaceWrite,
+    tx: &rusqlite::Transaction<'_>,
+    position: u64,
+    authorization: &str,
+    manifest: Option<&[u8]>,
+) -> rusqlite::Result<()> {
+    tx.execute(
+        "INSERT INTO erased_operations VALUES(?,?,?)",
+        rusqlite::params![position as i64, authorization, manifest],
+    )?;
+    Ok(())
+}
+#[cfg(feature = "v2-storage")]
+pub fn erase_spool_payload(
+    _surface: SurfaceWrite,
+    tx: &rusqlite::Transaction<'_>,
+    position: u64,
+    acknowledged: bool,
+) -> rusqlite::Result<()> {
+    tx.execute("DELETE FROM pending WHERE position=?", [position as i64])?;
+    if acknowledged {
+        tx.execute(
+            "UPDATE state SET acknowledged_request=NULL,acknowledged_reply=NULL WHERE singleton=1",
+            [],
+        )?;
+    }
+    Ok(())
+}
+
+/// Fixed erasure mutations: callers authenticate the entire plan before writing.
+#[cfg(feature = "v2-storage")]
+pub fn initialize_evidence_erasure(
+    _surface: SurfaceWrite,
+    tx: &rusqlite::Transaction<'_>,
+) -> rusqlite::Result<()> {
+    tx.execute_batch(crate::evidence_store::erasure::SCHEMA)
+}
+#[cfg(feature = "v2-storage")]
+pub fn insert_evidence_erasure(
+    _surface: SurfaceWrite,
+    tx: &rusqlite::Transaction<'_>,
+    ordinal: i64,
+    id: &str,
+    bytes: &[u8],
+) -> rusqlite::Result<()> {
+    tx.execute(
+        "INSERT INTO erasures VALUES(?,?,?)",
+        rusqlite::params![ordinal, id, bytes],
+    )?;
+    Ok(())
+}
+#[cfg(feature = "v2-storage")]
+pub fn insert_erased_evidence_object(
+    _surface: SurfaceWrite,
+    tx: &rusqlite::Transaction<'_>,
+    id: &str,
+) -> rusqlite::Result<()> {
+    tx.execute(
+        "INSERT INTO objects(cid,bytes) VALUES(?,x'00') ON CONFLICT(cid) DO UPDATE SET bytes=x'00'",
+        [id],
+    )?;
+    Ok(())
+}
+#[cfg(feature = "v2-storage")]
+pub fn redact_evidence_object(
+    _surface: SurfaceWrite,
+    tx: &rusqlite::Transaction<'_>,
+    id: &str,
+) -> rusqlite::Result<()> {
+    tx.execute("UPDATE objects SET bytes=x'00' WHERE cid=?", [id])?;
+    Ok(())
+}
+
+#[cfg(feature = "v2-crypto")]
+pub fn initialize_workspace_erasure(
+    _surface: SurfaceWrite,
+    tx: &rusqlite::Transaction<'_>,
+) -> rusqlite::Result<()> {
+    tx.execute_batch("PRAGMA user_version=2;")
+}
+#[cfg(feature = "v2-crypto")]
+pub fn insert_workspace_erasure(
+    _surface: SurfaceWrite,
+    tx: &rusqlite::Transaction<'_>,
+    id: &str,
+    bytes: &[u8],
+) -> rusqlite::Result<()> {
+    tx.execute(
+        "INSERT INTO entries VALUES('erasure',?,?)",
+        rusqlite::params![id, bytes],
+    )?;
+    Ok(())
+}
+#[cfg(feature = "v2-crypto")]
+pub fn delete_workspace_erased_entry(
+    _surface: SurfaceWrite,
+    tx: &rusqlite::Transaction<'_>,
+    kind: &str,
+    id: &str,
+) -> rusqlite::Result<()> {
+    tx.execute(
+        "DELETE FROM entries WHERE kind=? AND id=?",
+        rusqlite::params![kind, id],
+    )?;
+    Ok(())
+}
+
+/// Derived serving metadata is committed with its signed checkpoint and evidence.
+#[cfg(feature = "v2-storage")]
+pub fn initialize_serving_index(
+    _surface: SurfaceWrite,
+    tx: &rusqlite::Transaction<'_>,
+) -> rusqlite::Result<()> {
+    tx.execute_batch(crate::evidence_store::serving::SCHEMA)
+}
+#[cfg(feature = "v2-storage")]
+pub fn insert_serving_node(
+    _surface: SurfaceWrite,
+    tx: &rusqlite::Transaction<'_>,
+    id: &[u8; 32],
+    bytes: &[u8],
+) -> rusqlite::Result<()> {
+    tx.execute(
+        "INSERT INTO serving_nodes VALUES(?,?)",
+        rusqlite::params![id, bytes],
+    )?;
+    Ok(())
+}
+#[cfg(feature = "v2-storage")]
+pub fn reset_serving_nodes(
+    _surface: SurfaceWrite,
+    tx: &rusqlite::Transaction<'_>,
+) -> rusqlite::Result<()> {
+    tx.execute("DELETE FROM serving_nodes", [])?;
+    Ok(())
+}
+#[cfg(feature = "v2-storage")]
+pub fn publish_serving_checkpoint(
+    _surface: SurfaceWrite,
+    tx: &rusqlite::Transaction<'_>,
+    bytes: &[u8],
+) -> rusqlite::Result<()> {
+    tx.execute("INSERT INTO serving_checkpoint VALUES(1,?) ON CONFLICT(singleton) DO UPDATE SET body=excluded.body",[bytes])?;
+    Ok(())
 }

@@ -541,3 +541,529 @@ fn generated_encrypted_requests_reserve_frontier_before_preparation() {
     }
     assert_eq!(Spool::open(&path).unwrap().status().unwrap().pending, 80);
 }
+
+fn erasure_identity(n: u8) -> Identity {
+    use std::io::Write;
+    let mut file = tempfile::NamedTempFile::new().unwrap();
+    file.write_all(&[n; 32]).unwrap();
+    Identity::load_existing(file.path()).unwrap()
+}
+fn erasure_custody(
+    root: &std::path::Path,
+    binding: &kan::evidence_store::attested::Binding,
+) -> kan::evidence_erasure_history::Access {
+    use kan::evidence_erasure_history::{Access, Record};
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(root, std::fs::Permissions::from_mode(0o700)).unwrap();
+    }
+    let mut access:Access=serde_json::from_value(serde_json::json!({"directory":root,"binding":{"profile":"admitted","archive":service::hex(&binding.archive),"scope":service::hex(&binding.scope),"issuer":binding.issuer},"owner":erasure_identity(9).did().as_str()})).unwrap();
+    access.initialize().unwrap();
+    let genesis = Record::sign(
+        access.preview(None, "1".repeat(64)).unwrap(),
+        &erasure_identity(9),
+    )
+    .unwrap();
+    let id = genesis.id().unwrap();
+    access.append(genesis).unwrap();
+    access.minimum = Some(id);
+    access
+}
+fn authorize_erasure(
+    root: &std::path::Path,
+    binding: &kan::evidence_store::attested::Binding,
+    access: &kan::evidence_erasure_history::Access,
+    sequences: &[u64],
+) {
+    let mut archive = kan::evidence_store::attested::Archive::open(root, binding.clone()).unwrap();
+    let plan = archive
+        .preview_erasure(sequences, "2".repeat(64), 2000)
+        .unwrap();
+    let record = kan::evidence_store::erasure::Record::sign(plan, &erasure_identity(8)).unwrap();
+    let owner = kan::evidence_erasure_history::Record::sign(
+        access
+            .preview(Some(record.clone()), "3".repeat(64))
+            .unwrap(),
+        &erasure_identity(9),
+    )
+    .unwrap();
+    access.append(owner).unwrap();
+    archive.apply_erasure(record).unwrap();
+}
+#[test]
+fn erased_spool_ack_and_lost_ack_head_keep_authenticated_cursor_and_unrelated_delivery() {
+    use kan::evidence_store::attested::{Archive, Binding};
+    let local = tempfile::tempdir().unwrap();
+    let custody = tempfile::tempdir().unwrap();
+    let root = local.path().join("archive");
+    let path = local.path().join("spool.sqlite");
+    let writer = erasure_identity(6);
+    let issuer = erasure_identity(8);
+    let binding = Binding {
+        archive: [21; 32],
+        scope: [1; 32],
+        issuer: issuer.did().to_string(),
+    };
+    let access = erasure_custody(custody.path(), &binding);
+    let mut remote = service::AdmittingService::new(
+        Archive::create(&root, binding.clone()).unwrap(),
+        issuer,
+        vec![Grant {
+            principal: writer.did().to_string(),
+            append: true,
+            inventory: false,
+        }],
+    )
+    .unwrap()
+    .with_erasure_history(access.clone())
+    .unwrap();
+    let mut spool = create(&path, &writer, &erasure_identity(8), 1024 * 1024);
+    let mut requests = Vec::new();
+    let mut replies = Vec::new();
+    for n in 0..4 {
+        let next = spool.frontier().unwrap();
+        let raw = append(&writer, &binding.issuer, 1, n as u8, n, next.previous);
+        spool.enqueue(&raw).unwrap();
+        if n < 3 {
+            let reply = remote.dispatch(&raw, 1000 + n).unwrap().bytes().unwrap();
+            if n < 2 {
+                spool.acknowledge(&reply).unwrap();
+            }
+            replies.push(reply);
+        }
+        requests.push(raw);
+    }
+    let expected = spool.frontier().unwrap();
+    let mut already_open = Spool::open(&path).unwrap();
+    authorize_erasure(&root, &binding, &access, &[1, 2, 3]);
+    let done = spool.reconcile_erasure(&access).unwrap();
+    assert_eq!(done["retired_operations"], 3);
+    assert_eq!(spool.frontier().unwrap(), expected);
+    assert_eq!(spool.head().unwrap(), Some(requests[3].clone()));
+    assert_eq!(already_open.head().unwrap(), Some(requests[3].clone()));
+    assert!(
+        already_open.acknowledge(&replies[2]).is_err(),
+        "late ACK must not release the new head"
+    );
+    for n in 0..3 {
+        assert!(
+            spool
+                .operation(&service::hex(&[n; 16]))
+                .unwrap()
+                .unwrap()
+                .erased
+        );
+        assert!(matches!(
+            already_open.enqueue(&requests[n as usize]),
+            Err(Error::Erased)
+        ));
+    }
+    let db = rusqlite::Connection::open(&path).unwrap();
+    let ack: (Option<Vec<u8>>, Option<Vec<u8>>) = db
+        .query_row(
+            "SELECT acknowledged_request,acknowledged_reply FROM state",
+            [],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!(ack, (None, None));
+    assert_eq!(
+        db.query_row("SELECT count(*) FROM erasure_authorizations", [], |r| r
+            .get::<_, i64>(0))
+            .unwrap(),
+        1,
+        "large signed authorization retained once"
+    );
+    assert_eq!(
+        db.query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0))
+            .unwrap(),
+        3
+    );
+    let response = remote
+        .dispatch(&requests[3], 2001)
+        .unwrap()
+        .bytes()
+        .unwrap();
+    spool.acknowledge(&response).unwrap();
+    assert_eq!(spool.status().unwrap().pending, 0);
+    assert_eq!(
+        spool.reconcile_erasure(&access).unwrap()["retired_operations"],
+        0
+    );
+    drop(spool);
+    drop(already_open);
+    drop(db);
+    let spool = Spool::open(&path).unwrap();
+    assert!(spool.head().unwrap().is_none());
+    assert_eq!(spool.frontier().unwrap(), expected);
+    assert!(spool.reclaim_erased_pages().unwrap());
+    drop(spool);
+    let file = std::fs::read(&path).unwrap();
+    for raw in &requests[..3] {
+        assert!(!file.windows(raw.len()).any(|p| p == raw));
+    }
+    // A minimal proof cannot be replaced with fabricated cursor metadata.
+    let db = rusqlite::Connection::open(&path).unwrap();
+    db.execute(
+        "UPDATE erased_operations SET manifest=x'00' WHERE position=2",
+        [],
+    )
+    .unwrap();
+    drop(db);
+    assert!(Spool::open(&path).is_err());
+}
+#[test]
+fn spool_erasure_refuses_nonprefix_removal_then_retires_after_unrelated_ack() {
+    use kan::evidence_store::attested::{Archive, Binding};
+    let local = tempfile::tempdir().unwrap();
+    let custody = tempfile::tempdir().unwrap();
+    let root = local.path().join("archive");
+    let path = local.path().join("spool.sqlite");
+    let writer = erasure_identity(6);
+    let binding = Binding {
+        archive: [22; 32],
+        scope: [1; 32],
+        issuer: erasure_identity(8).did().to_string(),
+    };
+    let access = erasure_custody(custody.path(), &binding);
+    let mut remote = service::AdmittingService::new(
+        Archive::create(&root, binding.clone()).unwrap(),
+        erasure_identity(8),
+        vec![Grant {
+            principal: writer.did().to_string(),
+            append: true,
+            inventory: false,
+        }],
+    )
+    .unwrap();
+    let mut spool = create(&path, &writer, &erasure_identity(8), 1024 * 1024);
+    let mut replies = Vec::new();
+    let mut requests = Vec::new();
+    for n in 0..2 {
+        let next = spool.frontier().unwrap();
+        let raw = append(&writer, &binding.issuer, 1, n as u8, n, next.previous);
+        spool.enqueue(&raw).unwrap();
+        replies.push(remote.dispatch(&raw, 1000).unwrap().bytes().unwrap());
+        requests.push(raw);
+    }
+    authorize_erasure(&root, &binding, &access, &[2]);
+    assert!(matches!(
+        spool.reconcile_erasure(&access),
+        Err(Error::Conflict)
+    ));
+    assert_eq!(spool.head().unwrap(), Some(requests[0].clone()));
+    assert_eq!(spool.status().unwrap().pending, 2);
+    assert!(
+        !spool
+            .operation(&service::hex(&[1; 16]))
+            .unwrap()
+            .unwrap()
+            .erased
+    );
+    spool.acknowledge(&replies[0]).unwrap();
+    spool.reconcile_erasure(&access).unwrap();
+    assert!(spool.head().unwrap().is_none());
+    assert_eq!(
+        spool.enqueue(&requests[0]).unwrap(),
+        Enqueue::AlreadyAcknowledged
+    );
+    assert!(matches!(spool.enqueue(&requests[1]), Err(Error::Erased)));
+    drop(spool);
+    let mut spool = Spool::open(&path).unwrap();
+    assert_eq!(spool.status().unwrap().pending, 0);
+    let mut foreign = access.clone();
+    foreign.owner = erasure_identity(10).did().to_string();
+    assert!(spool.reconcile_erasure(&foreign).is_err());
+}
+
+#[test]
+fn spool_erasure_makes_prefix_progress_without_skipping_unaffected_requests() {
+    use kan::evidence_store::attested::{Archive, Binding};
+    let local = tempfile::tempdir().unwrap();
+    let custody = tempfile::tempdir().unwrap();
+    let root = local.path().join("archive");
+    let path = local.path().join("spool.sqlite");
+    let writer = erasure_identity(6);
+    let binding = Binding {
+        archive: [23; 32],
+        scope: [1; 32],
+        issuer: erasure_identity(8).did().to_string(),
+    };
+    let access = erasure_custody(custody.path(), &binding);
+    let mut remote = service::AdmittingService::new(
+        Archive::create(&root, binding.clone()).unwrap(),
+        erasure_identity(8),
+        vec![Grant {
+            principal: writer.did().to_string(),
+            append: true,
+            inventory: false,
+        }],
+    )
+    .unwrap();
+    let mut spool = create(&path, &writer, &erasure_identity(8), 1024 * 1024);
+    let mut replies = Vec::new();
+    let mut requests = Vec::new();
+    for n in 0..3 {
+        let next = spool.frontier().unwrap();
+        let raw = append(&writer, &binding.issuer, 1, n as u8, n, next.previous);
+        spool.enqueue(&raw).unwrap();
+        replies.push(remote.dispatch(&raw, 1000).unwrap().bytes().unwrap());
+        requests.push(raw);
+    }
+    authorize_erasure(&root, &binding, &access, &[1, 3]);
+    let first = spool.reconcile_erasure(&access).unwrap();
+    assert_eq!(first["state"], "partial-admitted-erasure");
+    assert_eq!(first["retired_operations"], 1);
+    assert_eq!(first["deferred_pending_operations"], 1);
+    assert_eq!(spool.head().unwrap(), Some(requests[1].clone()));
+    assert_eq!(spool.status().unwrap().pending, 2);
+    spool.acknowledge(&replies[1]).unwrap();
+    let second = spool.reconcile_erasure(&access).unwrap();
+    assert_eq!(second["state"], "admitted-erasure-reconciled");
+    assert_eq!(second["retired_operations"], 1);
+    assert!(spool.head().unwrap().is_none());
+    drop(spool);
+    assert!(Spool::open(&path).unwrap().head().unwrap().is_none());
+    #[cfg(feature = "v2-service")]
+    {
+        let config = local.path().join("custody.json");
+        std::fs::write(&config, serde_json::to_vec(&access).unwrap()).unwrap();
+        let output = std::process::Command::new(env!("CARGO_BIN_EXE_kan-v2"))
+            .args(["reconcile-spool-erasure"])
+            .arg(&path)
+            .arg("--erasure-history")
+            .arg(config)
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(report["retired_operations"], 0);
+        assert_eq!(report["page_reclamation"], "completed");
+    }
+}
+
+#[test]
+fn managed_spool_fences_current_erasure_across_live_handles_and_old_restore() {
+    use kan::evidence_store::attested::{Archive, Binding};
+    let local = tempfile::tempdir().unwrap();
+    let custody = tempfile::tempdir().unwrap();
+    let root = local.path().join("archive");
+    let path = local.path().join("spool.sqlite");
+    let restored = local.path().join("restored.sqlite");
+    let writer = erasure_identity(6);
+    let binding = Binding {
+        archive: [24; 32],
+        scope: [1; 32],
+        issuer: erasure_identity(8).did().to_string(),
+    };
+    let access = erasure_custody(custody.path(), &binding);
+    let mut remote = service::AdmittingService::new(
+        Archive::create(&root, binding.clone()).unwrap(),
+        erasure_identity(8),
+        vec![Grant {
+            principal: writer.did().to_string(),
+            append: true,
+            inventory: false,
+        }],
+    )
+    .unwrap();
+    let mut spool = create(&path, &writer, &erasure_identity(8), 1024 * 1024);
+    let mut requests = Vec::new();
+    let mut replies = Vec::new();
+    for n in 0..2 {
+        let raw = append(
+            &writer,
+            &binding.issuer,
+            1,
+            n as u8,
+            n,
+            spool.frontier().unwrap().previous,
+        );
+        spool.enqueue(&raw).unwrap();
+        replies.push(remote.dispatch(&raw, 1000).unwrap().bytes().unwrap());
+        requests.push(raw);
+    }
+    drop(spool);
+    std::fs::copy(&path, &restored).unwrap();
+    let mut live = Spool::open(&path)
+        .unwrap()
+        .with_erasure_history(access.clone())
+        .unwrap();
+    authorize_erasure(&root, &binding, &access, &[2]);
+    {
+        let mut queue = Spool::open(&restored)
+            .unwrap()
+            .with_erasure_history(access.clone())
+            .unwrap();
+        assert_eq!(
+            queue.head().unwrap(),
+            Some(requests[0].clone()),
+            "unaffected predecessor stays deliverable"
+        );
+        assert!(
+            queue
+                .operation(&service::hex(&[1; 16]))
+                .unwrap()
+                .unwrap()
+                .erased
+        );
+        assert!(matches!(queue.enqueue(&requests[1]), Err(Error::Erased)));
+        queue.acknowledge(&replies[0]).unwrap();
+        assert!(
+            matches!(queue.head(), Err(Error::Erased)),
+            "profile-2 backup cannot export erased bytes"
+        );
+        assert!(matches!(queue.acknowledge(&replies[1]), Err(Error::Erased)));
+        #[cfg(feature = "v2-crypto")]
+        assert!(
+            tokio::runtime::Runtime::new()
+                .unwrap()
+                .block_on(kan::evidence_delivery::deliver_one(
+                    &mut queue,
+                    "not-an-endpoint"
+                ))
+                .unwrap()
+                .is_none(),
+            "retirement precedes any network activity"
+        );
+    }
+    live.acknowledge(&replies[0]).unwrap();
+    assert!(
+        matches!(live.head(), Err(Error::Erased)),
+        "live enrollment refreshes owner history"
+    );
+    #[cfg(feature = "v2-service")]
+    {
+        let config = local.path().join("custody.json");
+        std::fs::write(&config, serde_json::to_vec(&access).unwrap()).unwrap();
+        let out = std::process::Command::new(env!("CARGO_BIN_EXE_kan-v2"))
+            .arg("spool-head")
+            .arg(&path)
+            .arg("--erasure-history")
+            .arg(config)
+            .output()
+            .unwrap();
+        assert!(!out.status.success());
+        assert!(out.stdout.is_empty(), "managed CLI emits no erased request");
+    }
+    let history_path = custody.path().to_path_buf();
+    let unavailable = local.path().join("unavailable-history");
+    std::fs::rename(&history_path, &unavailable).unwrap();
+    assert!(
+        live.head().is_err(),
+        "missing independent custody fails closed"
+    );
+    assert!(live.enqueue(&requests[0]).is_err());
+    std::fs::rename(unavailable, history_path).unwrap();
+    let mut wrong = access.clone();
+    wrong.binding.scope = "ff".repeat(32);
+    assert!(Spool::open(&path)
+        .unwrap()
+        .with_erasure_history(wrong)
+        .is_err());
+}
+
+#[cfg(feature = "v2-crypto")]
+#[tokio::test]
+async fn managed_delivery_holds_owner_custody_until_network_ack() {
+    use kan::{
+        evidence_erasure_history::Record,
+        evidence_store::attested::{Archive, Binding},
+    };
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let local = tempfile::tempdir().unwrap();
+    let custody = tempfile::tempdir().unwrap();
+    let root = local.path().join("archive");
+    let path = local.path().join("spool.sqlite");
+    let writer = erasure_identity(6);
+    let issuer = erasure_identity(8);
+    let binding = Binding {
+        archive: [25; 32],
+        scope: [1; 32],
+        issuer: issuer.did().to_string(),
+    };
+    let access = erasure_custody(custody.path(), &binding);
+    let mut remote = service::AdmittingService::new(
+        Archive::create(&root, binding.clone()).unwrap(),
+        issuer,
+        vec![Grant {
+            principal: writer.did().to_string(),
+            append: true,
+            inventory: false,
+        }],
+    )
+    .unwrap();
+    let raw = append(&writer, &binding.issuer, 1, 0, 0, None);
+    let reply = remote.dispatch(&raw, 1000).unwrap().bytes().unwrap();
+    let mut spool = create(&path, &writer, &erasure_identity(8), 1024 * 1024)
+        .with_erasure_history(access.clone())
+        .unwrap();
+    spool.enqueue(&raw).unwrap();
+    let mut archive = Archive::open(&root, binding).unwrap();
+    let erasure = kan::evidence_store::erasure::Record::sign(
+        archive.preview_erasure(&[1], "4".repeat(64), 2000).unwrap(),
+        &erasure_identity(8),
+    )
+    .unwrap();
+    let authorization = Record::sign(
+        access
+            .preview(Some(erasure.clone()), "5".repeat(64))
+            .unwrap(),
+        &erasure_identity(9),
+    )
+    .unwrap();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let endpoint = format!("http://{}/v1/rpc", listener.local_addr().unwrap());
+    let server = async {
+        let (mut socket, _) = listener.accept().await.unwrap();
+        let mut received = Vec::new();
+        loop {
+            let mut buf = [0; 4096];
+            let n = socket.read(&mut buf).await.unwrap();
+            assert!(n > 0);
+            received.extend_from_slice(&buf[..n]);
+            assert!(received.len() <= raw.len() + 65536);
+            if received
+                .windows(4)
+                .position(|b| b == b"\r\n\r\n")
+                .is_some_and(|header| received.len() >= header + 4 + raw.len())
+            {
+                break;
+            }
+        }
+        assert!(
+            access.append(authorization.clone()).is_err(),
+            "owner publication must not race an in-flight old request"
+        );
+        socket.write_all(format!("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",reply.len()).as_bytes()).await.unwrap();
+        socket.write_all(&reply).await.unwrap();
+    };
+    let (_, delivered) = tokio::time::timeout(std::time::Duration::from_secs(10), async {
+        tokio::join!(
+            server,
+            kan::evidence_delivery::deliver_one(&mut spool, &endpoint)
+        )
+    })
+    .await
+    .unwrap();
+    assert!(delivered.unwrap().is_some());
+    access.append(authorization).unwrap();
+    archive.apply_erasure(erasure).unwrap();
+    assert!(kan::evidence_delivery::deliver_one(&mut spool, "unused")
+        .await
+        .unwrap()
+        .is_none());
+    assert!(
+        spool
+            .operation(&service::hex(&[0; 16]))
+            .unwrap()
+            .unwrap()
+            .erased
+    );
+    assert!(Spool::open(&path).unwrap().head().unwrap().is_none());
+}

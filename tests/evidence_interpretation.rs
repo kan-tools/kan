@@ -438,3 +438,37 @@ fn missing_event_and_delta_types_are_malformed_not_future_extensions() {
         assert!(!d.coherent_stop_observed);
     }
 }
+
+#[test]
+fn harness_jsonl_keeps_tools_compaction_unknowns_and_original_line_ranges() {
+    let lines = [
+        "{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"hello\"},{\"type\":\"tool_use\",\"id\":\"t\",\"name\":\"read\",\"input\":{\"path\":\"a\"}}]}}\n",
+        "{\"type\":\"summary\",\"summary\":\"compacted\",\"parentUuid\":\"branch-parent\"}\n",
+        "{\"type\":\"future\",\"extension\":true}\n",
+        "{\"type\":\"user\",\"type\":\"assistant\"}\n",
+    ];
+    let raw = lines.concat();
+    let doc = parse(raw.as_bytes(), p::Format::HarnessJsonl);
+    assert!(doc.items.iter().any(|i| i.kind == p::Kind::ToolUse));
+    assert!(doc.items.iter().any(|i| i.text.as_deref() == Some("hello")));
+    let summary = doc
+        .items
+        .iter()
+        .find(|i| i.kind == p::Kind::Context)
+        .unwrap();
+    assert_eq!(
+        summary.region,
+        lines[0].len()..lines[0].len() + lines[1].len()
+    );
+    assert_eq!(
+        summary.event.as_ref().unwrap()["parentUuid"],
+        "branch-parent"
+    );
+    assert!(doc
+        .items
+        .iter()
+        .any(|i| i.kind == p::Kind::Protocol && i.event.as_ref().unwrap()["extension"] == true));
+    assert_eq!(doc.items.last().unwrap().kind, p::Kind::Malformed);
+    assert!(doc.items.iter().all(|i| i.pointer.is_none()));
+    assert!(!doc.coherent_stop_observed);
+}

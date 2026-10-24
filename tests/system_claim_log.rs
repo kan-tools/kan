@@ -120,6 +120,19 @@ async fn kan_actor_authorship_and_atproto_repository_approval_stay_separate() {
         decoded.claim,
         DecodedClaim::Supported(SupportedClaim::Claim(decoded)) if decoded == claim
     ));
+    assert_eq!(
+        log.iter_decoded(VerificationContext::ActiveDidKan(actor.state()))
+            .await
+            .unwrap()
+            .len(),
+        1
+    );
+    // Enumeration must use the caller's current identity evidence on each
+    // call; a previous successful read cannot authorize a different context.
+    assert!(log
+        .iter_decoded(VerificationContext::StaticDidKey)
+        .await
+        .is_err());
 
     let head: Cid = std::fs::read_to_string(log_dir.join("HEAD"))
         .unwrap()

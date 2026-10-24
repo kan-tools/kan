@@ -17,18 +17,25 @@ pub mod attested;
 pub mod bundle;
 pub mod copied;
 pub mod copy_upgrade;
+pub mod erasure;
 pub mod inventory;
+pub mod serving;
 
 type CommitProofHook<'a> =
     dyn FnMut(&rusqlite::Transaction<'_>, &Committed, &mut dyn FnMut(Boundary)) -> Result<()> + 'a;
 
+enum CommitMode<'a> {
+    Unpartitioned,
+    Partitioned,
+    InitiallyErased(&'a erasure::Record),
+}
 pub const MAX_CHUNK: usize = 4 * 1024 * 1024;
 const APPLICATION_ID: i64 = 0x4b563201;
 // Two range probes use the existing scope-leading indexes, including when every
 // retained row has the requested scope. `scope != ?` scans that entire index.
 const FOREIGN_SCOPE: &str = "SELECT EXISTS(SELECT 1 FROM commits WHERE scope < ?1) OR EXISTS(SELECT 1 FROM commits WHERE scope > ?1)";
 const SCHEMA: &str = "
-CREATE TABLE objects(cid TEXT PRIMARY KEY, bytes BLOB NOT NULL CHECK(length(bytes)>0 AND length(bytes)<=4194304)) WITHOUT ROWID;
+CREATE TABLE objects(cid TEXT NOT NULL PRIMARY KEY, bytes BLOB NOT NULL CHECK(length(bytes)>0 AND length(bytes)<=4194304));
 CREATE TABLE commits(
  sequence INTEGER PRIMARY KEY, cid TEXT NOT NULL UNIQUE, scope BLOB NOT NULL, writer TEXT NOT NULL,
  operation BLOB NOT NULL, position INTEGER NOT NULL, previous TEXT,
@@ -43,6 +50,29 @@ PRAGMA application_id=1263940097;
 PRAGMA user_version=1;
 ";
 
+const LEGACY_OBJECTS_SCHEMA: &str = "CREATE TABLE objects(cid TEXT PRIMARY KEY, bytes BLOB NOT NULL CHECK(length(bytes)>0 AND length(bytes)<=4194304)) WITHOUT ROWID";
+const ROWID_OBJECTS_SCHEMA: &str = "CREATE TABLE objects(cid TEXT NOT NULL PRIMARY KEY, bytes BLOB NOT NULL CHECK(length(bytes)>0 AND length(bytes)<=4194304))";
+/// Payload lookup must never infer a safe layout merely from a profile number.
+fn rowid_objects(conn: &Connection) -> Result<bool> {
+    let (len,sql): (i64,String) = conn.query_row("SELECT length(sql),substr(sql,1,4096) FROM sqlite_schema WHERE type='table' AND name='objects'",[],|r|Ok((r.get(0)?,r.get(1)?)))?;
+    if len != sql.len() as i64 {
+        return Err(Error::Invalid("unsupported writable archive schema"));
+    }
+    match sql.as_str() {
+        ROWID_OBJECTS_SCHEMA => Ok(true),
+        LEGACY_OBJECTS_SCHEMA => Ok(false),
+        _ => Err(Error::Invalid("unsupported writable archive schema")),
+    }
+}
+fn expected_base_schema(source: &Connection, expected: &Connection) -> Result<()> {
+    if rowid_objects(source)? {
+        expected.execute_batch(SCHEMA)?;
+    } else {
+        expected.execute_batch(&SCHEMA.replace(ROWID_OBJECTS_SCHEMA, LEGACY_OBJECTS_SCHEMA))?;
+    }
+    Ok(())
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error(transparent)]
@@ -55,6 +85,8 @@ pub enum Error {
     Invalid(&'static str),
     #[error("conflict: {0}")]
     Conflict(&'static str),
+    #[error("erased by owner: {0}")]
+    Erased(String),
     #[error("missing object: {0}")]
     Missing(String),
     #[error("missing commit: {0}")]
@@ -93,7 +125,9 @@ pub enum Boundary {
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct Verification {
+    /// Object identities include authorized erasure markers.
     pub objects: u64,
+    pub erased_objects: u64,
     pub commits: u64,
     pub bytes: u64,
     pub snapshot: Snapshot,
@@ -238,6 +272,9 @@ impl RecoveryReader {
     }
 
     pub fn read_object(&self, id: &Cid) -> Result<Vec<u8>> {
+        if erasure::erased(&self.ledger.conn, &id.to_string())? {
+            return Err(Error::Erased(id.to_string()));
+        }
         // WITHOUT ROWID key seeks can materialize an entire corrupt object row
         // before SQLITE_LIMIT_LENGTH applies. This offline recovery path scans
         // keys instead; NOT INDEXED/+cid prohibit an index seek. Ordinary Ledger
@@ -295,6 +332,7 @@ impl RecoveryReader {
                 copied::check_plan(&self.ledger.conn, binding, plan)?;
             }
         }
+        let erasures = erasure::load(&self.ledger.conn)?;
         let destination = sqlite_destination(&self.source, destination)?;
         // surface-write: evidence-recovery:archive.sqlite
         crate::persistence::write_new_owner_only(
@@ -324,9 +362,12 @@ impl RecoveryReader {
                 let id: String = row.get(0)?;
                 let length: i64 = row.get(1)?;
                 let bytes: Vec<u8> = row.get(2)?;
-                if !(1..=MAX_CHUNK as i64).contains(&length)
-                    || ciphertext_cid(&bytes).to_string() != id
-                {
+                if if erasures.objects.contains_key(&id) {
+                    bytes != erasure::MARKER
+                } else {
+                    !(1..=MAX_CHUNK as i64).contains(&length)
+                        || ciphertext_cid(&bytes).to_string() != id
+                } {
                     return Err(Error::Corrupt(id));
                 }
                 tx.execute("INSERT INTO objects VALUES(?,?)", params![id, bytes])?;
@@ -373,6 +414,7 @@ impl RecoveryReader {
                 observe(RecoveryBoundary::CommitCopied);
             }
         }
+        erasure::copy_history(&self.ledger.conn, &tx)?;
         // Verify before publishing even the profile marker. This also rejects
         // raw histories with missing predecessors or conflicting slot reuse.
         let expected = target.verify_contents()?;
@@ -759,17 +801,21 @@ impl Ledger {
     }
     fn check_write_profile(&self, attested: bool) -> Result<()> {
         let expected = Connection::open_in_memory()?;
-        expected.execute_batch(SCHEMA)?;
+        expected_base_schema(&self.conn, &expected)?;
         if attested {
             expected.execute_batch(attested::SCHEMA)?;
         }
+        erasure::extend_schema(&self.conn, &expected)?;
+        serving::extend_schema(&self.conn, &expected)?;
         self.check_schema_against(&expected)
     }
     fn check_copy_schema(&self) -> Result<()> {
         let expected = Connection::open_in_memory()?;
-        expected.execute_batch(SCHEMA)?;
+        expected_base_schema(&self.conn, &expected)?;
         expected.execute_batch(attested::SCHEMA)?;
         expected.execute_batch(copied::SCHEMA)?;
+        erasure::extend_schema(&self.conn, &expected)?;
+        serving::extend_schema(&self.conn, &expected)?;
         self.check_schema_against(&expected)
     }
     fn check_schema_against(&self, expected: &Connection) -> Result<()> {
@@ -805,6 +851,16 @@ impl Ledger {
         bytes: &[u8],
         observe: &mut dyn FnMut(Boundary),
     ) -> Result<Cid> {
+        self.stage_guarded(bytes, observe, &mut |tx, id| {
+            erasure::stage_allowed(tx, &id.to_string())
+        })
+    }
+    fn stage_guarded(
+        &mut self,
+        bytes: &[u8],
+        observe: &mut dyn FnMut(Boundary),
+        guard: &mut dyn FnMut(&Connection, &Cid) -> Result<()>,
+    ) -> Result<Cid> {
         if bytes.is_empty() || bytes.len() > MAX_CHUNK {
             return Err(Error::Invalid("chunk length"));
         }
@@ -812,6 +868,7 @@ impl Ledger {
         let tx = self
             .conn
             .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        guard(&tx, &id)?;
         let prior: Option<Vec<u8>> = tx
             .query_row(
                 "SELECT bytes FROM objects WHERE cid=?",
@@ -836,6 +893,14 @@ impl Ledger {
     }
 
     pub fn read_object(&self, id: &Cid) -> Result<Vec<u8>> {
+        if erasure::erased(&self.conn, &id.to_string())? {
+            return Err(Error::Erased(id.to_string()));
+        }
+        self.retained_object(id)
+    }
+    // Only callers holding a pinned transaction and an already checked erasure
+    // history may skip repeating that history's signature verification.
+    fn retained_object(&self, id: &Cid) -> Result<Vec<u8>> {
         let bytes: Vec<u8> = self
             .conn
             .query_row(
@@ -861,13 +926,27 @@ impl Ledger {
         receipt: &[u8],
         observe: &mut dyn FnMut(Boundary),
     ) -> Result<Committed> {
-        self.commit_inner(manifest, receipt, observe, false, None, None)
+        self.commit_inner(
+            manifest,
+            receipt,
+            observe,
+            CommitMode::Unpartitioned,
+            None,
+            None,
+        )
     }
 
     /// Service partition admission: serialized with all other writers. The first
     /// commit binds an empty partition; later service commits cannot mix scopes.
     pub fn commit_partition(&mut self, manifest: &[u8], receipt: &[u8]) -> Result<Committed> {
-        self.commit_inner(manifest, receipt, &mut |_| {}, true, None, None)
+        self.commit_inner(
+            manifest,
+            receipt,
+            &mut |_| {},
+            CommitMode::Partitioned,
+            None,
+            None,
+        )
     }
 
     /// Admit only if no commit has arrived since the caller audited `expected`.
@@ -879,7 +958,14 @@ impl Ledger {
         receipt: &[u8],
         expected: &Snapshot,
     ) -> Result<Committed> {
-        self.commit_inner(manifest, receipt, &mut |_| {}, true, Some(expected), None)
+        self.commit_inner(
+            manifest,
+            receipt,
+            &mut |_| {},
+            CommitMode::Partitioned,
+            Some(expected),
+            None,
+        )
     }
 
     fn commit_inner(
@@ -887,7 +973,7 @@ impl Ledger {
         manifest: &[u8],
         receipt: &[u8],
         observe: &mut dyn FnMut(Boundary),
-        single_scope: bool,
+        mode: CommitMode<'_>,
         expected_snapshot: Option<&Snapshot>,
         mut proof_hook: Option<&mut CommitProofHook<'_>>,
     ) -> Result<Committed> {
@@ -925,7 +1011,9 @@ impl Ledger {
                 return Err(Error::Conflict("service audit frontier"));
             }
         }
-        if single_scope && tx.query_row(FOREIGN_SCOPE, [scope], |row| row.get::<_, bool>(0))? {
+        if !matches!(mode, CommitMode::Unpartitioned)
+            && tx.query_row(FOREIGN_SCOPE, [scope], |row| row.get::<_, bool>(0))?
+        {
             return Err(Error::Conflict("service partition scope"));
         }
         let prior: Option<(i64,String,Vec<u8>,Vec<u8>)> = tx.query_row(
@@ -958,6 +1046,9 @@ impl Ledger {
         if position != expected || previous.as_ref() != head.as_ref().map(|(_, c)| c) {
             return Err(Error::Conflict("writer frontier"));
         }
+        if let CommitMode::InitiallyErased(record) = &mode {
+            erasure::install_initial(&tx, record, &manifest)?;
+        }
         for e in entries(&manifest) {
             let object = cid(&e["ciphertext"]);
             let bytes: Vec<u8> = tx
@@ -966,7 +1057,9 @@ impl Ledger {
                 })
                 .optional()?
                 .ok_or_else(|| Error::Missing(object.clone()))?;
-            if bytes.len() as i64 != number(&e["length"])
+            if matches!(mode, CommitMode::InitiallyErased(_)) {
+                erasure::check_marker(&tx, &object)?;
+            } else if bytes.len() as i64 != number(&e["length"])
                 || ciphertext_cid(&bytes).to_string() != object
             {
                 return Err(Error::Corrupt(object));
@@ -1098,12 +1191,21 @@ impl Ledger {
             return Err(Error::Corrupt("foreign keys".into()));
         }
         let snapshot = self.snapshot()?;
-        let (mut objects, mut bytes, mut commits) = (0, 0, 0);
+        let erasures = erasure::load(tx)?;
+        let (mut objects, mut bytes, mut commits, mut erased_objects) = (0, 0, 0, 0);
         let mut stmt = tx.prepare("SELECT cid,bytes FROM objects ORDER BY cid")?;
         let mut rows = stmt.query([])?;
         while let Some(row) = rows.next()? {
             let id: String = row.get(0)?;
             let payload: Vec<u8> = row.get(1)?;
+            if erasures.objects.contains_key(&id) {
+                if payload != erasure::MARKER {
+                    return Err(Error::Corrupt("erased object retains bytes".into()));
+                }
+                objects += 1;
+                erased_objects += 1;
+                continue;
+            }
             if payload.is_empty()
                 || payload.len() > MAX_CHUNK
                 || ciphertext_cid(&payload).to_string() != id
@@ -1151,7 +1253,11 @@ impl Ledger {
                 }) {
                     return Err(Error::Corrupt("binding".into()));
                 }
-                let payload = self.read_object(
+                if erasures.objects.contains_key(&cid(&e["ciphertext"])) {
+                    erasure::check_marker(tx, &cid(&e["ciphertext"]))?;
+                    continue;
+                }
+                let payload = self.retained_object(
                     &cid(&e["ciphertext"])
                         .parse()
                         .map_err(|_| Error::Corrupt("CID".into()))?,
@@ -1187,6 +1293,7 @@ impl Ledger {
         drop(stmt);
         Ok(Verification {
             objects,
+            erased_objects,
             commits,
             bytes,
             snapshot,

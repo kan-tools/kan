@@ -3,7 +3,7 @@ use crate::{
     evidence_delivery, evidence_service as service, evidence_spool::Spool,
     migration_preflight as preflight, sign::Identity,
 };
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{
     fs::{self, File},
@@ -35,7 +35,7 @@ pub enum Error {
     Invalid(&'static str),
 }
 type Result<T> = std::result::Result<T, Error>;
-#[derive(Debug, Clone, Copy, Serialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum Selection {
     Workspace,
@@ -94,6 +94,7 @@ pub struct Progress {
     pub total_operations: usize,
     pub retained_operations: usize,
     pub pending_operations: usize,
+    pub erased_operations: usize,
     pub newly_queued: usize,
     pub queue_coverage_complete: bool,
     pub recovery_verified: bool,
@@ -245,6 +246,67 @@ impl Plan {
     pub fn summary(&self) -> serde_json::Value {
         serde_json::json!({"plan":self.id,"inventory":self.inventory,"data_chunks":self.files.iter().map(|f|f.chunks.len()).sum::<usize>(),"total_operations":self.entries().len(),"ready_for_cutover":false,"recovery_verified":false})
     }
+    /// Compare a recovery copy with this exact inventory and recheck the source.
+    /// This does not fence writers, certify native semantics, or activate a store.
+    pub fn reconcile(&self, recovered: &Path, spool: &mut Spool) -> Result<serde_json::Value> {
+        let root = fs::symlink_metadata(recovered)?;
+        if !root.is_dir() || root.file_type().is_symlink() {
+            return Err(Error::Invalid("recovery directory"));
+        }
+        let plan_file = source_file(recovered, Path::new("plan.json"))?;
+        if plan_file.metadata()?.len() != self.document.len() as u64 {
+            return Err(Error::PlanMismatch);
+        }
+        let mut document = Vec::new();
+        plan_file
+            .take(MAX_PLAN as u64 + 1)
+            .read_to_end(&mut document)?;
+        if document != self.document {
+            return Err(Error::PlanMismatch);
+        }
+        let mut total = 0u64;
+        let mut buffer = vec![0; CHUNK];
+        for expected in &self.files {
+            let mut file = source_file(recovered, &Path::new("files").join(&expected.path))?;
+            let before = file.metadata()?;
+            if before.len() != expected.length {
+                return Err(Error::Changed);
+            }
+            let mut hash = Sha256::new();
+            let mut length = 0u64;
+            loop {
+                let n = file.read(&mut buffer)?;
+                if n == 0 {
+                    break;
+                }
+                length += n as u64;
+                if length > expected.length {
+                    return Err(Error::Changed);
+                }
+                hash.update(&buffer[..n]);
+            }
+            if length != expected.length
+                || service::hex(&hash.finalize()) != expected.sha256
+                || !same(&before, &file.metadata()?)
+            {
+                return Err(Error::Changed);
+            }
+            total = total.checked_add(length).ok_or(Error::Limit)?;
+        }
+        let current = Self::build(
+            &self.root,
+            self.selection,
+            self.source_id,
+            self.recipient,
+            spool,
+        )?;
+        if current.id != self.id {
+            return Err(Error::Changed);
+        }
+        Ok(
+            serde_json::json!({"plan":self.id,"source_id":service::hex(&self.source_id),"verified_files":self.files.len(),"verified_bytes":total.to_string(),"current_source_matches":true,"recovered_selected_bytes_match":true,"delivery":self.progress(spool)?,"source_writers_fenced":false,"native_semantics_verified":false,"independent_backup":false,"ready_for_cutover":false,"remaining_preconditions":["Fence source writers and reconcile the final snapshot","Verify repository membership, identities and native read views","Verify an independent backup and recovery key package","Explicitly authorize activation; retain the original store"]}),
+        )
+    }
     fn entries(&self) -> Vec<Entry> {
         let mut entries = (0..self.document.len().div_ceil(CHUNK))
             .map(Entry::Inventory)
@@ -337,10 +399,15 @@ impl Plan {
         let entries = self.entries();
         let mut retained = 0;
         let mut pending = 0;
+        let mut erased = 0;
         for ordinal in 0..entries.len() {
             if let Some(op) = spool.operation(&service::hex(&self.operation(ordinal)))? {
-                retained += 1;
-                pending += usize::from(op.pending);
+                if op.erased {
+                    erased += 1;
+                } else {
+                    retained += 1;
+                    pending += usize::from(op.pending);
+                }
             }
         }
         Ok(Progress {
@@ -348,6 +415,7 @@ impl Plan {
             total_operations: entries.len(),
             retained_operations: retained,
             pending_operations: pending,
+            erased_operations: erased,
             newly_queued: 0,
             queue_coverage_complete: retained == entries.len(),
             recovery_verified: false,
@@ -385,7 +453,10 @@ impl Plan {
         let mut added = 0;
         for (ordinal, entry) in self.entries().into_iter().enumerate() {
             let operation = self.operation(ordinal);
-            if spool.operation(&service::hex(&operation))?.is_some() {
+            if let Some(retained) = spool.operation(&service::hex(&operation))? {
+                if retained.erased {
+                    return Err(Error::Invalid("import operation explicitly erased"));
+                }
                 continue;
             }
             if added == limit {

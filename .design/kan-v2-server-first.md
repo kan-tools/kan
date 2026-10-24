@@ -52,7 +52,7 @@ All criteria below are **implementation intent**, not claims that tests exist or
 - [ ] AC-16: Intent; witness `bare_host_restore`: restore the last verified checkpoint on a clean host using the independent key package; enumerate every committed event and dependency, rebuild projections, and show the exact uncovered interval after the checkpoint. Missing keys or objects fail visibly. (REQ-16)
 - [ ] AC-17: Intent; witness `legacy_import_idempotence`: import a mixed released/current/unknown corpus twice, compare original bytes and CIDs, preserve source mappings and counts, inject corruption, and verify source files remain untouched. (REQ-17)
 - [ ] AC-18: Intent; witness `uri_scope_continuity`: resolve old claim/scope fixtures before and after import; existing targets and four judgments agree, while new capture resources require explicit versioned URI semantics rather than overloading an existing resource. (REQ-18)
-- [ ] AC-19: Intent; witness `erasure_without_false_retraction`: prove time alone never expires a payload, remove authorized payload access, and exercise restore/index rebuild; the subject remains, missing evidence is disclosed, no semantic retraction is inferred, and policy forbids silent resurrection. The concrete key/backup erasure protocol remains conditional on Q4. (REQ-19)
+- [ ] AC-19: Intent; witness `erasure_without_false_retraction`: prove time alone never expires a payload, erase an owner-selected capture and affected managed derivatives, and exercise restore/index rebuild; the subject remains, erased evidence is disclosed, no semantic retraction is inferred, and restoration applies current erasure history before exposing evidence. Report backup purge separately; do not claim cryptographic irrecoverability from older backups and recovery keys. Policy is resolved in §10; the implementation remains required. (REQ-19)
 - [ ] AC-20: Intent; witness `multi_host_fault_campaign`: two collectors upload offline histories, duplicate chunks, forks, tampered ciphertext, truncated streams, and ambiguous provider attempts; committed evidence is retained, incompleteness is explicit, and no uncertain provider request is automatically executed again. (REQ-4, REQ-7, REQ-20)
 - [ ] AC-21: Intent; witness `local_migration_inventory`: discover a fixture tree with ordinary repositories, linked worktrees, separate stores in two checkouts of one project, a publication-only tree, an inaccessible directory, and a broken path. Preview names every discovered source and failure, performs no upload or source mutation, and does not merge stores merely because their Git remote or directory name matches. (REQ-21)
 - [ ] AC-22: Intent; witness `aggregate_import_resume`: import multiple snapshots, interrupt between batches, lose a receipt, restart, and rerun against a moved source directory. The destination contains one retained copy of each identical signed record within its permitted deduplication domain, all source-occurrence links, distinct legacy-local subject namespaces, and an explicit report of pending or conflicting records. No source bytes change. (REQ-17, REQ-21)
@@ -127,6 +127,25 @@ Each adapter emits a versioned coverage descriptor: what it can observe, what it
 Large or binary content is streamed into bounded chunks. A URL is not a retained attachment: fetching bytes, permission to fetch, source, time, and digest are separate facts. Preserve original bytes alongside disposable parsing and normalized message projections. Unknown provider fields remain in the original payload even when a parser cannot interpret them.
 
 The first integration must identify a real harness/provider pair and test supported hooks, streaming, and endpoint configuration. No broad transparent compatibility claim is made before that spike. Other adapters can follow independently because their output contract is the ledger event, not a particular provider schema.
+
+Implementation contract for the first complementary adapter: Claude Code hook
+payloads and explicit JSONL transcript snapshots enter `kan-harness-jsonl/1` as
+exact supplied bytes, chunked through the existing encrypted spool. The hook
+wrapper runs only when explicitly configured, records subagent transcript links,
+and returns success with a recording-gap diagnostic on failure. Snapshots are
+separate observations, never claimed as contemporaneous events or deduplicated
+source truth. The disposable reader retains unknown fields and exposes tool,
+summary/compaction and lineage records with enclosing original-line citations.
+Hidden events, missing hook delivery, externally referenced files and unsupported
+schema semantics remain unknown. The provider proxy remains independently needed.
+
+Reconstructed inline image/document exports accept currently authorized chunks
+from one attempt and a JSON pointer. Every source is verified again on export;
+missing, erased, contradictory or revoked chunks prevent a download. Canonical
+base64 decoding produces a binary attachment with its SHA-256 and source citations.
+This is a derived export, never replacement source authority. External URLs are
+not fetched. JSONL and SSE attachments without an unambiguous body pointer remain
+source-inspectable rather than advertising an invalid export location.
 
 ### 4. The evidence model
 
@@ -252,7 +271,275 @@ A restore starts on a clean host, verifies the checkpoint and ciphertext closure
 
 Back up committed manifests with their object closure, not an arbitrary copy of a live database file. Regular restore drills are part of acceptance, including corrupted objects and a missing-key failure. Specify recovery time and backup-lag objectives from measured deployment data before release; no numerical recovery promise is established here.
 
-The logical ledger retains subjects and provenance. Retain payloads indefinitely by default, until explicit owner erasure; storage pressure is an operational condition, not permission to expire history. Retraction changes a view; erasure removes access to retained payload material. Explicit erasure requires an authorization event, affected object/key set, confirmation of replicas/backups addressed, and an unavailable-evidence state. Retaining an immutable erasure marker does not retain the erased body. Key deletion works only to the extent all relevant wrapped keys and decrypted copies are removed; shared epoch keys alone do not permit selective cryptographic erasure. Backup retention and restore must honor erasure policy rather than silently resurrecting content. The concrete key/backup protocol remains Q4.
+The logical ledger retains subjects and provenance. Retain payloads indefinitely by default, until explicit owner erasure; storage pressure is an operational condition, not permission to expire history. Retraction changes a view; erasure removes access to retained payload material.
+
+**Owner decision, 2026-10-20:** granularity and irrecoverability are separate choices.
+The normal erasure unit is a logical capture (a request/response exchange including
+its chunks and attachments), with explicit bulk selection for sessions or archives.
+An encryption epoch is not the normal selection boundary: its shared key may cover
+unrelated captures. A preview resolves the logical selection into exact retained
+objects and affected copies/derivatives; a partial discovery window cannot claim
+to enumerate a complete capture.
+
+The v2 contract is removal from managed Kan plus prevention of resurrection through
+managed restore. It does **not** promise that old backups plus old recovery
+credentials become cryptographically unable to recover content. Per-capture
+cryptographic erasure is a separate future custody design, not a prerequisite for
+this contract and not something epoch rotation or ordinary wrapped-key backups
+already provide.
+
+The owner authorizes a concrete preview. Its durable signed erasure record retains
+minimal identifiers, attribution and disposition, never a copy of the erased body
+or a free-text excerpt. The ledger retains provenance and displays “erased by
+owner,” distinct from accidental missing/corrupt evidence and semantic retraction.
+The coordinated plan covers raw payloads, replicas, pending spools, indexes,
+normalized caches, excerpts, analysis inputs/outputs and summaries containing the
+material. Known lineage drives a conservative cascade; incomplete dependency
+knowledge must be disclosed, not treated as proof that no derivatives exist.
+Independent assertions or subjects are not semantically retracted by this cleanup.
+
+Completion is reported per destination: managed removal completed, pending purge,
+or outside Kan's control. Backups and recovery-key packages are listed explicitly.
+An acknowledged erasure must fence reads, retries, ingest replay, index rebuild and
+derived publication before asynchronous cleanup can report completion. Interrupted
+cleanup resumes from the signed authorization and cannot report a merely queued
+job as completed.
+
+A managed restore remains quarantined until it has validated and applied the
+current independently retained erasure history, including erasures newer than the
+backup. Restoring only the old backup's own erasure state is insufficient. If the
+current history or an adequate trusted checkpoint is unavailable, the restore
+cannot claim the no-resurrection guarantee or expose the restored evidence.
+As with receipt witnesses, loss of all independent erasure witnesses limits what
+can be proven; the UI must state that limitation.
+
+Removing live bytes does not prove removal from filesystem snapshots, old backups,
+distributed plaintext, or copied keys. Strong cryptographic erasure would require
+removal of every recoverable relevant key copy, including wrapped copies; shared
+epoch-key deletion would also sacrifice unrelated captures. Backup purge status
+therefore stays separate from managed erasure status. No production erasure is
+authorized by this architecture decision.
+
+#### Large selections: consent is independent of execution batches
+
+The complete logical selection must not have to fit in one HTTP request, owner
+journal row or native storage-erasure record. Discovery retains authenticated
+coordinate pages and verifies capture closure before offering approval. The
+reviewable preview binds the configured destinations, capture identities, verified
+archive frontier, recording-gap disclosure, object/byte totals and a digest of
+all ordered selection pages. The owner can inspect the pages; the approval submits
+that retained reference and digest rather than echoing a large authority payload.
+No partial discovery or client-supplied coordinate list becomes an authority.
+
+After approval, retain owner-signed consent to that exact selection and durable
+progress. Prepare bounded native issuer/owner erasure records from those selected
+coordinates, journal each exact authorization before publishing custody, and
+resume across crashes or lost acknowledgements. Existing native record-size limits
+are batch limits. Current metadata must still match the approved objects; later
+appends are outside a frozen selection. Legitimate intervening custody changes may
+require fresh chain coordinates, but never expand the approved object set. Already
+erased targets count only when verified current custody names the exact coordinates.
+Missing selection pages or custody fail closed, with an incomplete job remaining
+visible. No payload body is copied into consent or progress records.
+
+Dependent publication/workspace cleanup uses the union of the approved source
+coordinates, including approved targets already erased before resumption. It must
+not lose lineage by treating each batch as an unrelated user decision. Completion
+requires every selected source batch plus the configured copy/derivative scope to
+reconcile. The same manifest mechanism supports explicit multi-capture selection
+and owner-selected archive prefixes; session labels remain evidence associations,
+not implicit deletion authority. Existing inline single-capture jobs remain
+resumable under their original contracts. The integration branch now implements
+this manifest, consent, bounded worker and explicit bulk-selection path in the
+shared owner API and Library. Runtime qualification remains pending CI; this is
+not a release or a claim of constant-memory discovery.
+
+#### Scale qualification still outstanding
+
+Source inspection at integration commit `31fa5f1` contradicts completion of REQ-8 /
+AC-8. `src/evidence_store/attested.rs` runs `verify_for` from ordinary admission;
+that calls `Ledger::verify_contents` and `audit_prefix_cached`. The latter still
+walks the retained prefix and reads/hashes current payloads. Its bounded cache
+memoizes exact-byte cryptographic verification, not archive membership or payload
+availability. `Archive::open` also calls the full verifier. In
+`src/evidence_store/inventory.rs`, startup explicitly audits the entire metadata
+chain before servicing bounded pages. Streaming these scans bounds some memory
+but does not make I/O independent of lifetime archive size.
+
+The passing 11 MiB / 179-occurrence workload therefore proves capture/retrieval
+beyond the original reported ceiling; it does not prove the 10 GiB / 100 GiB
+acceptance criterion. The measured roughly threefold fixture preparation speedup
+is not evidence that routine append/open/range-read has the required complexity.
+This remains implementation work before full-v2 completion, followed by remote
+scale measurements. No large local build or dataset is authorized by this note.
+
+The next storage implementation must separate explicit whole-archive maintenance
+verification from normal serving while retaining authenticated membership,
+current custody and exact selected-byte verification. A fast path must not simply
+trust an unauthenticated index, file timestamp, or archived freshness claim. It
+must define how committed frontiers and indexed membership survive restart,
+concurrent writers, missing/corrupt payloads, restored old stores and erasure.
+Any added persisted frontier/index/proof changes require the surface catalog and
+protocol compatibility contract to change with the implementation. Existing strict
+owner verification/recovery APIs remain available as explicit maintenance work;
+no current integrity guarantee may disappear behind a silently changed method.
+
+Qualification must measure ordinary operations at both declared archive sizes and
+also mutate old/current metadata, payloads and checkpoints, exercising restart and
+stale restore. A bounded result may report unavailable/corrupt selected evidence;
+it must not label an unscanned archive globally verified. The accepted target stays
+unchanged; a new cache hit count or a smaller passing workload cannot close AC-8.
+
+#### Seekable payload layout
+
+New archives use a rowid `objects` table with a separate unique CID index. This
+keeps the lookup key separate from a potentially damaged large payload cell;
+length/type inspection and bounded substring reads use a CID seek followed by the
+rowid rather than scanning every object. Record fields, ciphertext CIDs, native
+proofs and logical profile numbers are unchanged. Strict schema validation accepts
+exactly this layout or the historical `WITHOUT ROWID` layout; unknown alternatives
+remain errors. Ordinary legacy readers retain their existing safe bounded-memory
+scan. Indexed proof/source readers require the seekable layout and report that
+requirement explicitly. Existing owner recovery builds a separate archive with the
+current layout and preserves the original; no live file is silently converted.
+
+Indexed inventory startup checks a signed current checkpoint and selected prefix
+membership. Every page occurrence is authenticated against the same root, including
+caller-selected continuation coordinates. Payload sampling verifies only selected
+bytes and checks erased-object membership from the current signed custody map.
+Fresh source reads reopen current state and reject changed custody before returning
+bytes. They retain existing duration, cancellation, item and byte budgets. These
+are selected-evidence claims, never a whole-archive audit claim.
+
+#### Authenticated serving-index implementation contract
+
+The bounded-serving work uses a separate content-addressed binary Patricia map;
+`src/mst/` remains unchanged because its canonical rebuild currently walks all keys.
+The new pure codec is `src/evidence_index.rs`. Its root authenticates map contents
+only when bound to an independently validated service checkpoint. It is neither a
+source-event identifier nor a replacement for archive, custody or scope authority.
+No new capture URI or reinterpretation of old claim/receipt bytes follows from it.
+
+Keys are SHA-256 over the versioned key domain, a length-framed namespace and an
+opaque coordinate. Values are bounded metadata commitments, never captured content
+or semantic names. Leaves encode a 32-byte key and a bounded value; branch nodes
+encode the first differing bit, a canonical shared prefix and two child hashes.
+Nodes use a separate versioned hash domain. Reads authenticate each traversed node
+and validate increasing branch depths and child prefixes. Missing, oversized,
+malformed or hash-mismatched nodes fail; they do not turn into absence. Insertion
+rewrites one path, preserving prior roots. At most 257 existing nodes are read for
+a 256-bit key, independent of corpus size. A returned new root is published only
+after every new node write succeeds; failed writes can leave unreachable blocks,
+but cannot change the caller's accepted root.
+
+The initial codec has no filesystem writer or service activation. Its independent
+Python reference rebuilds canonical trees from sorted key sets, while Rust updates
+one path; shared vectors and insertion-order comparisons check agreement. Fault
+checks cover missing nodes, byte substitution, invalid prefixes/depths, bounded
+lookup work and interrupted writes preserving the accepted root. These establish
+only the map primitive, not bounded archive operation or production index custody.
+
+Before wiring serving paths, add a signed checkpoint binding archive/profile,
+verified frontier and exact index root, with index blocks/checkpoint committed in
+the same transaction as evidence and receipts. Verify requested source metadata
+and payloads against that root; authenticate writer/operation/slot lookups before
+using them for admission. Existing archives need explicit verified initialization
+or rebuild; missing index state must report that work, never silently scan history
+in a nominally bounded request. Inventory, copied archives, erasure/custody,
+backup/recovery and independent freshness checks must all use the same contract.
+The first durable integration is `evidence_store::serving`: an explicit full-audit
+initialization/rebuild creates `serving_nodes` and a signed `serving_checkpoint` in
+one immediate transaction. Checkpoints bind version, admitted/copied profile, archive,
+scope, issuer, full frontier, map root, accepted native erasure tip and its highest required archive sequence. The map
+commits exact sequence/manifest/receipt/proof metadata plus operation, writer-head
+and slot coordinates, plus erased-object commitments. Normal admissions into initialized archives advance the
+nodes/checkpoint atomically with evidence and attestation; exact retries preserve
+the existing checkpoint. Rebuild replaces disposable nodes only after verifying
+source data, under the same writer transaction. Failed rebuilds preserve the prior
+checkpoint. Optional index tables are recognized by strict archive/inventory schema
+checks; legacy archives remain readable and require explicit initialization for
+the new read API.
+
+`read_metadata` requires an independently accepted frontier and current custody tip,
+authenticates the signed checkpoint and selected path, then verifies the selected
+native attestation. Its result certifies selected metadata only. Missing or corrupt
+payloads elsewhere do not turn that result into a whole-archive health claim.
+Changed custody makes an older checkpoint unusable until refreshed by verified
+maintenance. Owner erasure workers now refresh initialized maps after native
+reconciliation, including root batches, replicas and publication archives. The
+refresh verifies the native custody extension and unchanged authenticated metadata
+frontier, then publishes new erased-object commitments atomically; it neither
+rebuilds the source metadata map nor rescans lifetime payloads. Archives without
+an index remain unindexed. A checkpoint loaded from the archive alone
+cannot establish freshness. Copied checkpoints additionally bind the exact recipe
+digest and whether its original metadata prefix has completed. Explicit rebuild
+verifies that recipe against retained metadata; resumable copy batches advance
+records, recipe status and the map atomically. Later current-issuer admissions
+retain the copy commitment. Reading an earlier pin reports recipe completion only
+when that pin contains the whole planned prefix. Selected source bytes are freshly
+checked; the completion bit is not a claim that every imported payload is present.
+No original request, receipt, proof or recipe is rewritten by index initialization.
+The copied storage API also offers `open_indexed` / `admit_indexed`; admission
+requires authenticated completed-copy state and rechecks its exact recipe under
+the writer transaction. Incomplete imports remain browsable but cannot accept a
+new native append. Full copy/recovery audits remain explicit maintenance paths.
+
+The explicit `Archive::open_indexed` / `admit_indexed` storage path checks the
+signed checkpoint, exact database tip, and caller-supplied current erasure custody
+without auditing lifetime data. Staging checks erased-object membership against
+the authenticated map. The existing commit transaction remains the visibility
+boundary: before acceptance, indexed admission validates operation identity,
+writer position/predecessor and slot commitments against the prior root, rechecks
+checkpoint/custody under the writer lease, and advances the root with the receipt
+and native proof. Unauthenticated SQL lookup changes cannot authorize a writer
+fork. Interrupted operations retain both the prior proof/index or both new ones;
+exact retries retain prior receipts/proofs. Unselected historical damage remains
+visible to full audit and selected reads, rather than forcing a lifetime scan on
+append. The original `open` / `admit` methods still perform full audits. Indexed
+storage is available through explicit `rebuild-serving-index` and
+`serve-admitted --indexed`; it is not the default. The HTTP admitting service
+retains grant/policy checks and the independently current owner-custody lease
+through indexed admission. Its existing real encrypted-spool delivery test now
+exercises indexed ingestion. `serve-proof --indexed` connects bounded authenticated
+inventory/source reads for both archive profiles to the unchanged Library wire
+protocol. It requires the seekable payload layout described above. The external
+owner-custody and policy readers still scan their independent control histories;
+the option is not a claim that the whole deployment is bounded yet. Scale and
+whole-deployment qualification remain required.
+
+#### Bounded independent control reads
+
+Access policy and erasure custody keep their immutable owner-signed JSON records.
+An explicit owner-key maintenance command audits that history and builds a separate
+signed serving checkpoint over an authenticated record-ID/sequence map. Normal
+service reads can then verify the current selected record and membership of the
+independently configured minimum without loading earlier records. The checkpoint
+binds its control kind, owner, archive binding, exact current tip and record count;
+existing owner and issuer signatures remain independently checked. An unselected
+historical byte defect is an audit/repair finding, not a false claim that current
+selected permissions were unverified. Original history reads remain full audits.
+
+`CURRENT` is retained separately from the disposable `serving.sqlite` map. Reads
+require exact agreement, so restoring just an old derived database or just an old
+pointer fails. The independently current control directory is still the freshness
+source: restoring the entire directory with an old `CURRENT` requires an external
+freshness check and is not made safe by a self-contained signature.
+
+Owner updates hold the same exclusive control lease, durably install `INDEX-DIRTY`
+before changing raw history, and publish a newly signed map and `CURRENT` before
+removing that barrier. Readers hold a shared lease through the operation and
+refuse a dirty, missing, corrupt or mismatched checkpoint. Interrupted publication
+can be repaired only by an explicit owner-key full-history rebuild; exact signed
+append retries perform that repair before acknowledging success. Legacy append
+entry points refuse mutation once indexing is enabled. Owner UI/CLI operations
+use the checkpoint-aware path. Rebuild stages a fresh derived database and never
+rewrites or deletes the raw records. This also repairs a corrupt old index.
+
+Initialization remains explicit. Uninitialized control directories retain their
+legacy full audit; a deployment claiming bounded service I/O must initialize both
+archive and independent control indexes. Owner maintenance writes and full audits
+can scan history. Policy history has no 1,024-record or 16 MiB lifetime limit;
+individual record/grant limits and the abandoned-staging-file limit still apply.
 
 ### 11. Compatibility and explicit departures
 
@@ -287,6 +574,29 @@ The proposed command family is `kan migrate` with discover, preview, import, sta
 4. **Import in bounded batches.** The importer runs locally, validates supported records, preserves unsupported bytes, encrypts them, and calls the ordinary v2 ingest boundary with an import principal and explicit destination grant. Retain original claim signatures, CIDs, author identities, source ordering, public identity/governance history, and all citation/retraction/relation edges. A signed import manifest records the importer, source snapshot, mappings, parser version, omissions, and receipts; it does not re-author historical claims.
 5. **Resume and verify.** Resume from service-confirmed batch receipts, not an unverified client counter. The job identity includes source snapshot commitment, destination scope mapping, and importer contract version. Re-importing an identical snapshot is idempotent; a path change alone does not create new claims. Byte/CID reconciliation and dependency checks must agree with the pinned inventory. Reports distinguish retained bytes, valid/admitted records, unsupported records, quarantined invalid records, unresolved references, and pending uploads. No "complete" result is available while inventoried evidence is unaccounted for.
 6. **Cut over explicitly.** After verification, route chosen clients to the service. Before recommending retirement of old stores, verify independent backup coverage and a restore drill. An optional final delta handles writes since the first snapshot; cutover requires a declared final source frontier, not a claim that two independently writable stores will stay synchronized. Preserve original files and prior client configuration. Rollback switches routing back; imported history remains in the ledger. Source deletion is not a migration-tool side effect.
+
+The implemented owner `migration-cutover` target exposes fence, final-snapshot,
+activation and rollback jobs through the shared API/CLI/MCP and human UI. The
+fence uses the v1 log's existing writer lock and a persistent source marker;
+new v1 writers refuse writes while it exists. The owner must separately stop old
+binaries and external publication writers that do not implement this fence.
+Final-snapshot batches retain complete selected bytes rather than rewriting a v1
+store or silently dropping unreachable blocks. Activation requires acknowledgment
+of every final-plan operation, independent signed backup closure verification,
+actual decryption/reconstruction from that backup, exact source reconciliation and
+native repository inspection. Unknown membership is refused by default; explicit
+`allow_uninterpreted` preserves damaged evidence without promoting it as valid.
+
+The target atomically replaces the actual Library `--config` file after checking
+its previewed prior and candidate digests; clients adopt it on restart. Both
+configurations and the v1 source remain. This is configured client routing, not a
+claim to reconfigure every harness or an already running process. Rollback restores
+the prior configuration before removing this migration's fence. If interrupted,
+retry leaves the safe state (prior routing with v1 still fenced) until cleanup
+finishes. V2 writes after activation stay in v2 on rollback; reverse replication
+is never implied. Every job's signed encrypted owner record retains the operation,
+preview and result. A private control directory retains rollback configurations,
+coordination lock and recovery outputs; none are raw evidence replacements.
 
 The existing seams are `src/store/log.rs` for read-only source access and mixed records, `src/claim/codec.rs` and `src/claim/compat.rs` for byte-preserving decode, `src/transport/git_tree.rs` for publication evidence, and `src/identity/ledger.rs` for public control history. Reuse their format semantics and fixtures, but do not make bulk import call `kan show --all` or build the current all-memory `Log`: the failure that made a source unusable must not also make it unmigratable. A streaming CAR decoder with a disk-backed lookup/reachability index is an implementation requirement for this path. Display trust filtering is not an inventory of stored evidence.
 
@@ -326,7 +636,16 @@ The first useful prototype is B; the first release trusted as the home-server ar
 <!-- OPEN: Q4 -->
 ### Q4: Key custody and recovery profile
 
-Choose the concrete archive-encryption/key-wrapping protocol, recovery custodians, reader grant mechanism, and erasure unit before implementing the wire format. Proposed direction is separate signing/encryption keys, per-scope encryption epochs, gateway encryption-only archive access, and an independently stored recovery package. Selective erasure may require per-object keys rather than only epoch keys. The operator must be able to restore without the original home server, while the backup principal remains unable to decrypt.
+The current build implements separate signing/encryption keys, per-scope encryption
+epochs, gateway encryption-only archive access, independently recoverable wrapped
+key history, reader grants and explicit custody transfer. The operator can restore
+without the original home server while the backup principal remains unable to
+decrypt. The owner resolved erasure granularity and guarantee in §10 on
+2026-10-20: logical captures, managed removal, restore enforcement, explicit backup
+purge status; no claim of cryptographic irrecoverability from old recovery material.
+The signed erasure protocol and integration with retained proof validation,
+derived cleanup, admission replay and recovery remain implementation work.
+Selective cryptographic erasure would require a separate future key-custody design.
 <!-- /OPEN -->
 
 <!-- OPEN: Q5 -->
@@ -354,3 +673,38 @@ The installed kan is 0.13.0-beta.1. Bulk claims and issues were read successfull
 The graph currently reports generative-build after design. That describes the recorded vocabulary; it is not authorization to start implementation or proof that this draft's open contracts are resolved. This pass targets the existing raw-data-and-projections principle; it does not invent a new milestone telos or human evidence criteria. A bridge to that deliberately unwitnessed maintenance target cannot honestly prove attainment.
 
 Recording was attempted with `day design record` against this document and the existing raw-data-and-projections claim as a normative citation. It exited 2 before appending: the two unattributed withheld claims make the new subject's absence indeterminate. `day bridge declare` likewise exited 2 before declaring the proposed bridge. No observe/plan/decide CIDs or bridge CID were produced. The file needs back-filling through day after its read context can establish subject history; no claims were assembled manually and no trust settings were changed. Validation is available despite this recording limitation.
+
+### Decision adapter implementation contract — 2026-10-20
+
+The integrated analysis scheduler now distinguishes `anthropic-messages` from
+`typesafe-system-one`. Both use explicitly configured loopback collector endpoints,
+source grants, fixed versioned recipes, preview-bound submissions and encrypted
+run/input/output history. A TypeSafe gateway profile forwards only `/v1/systemone`
+to its configured origin, inserting a separately provisioned provider Bearer key;
+collector credentials and source text cannot choose that destination or key.
+Typed questions support Choice, Score and Noul with exact question-ID coverage and
+bounded answer validation. Full returned distributions/model identity remain
+untrusted recorded output, not automatic action or identity authority. TypeSafe
+has no requested output-token cap; its question/response bounds are disclosed
+separately. Generative summaries remain on the generative adapter. Swapping models
+or adapters cannot overwrite earlier runs or require their providers for reading
+retained results. This does not select Jev operationally or establish its quality;
+the user-approved corpus comparison described in §9 remains an operational choice.
+Primary interface checked against TypeSafe's [HTTP examples](https://docs.typesafe.ai/introduction/quickstart#call-it-the-api)
+and [question contracts](https://docs.typesafe.ai/primitives) on this date. Runtime
+qualification of the new protocol path remains pending; tests use synthetic
+responses and never upload production traces.
+
+#### Destination checkpoint implementation
+
+Owner `verify-backup` jobs audit a completed standalone archive at the configured
+destination before publishing a domain-separated owner signature over its binding,
+frontier, exact encrypted database digest/length, destination identity, declared
+independence and verification time. The immutable receipt is retained outside the
+source archive and in the encrypted owner journal. Transfers remain operator-driven.
+`verify-restore` authenticates that independent receipt and exact destination closure,
+then compares an optional independently retained service-signed snapshot witness.
+It reports the inclusive uncovered acknowledged position interval, unknown coverage
+when no witness exists, or a conflicting equal-position frontier. A high-water mark
+alone cannot prove ancestry of a lost suffix. This archive receipt does not replace
+independent key/workspace packages or current erasure custody, and grants no access.

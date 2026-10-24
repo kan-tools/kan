@@ -88,10 +88,11 @@ Only body bytes and the explicit lifecycle fields are covered here. TLS packets,
 HTTP transfer framing, arbitrary headers/trailers, expanded attachments, tool hooks
 and hidden harness events are not captured. The reusable recorder can be used by
 collector adapters, but `capture-post` produces gateway observations only. The
-remaining P6 work includes authenticated encrypted collector/gateway transport,
-request streaming, the chosen real provider/harness profile, persistent health and
-control reserves. Production key custody, independent-host backup drills and
-explicit cutover remain required before using v2 as the primary archive.
+[gateway runbook](V2-GATEWAY.md) covers authenticated collector/gateway transport,
+request streaming and the supported harness profile; [Operations](V2-OPERATIONS.md)
+covers persistent health and delivery supervision. Qualify the actual deployment's
+key custody and independent backups, then explicitly approve cutover before using
+v2 as the primary archive.
 
 
 Capture opens its spool with a 100 ms SQLite busy timeout to tolerate brief WAL

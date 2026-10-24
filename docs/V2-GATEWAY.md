@@ -148,3 +148,34 @@ is not a production archive reader or independent outer-signature verifier.
 The older body-only witness scripts remain scoped to their original fixtures.
 Rust `Header`/`Event` are closed typed views: an unknown variant is an explicit
 decode failure, never permission to discard the original archived bytes.
+
+## Explicit session relationships
+
+The Anthropic collector profile captures optional `x-kan-session`,
+`x-kan-parent-attempt` and `x-kan-transition` headers and forwards them to the
+configured gateway. The gateway records them and strips them before the inference
+provider. They do not change authentication, routing or inference retries. The
+Library interprets these as observer-recorded claims with source citations; see
+[V2-LIBRARY.md](V2-LIBRARY.md). Existing `x-claude-code-session-id` capture can
+provide session membership without inventing parent/branch relationships. Session
+metadata is not proof of the claimed human/assistant identity.
+
+## TypeSafe decision profile
+
+`--profile typesafe` on both collector and gateway exposes only
+`POST /v1/systemone`, with no query string or arbitrary destination. Configure the
+gateway's `--provider` as an explicit HTTPS origin (for TypeSafe,
+`https://api.typesafe.ai/`) and supply its raw API key through the owner-only
+`--provider-key-file`. The collector keeps its separate local token and mutual
+TLS identity; it never receives the provider key. The gateway creates the provider
+Bearer header after stripping incoming credentials. The same credential omissions,
+encrypted request/response capture, gap reporting, stream bounds and shutdown
+behavior apply. Request bodies and response bytes pass through unchanged; this
+profile does not classify or execute the returned decisions.
+
+The Library's `typesafe-system-one` analysis adapter calls the local collector
+using its local token. Provider configuration is not supplied by the browser or
+extracted from source text. See [typed analysis](V2-LIBRARY.md#background-extraction-and-day-assessment)
+for recipe questions, answer validation and exact run history. This profile's
+protocol contract comes from the [TypeSafe HTTP documentation](https://docs.typesafe.ai/introduction/quickstart#call-it-the-api);
+no live provider request or installation is part of the synthetic qualification.

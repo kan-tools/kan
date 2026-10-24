@@ -1,15 +1,15 @@
 const {test}=require('node:test'), assert=require('node:assert/strict'), vm=require('node:vm'), fs=require('node:fs');
 const tick=()=>new Promise(setImmediate);
 function ui(){
- const nodes=new Map(),pending=[],downloads=[],revoked=[],timers=new Map(),blobs=[];let active;
- class Element{constructor(){this.value='';this.hidden=false;this.disabled=false;this.children=[];this.events={};this.attrs={};this.textContent='';}setAttribute(k,v){this.attrs[k]=v;}addEventListener(k,f){this.events[k]=f;}append(v){this.children.push(v);}replaceChildren(){this.children=[];}remove(){this.removed=true;}focus(){active=this;}click(){downloads.push(this);if(this.events.click)this.events.click();}}
+ const nodes=new Map(),pending=[],downloads=[],forms=[],revoked=[],timers=new Map(),blobs=[];let active;
+ class Element{constructor(){this.value='';this.hidden=false;this.disabled=false;this.children=[];this.events={};this.attrs={};this.textContent='';}setAttribute(k,v){this.attrs[k]=v;}addEventListener(k,f){this.events[k]=f;}append(v){this.children.push(v);}replaceChildren(){this.children=[];}remove(){this.removed=true;}focus(){active=this;}submit(){forms.push({action:this.action,method:this.method,enctype:this.enctype,payload:this.children.find(n=>n.name==='payload').value,element:this});}click(){downloads.push(this);if(this.events.click)this.events.click();}}
  const node=id=>{if(!nodes.has(id))nodes.set(id,new Element());return nodes.get(id);};const window={events:{},addEventListener(k,f){this.events[k]=f;}};
  const context={document:{getElementById:node,createElement:()=>new Element(),body:node("body")},window,AbortController,Blob,Uint8Array,setTimeout:(fn)=>{const id={};timers.set(id,fn);return id;},clearTimeout:id=>timers.delete(id),URL:{createObjectURL:blob=>{blobs.push(blob);return 'blob:synthetic';},revokeObjectURL:url=>revoked.push(url)},fetch:(url,opts)=>new Promise((resolve,reject)=>pending.push({url,opts,resolve,reject})),console};
  node('library').hidden=true;node('inspection').hidden=true;
  vm.createContext(context);vm.runInContext(fs.readFileSync('web/library/app.js','utf8'),context);
  const respond=async(value,status=200)=>{const request=pending.shift();assert.ok(request,'expected request');request.resolve({ok:status===200,status,json:async()=>value});await tick();await tick();};
  const login=async()=>{node('token').value='synthetic-library-token';node('connect').events.submit({preventDefault(){}});await tick();};
- return{node,pending,respond,login,downloads,revoked,timers,blobs,window,active:()=>active};
+ return{node,pending,respond,login,downloads,forms,revoked,timers,blobs,window,active:()=>active};
 }
 const pin={request:'synthetic-pin',reply:{}};
 const catalog={version:1,coverage:'complete',capabilities:['snapshot-inventory','source-ranges','provenance'],unavailable:['semantic-search','normalized-sessions','annotations','saved-views','analysis','administrative-jobs'],scopes:[{scope:'allowed-A',pin},{scope:'allowed-B',pin}]};
@@ -26,7 +26,7 @@ test('pagehide locks and no reader persistence or HTML execution sinks are prese
 
 test('source view can inspect exact bytes even when UTF-8 contains controls',async()=>{const u=ui();await open(u);u.node('rows').children[0].click();await tick();await u.respond({...source,utf8:'x\0y',bytes_hex:'780079',total_bytes:3,next:null});assert.equal(u.node('source').textContent,'780079');assert.match(u.node('range').textContent,/hex/);u.node('encoding').click();assert.equal(u.node('source').textContent,'x\0y');u.node('encoding').click();assert.equal(u.node('source').textContent,'780079');});
 
-test('export keeps exact bytes alive until navigation starts and releases on timeout or lock',async()=>{for(const finish of ['timeout','lock']){const u=ui();await open(u);u.node('rows').children[0].click();await tick();await u.respond(source);u.node('download').click();await tick();await u.respond(source);const a=u.downloads.find(x=>x.download);assert.ok(u.node('body').children.includes(a));assert.equal(a.removed,true);assert.equal(a.download,'kan-occurrence-1-offset-0.bin');assert.deepEqual([...new Uint8Array(await u.blobs[0].arrayBuffer())],[60,98,62,120]);assert.equal(u.revoked.length,0);assert.equal(u.timers.size,1);if(finish==='lock')u.node('lock').click();else [...u.timers.values()][0]();assert.deepEqual(u.revoked,['blob:synthetic']);assert.equal(u.timers.size,0);}});
+test('native source export posts exact selection and credential only in the body after authorization',async()=>{const u=ui();await open(u);u.node('rows').children[0].click();await tick();await u.respond(source);u.node('download').click();await tick();const request=JSON.parse(u.pending[0].opts.body);assert.equal(u.forms.length,0);await u.respond(source);assert.equal(u.forms.length,1);const form=u.forms[0];assert.equal(form.action,'/api/library/download');assert.equal(form.method,'POST');assert.equal(form.enctype,'text/plain');assert.deepEqual(JSON.parse(form.payload),{token:'synthetic-library-token',request});assert.equal(form.element.removed,true);assert.equal(form.element.children[0].value,'');assert.equal(u.blobs.length,0);assert.equal(u.timers.size,0);u.node('lock').click();assert.equal(u.node('source').textContent,'');});
 
 test('scope changes remove old-scope rows before a new pin is used',async()=>{const u=ui();await open(u);assert.equal(u.node('rows').children.length,1);u.node('scope').value='allowed-B';u.node('scope').events.change();await tick();assert.equal(u.node('rows').children.length,0,'old rows must not remain actionable under a new scope pin');assert.equal(u.node('next').disabled,true);await u.respond({...page,through:0,next:null,records:[]});assert.equal(u.node('empty').hidden,false);});
 
@@ -283,4 +283,772 @@ test('malformed ref in the RESPONSE stream after a valid request stream leaves n
  const u=ui();await openContent(u);u.node('interpret').click();await tick();const v=clone(contentResult);
  v.groups[0].response={...clone(v.groups[0].request),citation_sets:[[{input:'0',bytes:['1','2']}]]};v.groups[0].response.items[0].citation_set='1';await u.respond(v);
  assert.equal(u.node('content-panel').children.length,0);assert.equal(u.node('content-tab').disabled,true);
+});
+
+const proofEntry=id=>({id,scope:'shared-scope',protocol:'kan-proof-reader/1',binding:{profile:'copied',archive:id},pin,capabilities:['snapshot-inventory','source-ranges','provenance','payload-availability']});
+const proofCatalog={...catalog,version:2,capabilities:['snapshot-inventory','source-ranges','provenance','payload-availability'],scopes:[proofEntry('archive-A'),proofEntry('archive-B')]};
+const proofRow={sequence:'3',manifest:'manifest-proof',receipt:'receipt-proof',attestation:'attestation-proof',purpose:'retained-verified',issued_at:'1234',receipt_issuer:'historical-issuer',availability:'available',selection:{signature:'selection-token'}};
+const proofPage={through:'3',records:[proofRow],next:{signature:'page-token'},coverage:'Issuer-attested metadata'};
+const proofSource={...source,record:proofRow,scope:'shared-scope',archive:'archive-A',profile:'copied',availability:'available',offset:'0',total_bytes:'8',next:'4'};
+async function openProof(u){await u.login();await u.respond(proofCatalog);await u.respond(proofPage);}
+test('proof sources sharing one scope use distinct configured identities and opaque page tokens',async()=>{
+ const u=ui();await openProof(u);assert.deepEqual(u.node('scope').children.map(x=>x.value),['archive-A','archive-B']);
+ assert.match(u.node('rows').children[0].children[2].textContent,/available.*retained-verified/);
+ u.node('next').click();await tick();let request=JSON.parse(u.pending[0].opts.body);assert.equal(request.action,'proof-page');assert.equal(request.source,'archive-A');assert.deepEqual(request.cursor,proofPage.next);
+ await u.respond({...proofPage,next:null,records:[{...proofRow,sequence:'2'}]});u.node('previous').click();await tick();assert.equal(JSON.parse(u.pending[0].opts.body).cursor,null);await u.respond(proofPage);
+ u.node('scope').value='archive-B';u.node('scope').events.change();await tick();request=JSON.parse(u.pending[0].opts.body);assert.equal(request.source,'archive-B');assert.equal(request.cursor,null);assert.equal(u.node('rows').children.length,0);await u.respond(proofPage);
+});
+test('proof source keeps exact selection, proof purpose and historical issuer',async()=>{
+ const u=ui();await openProof(u);u.node('rows').children[0].click();await tick();const request=JSON.parse(u.pending[0].opts.body);
+ assert.equal(request.action,'proof-source');assert.deepEqual(request.selection,proofRow.selection);assert.equal(request.offset,'0');assert.equal(request.length,'65536');
+ await u.respond(proofSource);const text=u.node('provenance').children.map(x=>x.textContent).join(' ');assert.match(text,/retained-verified/);assert.match(text,/historical-issuer/);assert.match(text,/1234/);assert.equal(u.node('download').disabled,false);
+});
+test('erasure, loss or corruption after sampling clears plaintext and disables export',async()=>{
+ for(const availability of ['erased','missing','corrupt']){const u=ui();await openProof(u);u.node('rows').children[0].click();await tick();await u.respond(proofSource);
+ u.node('download').click();await tick();assert.equal(u.node('source').textContent,'');assert.equal(u.node('download').disabled,true);
+ const lost={...proofSource,availability,record:{...proofRow,availability},writer:null};for(const key of ['bytes_hex','utf8','offset','total_bytes','next'])delete lost[key];await u.respond(lost);
+ assert.equal(u.blobs.length,0);assert.equal(u.forms.length,0);assert.match(u.node('source').textContent,new RegExp(availability,'i'));assert.equal(u.node('source').textContent.includes('<b>x'),false);
+ assert.equal(u.node('download').disabled,true);assert.equal(u.node('more').disabled,true);assert.equal(u.node('provenance-tab').disabled,false);assert.equal(u.node('rows').children.length,1);
+ assert.match(u.node('provenance').children.map(x=>x.textContent).join(' '),/Writer|Unavailable/);
+ }
+});
+test('proof export reauthorizes; denial clears the Library and emits no Blob',async()=>{
+ const u=ui();await openProof(u);u.node('rows').children[0].click();await tick();await u.respond(proofSource);u.node('download').click();await tick();assert.equal(JSON.parse(u.pending[0].opts.body).action,'proof-source');await u.respond({},403);
+ assert.equal(u.node('library').hidden,true);assert.equal(u.node('source').textContent,'');assert.equal(u.blobs.length,0);assert.equal(u.node('provenance').children.length,0);
+});
+test('mixed catalog changes per-source Content capability without legacy fallback',async()=>{
+ const u=ui();await u.login();await u.respond({...proofCatalog,scopes:[proofEntry('archive-A'),{id:'legacy',scope:'legacy',protocol:'legacy',pin,pin_wire:'exact-legacy-pin',capabilities:['content-inspection']}]});await u.respond(proofPage);
+ assert.match(u.node('content-support').textContent,/not yet available/);assert.equal(u.node('rows').children[0].children.some(c=>c.type==='checkbox'),false);
+ u.node('scope').value='legacy';u.node('scope').events.change();await tick();assert.equal(JSON.parse(u.pending[0].opts.body).action,'content-page');await u.respond({...page,through:'2',next:null,records:[{...page.records[0],sequence:'1'}]});assert.match(u.node('content-support').textContent,/Select captures/);
+ u.node('scope').value='archive-A';u.node('scope').events.change();await tick();assert.equal(JSON.parse(u.pending[0].opts.body).action,'proof-page');await u.respond({},503);assert.equal(u.pending.length,0);assert.equal(u.node('rows').children.length,0);
+});
+test('proof refresh and lock preserve no stale source or selection',async()=>{
+ const u=ui();await openProof(u);u.node('resnapshot').click();await tick();assert.deepEqual(JSON.parse(u.pending[0].opts.body),{action:'proof-snapshot',source:'archive-A'});await u.respond({pin:{...pin,request:'new-pin'}});assert.equal(JSON.parse(u.pending[0].opts.body).cursor,null);await u.respond(proofPage);
+ u.node('rows').children[0].click();await tick();const pending=u.pending[0];u.node('lock').click();assert.equal(pending.opts.signal.aborted,true);await u.respond(proofSource);assert.equal(u.node('source').textContent,'');assert.equal(u.node('rows').children.length,0);assert.equal(u.node('download').disabled,true);
+});
+
+async function openProofContent(u){
+ await u.login();await u.respond({...proofCatalog,capabilities:[...proofCatalog.capabilities,'content-inspection'],scopes:[{...proofEntry('archive-A'),pin_wire:exactPin,capabilities:[...proofEntry('archive-A').capabilities,'content-inspection']}]});await u.respond(proofPage);
+ const check=u.node('rows').children[0].children[0];check.checked=true;check.events.change();
+}
+test('proof Content sends signed selections and citations return through proof source verification',async()=>{
+ const u=ui();await openProofContent(u);u.node('interpret').click();await tick();assert.equal(u.pending[0].url,'/api/library/proof-content');
+ const request=JSON.parse(u.pending[0].opts.body);assert.equal(request.action,'proof-content');assert.deepEqual(request.selections,[proofRow.selection]);assert.equal(request.source,'archive-A');
+ const value=clone(contentResult);value.occurrences[0].record=proofRow;await u.respond(value);
+ const citation=walk(u.node('content-panel')).find(n=>n.textContent.startsWith('Source 3 ·'));assert.ok(citation);citation.click();await tick();assert.equal(JSON.parse(u.pending[0].opts.body).action,'proof-source');assert.deepEqual(JSON.parse(u.pending[0].opts.body).selection,proofRow.selection);await u.respond(proofSource);
+ u.node('content-tab').click();assert.equal(u.active(),citation);
+});
+test('proof Content keeps unavailable inputs visible and presentation limits preserve selection',async()=>{
+ const u=ui();await openProofContent(u);u.node('interpret').click();await tick();await u.respond({},422);assert.match(u.node('content-count').textContent,/1 selected/);assert.match(u.node('notice').textContent,/presentation limit/);
+ u.node('interpret').click();await tick();await u.respond({version:'kan-content/2',pin_wire:exactPin,occurrences:[{record:{...proofRow,availability:'missing'},writer:null}],observations:[{input:'0',kind:'unavailable',reason:'Missing'}],groups:[],coverage:'explicit selection only'});
+ assert.ok(walk(u.node('content-panel')).some(n=>n.textContent.includes('unavailable · Missing')));const inspect=walk(u.node('content-panel')).find(n=>n.textContent==='Inspect source');assert.ok(inspect);inspect.click();await tick();assert.equal(JSON.parse(u.pending[0].opts.body).action,'proof-source');await u.respond({},403);assert.equal(u.node('library').hidden,true);assert.equal(u.node('content-panel').children.length,0);
+});
+
+async function openDiscovery(u) {
+ await u.login(); await u.respond({...proofCatalog,scopes:[{...proofEntry('archive-A'),pin_wire:exactPin,capabilities:['attempt-discovery','content-inspection']} ]}); await u.respond(proofPage);
+}
+const discoveredCapture=(sequence,writer='writer-A',ordinal='0')=>({record:{...proofRow,sequence,selection:{signature:'selection-'+sequence}},writer,description:{kind:'capture',attempt:'a'.repeat(64),observer:'collector',ordinal,event:{type:'started',method:'POST',route:'/v1/messages'}}});
+test('discovery continues across pages and groups only equal verified writer/observer/attempt identities',async()=>{
+ const u=ui();await openDiscovery(u);assert.equal(u.node('discovery').hidden,false);
+ u.node('scan-attempts').click();await tick();assert.equal(JSON.parse(u.pending[0].opts.body).action,'proof-discover');
+ await u.respond({version:'kan-discovery/1',records:[discoveredCapture('3')],next:{signature:'next-discovery'}});
+ assert.match(u.node('discovery-coverage').textContent,/Partial inventory/);
+ u.node('scan-attempts').click();await tick();assert.deepEqual(JSON.parse(u.pending[0].opts.body).cursor,{signature:'next-discovery'});
+ const second=discoveredCapture('2','writer-A','1'), distinct=discoveredCapture('1','writer-B');
+ await u.respond({version:'kan-discovery/1',records:[second,distinct],next:null});
+ assert.match(u.node('discovery-coverage').textContent,/3 occurrences inspected.*2 attempt groups/);assert.match(u.node('discovery-coverage').textContent,/traffic completeness remains unknown/);
+ const read=walk(u.node('attempts')).find(n=>n.textContent==='Read records 1–2');assert.ok(read);read.click();await tick();await tick();
+ const req=JSON.parse(u.pending[0].opts.body);assert.equal(req.action,'proof-content');assert.deepEqual(req.selections,[{signature:'selection-3'},{signature:'selection-2'}]);
+ await u.respond({},422);const source=walk(u.node('attempts')).find(n=>n.textContent==='Source 2');source.click();await tick();assert.deepEqual(JSON.parse(u.pending[0].opts.body).selection,second.record.selection);await u.respond(proofSource);
+});
+test('discovery preserves unassigned loss, treats hostile labels as text, and lock discards late scans',async()=>{
+ const u=ui();await openDiscovery(u);u.node('scan-attempts').click();await tick();
+ const hostile=discoveredCapture('3');hostile.description.event.route='<img src=x onerror=alert(1)>';
+ await u.respond({version:'kan-discovery/1',records:[hostile,{record:{...proofRow,sequence:'2'},writer:null,description:{kind:'missing'}}],next:{signature:'more'}});
+ assert.match(u.node('discovery-coverage').textContent,/1 unassigned/);assert.ok(walk(u.node('attempts')).some(n=>n.textContent.includes('<img src=x onerror=alert(1)>')));
+ u.node('scan-attempts').click();await tick();const pending=u.pending[0];u.node('lock').click();assert.equal(pending.opts.signal.aborted,true);
+ await u.respond({version:'kan-discovery/1',records:[hostile],next:null});assert.equal(u.node('attempts').children.length,0);assert.equal(u.node('discovery').hidden,true);
+});
+test('discovery revocation clears cached descriptions and refresh resets scan coverage',async()=>{
+ const u=ui();await openDiscovery(u);u.node('scan-attempts').click();await tick();await u.respond({version:'kan-discovery/1',records:[discoveredCapture('3')],next:null});
+ u.node('resnapshot').click();await tick();assert.equal(u.node('attempts').children.length,0);await u.respond({pin,pin_wire:exactPin});await u.respond(proofPage);
+ assert.match(u.node('discovery-coverage').textContent,/No capture discovery/);u.node('scan-attempts').click();await tick();assert.equal(JSON.parse(u.pending[0].opts.body).cursor,null);await u.respond({},403);
+ assert.equal(u.node('library').hidden,true);assert.equal(u.node('attempts').children.length,0);
+});
+
+async function openSessions(u){await u.login();await u.respond({...proofCatalog,scopes:[{...proofEntry('archive-A'),pin_wire:exactPin,capabilities:['attempt-discovery','content-inspection','attempt-content','session-links']}]});await u.respond(proofPage);}
+test('large attempt uses one verified selection beyond forty and long text stays readable in pages',async()=>{
+ const u=ui();await openSessions(u);
+ for(let batch=0;batch<3;batch++){
+  u.node('scan-attempts').click();await tick();
+  const records=Array.from({length:batch===2?8:20},(_,i)=>discoveredCapture(String(batch*20+i+1),'writer-A',String(batch*20+i)));
+  await u.respond({version:'kan-discovery/1',records,next:batch===2?null:{signature:'next-'+batch}});
+ }
+ const read=walk(u.node('attempts')).find(n=>n.textContent==='Read attempt · 48 observed records');assert.ok(read);read.click();await tick();await tick();
+ const req=JSON.parse(u.pending[0].opts.body);assert.equal(req.action,'proof-attempt');assert.equal(req.selections.length,48);assert.equal(u.pending[0].url,'/api/library/proof-attempt');
+ const value=clone(contentResult);value.occurrences=Array.from({length:48},(_,i)=>({record:{sequence:String(i+1)}}));value.groups[0].request.items[0].text='x'.repeat(32768)+'THE END';await u.respond(value);
+ assert.ok(walk(u.node('content-panel')).some(n=>n.textContent==='x'.repeat(32768)));
+ const next=walk(u.node('content-panel')).find(n=>n.textContent==='Next text page');next.click();assert.ok(walk(u.node('content-panel')).some(n=>n.textContent==='THE END'));
+});
+test('explicit session view retains branch and compaction claims, cites their source and clears on lock',async()=>{
+ const u=ui();await openSessions(u);u.node('scan-attempts').click();await tick();
+ const a=discoveredCapture('3'),b=discoveredCapture('2');b.description.attempt='b'.repeat(64);
+ a.description.session_link={state:'claimed',scheme:'kan-header',session:'c'.repeat(64),parent_attempt:null,transition:'start'};
+ b.description.session_link={state:'claimed',scheme:'kan-header',session:'c'.repeat(64),parent_attempt:a.description.attempt,transition:'branch'};
+ const c=clone(b);c.record={...proofRow,sequence:'1'};c.description.session_link.transition='compaction';
+ await u.respond({version:'kan-discovery/1',records:[a,b,c],next:null});
+ let texts=walk(u.node('sessions')).map(n=>n.textContent).join(' ');assert.match(texts,/branch/);assert.match(texts,/compaction/);assert.match(texts,/Conflicting session claims retained/);
+ const cite=walk(u.node('sessions')).find(n=>n.textContent==='Session link source 2');cite.click();await tick();assert.deepEqual(JSON.parse(u.pending[0].opts.body).selection,b.record.selection);await u.respond(proofSource);
+ u.node('lock').click();assert.equal(u.node('sessions').children.length,0);
+});
+
+test('scan window progresses through batches and stopping ignores late descriptions',async()=>{
+ const u=ui();await openSessions(u);u.node('scan-window').click();await tick();
+ await u.respond({version:'kan-discovery/1',records:[discoveredCapture('3')],next:{signature:'next'}});
+ assert.equal(JSON.parse(u.pending[0].opts.body).cursor.signature,'next');const pending=u.pending[0];u.node('stop-scan').click();assert.equal(pending.opts.signal.aborted,true);
+ await u.respond({version:'kan-discovery/1',records:[discoveredCapture('2')],next:null});assert.match(u.node('discovery-coverage').textContent,/1 occurrences inspected/);assert.equal(u.node('scan-window').disabled,false);
+});
+
+async function openWorkspaceUI(u){
+ await u.login();await u.respond({...proofCatalog,scopes:['archive-A','archive-B'].map(id=>({...proofEntry(id),pin:{request:'pin-'+id,reply:{}},pin_wire:exactPin,capabilities:['attempt-discovery','content-inspection','attempt-content','session-links']}))});await u.respond(proofPage);
+}
+function linkedRecord(sequence,attempt,parent=null,writer='verified-writer'){
+ const item=discoveredCapture(sequence);item.writer=writer;item.description.attempt=attempt;
+ item.record.selection={signature:sequence+'-'+attempt};
+ item.description.session_link={state:'claimed',scheme:'kan-header',session:'c'.repeat(64),parent_attempt:parent,transition:parent?'branch':'start'};return item;
+}
+test('cross-archive sessions follow parent and link source with each original pin',async()=>{
+ const u=ui();await openWorkspaceUI(u);u.node('scan-archives').click();await tick();
+ const parent=linkedRecord('1','a'.repeat(64)),child=linkedRecord('1','b'.repeat(64),parent.description.attempt);
+ assert.equal(JSON.parse(u.pending[0].opts.body).source,'archive-A');
+ await u.respond({version:'kan-discovery/1',records:[parent],next:null});
+ assert.equal(JSON.parse(u.pending[0].opts.body).source,'archive-B');
+ await u.respond({version:'kan-discovery/1',records:[child],next:null});
+ const texts=walk(u.node('workspace-sessions')).map(n=>n.textContent).join(' ');assert.match(texts,/2 archives/);assert.match(texts,/branch/);
+ walk(u.node('workspace-sessions')).find(n=>n.textContent==='Read parent in archive-A').click();await tick();
+ let q=JSON.parse(u.pending[0].opts.body);assert.equal(q.action,'proof-attempt');assert.equal(q.source,'archive-A');assert.equal(q.pin.request,'pin-archive-A');assert.deepEqual(q.selections,[parent.record.selection]);
+ await u.respond({...contentResult,occurrences:[{record:{sequence:'1'}}]});
+ const cites=walk(u.node('workspace-sessions')).filter(n=>n.textContent==='Link source 1');cites[1].click();await tick();
+ q=JSON.parse(u.pending[0].opts.body);assert.equal(q.action,'proof-source');assert.equal(q.source,'archive-B');assert.equal(q.pin.request,'pin-archive-B');assert.deepEqual(q.selection,child.record.selection);
+ await u.respond({},403);assert.equal(u.node('workspace-sessions').children.length,0);assert.equal(u.node('session-workspace').hidden,true);
+});
+test('workspace separates writers and archive copies and exposes all parent matches',async()=>{
+ const u=ui();await openWorkspaceUI(u);u.node('scan-archives').click();await tick();
+ const parent=linkedRecord('3','a'.repeat(64)),child=linkedRecord('2','b'.repeat(64),parent.description.attempt),foreign=linkedRecord('1','b'.repeat(64),parent.description.attempt,'other-writer');
+ await u.respond({version:'kan-discovery/1',records:[parent,child],next:null});
+ await u.respond({version:'kan-discovery/1',records:[clone(parent),foreign],next:null});
+ assert.match(u.node('workspace-coverage').textContent,/2 explicit session groups/);
+ const texts=walk(u.node('workspace-sessions')).map(n=>n.textContent).join(' ');assert.match(texts,/2 observed parent archive matches/);assert.match(texts,/Parent not observed/);
+ const parentButtons=walk(u.node('workspace-sessions')).filter(n=>n.textContent.startsWith('Read parent in '));assert.equal(parentButtons.length,2);
+ u.node('resnapshot').click();await tick();assert.match(u.node('workspace-coverage').textContent,/0 records/);
+ await u.respond({pin:{request:'new',reply:{}},pin_wire:exactPin});await u.respond(proofPage);
+ u.node('scan-archives').click();await tick();assert.equal(JSON.parse(u.pending[0].opts.body).pin.request,'new');assert.equal(JSON.parse(u.pending[0].opts.body).cursor,null);
+ u.node('lock').click();await u.respond({version:'kan-discovery/1',records:[parent],next:null});assert.equal(u.node('workspace-sessions').children.length,0);
+});
+test('workspace scans round-robin, retains failed coverage, and stops without accepting late replies',async()=>{
+ const u=ui();await openWorkspaceUI(u);u.node('scan-archives').click();await tick();
+ await u.respond({version:'kan-discovery/1',records:[linkedRecord('3','a'.repeat(64))],next:{signature:'continue-A'}});
+ assert.equal(JSON.parse(u.pending[0].opts.body).source,'archive-B');await u.respond({},503);
+ assert.equal(JSON.parse(u.pending[0].opts.body).source,'archive-A');assert.deepEqual(JSON.parse(u.pending[0].opts.body).cursor,{signature:'continue-A'});
+ u.node('stop-archives').click();await u.respond({version:'kan-discovery/1',records:[linkedRecord('2','b'.repeat(64))],next:null});
+ assert.match(u.node('workspace-coverage').textContent,/1 records/);assert.match(walk(u.node('workspace-sources')).map(n=>n.textContent).join(' '),/unavailable; retry scan/);
+ u.node('clear-archives').click();assert.match(u.node('workspace-coverage').textContent,/0 records/);
+});
+test('workspace window bound preserves independent continuation without growing tab storage',async()=>{
+ const u=ui();await openWorkspaceUI(u);u.node('scan-archives').click();await tick();
+ for(let batch=0;batch<50;batch++){
+  assert.equal(JSON.parse(u.pending[0].opts.body).source,batch%2?'archive-B':'archive-A');
+  await u.respond({version:'kan-discovery/1',records:Array.from({length:20},(_,i)=>linkedRecord(String(batch*20+i+1),'a'.repeat(64))),next:{signature:'next-'+batch}});
+ }
+ assert.equal(u.pending.length,0);assert.match(u.node('workspace-coverage').textContent,/1000 records/);assert.equal(u.node('scan-archives').textContent,'Continue in a new window');
+ u.node('scan-archives').click();await tick();assert.deepEqual(JSON.parse(u.pending[0].opts.body).cursor,{signature:'next-48'});
+ await u.respond({version:'kan-discovery/1',records:[],next:null});assert.deepEqual(JSON.parse(u.pending[0].opts.body).cursor,{signature:'next-49'});
+ await u.respond({version:'kan-discovery/1',records:[],next:null});assert.match(u.node('workspace-coverage').textContent,/0 records.*2\/2 archive inventories finished/);
+});
+
+test('fragmented links resolve across discovery pages and cite every original fragment',async()=>{
+ const u=ui();await openSessions(u);
+ const a=discoveredCapture('2'),b=discoveredCapture('1');
+ for(const item of [a,b])item.description.event={type:'http-metadata-chunk',direction:'request',offset:item===a?'50':'0',total:'100'};
+ u.node('scan-attempts').click();await tick();await u.respond({version:'kan-discovery/1',records:[a],next:{signature:'more'}});
+ u.node('scan-attempts').click();await tick();await u.respond({version:'kan-discovery/1',records:[b],next:null});
+ walk(u.node('attempts')).find(n=>n.textContent==='Resolve chunked session links').click();await tick();
+ const q=JSON.parse(u.pending[0].opts.body);assert.equal(q.action,'proof-attempt');assert.equal(q.selections.length,2);
+ const result={...contentResult,occurrences:[{record:{sequence:'2'}},{record:{sequence:'1'}}],groups:[{...contentResult.groups[0],metadata:[{state:'complete',fragmented:true,session_link:{state:'claimed',scheme:'kan-header',session:'c'.repeat(64),transition:'branch',parent_attempt:'b'.repeat(64)},sources:[{input:'1',bytes:['200','250']},{input:'0',bytes:['210','260']}]}]}]};
+ await u.respond(result);
+ assert.match(walk(u.node('sessions')).map(n=>n.textContent).join(' '),/branch/);
+ const links=walk(u.node('sessions')).filter(n=>n.textContent.startsWith('Session link source '));assert.equal(links.length,2);
+ links[0].click();await tick();assert.equal(JSON.parse(u.pending[0].opts.body).offset,'200');await u.respond(proofSource);
+ u.node('resnapshot').click();await tick();assert.equal(u.node('sessions').children.length,0);
+});
+test('workspace fragment resolution retains incomplete state without claiming a session',async()=>{
+ const u=ui();await openWorkspaceUI(u);u.node('scan-archives').click();await tick();
+ const item=discoveredCapture('3');item.description.event={type:'http-metadata-chunk',direction:'request',offset:'0',total:'100'};
+ await u.respond({version:'kan-discovery/1',records:[item],next:null});await u.respond({version:'kan-discovery/1',records:[],next:null});
+ walk(u.node('workspace-sessions')).find(n=>n.textContent==='Resolve chunked session links').click();await tick();
+ assert.equal(JSON.parse(u.pending[0].opts.body).source,'archive-A');
+ await u.respond({...contentResult,occurrences:[{record:{sequence:'3'}}],groups:[{metadata:[{state:'incomplete',fragmented:true,session_link:null,sources:[{input:'0',bytes:['210','260']}]}]}]});
+ assert.match(walk(u.node('workspace-sessions')).map(n=>n.textContent).join(' '),/Metadata incomplete/);assert.match(u.node('workspace-coverage').textContent,/0 explicit session groups/);
+ walk(u.node('workspace-sessions')).find(n=>n.textContent==='Resolve chunked session links').click();await tick();u.node('lock').click();await u.respond(contentResult);assert.equal(u.node('workspace-sessions').children.length,0);
+});
+
+const searchCatalog={...proofCatalog,scopes:[proofEntry('archive-A'),proofEntry('archive-B')],capabilities:[...proofCatalog.capabilities,'text-search','saved-views'],unavailable:proofCatalog.unavailable.filter(x=>x!=='saved-views')};
+const searchPage={state:'indexed',indexed_occurrences:3,indexed_at:'123',hits:[{record:proofRow,writer:'writer',kind:'opaque',offset:'5',end:'11',snippet:'<script>Needle</script>'}],next:null,unsearchable_bytes:'0',unavailable_matches:0,facets_as_indexed:{kind:{opaque:3},writer:{writer:3}}};
+async function openSearch(u){await u.login();await u.respond(searchCatalog);await u.respond(proofPage);u.node('search-text').value='needle';u.node('search-form').events.submit({preventDefault(){}});await tick();}
+test('persistent search scans distinct archives, keeps text inert and opens the exact pinned citation',async()=>{
+ const u=ui();await openSearch(u);assert.equal(u.node('search-workspace').hidden,false);
+ for(const id of ['archive-A','archive-B']){let q=JSON.parse(u.pending[0].opts.body);assert.equal(q.action,'index-page');assert.equal(q.target.source,id);await u.respond(searchPage);q=JSON.parse(u.pending[0].opts.body);assert.equal(q.action,'search-page');assert.equal(q.filter.text,'needle');await u.respond(searchPage);}
+ assert.equal(u.node('search-results').children.length,2);assert.match(u.node('search-coverage').textContent,/2 matches/);assert.equal(u.node('resume-search').disabled,true);
+ const row=u.node('search-results').children[1];assert.equal(row.children[1].textContent,'<script>Needle</script>');row.children.at(-1).click();await tick();const q=JSON.parse(u.pending[0].opts.body);assert.equal(q.source,'archive-B');assert.equal(q.offset,'5');assert.deepEqual(q.selection,proofRow.selection);assert.equal(u.node('rows').children.length,0);await u.respond({...proofSource,offset:'5'});
+ u.node('lock').click();assert.equal(u.node('search-results').children.length,0);assert.equal(u.node('search-text').value,'');assert.equal(u.node('search-workspace').hidden,true);
+});
+test('search stop and revocation cannot accept late snippets or leave saved views exposed',async()=>{
+ const u=ui();await openSearch(u);await u.respond(searchPage);const request=u.pending[0];u.node('stop-search').click();assert.equal(request.opts.signal.aborted,true);await u.respond(searchPage);assert.equal(u.node('search-results').children.length,0);assert.equal(u.node('resume-search').disabled,false);
+ u.node('resume-search').click();await tick();assert.equal(JSON.parse(u.pending[0].opts.body).cursor,null);await u.respond(searchPage);await u.respond({},403);assert.equal(u.node('library').hidden,true);assert.equal(u.node('search-results').children.length,0);assert.equal(u.node('saved-views').children.length,0);
+});
+test('saved views preserve exact snapshots and filters and reload through the shared API',async()=>{
+ const u=ui();await openSearch(u);for(let i=0;i<2;i++){await u.respond(searchPage);await u.respond(searchPage);}
+ u.node('view-name').value='My view';u.node('save-view').click();await tick();const saved=JSON.parse(u.pending[0].opts.body);assert.equal(saved.action,'save-view');assert.equal(saved.targets.length,2);assert.deepEqual(saved.targets[0].pin,pin);assert.equal(saved.filter.text,'needle');await u.respond({...saved,id:'view-id'});
+ u.node('load-views').click();await tick();await u.respond({coverage:'complete',views:[{...saved,id:'view-id',author:'owner'}]});const button=u.node('saved-views').children[0].children.at(-1);button.click();await tick();const request=JSON.parse(u.pending[0].opts.body);assert.equal(request.action,'index-page');assert.deepEqual(request.target,saved.targets[0]);u.node('lock').click();await u.respond(searchPage);assert.equal(u.pending.length,0);assert.equal(u.node('saved-views').children.length,0);
+});
+
+const knowledgeCatalog={...searchCatalog,scopes:[proofEntry('archive-A'),proofEntry('archive-B')],capabilities:[...searchCatalog.capabilities,'annotations'],unavailable:searchCatalog.unavailable.filter(x=>x!=='annotations')};
+async function openKnowledge(u){await u.login();await u.respond(knowledgeCatalog);await u.respond(proofPage);u.node('rows').children[0].click();await tick();await u.respond(proofSource);u.node('annotate-source').click();u.node('annotation-subject').value='decision/test';u.node('annotation-text').value='<script>A note</script>';u.node('annotation-tags').value='decision, useful';}
+test('annotation preview verifies exact citations before append and corrections retain the prior record',async()=>{
+ const u=ui();await openKnowledge(u);assert.equal(u.node('knowledge').hidden,false);assert.equal(u.node('annotation-form').hidden,false);
+ u.node('annotation-form').events.submit({preventDefault(){}});await tick();const request=JSON.parse(u.pending[0].opts.body);assert.equal(request.action,'annotation-preview');assert.deepEqual(request.draft.cites,[{source:'archive-A',pin,selection:proofRow.selection}]);assert.equal(u.node('save-annotation').disabled,true);
+ const preview={id:'digest',declaration:{author:'owner',draft:request.draft},effect:'Append only',evidence:[{source:'archive-A',record:proofRow,availability:'available'}]};await u.respond(preview);assert.match(u.node('annotation-preview').textContent,/<script>A note<\/script>/);assert.equal(u.node('save-annotation').disabled,false);
+ u.node('save-annotation').click();await tick();const save=JSON.parse(u.pending[0].opts.body);assert.equal(save.action,'annotation-save');assert.equal(save.preview,'digest');assert.deepEqual(save.draft,request.draft);const note={id:'digest',...preview.declaration};await u.respond(note);assert.equal(JSON.parse(u.pending[0].opts.body).action,'annotations');await u.respond({records:[note],coverage:'complete'});
+ assert.equal(u.node('annotation-form').hidden,true);const row=u.node('annotation-list').children[0];assert.equal(row.children[1].textContent,'<script>A note</script>');row.children.at(-1).click();assert.match(u.node('annotation-target').textContent,/correction of digest/);assert.equal(u.node('annotation-subject').value,'decision/test');assert.equal(u.node('annotation-list').children.length,1);
+ u.node('lock').click();assert.equal(u.node('annotation-list').children.length,0);assert.equal(u.node('annotation-text').value,'');assert.equal(u.node('knowledge').hidden,true);
+});
+test('editing or cancelling an annotation invalidates an in-flight preview',async()=>{
+ for(const action of ['edit','cancel']){const u=ui();await openKnowledge(u);u.node('annotation-form').events.submit({preventDefault(){}});await tick();const pending=u.pending[0];if(action==='edit'){u.node('annotation-text').value='changed';u.node('annotation-text').events.input();}else u.node('cancel-annotation').click();assert.equal(pending.opts.signal.aborted,true);await u.respond({id:'stale',declaration:{author:'owner',draft:{}},evidence:[],effect:'old'});assert.equal(u.node('save-annotation').disabled,true);assert.equal(u.node('annotation-preview').textContent,'');}
+});
+
+test('operations navigation is shown only for a configured capability and cleared on lock',async()=>{
+ const u=ui();await u.login();await u.respond({...proofCatalog,scopes:[proofEntry('archive-A')],capabilities:[...proofCatalog.capabilities,'operations-read']});await u.respond(proofPage);assert.equal(u.node('operations-link').hidden,false);u.node('lock').click();assert.equal(u.node('operations-link').hidden,true);
+});
+
+test('annotation publication shows the fixed destination and uses exact retry and acknowledgment states',async()=>{
+ const u=ui();await openKnowledge(u);u.node('load-annotations').click();await tick();const note={id:'a'.repeat(64),author:'writer',recorded_at:'123',draft:{subject:'note',text:'retained note',tags:[],supersedes:null,cites:[{source:'archive-A',pin,selection:proofRow.selection}]}};await u.respond({records:[note],coverage:'complete'});
+ const row=u.node('annotation-list').children[0];row.children.find(x=>x.textContent==='Check ledger publication').click();await tick();assert.equal(JSON.parse(u.pending[0].opts.body).action,'annotation-delivery');
+ const status={state:'not-queued',destination:{scope:'target-scope',issuer:'target-issuer',recipient:'public-recipient',endpoint:'http://127.0.0.1:7282/v1/rpc'},destination_digest:'fixed-destination',record:null};await u.respond(status);
+ const parent=row.children.find(x=>x.children.some(y=>y.textContent==='Queue encrypted annotation'));assert.match(parent.children[0].textContent,/target-scope.*target-issuer.*public-recipient/);parent.children.find(x=>x.textContent==='Queue encrypted annotation').click();await tick();assert.deepEqual(JSON.parse(u.pending[0].opts.body),{action:'annotation-queue',id:note.id,destination:'fixed-destination'});
+ await u.respond({...status,state:'queued',record:{manifest:'manifest',position:0}});parent.children.find(x=>x.textContent==='Deliver one queued record').click();await tick();assert.equal(JSON.parse(u.pending[0].opts.body).action,'annotation-drain');await u.respond({pending:'0'});assert.equal(JSON.parse(u.pending[0].opts.body).action,'annotation-delivery');await u.respond({...status,state:'acknowledged',record:{manifest:'manifest',position:0}});assert.match(parent.children[0].textContent,/acknowledged/);assert.equal(parent.children.filter(x=>x.textContent==='Deliver one queued record').length,0);
+});
+
+async function sessionReaderFixture(u){
+ await u.login();await u.respond({...proofCatalog,scopes:['archive-A','archive-B'].map(id=>({...proofEntry(id),pin:{request:'pin-'+id,reply:{}},pin_wire:exactPin,capabilities:['attempt-discovery','content-inspection','attempt-content','session-links','session-content']}))});await u.respond(proofPage);
+ u.node('content-format').value='anthropic-messages-json';u.node('scan-archives').click();await tick();
+ const a=linkedRecord('1','a'.repeat(64)),b=linkedRecord('1','b'.repeat(64),a.description.attempt);
+ await u.respond({version:'kan-discovery/1',records:[a],next:null});await u.respond({version:'kan-discovery/1',records:[b],next:null});
+ walk(u.node('workspace-sessions')).find(n=>n.textContent==='Read conversation · attempts 1–2').click();await tick();
+ const request=JSON.parse(u.pending[0].opts.body);assert.equal(request.action,'proof-session');assert.equal(u.pending[0].url,'/api/library/proof-session');
+ assert.deepEqual(request.attempts.map(a=>a.source),['archive-A','archive-B']);
+ return {version:'kan-session-content/1',identity:request.identity,coverage:'Explicit attempts; no inferred chronology',attempts:request.attempts.map((attempt,index)=>{
+  const content=clone(contentResult);content.occurrences=[{record:{sequence:'1'}}];content.groups[0].writer='verified-writer';content.groups[0].observer=a.description.observer;
+  return {source:attempt.source,pin:attempt.pin,membership:index?'conflicting':'claimed',links:[index?b.description.session_link:a.description.session_link],content};
+ })};
+}
+test('conversation presents attempts without replaying request history as new turns and keeps archive citations',async()=>{
+ const u=ui(),value=await sessionReaderFixture(u);await u.respond(value);
+ assert.equal(u.node('session-reader').hidden,false);
+ const nodes=walk(u.node('session-reader-body'));
+ assert.ok(nodes.some(n=>n.textContent==='Supplied request history · may repeat earlier messages'));
+ assert.ok(nodes.some(n=>String(n.textContent).includes('Session membership conflicting')));
+ assert.ok(nodes.some(n=>n.textContent==='<script>never execute</script>'));
+ const cites=nodes.filter(n=>String(n.textContent).startsWith('Source 1 ·'));assert.equal(cites.length,2);cites[1].click();await tick();
+ const request=JSON.parse(u.pending[0].opts.body);assert.equal(request.source,'archive-B');assert.equal(request.pin.request,'pin-archive-B');assert.equal(request.offset,'20');
+ await u.respond({},403);assert.equal(u.node('session-reader-body').children.length,0);assert.equal(u.node('session-reader').hidden,true);
+});
+test('conversation refuses foreign identity and discards replies after close or lock',async()=>{
+ for(const action of ['identity','close','lock']) {
+  const u=ui(),value=await sessionReaderFixture(u);
+  if(action==='identity')value.identity.writer='other-writer';
+  if(action==='close')u.node('close-session-reader').click();
+  if(action==='lock')u.node('lock').click();
+  await u.respond(value);assert.equal(u.node('session-reader-body').children.length,0,action);assert.equal(u.node('session-reader').hidden,true,action);
+ }
+});
+
+const analysisConfiguration={recipes:[{id:'day-review',revision:'1',purpose:'day-assessment',instructions:'Assess progress using cited evidence only.'}],model:'synthetic-model',endpoint:'http://127.0.0.1:9999/v1/messages',limits:{jobs:10}};
+async function openAnalysisUI(u){
+ await u.login();await u.respond({...proofCatalog,capabilities:[...proofCatalog.capabilities,'analysis','annotations'],unavailable:proofCatalog.unavailable.filter(c=>!['analysis','annotations'].includes(c)),scopes:[{...proofEntry('archive-A'),pin,pin_wire:exactPin}]});await u.respond(proofPage);
+ u.node('rows').children[0].click();await tick();await u.respond(proofSource);u.node('analyze-source').click();await tick();
+ assert.equal(JSON.parse(u.pending[0].opts.body).action,'analysis-jobs');await u.respond({configuration:analysisConfiguration,jobs:[],coverage:'complete'});
+ u.node('analysis-form').events.submit({preventDefault(){}});await tick();return JSON.parse(u.pending[0].opts.body);
+}
+test('analysis requires a destination and recipe preview, submits asynchronously, and treats results as text',async()=>{
+ const u=ui(),request=await openAnalysisUI(u);assert.equal(request.action,'analysis-preview');assert.equal(request.draft.cites[0].source,'archive-A');
+ const checked={digest:'preview-digest',nonce:'a'.repeat(64),effect:'Send selected evidence',endpoint:analysisConfiguration.endpoint,model:'synthetic-model',recipe:analysisConfiguration.recipes[0],input_bytes:8,max_output_tokens:128};
+ await u.respond(checked);assert.match(u.node('analysis-preview').textContent,/127.0.0.1:9999/);assert.match(u.node('analysis-preview').textContent,/day-assessment/);
+ u.node('submit-analysis').click();await tick();assert.deepEqual(JSON.parse(u.pending[0].opts.body),{action:'analysis-submit',draft:request.draft,preview:checked.digest,nonce:checked.nonce,wait:false});
+ const job={id:'job-id',draft:request.draft};await u.respond({state:'running',job});await u.respond({configuration:analysisConfiguration,jobs:[{state:'running',job}],coverage:'complete'});
+ walk(u.node('analysis-jobs')).find(n=>n.textContent==='Inspect job and lineage').click();await tick();
+ await u.respond({state:'succeeded',job,input:{request_hex:'00'},result:{parsed:{content:[{type:'text',text:'<script>derived, never executed</script>'}]}}});
+ assert.ok(walk(u.node('analysis-detail')).some(n=>n.textContent==='<script>derived, never executed</script>'));
+ u.node('lock').click();assert.equal(u.node('analysis-detail').children.length,0);assert.equal(u.node('analysis-jobs').children.length,0);assert.equal(u.node('analysis').hidden,true);
+});
+test('analysis recipe changes and cancellation invalidate stale previews',async()=>{
+ for(const action of ['recipe','cancel']){
+  const u=ui();await openAnalysisUI(u);const pending=u.pending[0];
+  if(action==='recipe')u.node('analysis-recipe').events.change();else u.node('cancel-analysis-draft').click();
+  assert.equal(pending.opts.signal.aborted,true);await u.respond({digest:'stale',nonce:'stale'});assert.equal(u.node('submit-analysis').disabled,true);assert.equal(u.node('analysis-preview').textContent,'');
+ }
+});
+
+test('tag trigger plans are visible before append and scheduling failures remain retryable',async()=>{
+ const u=ui();await openKnowledge(u);u.node('load-annotations').click();await tick();
+ const note={id:'tag-note',author:'reader',analysis_trigger_plan:[{tag:'assess',recipe:{id:'day-review'},endpoint:'http://127.0.0.1:9999/v1/messages'}],draft:{subject:'day/subject',text:'Evidence for assessment',tags:['assess'],cites:[]}};
+ await u.respond({records:[note],coverage:'complete'});
+ walk(u.node('annotation-list')).find(n=>n.textContent==='Inspect tag-triggered jobs').click();await tick();assert.deepEqual(JSON.parse(u.pending[0].opts.body),{action:'annotation-triggers',id:note.id,retry:false});
+ await u.respond({plan:note.analysis_trigger_plan,attempts:[{outcomes:[{recipe:'day-review',state:'not-scheduled',reason:'Quota unavailable'}]}]});
+ walk(u.node('annotation-list')).find(n=>n.textContent==='Retry failed scheduling').click();await tick();assert.equal(JSON.parse(u.pending[0].opts.body).retry,true);
+ u.node('lock').click();await u.respond({plan:[],attempts:[]});assert.equal(u.node('annotation-list').children.length,0);
+});
+
+test('promoting model output drafts an editable annotation with job provenance and original citations',async()=>{
+ const u=ui(),request=await openAnalysisUI(u);u.node('cancel-analysis-draft').click();await u.respond({});
+ u.node('load-analysis').click();await tick();const job={id:'derived-job',draft:request.draft};
+ await u.respond({configuration:analysisConfiguration,jobs:[{state:'succeeded',job}],coverage:'complete'});
+ walk(u.node('analysis-jobs')).find(n=>n.textContent==='Inspect job and lineage').click();await tick();await u.respond({state:'succeeded',job,input:{},result:{parsed:{content:[{type:'text',text:'Review this generated assessment'}]}}});
+ walk(u.node('analysis-detail')).find(n=>n.textContent==='Draft annotation from this result').click();assert.equal(u.node('annotation-text').value,'Review this generated assessment');
+ u.node('annotation-form').events.submit({preventDefault(){}});await tick();const preview=JSON.parse(u.pending[0].opts.body);assert.equal(preview.action,'annotation-preview');assert.deepEqual(preview.draft.derived_from,['derived-job']);assert.deepEqual(preview.draft.cites,request.draft.cites);
+});
+
+test('subject relations are previewed as attributed assertions and day browsing retains correction history',async()=>{
+ const u=ui();await openKnowledge(u);u.node('relation-kind').value='InTensionWith';u.node('relation-target').value='telos/speed';u.node('add-relation').click();
+ u.node('annotation-form').events.submit({preventDefault(){}});await tick();assert.deepEqual(JSON.parse(u.pending[0].opts.body).draft.relations,[{kind:'InTensionWith',target:'telos/speed'}]);
+ u.node('cancel-annotation').click();await u.respond({});u.node('knowledge-mode').value='day';u.node('load-subjects').click();await tick();assert.deepEqual(JSON.parse(u.pending[0].opts.body),{action:'knowledge-graph',subject:null,day:true,after:null,limit:100});
+ await u.respond({coverage:'complete',authority:'Attributed declarations only',subjects:[{subject:'atom/storage',kind:'atom',declarations:2}],relations:[],records:[]});
+ u.node('knowledge-subjects').children[0].click();await tick();assert.equal(JSON.parse(u.pending[0].opts.body).subject,'atom/storage');
+ const declaration={id:'old-note',author:'reader',draft:{subject:'atom/storage',text:'```day-atom\n{"inputs":["raw"],"outputs":["durable"]}\n```',cites:[]}};
+ await u.respond({coverage:'complete',authority:'History retained',subjects:[],records:[{declaration,corrected_by:['new-note']}],relations:[{from:'atom/storage',to:'telos/durability',kind:'About',author:'reader',annotation:'old-note',corrected_by:['new-note']}]});
+ const nodes=walk(u.node('knowledge-detail'));assert.ok(nodes.some(n=>n.textContent==='Declared day-atom structure'));assert.ok(nodes.some(n=>String(n.textContent).includes('corrected by new-note')));
+ nodes.find(n=>n.textContent==='telos/durability').click();await tick();assert.equal(JSON.parse(u.pending[0].opts.body).subject,'telos/durability');u.node('lock').click();await u.respond({});assert.equal(u.node('knowledge-detail').children.length,0);assert.equal(u.node('knowledge-subjects').children.length,0);
+});
+
+async function ownerUI(u){
+ await u.login();await u.respond({...proofCatalog,capabilities:['snapshot-inventory','source-ranges','provenance','payload-availability','owner-maintenance'],scopes:['archive-A','archive-B'].map(proofEntry)});await u.respond(proofPage);
+ u.node('owner-token').value='owner-only-credential';u.node('owner-connect').events.submit({preventDefault(){}});await tick();assert.equal(u.node('owner-token').value,'');assert.equal(u.pending[0].url,'/api/owner');assert.equal(u.pending[0].opts.headers.Authorization,'Bearer owner-only-credential');
+ await u.respond({owner:'owner-did',targets:[{id:'evidence',kind:'archive'}],jobs:[],limits:{jobs:10}});
+}
+test('owner maintenance uses separate credentials and exact preview-bound requests without browser paths',async()=>{
+ const u=ui();await ownerUI(u);u.node('owner-job-form').events.submit({preventDefault(){}});await tick();assert.deepEqual(JSON.parse(u.pending[0].opts.body),{action:'preview',target:'evidence',operation:'backup',retry_of:null});
+ const contract={target:{id:'evidence',kind:'archive',root:'/configured/archive'},operation:'backup',destination:'/configured/output/nonce.sqlite',effect:'New verified backup; no activation',cancellation:'Runs to a safe boundary'};
+ await u.respond({digest:'owner-preview',nonce:'a'.repeat(64),contract});assert.match(u.node('owner-preview').textContent,/no activation/);assert.match(u.node('owner-preview').textContent,/configured\/output/);
+ u.node('owner-submit').click();await tick();assert.deepEqual(JSON.parse(u.pending[0].opts.body),{action:'submit',target:'evidence',operation:'backup',retry_of:null,nonce:'a'.repeat(64),preview:'owner-preview',wait:false});
+ await u.respond({state:'running'});await u.respond({owner:'owner-did',targets:[{id:'evidence',kind:'archive'}],jobs:[{state:'running',job:{id:'job',contract}}],limits:{jobs:10}});
+ walk(u.node('owner-jobs')).find(n=>n.textContent==='Inspect maintenance job').click();await tick();u.node('owner-lock').click();await u.respond({state:'succeeded',secret:'late-result'});assert.equal(u.node('owner-detail').children.length,0);assert.equal(u.node('owner-jobs').children.length,0);assert.equal(u.node('library').hidden,false);
+});
+test('owner target changes invalidate late previews and reader lock clears owner authority',async()=>{
+ const u=ui();await ownerUI(u);u.node('owner-job-form').events.submit({preventDefault(){}});await tick();const pending=u.pending[0];u.node('owner-operation').events.change();assert.equal(pending.opts.signal.aborted,true);await u.respond({digest:'late',nonce:'late',contract:{}});assert.equal(u.node('owner-submit').disabled,true);
+ u.node('owner-refresh').click();await tick();u.node('lock').click();await u.respond({owner:'late',targets:[],jobs:[],limits:{jobs:10}});assert.equal(u.node('owner-controls').hidden,true);assert.equal(u.node('owner-jobs').children.length,0);assert.equal(u.node('owner-preview').textContent,'');
+});
+
+const importedItem={record:proofRow,writer:'writer-A',description:{kind:'import',plan:'a'.repeat(64),ordinal:'0',frame_kind:'inventory',part:0,parts:1,file:null}};
+const importView={version:'kan-import-content/1',plan:'a'.repeat(64),source:'archive-A',pin,state:'inventory-verified',coverage:'Selected file hashes and individual signatures; no repository membership.',files:[{index:0,path:'repo.car',length:'400',present_parts:1,parts:1}],inventory_cites:[{record:proofRow,bytes:['9','40']}],unavailable:[],file:null};
+async function openImported(u){await openDiscovery(u);u.node('scan-attempts').click();await tick();await u.respond({version:'kan-discovery/1',records:[importedItem],next:null});walk(u.node('attempts')).find(n=>n.textContent==='Browse imported files and claims').click();await tick();}
+test('import browser opens files, preserves claim text and exact source coordinates, then clears on revocation',async()=>{
+ const u=ui();await openImported(u);assert.equal(u.pending[0].url,'/api/library/proof-import');assert.equal(JSON.parse(u.pending[0].opts.body).plan,importView.plan);await u.respond(importView);
+ walk(u.node('content-panel')).find(n=>n.textContent==='Read repo.car').click();await tick();assert.equal(JSON.parse(u.pending[0].opts.body).file,0);
+ const value={...importView,file:{index:0,path:'repo.car',state:'verified',sources:importView.inventory_cites,car:{membership:'Not evaluated',scan:{error:null},next:null,records:[{state:'verified-claim',id:'claim-cid',claim:{text:'<script>retained claim</script>',cites:['original-cite']},sources:[{record:proofRow,bytes:['23','39']}]}]}}};
+ await u.respond(value);assert.ok(walk(u.node('content-panel')).some(n=>n.textContent.includes('<script>retained claim</script>')));
+ walk(u.node('content-panel')).find(n=>n.textContent==='Source 3 · 23–39').click();await tick();const request=JSON.parse(u.pending[0].opts.body);assert.equal(request.offset,'23');assert.deepEqual(request.selection,proofRow.selection);await u.respond({},403);assert.equal(u.node('library').hidden,true);assert.equal(u.node('content-panel').children.length,0);
+});
+test('import browser exposes incomplete inventories and rejects a source citation outside the selected frames',async()=>{
+ const u=ui();await openImported(u);await u.respond({...importView,state:'inventory-incomplete',files:[],inventory_cites:[]});assert.ok(walk(u.node('content-panel')).some(n=>n.textContent.includes('complete inventory is not selected')));
+ walk(u.node('attempts')).find(n=>n.textContent==='Browse imported files and claims').click();await tick();await u.respond({...importView,inventory_cites:[{record:{...proofRow,sequence:'99'},bytes:['1','2']}]});assert.equal(u.node('content-panel').children.length,0);assert.equal(u.node('inspection').hidden,true);
+});
+test('owner migration exposes only configured import action and shows pinned snapshot before queueing',async()=>{
+ const u=ui();await ownerUI(u);u.node('owner-refresh').click();await tick();await u.respond({owner:'owner-did',targets:[{id:'legacy',kind:'migration'}],jobs:[],limits:{jobs:10}});
+ assert.equal(u.node('owner-operation').value,'import');assert.equal(u.node('owner-operation').children.length,1);u.node('owner-job-form').events.submit({preventDefault(){}});await tick();assert.equal(JSON.parse(u.pending[0].opts.body).operation,'import');
+ await u.respond({digest:'pinned',nonce:'a'.repeat(64),contract:{import:{plan:'commitment',files:2},effect:'Queue encrypted batch; retain originals',cancellation:'Safe boundary'}});assert.match(u.node('owner-preview').textContent,/commitment/);assert.match(u.node('owner-preview').textContent,/retain originals/);
+});
+test('owner import recovery offers its explicit plaintext restoration operation',async()=>{
+ const u=ui();await ownerUI(u);u.node('owner-refresh').click();await tick();await u.respond({owner:'owner-did',targets:[{id:'snapshot',kind:'import-recovery'}],jobs:[],limits:{jobs:10}});assert.equal(u.node('owner-operation').value,'restore-import');assert.equal(u.node('owner-operation').children.length,1);
+});
+test('application navigation exposes available areas and clears them on lock',async()=>{
+ const u=ui();await openSearch(u);assert.equal(u.node('nav-search').hidden,false);assert.equal(u.node('nav-evidence').hidden,false);assert.equal(u.node('nav-knowledge').hidden,true);u.node('lock').click();for(const id of ['search','evidence','sessions','imports','knowledge','views','analysis','owner'])assert.equal(u.node('nav-'+id).hidden,true);
+});
+test('search includes observer, attempt and attestation time in the reproducible filter',async()=>{
+ const u=ui();await u.login();await u.respond(searchCatalog);await u.respond(proofPage);u.node('search-text').value='needle';u.node('search-tag').value='decision';u.node('search-subject').value='project/example';u.node('search-observer').value='gateway';u.node('search-attempt').value='a'.repeat(64);u.node('search-from').value='2026-10-20T00:00';u.node('search-to').value='2026-10-21T00:00';u.node('search-form').events.submit({preventDefault(){}});await tick();await u.respond({indexed_occurrences:1,next:null});const request=JSON.parse(u.pending[0].opts.body);assert.equal(request.filter.annotation_tag,'decision');assert.equal(request.filter.annotation_subject,'project/example');assert.equal(request.filter.observer,'gateway');assert.equal(request.filter.attempt,'a'.repeat(64));assert.equal(request.filter.attested_from,String(new Date('2026-10-20T00:00').getTime()));assert.ok(BigInt(request.filter.attested_to)>BigInt(request.filter.attested_from));
+});
+test('import source inspection retains its selection for following bytes and fresh-authority export',async()=>{
+ const u=ui();await openImported(u);await u.respond(importView);walk(u.node('content-panel')).find(n=>n.textContent==='Source 3 · 9–40').click();await tick();await u.respond({...proofSource,offset:'9',next:'13',total_bytes:'17'});
+ u.node('more').click();await tick();let request=JSON.parse(u.pending[0].opts.body);assert.deepEqual(request.selection,proofRow.selection);assert.equal(request.offset,'13');await u.respond({...proofSource,offset:'13',next:null,total_bytes:'17'});
+ u.node('download').click();await tick();request=JSON.parse(u.pending[0].opts.body);assert.deepEqual(request.selection,proofRow.selection);assert.equal(request.offset,'13');await u.respond({},403);assert.equal(u.node('library').hidden,true);
+});
+test('owner offers reconciliation only when a fixed recovery directory is configured',async()=>{
+ const u=ui();await ownerUI(u);u.node('owner-refresh').click();await tick();await u.respond({owner:'owner-did',targets:[{id:'legacy',kind:'migration',recovered:'/configured/recovery'}],jobs:[],limits:{jobs:10}});assert.deepEqual(u.node('owner-operation').children.map(n=>n.value),['import','reconcile-import']);
+});
+
+test('owner workspace recovery offers only the configured recovery operation',async()=>{
+ const u=ui();await ownerUI(u);u.node('owner-refresh').click();await tick();await u.respond({owner:'owner-did',targets:[{id:'reader-history',kind:'workspace-recovery'}],jobs:[],limits:{jobs:10}});assert.deepEqual(u.node('owner-operation').children.map(n=>n.value),['recover']);
+});
+
+test('search reconstructs selected attempts after inventory and opens every contributing range',async()=>{
+ const u=ui();await openSearch(u);
+ const member={record:proofRow,writer:'writer',observer:'collector',attempt:'a'.repeat(64)};
+ const page={...searchPage,hits:[],attempt_members:[member]};
+ await u.respond(page);await u.respond(page);
+ await u.respond(searchPage);await u.respond({...searchPage,hits:[],attempt_members:[]});
+ let q=JSON.parse(u.pending[0].opts.body);assert.equal(q.action,'search-attempt');assert.equal(q.target.source,'archive-A');assert.deepEqual(q.selections,[proofRow.selection]);
+ const second={...proofRow,sequence:'2',selection:{...proofRow.selection,body:'second-selection'}};
+ const hit={...searchPage.hits[0],kind:'capture',interpretation:'reconstructed-message',coarse:true,direction:'request',item:1,cites:[{record:proofRow,offset:'200',end:'210'},{record:second,offset:'300',end:'320'}]};
+ await u.respond({version:'normalized-attempt-search/1',hits:[hit],streams:[{attempt:member.attempt,direction:'response',state:'unavailable',issues:[]}]});
+ assert.equal(u.node('search-results').children.length,1);assert.match(u.node('search-facets').children.map(n=>n.textContent).join(' '),/response: unavailable/);assert.equal(u.node('resume-search').disabled,true);
+ const links=walk(u.node('search-results')).filter(n=>n.textContent.startsWith('Source '));assert.equal(links.length,2);links[1].click();await tick();q=JSON.parse(u.pending[0].opts.body);assert.equal(q.source,'archive-A');assert.equal(q.offset,'300');assert.deepEqual(q.selection,second.selection);await u.respond(proofSource);
+});
+
+test('portable reference resolution installs fresh reader selections and clears exports on lock',async()=>{
+ const fresh={...proofCatalog,scopes:[proofEntry('archive-A')]};const u=ui();await u.login();await u.respond(fresh);await u.respond(proofPage);
+ const reference={version:1,binding:{archive:'archive-A'},coordinate:{through:'1',manifest:'m',attestation:'a'},receipt:'r'};
+ u.node('reference-input').value=JSON.stringify({reference,offset:'9'});u.node('reference-form').events.submit({preventDefault(){}});await tick();assert.deepEqual(JSON.parse(u.pending[0].opts.body),{action:'resolve-reference',reference});
+ const entry=fresh.scopes[0],record={...proofRow,selection:{...proofRow.selection,body:'new-reader-selection'}};
+ await u.respond({source:entry.id,pin:entry.pin,pin_wire:entry.pin_wire,record,reference});
+ const query=JSON.parse(u.pending[0].opts.body);assert.equal(query.action,'proof-source');assert.equal(query.offset,'9');assert.deepEqual(query.selection,record.selection);
+ await u.respond({...proofSource,record,reference,offset:'9'});assert.deepEqual(JSON.parse(u.node('reference-value').value),{reference,offset:'9'});assert.equal(u.node('reference-export').hidden,false);
+ u.node('lock').click();assert.equal(u.node('reference-input').value,'');assert.equal(u.node('reference-value').value,'');assert.equal(u.node('reference-export').hidden,true);
+});
+
+test('published annotation restoration requires preview and keeps provenance and lock state',async()=>{
+ const u=ui();await u.login();await u.respond(knowledgeCatalog);await u.respond(proofPage);
+ u.node('rows').children[0].click();await tick();
+ const reference={version:1,binding:{archive:'archive-A'},coordinate:{through:'3'},receipt:'r'};
+ await u.respond({...proofSource,reference,utf8:'{"format":"kan-annotation/1","declaration":{}}',offset:'0'});
+ assert.equal(u.node('restore-annotation').hidden,false);u.node('restore-annotation').click();await tick();assert.equal(JSON.parse(u.pending[0].opts.body).action,'restore-annotation');
+ await u.respond({state:'preview',digest:'checked',contract:{declaration:{author:'original',id:'retained'}}});assert.equal(u.node('annotation-recovery-save').disabled,false);
+ u.node('annotation-recovery-save').click();await tick();assert.deepEqual(JSON.parse(u.pending[0].opts.body),{action:'restore-annotation',reference,preview:'checked'});
+ await u.respond({state:'restored',annotation:{id:'retained',author:'original'}});assert.match(u.node('annotation-recovery-preview').textContent,/original author original/);
+ u.node('lock').click();assert.equal(u.node('annotation-recovery').hidden,true);assert.equal(u.node('annotation-recovery-preview').textContent,'');
+});
+test('import repository view separates reachability from trust and follows fold sources',async()=>{
+ const u=ui();await openImported(u);await u.respond(importView);walk(u.node('content-panel')).find(n=>n.textContent==='Read repo.car').click();await tick();
+ const author={did:'did:key:synthetic',agent:null},repo={state:'membership-verified',head:'head-cid',head_sources:importView.inventory_cites,records:2,commit:{signature:'valid-static-did-key',after:5},authors:[author],fold:{coverage:'Verified reachable v1 claims; explicit trust is interpretation.',verified_claims:2,uninterpreted_members:0,total_classes:0,classes:[],excluded_by_trust:[{subject:{Local:'telos/memory'},claims:2}],next:null}};
+ const value={...importView,file:{index:0,path:'repo.car',state:'verified',sources:importView.inventory_cites,car:{membership:'Exact imported HEAD only',repository:repo,scan:{error:null},records:[{state:'verified-claim',id:'claim-1',block:'block-1',membership:{state:'not-a-current-record'},claim:{text:'historical'},sources:importView.inventory_cites}],next:null}}};
+ await u.respond(value);assert.ok(walk(u.node('content-panel')).some(n=>n.textContent.includes('not-a-current-record')));
+ const checkbox=walk(u.node('content-panel')).find(n=>n.type==='checkbox');assert.equal(checkbox.checked,false);checkbox.checked=true;
+ walk(u.node('content-panel')).find(n=>n.textContent==='Apply repository trust view').click();await tick();assert.deepEqual(JSON.parse(u.pending[0].opts.body).view,{trust:[author],subjects_after:0});
+ const folded={...value,file:{...value.file,car:{...value.file.car,repository:{...repo,fold:{...repo.fold,total_classes:1,classes:[{subjects:[{Local:'telos/memory'}],status:{kind:'contested'},live_status_claims:['a','b'],witnesses:[],claims:[{id:'claim-1',author,body:{Observation:{text:'<b>raw</b>'}},cites:['original'],source:{after:2}}]}]}}}}};
+ await u.respond(folded);assert.ok(walk(u.node('content-panel')).some(n=>n.textContent==='contested'));assert.ok(walk(u.node('content-panel')).some(n=>n.textContent.includes('<b>raw</b>')));
+ walk(u.node('content-panel')).find(n=>n.textContent==='Inspect claim claim-1').click();await tick();const request=JSON.parse(u.pending[0].opts.body);assert.equal(request.after,2);assert.deepEqual(request.view.trust,[author]);u.node('lock').click();await u.respond(folded);assert.equal(u.node('content-panel').children.length,0);
+});
+test('owner access controls preview an exact grant set and clear pending changes on edits or lock',async()=>{
+ const u=ui();await u.login();await u.respond({...proofCatalog,scopes:[proofEntry('archive-A')]});await u.respond(proofPage);u.node('owner-token').value='owner-credential';u.node('owner-connect').events.submit({preventDefault(){}});await tick();
+ await u.respond({owner:'owner',targets:[{kind:'access-policy',id:'policy'}],jobs:[],limits:{jobs:10}});assert.equal(u.node('access-controls').hidden,false);assert.equal(u.node('owner-maintenance-preview').disabled,false);assert.equal(u.node('owner-operation').value,'rebuild-control-index');
+ u.node('access-load').click();await tick();assert.deepEqual(JSON.parse(u.pending[0].opts.body),{action:'access',target:'policy',after:0});
+ const grant={principal:'did:key:reader',append:true,inventory:true};const current={sequence:'0',recorded_at:'100',previous:null,grants:[grant]};
+ await u.respond({target:'policy',owner:'owner',snapshot:{tip:'old',changes:1,current:{change:current}},records:[{change:current}],next:null});assert.equal(u.node('access-editor').hidden,false);
+ walk(u.node('access-grants')).find(n=>n.textContent==='Remove grant').click();u.node('access-preview').click();await tick();assert.deepEqual(JSON.parse(u.pending[0].opts.body),{action:'preview-access',target:'policy',grants:[]});
+ const change={sequence:'1',previous:'old',grants:[],nonce:'nonce'};await u.respond({target:'policy',digest:'digest',change,effect:'Revoke subsequent access; retain prior history.'});assert.match(u.node('access-plan').textContent,/No principals/);
+ u.node('access-apply').click();await tick();assert.deepEqual(JSON.parse(u.pending[0].opts.body),{action:'apply-access',target:'policy',change,preview:'digest'});
+ await u.respond({state:'applied',target:'policy'});await u.respond({target:'policy',owner:'owner',snapshot:{tip:'new',changes:2,current:{change}},records:[{change:current},{change}],next:null});
+ u.node('access-add').click();const input=walk(u.node('access-grants')).find(n=>n.attrs['aria-label']==='Principal DID');input.value='did:key:new';u.node('access-preview').click();await tick();input.events.input();await u.respond({target:'policy',digest:'late',change,effect:'late'});assert.equal(u.node('access-apply').disabled,true);
+ u.node('owner-lock').click();assert.equal(u.node('access-grants').children.length,0);assert.equal(u.node('access-history').children.length,0);assert.equal(u.node('access-plan').textContent,'');
+});
+test('owner key controls show retained epochs, apply exact previews, and invalidate restore on edits and lock',async()=>{
+ const u=ui();await u.login();await u.respond({...proofCatalog,scopes:[proofEntry('archive-A')]});await u.respond(proofPage);u.node('owner-token').value='owner-credential';u.node('owner-connect').events.submit({preventDefault(){}});await tick();
+ await u.respond({owner:'owner',targets:[{kind:'key-history',id:'keys'}],jobs:[],limits:{jobs:10}});assert.equal(u.node('key-controls').hidden,false);assert.equal(u.node('owner-maintenance-preview').disabled,true);
+ u.node('key-preview').click();await tick();assert.deepEqual(JSON.parse(u.pending[0].opts.body),{action:'preview-key-rotation',target:'keys'});
+ const change={sequence:'0',previous:null,recipient:'public-epoch',recorded_at:'100'};await u.respond({target:'keys',digest:'digest',change,effect:'Keep old epochs.'});assert.match(u.node('key-plan').textContent,/Keep old epochs/);
+ u.node('key-apply').click();await tick();assert.deepEqual(JSON.parse(u.pending[0].opts.body),{action:'apply-key-rotation',target:'keys',change,preview:'digest'});
+ await u.respond({target:'keys',state:'applied'});await u.respond({target:'keys',snapshot:{epochs:1,current_recipient:'public-epoch',tip:'checkpoint',history:[{change}]},custody:'Credential verified'});assert.match(u.node('key-status').textContent,/1 retained epochs/);
+ u.node('key-export').click();await tick();const pkg={version:'kan-key-recovery/1',records:[{change}],tip:'checkpoint'};await u.respond({target:'keys',package:pkg,custody:'Wrapped keys only.'});assert.deepEqual(JSON.parse(u.node('key-package').value),pkg);assert.equal(u.node('key-download').disabled,false);
+ u.node('key-download').click();assert.equal(u.forms.length,1);assert.equal(u.forms[0].action,'/api/owner/download');assert.deepEqual(JSON.parse(u.forms[0].payload).package,pkg);assert.equal(u.forms[0].element.children[0].value,'');
+ u.node('key-restore-preview').click();await tick();assert.deepEqual(JSON.parse(u.pending[0].opts.body),{action:'restore-keys',target:'keys',package:pkg,preview:null});await u.respond({target:'keys',digest:'restore-digest',tip:'checkpoint',epochs:1,effect:'Restore wrapped history.'});assert.equal(u.node('key-restore-apply').disabled,false);
+ u.node('key-package').events.input();assert.equal(u.node('key-restore-apply').disabled,true);assert.equal(u.node('key-download').disabled,true);
+ u.node('key-preview').click();await tick();u.node('owner-lock').click();await u.respond({target:'keys',digest:'late',change,effect:'late'});assert.equal(u.node('key-apply').disabled,true);assert.equal(u.node('key-package').value,'');assert.equal(u.node('key-history').children.length,0);
+});
+test('missing decryption epoch keeps provenance but disables source download and analysis',async()=>{
+ const u=ui();await u.login();await u.respond({...proofCatalog,scopes:[proofEntry('archive-A')]});await u.respond(proofPage);u.node('rows').children[0].click();await tick();
+ await u.respond({scope:'s',archive:'archive-A',profile:'admitted',record:proofPage.records[0],availability:'key-unavailable',writer:'verified-writer',content_trust:'Untrusted capture',signature:'Verified writer',admission:'Retained',service_issuer:'issuer'});
+ assert.equal(u.node('download').disabled,true);assert.equal(u.node('analyze-source').hidden,true);assert.match(u.node('source').textContent,/key-unavailable/);assert.equal(u.node('provenance-tab').disabled,false);
+});
+test('imported current claims use explicit control evidence and preserve the four judgments in the human view',async()=>{
+ const u=ui();await openImported(u);await u.respond(importView);walk(u.node('content-panel')).find(n=>n.textContent==='Read repo.car').click();await tick();
+ const control={...importView,file:{index:0,path:'inception.cbor',state:'verified',sources:importView.inventory_cites,preview:null,control:{logical_id:'control-id',proved_id:'proved-id',supported:true,raw:{domain:'scope'},interpretation:'Evidence only'}}};
+ await u.respond(control);walk(u.node('content-panel')).find(n=>n.textContent==='Use this control evidence').click();
+ walk(u.node('content-panel')).find(n=>n.textContent==='Read repo.car').click();await tick();assert.equal(JSON.parse(u.pending[0].opts.body).view.controls.length,1);
+ const principal='did:key:current',current={coverage:'Selected control history only',authors:[principal],verified_claims:1,excluded_by_trust:1,unresolved:[],identities:[],scopes:[],controls:[],classes:[],next:null};
+ const repo={state:'membership-verified',head:'head',records:1,commit:{signature:'valid-static-did-key',after:2},authors:[],fold:{coverage:'Legacy',verified_claims:0,uninterpreted_members:1,total_classes:0,classes:[],next:null},current};
+ const value={...importView,file:{index:0,path:'repo.car',state:'verified',sources:importView.inventory_cites,car:{membership:'HEAD',scan:{error:null},records:[],next:null,repository:repo}}};
+ await u.respond(value);walk(u.node('content-panel')).find(n=>n.type==='checkbox').checked=true;walk(u.node('content-panel')).find(n=>n.textContent==='Apply current principal trust').click();await tick();const view=JSON.parse(u.pending[0].opts.body).view;assert.deepEqual(view.principals,[principal]);assert.equal(view.controls[0].parts[0].source,'archive-A');
+ const group={subjects:[{scope:'scope-id',path:'goal'}],status:{kind:'unclassified'},claims:[{id:'current-claim',content:{body:'raw'},judgments:{cryptographicValidity:'valid',identityStateStanding:'static',scopeAdmission:'unknown',viewTrust:'included'},source:{after:3}}],witnesses:[],live_status_claims:[]};
+ await u.respond({...value,file:{...value.file,car:{...value.file.car,repository:{...repo,current:{...current,excluded_by_trust:0,classes:[group]}}}}});
+ assert.ok(walk(u.node('content-panel')).some(n=>n.textContent.includes('scopeAdmission')));walk(u.node('content-panel')).find(n=>n.textContent==='Inspect current claim current-claim').click();await tick();assert.equal(JSON.parse(u.pending[0].opts.body).after,3);
+ u.node('lock').click();await u.respond(value);assert.equal(u.node('content-panel').children.length,0);
+});
+test('key transfer selects exact epochs and discards preview on recipient edit or lock',async()=>{
+ const u=ui();await u.login();await u.respond({...proofCatalog,scopes:[proofEntry('archive-A')]});await u.respond(proofPage);u.node('owner-token').value='owner-credential';u.node('owner-connect').events.submit({preventDefault(){}});await tick();await u.respond({owner:'owner',targets:[{kind:'key-history',id:'keys'}],jobs:[],limits:{jobs:10}});
+ u.node('key-load').click();await tick();const change={sequence:'0',recipient:'epoch',recorded_at:'100'};
+ await u.respond({target:'keys',epoch_ids:['id0','id1'],snapshot:{epochs:2,tip:'tip',history:[{change},{change:{...change,sequence:'1'}}]},custody:'verified'});
+ const checks=u.node('key-transfer-epochs').children.map(n=>n.children[0]);checks[0].checked=false;checks[0].events.change();u.node('key-recipient').value='ab'.repeat(32);u.node('key-transfer-purpose').value='share-epochs';
+ u.node('key-transfer-preview').click();await tick();assert.deepEqual(JSON.parse(u.pending[0].opts.body),{action:'preview-key-transfer',target:'keys',recipient:'ab'.repeat(32),epochs:['id1'],purpose:'share-epochs'});
+ const plan={recipient:'ab'.repeat(32),epochs:['id1'],purpose:'share-epochs',source_tip:'tip'};await u.respond({target:'keys',digest:'digest',plan,effect:'Transfer selected custody.'});assert.equal(u.node('key-transfer-apply').disabled,false);
+ u.node('key-recipient').events.input();assert.equal(u.node('key-transfer-apply').disabled,true);
+ u.node('key-transfer-preview').click();await tick();await u.respond({target:'keys',digest:'digest',plan,effect:'Transfer selected custody.'});u.node('key-transfer-apply').click();await tick();assert.deepEqual(JSON.parse(u.pending[0].opts.body),{action:'apply-key-transfer',target:'keys',plan,preview:'digest'});
+ const pkg={version:'kan-key-recovery/1',records:[]};await u.respond({target:'keys',package:pkg,custody:'No grants changed.'});assert.deepEqual(JSON.parse(u.node('key-package').value),pkg);assert.equal(u.node('key-download').disabled,false);
+ u.node('owner-lock').click();assert.equal(u.node('key-recipient').value,'');assert.equal(u.node('key-transfer-epochs').children.length,0);assert.equal(u.node('key-package').value,'');
+});
+
+test('saved import views retain explicit trust and control selections when reopened',async()=>{
+ const u=ui();await openImported(u);u.node('search-workspace').hidden=false;await u.respond(importView);
+ const name=walk(u.node('content-panel')).find(n=>n.attrs['aria-label']==='Imported view name');name.value='Pinned trust';walk(u.node('content-panel')).find(n=>n.textContent==='Save import & trust view').click();await tick();const save=JSON.parse(u.pending[0].opts.body);assert.equal(save.action,'save-import-view');assert.equal(save.name,'Pinned trust');assert.deepEqual(save.selections,[proofRow.selection]);
+ const query={...save};delete query.action;delete query.name;query.view={trust:[],principals:['did:key:chosen'],controls:[],subjects_after:0,current_after:0};
+ const saved={kind:'import',id:'saved-import',name:'Pinned trust',query,records:[proofRow],targets:[{source:'archive-A',pin}],trust:'Pinned evidence and trust'};await u.respond(saved);
+ u.node('load-views').click();await tick();await u.respond({views:[saved],coverage:'complete'});walk(u.node('saved-views')).find(n=>n.textContent==='Open pinned import & trust view').click();await tick();let request=JSON.parse(u.pending[0].opts.body);assert.equal(request.action,'proof-import');assert.deepEqual(request.view,query.view);assert.deepEqual(request.pin,pin);
+ await u.respond(importView);walk(u.node('content-panel')).find(n=>n.textContent==='Read repo.car').click();await tick();request=JSON.parse(u.pending[0].opts.body);assert.deepEqual(request.view,query.view);u.node('lock').click();await u.respond({...importView,file:{index:0,path:'repo.car',state:'incomplete'}});assert.equal(u.node('saved-views').children.length,0);
+});
+
+test('withdrawal previews the inherited evidence and reason, labels retained history, and resets on lock',async()=>{
+ const u=ui();await openKnowledge(u);u.node('load-annotations').click();await tick();
+ const note={id:'a'.repeat(64),author:'owner',draft:{subject:'decision/one',text:'Original assertion',tags:['decision'],supersedes:null,cites:[{source:'archive-A',pin,selection:proofRow.selection}],relations:[{kind:'About',target:'subject'}]}};
+ await u.respond({records:[note],withdrawals:{[note.id]:['earlier-withdrawal']},coverage:'complete'});
+ const row=u.node('annotation-list').children[0];assert.ok(row.children.some(n=>n.textContent.includes('Withdrawn by author')));
+ row.children.find(n=>n.textContent==='Withdraw annotation').click();assert.equal(u.node('annotation-subject').disabled,true);assert.equal(u.node('annotation-tags').disabled,true);assert.equal(u.node('add-relation').disabled,true);assert.match(u.node('annotation-target').textContent,/withdrawal of/);
+ u.node('annotation-text').value='The interpretation was mistaken';u.node('annotation-form').events.submit({preventDefault(){}});await tick();
+ const request=JSON.parse(u.pending[0].opts.body);assert.equal(request.draft.withdraws,note.id);assert.equal(request.draft.supersedes,null);assert.deepEqual(request.draft.cites,note.draft.cites);assert.deepEqual(request.draft.tags,[]);assert.equal(request.draft.relations,undefined);
+ const withdrawal={id:'withdrawal',author:'owner',draft:request.draft};await u.respond({id:withdrawal.id,declaration:withdrawal,evidence:[{source:'archive-A',record:proofRow,availability:'available'}],effect:'Append withdrawal; retain original'});
+ u.node('save-annotation').click();await tick();assert.equal(JSON.parse(u.pending[0].opts.body).draft.withdraws,note.id);await u.respond(withdrawal);await u.respond({records:[note,withdrawal],withdrawals:{[note.id]:[withdrawal.id]},coverage:'complete'});
+ assert.equal(u.node('annotation-list').children.length,2);assert.ok(!u.node('annotation-list').children[1].children.some(n=>n.textContent==='Withdraw annotation'||n.textContent==='Append correction'));
+ u.node('lock').click();assert.equal(u.node('annotation-list').children.length,0);assert.equal(u.node('annotation-subject').disabled,false);assert.equal(u.node('annotation-text').value,'');
+});
+
+test('owner settings expose configured targets only after owner authorization and clear on lock',async()=>{
+ const u=ui();await u.login();await u.respond({...proofCatalog,scopes:[proofEntry('archive-A')],capabilities:[...proofCatalog.capabilities,'owner-maintenance']});await u.respond(proofPage);
+ assert.equal(u.node('owner-settings').children.length,0);u.node('owner-token').value='synthetic-owner-token';u.node('owner-connect').events.submit({preventDefault(){}});await tick();
+ await u.respond({owner:'owner',limits:{jobs:10},jobs:[],targets:[{id:'archive',kind:'archive',root:'/private/synthetic/archive',output:'/private/synthetic/backup',binding:{scope:'scope',archive:'archive',issuer:'issuer'}}]});
+ const rows=u.node('owner-settings').children.map(row=>row.children.map(n=>n.textContent));assert.deepEqual(rows.find(row=>row[0]==='Archive directory'),['Archive directory','/private/synthetic/archive']);assert.match(rows.find(row=>row[0]==='Pinned archive identity')[1],/scope/);
+ u.node('owner-lock').click();assert.equal(u.node('owner-settings').children.length,0);assert.equal(u.node('library').hidden,false);
+});
+
+test('erased-source annotations show minimal status without a body or publication controls',async()=>{
+ const u=ui();await openKnowledge(u);u.node('load-annotations').click();await tick();
+ await u.respond({records:[],erased:[{id:'a'.repeat(64),state:'erased-source',cleanup:'pending-coordinated-erasure'}],coverage:'complete'});
+ const nodes=walk(u.node('annotation-list'));assert.ok(nodes.some(n=>n.textContent.includes('source erased by owner')));
+ assert.ok(nodes.some(n=>n.textContent.includes('cleanup pending')));assert.equal(nodes.some(n=>n.textContent==='Check ledger publication'),false);
+ u.node('lock').click();assert.equal(u.node('annotation-list').children.length,0);
+});
+
+test('capture erasure requires exact preview, clears on edits and lock, and resumes the retained job',async()=>{
+ const u=ui();await u.login();await u.respond({...proofCatalog,scopes:[proofEntry('archive-A')]});await u.respond(proofPage);
+ u.node('owner-token').value='owner-credential';u.node('owner-connect').events.submit({preventDefault(){}});await tick();
+ const targets=[{kind:'capture-erasure',id:'capture',root:'/synthetic/archive'}];
+ const catalog={owner:'owner',targets,jobs:[],limits:{jobs:10}};await u.respond(catalog);
+ assert.equal(u.node('erasure-controls').hidden,false);assert.equal(u.node('owner-maintenance-preview').disabled,false);assert.equal(u.node('owner-operation').value,'rebuild-control-index');assert.equal(u.node('erasure-apply').disabled,true);
+ u.node('erasure-writer').value='did:key:writer';u.node('erasure-attempt').value='a'.repeat(64);u.node('erasure-preview').click();await tick();
+ assert.deepEqual(JSON.parse(u.pending[0].opts.body),{action:'preview-erasure-selection',target:'capture',selection:{kind:'capture',capture:{writer:'did:key:writer',observer:'collector',attempt:'a'.repeat(64)}}});
+ const plan={selection:'a'.repeat(64)},preview={target:'capture',digest:'digest',plan,summary:{objects:2,bytes:'2048',pages:1,recording_gap:false},contract:{effect:'Erase selected capture',target:targets[0]}};
+ await u.respond(preview);assert.equal(u.node('erasure-apply').disabled,false);assert.match(u.node('erasure-status').textContent,/2 records selected/);
+ u.node('erasure-attempt').events.input();assert.equal(u.node('erasure-apply').disabled,true);assert.equal(u.node('erasure-plan').textContent,'');
+ u.node('erasure-preview').click();await tick();await u.respond(preview);u.node('erasure-apply').click();await tick();assert.deepEqual(JSON.parse(u.pending[0].opts.body),{action:'apply-erasure',target:'capture',plan,preview:'digest',wait:false});
+ await u.respond({state:'running'});
+ const job={job:{id:'digest',contract:{operation:'erase-capture',target:targets[0]}},state:'cleanup-pending',resumable:true,result:{report:{configured_cleanup:'pending',enrollment:'operator-verification-required',managed_cleanup:'pending-coordination',backup_purge:'not-performed',archives:[{root:'/synthetic/archive',state:'payloads-erased',page_reclamation:'completed'},{root:'/synthetic/offline',state:'pending'}]}}};
+ job.result.report.publications={state:'selected-prefix-planned',pass:2,destinations:[{binding:{archive:'publication-A'},coverage:'selected-prefix',frontier:{through:'42'},archives:[{root:'/synthetic/publications',state:'reconciled',page_reclamation:'completed'},{root:'/synthetic/publications-offline',state:'pending'}],spools:[{database:'/synthetic/annotation-queue',result:{state:'admitted-erasure-reconciled'},cancellation:{state:'pending-unrelated-prefix',processed:1}}]}],remaining:'Unpublished requests remain pending.'};
+ job.result.report.publications.progress={retained_pages:4,remaining_through:'80',frontier:{through:'240'}};job.result.report.publications.discovery='pending';
+ await u.respond({...catalog,jobs:[job]});
+ const rendered=u.node('owner-jobs').children[0].children.map(n=>n.textContent).join('\n');
+ assert.match(rendered,/Configured cleanup: pending/);assert.match(rendered,/Deployment enrollment: operator-verification-required/);assert.match(rendered,/Publication cleanup: selected-prefix-planned · pass 3/);assert.match(rendered,/4 pages retained · remaining through 80/);assert.match(rendered,/More publication batches/);assert.match(rendered,/publication-A · selected-prefix · selected through 42/);assert.match(rendered,/publications-offline · pending/);assert.match(rendered,/Unpublished requests remain pending/);assert.match(rendered,/cancellation pending-unrelated-prefix · 1 requests processed/);
+ const buttons=u.node('owner-jobs').children[0].children.filter(n=>n.events.click);assert.ok(!buttons.some(n=>n.textContent==='Preview new attempt'));
+ buttons.find(n=>n.textContent==='Resume erasure cleanup').click();await tick();assert.deepEqual(JSON.parse(u.pending[0].opts.body),{action:'resume-erasure',id:'digest',wait:false});
+ await u.respond({state:'running'});await u.respond({...catalog,jobs:[job]});
+ u.node('erasure-writer').value='did:key:writer';u.node('erasure-attempt').value='a'.repeat(64);u.node('erasure-preview').click();await tick();u.node('owner-lock').click();await u.respond(preview);
+ assert.equal(u.node('erasure-apply').disabled,true);assert.equal(u.node('erasure-plan').textContent,'');assert.equal(u.node('erasure-writer').value,'');assert.equal(u.node('erasure-attempt').value,'');assert.equal(u.node('erasure-controls').hidden,true);
+});
+
+test('backup purge requires a separate exact preview, expires on lock and resumes its retained plan',async()=>{
+ const u=ui();await u.login();await u.respond({...proofCatalog,scopes:[proofEntry('archive-A')]});await u.respond(proofPage);
+ const target={kind:'archive',id:'archive',binding:{archive:'archive-A'}},backup={job:{id:'backup-job',contract:{operation:'backup',target}},state:'succeeded',result:{report:{destination:'/synthetic/backup.sqlite'}}};
+ const catalog={owner:'owner',targets:[target],jobs:[backup],limits:{jobs:10}};
+ const connect=async()=>{u.node('owner-token').value='owner-token';u.node('owner-connect').events.submit({preventDefault(){}});await tick();await u.respond(catalog);};
+ await connect();
+ const preview={digest:'purge-id',plan:{backup_job:'backup-job',database:'/synthetic/backup.sqlite',sha256:'hash'},contract:{effect:'Delete the entire backup; retain source and other copies.'}};
+ const show=async()=>{walk(u.node('owner-jobs')).find(n=>n.textContent==='Preview backup purge').click();await tick();assert.deepEqual(JSON.parse(u.pending[0].opts.body),{action:'preview-backup-purge',backup_job:'backup-job'});await u.respond(preview);return walk(u.node('owner-detail')).find(n=>n.textContent==='Delete entire backup');};
+ const stale=await show();u.node('owner-lock').click();stale.click();await tick();assert.equal(u.pending.length,0);assert.equal(u.node('owner-detail').children.length,0);
+ await connect();const confirm=await show();confirm.click();await tick();assert.deepEqual(JSON.parse(u.pending[0].opts.body),{action:'apply-backup-purge',plan:preview.plan,preview:'purge-id',wait:false});
+ await u.respond({state:'running'});
+ const purge={job:{id:'purge-id',contract:{operation:'purge-backup',target,plan:preview.plan}},state:'purge-pending',resumable:true,result:{report:{backup_purge:'unconfirmed'}}};
+ await u.respond({...catalog,jobs:[backup,purge]});
+ const row=u.node('owner-jobs').children[1];assert.equal(walk(row).some(n=>n.textContent==='Preview new attempt'),false);
+ walk(row).find(n=>n.textContent==='Resume backup purge').click();await tick();assert.deepEqual(JSON.parse(u.pending[0].opts.body),{action:'apply-backup-purge',plan:preview.plan,preview:'purge-id',wait:false});
+ await u.respond({state:'succeeded'});await u.respond({...catalog,jobs:[backup,{...purge,state:'succeeded',resumable:false,result:{report:{backup_purge:'removed-configured-copy',source_archive:'retained',other_backups:'not-assessed'}}}]});
+ assert.equal(walk(u.node('owner-jobs')).some(n=>n.textContent==='Preview backup purge'||n.textContent==='Resume backup purge'),false);
+ assert.ok(walk(u.node('owner-jobs')).some(n=>n.textContent.includes('completed purge receipt')));
+ assert.ok(walk(u.node('owner-jobs')).some(n=>n.textContent.includes('Source archive: retained')));
+});
+
+
+test('owner history pages retain bounded navigation and discard late pages on lock',async()=>{
+ const u=ui();await ownerUI(u);u.node('owner-refresh').click();await tick();
+ const catalog={owner:'owner',targets:[{kind:'archive',id:'archive'}],jobs:[],limits:{jobs_per_page:2},next:'a'.repeat(64)};
+ await u.respond(catalog);assert.match(u.node('owner-status').textContent,/2 jobs per page/);assert.doesNotMatch(u.node('owner-status').textContent,/lifetime/);
+ walk(u.node('owner-jobs')).find(n=>n.textContent==='Next jobs').click();await tick();assert.deepEqual(JSON.parse(u.pending[0].opts.body),{action:'catalog',after:catalog.next});
+ await u.respond({...catalog,next:null});assert.equal(walk(u.node('owner-jobs')).some(n=>n.textContent==='Next jobs'),false);
+ walk(u.node('owner-jobs')).find(n=>n.textContent==='First jobs').click();await tick();assert.deepEqual(JSON.parse(u.pending[0].opts.body),{action:'catalog'});
+ u.node('owner-lock').click();await u.respond(catalog);assert.equal(u.node('owner-jobs').children.length,0);assert.equal(u.node('owner-controls').hidden,true);
+});
+
+
+test('capture discovery remains non-destructive until a complete preview and can continue',async()=>{
+ const u=ui();await ownerUI(u);u.node('owner-refresh').click();await tick();
+ await u.respond({owner:'owner',targets:[{kind:'capture-erasure',id:'capture'}],jobs:[],limits:{jobs_per_page:10}});
+ u.node('erasure-writer').value='did:key:writer';u.node('erasure-attempt').value='a'.repeat(64);
+ u.node('erasure-preview').click();await tick();const request=JSON.parse(u.pending[0].opts.body);
+ await u.respond({target:'capture',state:'discovering',progress:{scanned_through:'512',through:'2000',selected_records:2},effect:'Discovery only'});
+ assert.equal(u.node('erasure-apply').disabled,true);assert.match(u.node('erasure-status').textContent,/512 of 2000/);assert.equal(u.node('erasure-preview').textContent,'Continue discovery');
+ u.node('erasure-preview').click();await tick();assert.deepEqual(JSON.parse(u.pending[0].opts.body),request);
+ await u.respond({target:'capture',digest:'complete',plan:{selection:'a'.repeat(64)},summary:{objects:2,bytes:'2048',pages:1,recording_gap:false},contract:{effect:'Review selected capture'}});
+ assert.equal(u.node('erasure-apply').disabled,false);assert.equal(u.node('erasure-preview').textContent,'Preview erasure');
+ u.node('owner-lock').click();assert.equal(u.node('erasure-apply').disabled,true);
+});
+
+test('saved view pagination retains the cursor, restarts explicitly and clears continuation on lock',async()=>{
+ const u=ui();await u.login();await u.respond(searchCatalog);await u.respond(proofPage);
+ const view={name:'Paged view',targets:[{source:'archive-A',pin}],filter:{text:'needle'},author:'owner'};
+ u.node('load-views').click();await tick();assert.equal(JSON.parse(u.pending[0].opts.body).after,null);
+ await u.respond({views:[view],coverage:'complete',next:'a'.repeat(64)});
+ assert.equal(u.node('next-views').disabled,false);assert.match(u.node('views-status').textContent,/More saved views/);
+ u.node('next-views').click();await tick();assert.equal(JSON.parse(u.pending[0].opts.body).after,'a'.repeat(64));
+ assert.equal(u.node('next-views').disabled,true);assert.equal(u.node('saved-views').children.length,0);
+ await u.respond({views:[{...view,name:'Last view'}],coverage:'complete',next:null});
+ assert.equal(u.node('next-views').disabled,true);assert.match(u.node('views-status').textContent,/End of saved views/);
+ u.node('load-views').click();await tick();assert.equal(JSON.parse(u.pending[0].opts.body).after,null);
+ u.node('lock').click();await u.respond({views:[view],coverage:'complete',next:'b'.repeat(64)});
+ assert.equal(u.node('saved-views').children.length,0);assert.equal(u.node('next-views').disabled,true);
+});
+
+test('annotation pages show cross-page corrections and withdrawals and invalidate continuation on filter changes',async()=>{
+ const u=ui();await openKnowledge(u);
+ const note={id:'note',author:'owner',recorded_at:'1',draft:{subject:'decision/test',text:'Retained original',tags:['decision'],cites:[],supersedes:null}};
+ u.node('load-annotations').click();await tick();assert.equal(JSON.parse(u.pending[0].opts.body).after,null);
+ await u.respond({records:[note],coverage:'complete',next:'c'.repeat(64),corrections:{note:['later-correction']},withdrawals:{note:['later-withdrawal']}});
+ const text=walk(u.node('annotation-list')).map(n=>n.textContent).join(' ');
+ assert.match(text,/later-correction/);assert.match(text,/later-withdrawal/);assert.equal(u.node('next-annotations').disabled,false);
+ u.node('next-annotations').click();await tick();assert.equal(JSON.parse(u.pending[0].opts.body).after,'c'.repeat(64));
+ await u.respond({records:[],coverage:'complete',next:'d'.repeat(64)});
+ u.node('annotation-filter-tag').value='changed';u.node('annotation-filter-tag').events.input();assert.equal(u.node('next-annotations').disabled,true);
+ u.node('load-annotations').click();await tick();assert.equal(JSON.parse(u.pending[0].opts.body).after,null);
+ u.node('lock').click();await u.respond({records:[note],coverage:'complete',next:'e'.repeat(64)});
+ assert.equal(u.node('annotation-list').children.length,0);assert.equal(u.node('next-annotations').disabled,true);
+});
+
+test('bulk erasure reviews retained coordinate pages and clears them on edits and owner lock',async()=>{
+ const u=ui();await ownerUI(u);u.node('owner-refresh').click();await tick();
+ await u.respond({owner:'owner',targets:[{kind:'capture-erasure',id:'capture'}],jobs:[],limits:{jobs_per_page:10}});
+ u.node('erasure-kind').value='captures';u.node('erasure-kind').events.input();
+ u.node('erasure-writer').value='did:key:writer';u.node('erasure-attempt').value='a'.repeat(64)+'\n'+'b'.repeat(64);
+ u.node('erasure-preview').click();await tick();
+ const request=JSON.parse(u.pending[0].opts.body);assert.equal(request.action,'preview-erasure-selection');assert.equal(request.selection.kind,'captures');assert.equal(request.selection.captures.length,2);
+ const summary={objects:700,bytes:'1000000',pages:2,recording_gap:true};
+ const preview={target:'capture',digest:'digest',plan:{selection:'a'.repeat(64)},summary,contract:{effect:'Review complete pinned selection'}};
+ await u.respond(preview);assert.match(u.node('erasure-status').textContent,/700 records selected/);assert.match(u.node('erasure-status').textContent,/recording gaps reported/);
+ u.node('erasure-inspect').click();await tick();assert.deepEqual(JSON.parse(u.pending[0].opts.body),{action:'inspect-erasure-selection',target:'capture',selection:preview.plan.selection,page:0});
+ await u.respond({selection:preview.plan.selection,page:0,targets:[{sequence:1,manifest:'exact-manifest',object:'exact-object'}],next:1});
+ assert.equal(u.node('erasure-next').disabled,false);assert.match(u.node('erasure-coordinates').textContent,/exact-manifest/);
+ u.node('erasure-next').click();await tick();assert.equal(JSON.parse(u.pending[0].opts.body).page,1);
+ await u.respond({selection:preview.plan.selection,page:1,targets:[{sequence:700}],next:null});assert.equal(u.node('erasure-next').disabled,true);
+ u.node('erasure-kind').value='archive-prefix';u.node('erasure-kind').events.input();assert.equal(u.node('erasure-coordinates').textContent,'');assert.equal(u.node('erasure-apply').disabled,true);assert.equal(u.node('erasure-writer').disabled,true);
+ u.node('erasure-preview').click();await tick();assert.deepEqual(JSON.parse(u.pending[0].opts.body).selection,{kind:'archive-prefix'});
+ await u.respond(preview);assert.match(u.node('erasure-status').textContent,/opaque data and active captures/);
+ u.node('erasure-inspect').click();await tick();u.node('owner-lock').click();
+ await u.respond({selection:preview.plan.selection,page:0,targets:[{sequence:1,manifest:'late-private-coordinate'}],next:1});
+ assert.equal(u.node('erasure-coordinates').textContent,'');assert.equal(u.node('erasure-next').disabled,true);assert.equal(u.node('erasure-kind').value,'capture');assert.equal(u.node('erasure-attempt').value,'');
+});
+
+test('control and archive checkpoint repair use the shared preview-bound owner job',async()=>{
+ for(const [kind,operation] of [['access-policy','rebuild-control-index'],['capture-erasure','rebuild-control-index'],['capture-erasure','rebuild-archive-index']]){
+  const u=ui();await ownerUI(u);u.node('owner-refresh').click();await tick();
+  await u.respond({owner:'owner',targets:[{id:'control',kind}],jobs:[],limits:{jobs:10}});
+  assert.equal(u.node('owner-operation').value,'rebuild-control-index');
+  assert.ok(u.node('owner-operation').children.some(option=>option.value===operation));
+  u.node('owner-operation').value=operation;u.node('owner-operation').events.change();
+  assert.equal(u.node('owner-maintenance-preview').disabled,false);
+  u.node('owner-job-form').events.submit({preventDefault(){}});await tick();
+  assert.deepEqual(JSON.parse(u.pending[0].opts.body),{action:'preview',target:'control',operation,retry_of:null});
+  await u.respond({digest:'control-preview',nonce:'c'.repeat(64),contract:{target:{id:'control',kind},operation,effect:'Audit signed owner history; preserve original records.'}});
+  u.node('owner-submit').click();await tick();
+  assert.deepEqual(JSON.parse(u.pending[0].opts.body),{action:'submit',target:'control',operation,retry_of:null,nonce:'c'.repeat(64),preview:'control-preview',wait:false});
+  u.node('owner-lock').click();await u.respond({state:'succeeded'});
+  assert.equal(u.node('owner-jobs').children.length,0);
+ }
+});
+
+
+test('graph pages preserve continuation through empty results, retry failures, and discard stale responses',async()=>{
+ const u=ui();await openKnowledge(u);u.node('load-subjects').click();await tick();
+ const empty={coverage:'complete',authority:'Attributed declarations',scope:'This page only',subjects:[],relations:[],records:[],next:'graph-page-2'};
+ await u.respond(empty);assert.equal(u.node('next-subjects').disabled,false);assert.match(u.node('knowledge-coverage').textContent,/more pages available/);
+ u.node('next-subjects').click();await tick();const next={action:'knowledge-graph',subject:null,day:false,after:'graph-page-2',limit:100};
+ assert.deepEqual(JSON.parse(u.pending[0].opts.body),next);await u.respond({},503);assert.equal(u.node('next-subjects').disabled,false);
+ u.node('next-subjects').click();await tick();assert.deepEqual(JSON.parse(u.pending[0].opts.body),next);
+ await u.respond({...empty,subjects:[{subject:'atom/later',kind:'atom',declarations:1}],next:null});assert.equal(u.node('next-subjects').disabled,true);assert.match(u.node('knowledge-subjects').children[0].textContent,/on this page/);
+ u.node('knowledge-subjects').children[0].click();await tick();assert.deepEqual(JSON.parse(u.pending[0].opts.body),{action:'knowledge-graph',subject:'atom/later',day:false,after:null,limit:100});
+ await u.respond(empty);assert.match(walk(u.node('knowledge-detail')).find(n=>String(n.textContent).includes('No currently authorized')).textContent,/on this page/);
+ u.node('next-subjects').click();await tick();assert.equal(JSON.parse(u.pending[0].opts.body).subject,'atom/later');
+ u.node('knowledge-mode').value='day';u.node('knowledge-mode').events.change();await u.respond({...empty,subjects:[{subject:'late-private-node'}]});
+ assert.equal(u.node('next-subjects').disabled,true);assert.equal(u.node('knowledge-subjects').children.length,0);
+ u.node('load-subjects').click();await tick();assert.deepEqual(JSON.parse(u.pending[0].opts.body),{action:'knowledge-graph',subject:null,day:true,after:null,limit:100});
+ u.node('lock').click();await u.respond(empty);assert.equal(u.node('next-subjects').disabled,true);assert.equal(u.node('knowledge-coverage').textContent,'');
+});
+
+test('structured analysis answers retain model distributions and explicit promotion lineage',async()=>{
+ const u=ui(),request=await openAnalysisUI(u);u.node('cancel-analysis-draft').click();await u.respond({});
+ u.node('load-analysis').click();await tick();const job={id:'decision-job',draft:request.draft};
+ await u.respond({configuration:{...analysisConfiguration,adapter:'typesafe-system-one'},jobs:[{state:'succeeded',job}],coverage:'complete'});
+ walk(u.node('analysis-jobs')).find(n=>n.textContent==='Inspect job and lineage').click();await tick();
+ const parsed={model:'synthetic-jev-fixture',answers:{boundary:{type:'choice',choice:'uncertain',confidence:0.12,probabilities:{same:0.3,new:0.3,uncertain:0.4}}},usage:{input_tokens:41,output_tokens:12}};
+ await u.respond({state:'succeeded',job,input:{adapter:'typesafe-system-one'},result:{adapter:'typesafe-system-one',parsed}});
+ assert.ok(walk(u.node('analysis-detail')).some(n=>n.textContent.includes('synthetic-jev-fixture')));
+ walk(u.node('analysis-detail')).find(n=>n.textContent==='Draft annotation from this result').click();
+ assert.deepEqual(JSON.parse(u.node('annotation-text').value),parsed);
+ u.node('annotation-form').events.submit({preventDefault(){}});await tick();const preview=JSON.parse(u.pending[0].opts.body);
+ assert.deepEqual(preview.draft.derived_from,['decision-job']);assert.deepEqual(preview.draft.cites,request.draft.cites);
+});
+
+
+test('search continues beyond 25 pages and cache maintenance is separate from authored history', async()=>{
+ const u=ui();await openSearch(u);
+ for(let i=0;i<30;i++) {
+  assert.equal(JSON.parse(u.pending[0].opts.body).action,'index-page');
+  await u.respond(searchPage);
+  await u.respond({...searchPage,hits:[],next:i<28?{cursor:i}:null});
+ }
+ assert.equal(u.pending.length,0);assert.equal(u.node('resume-search').disabled,true);
+ assert.match(u.node('search-coverage').textContent,/30 index pages/);
+ u.node('clear-search-index').click();await tick();
+ assert.equal(JSON.parse(u.pending[0].opts.body).action,'prune-search-cache');
+ await u.respond({removed:128,more:true});
+ assert.match(u.node('search-coverage').textContent,/128/);
+});
+
+test('backup verification exposes cold restore and an explicit uncovered interval',async()=>{
+ const u=ui();await ownerUI(u);u.node('owner-refresh').click();await tick();
+ const target={id:'vault',kind:'backup-verification',config:{checkpoint:'/independent/receipt.json'}};
+ await u.respond({owner:'owner',targets:[target],limits:{jobs:10},jobs:[{state:'succeeded',job:{id:'receipt',contract:{operation:'verify-restore',target}},result:{report:{state:'backup-checkpointed',checkpoint_frontier:{through:'3'},checkpoint_age_seconds:'90',receipt_coverage:'acknowledged-positions-not-covered',uncovered_interval:{first:'4',last:'8',count:'5'},scope:'Archive only; separate key recovery required'}}}]});
+ assert.deepEqual(u.node('owner-operation').children.map(n=>n.value),['verify-backup','verify-restore']);
+ assert.match(walk(u.node('owner-jobs')).map(n=>n.textContent).join(' '),/Uncovered acknowledged positions 4–8 \(5\)/);
+});
+
+test('attachment export verifies source selection before native download and refuses revoked evidence',async()=>{
+ const u=ui();await openProofContent(u);u.node('interpret').click();await tick();
+ const value=clone(contentResult);value.occurrences[0].record=proofRow;
+ value.groups[0].ordinals=[{value:'0',inputs:['0'],conflict:false}];
+ const item=value.groups[0].request.items[0];item.kind='attachment';item.attachment_export=true;item.pointer='/messages/0/content/0';
+ await u.respond(value);
+ const button=walk(u.node('content-panel')).find(n=>n.textContent==='Verify & download attachment');assert.ok(button);button.click();await tick();
+ assert.equal(u.pending[0].url,'/api/library/proof-attachment');
+ const request=JSON.parse(u.pending[0].opts.body);assert.deepEqual(request.selections,[proofRow.selection]);assert.equal(request.direction,'request');
+ await u.respond({decoded_sha256:'digest',decoded_bytes:'3145728',cites:[]});
+ assert.equal(u.forms.length,1);assert.equal(u.forms[0].action,'/api/library/download');assert.equal(JSON.parse(u.forms[0].payload).request.pointer,item.pointer);
+ button.click();await tick();await u.respond({},403);assert.equal(u.forms.length,1);assert.equal(u.node('library').hidden,true);
+});
+
+test('migration cutover exposes final delta and explicit rollback without hiding retained v2 writes',async()=>{
+ const u=ui();await ownerUI(u);u.node('owner-refresh').click();await tick();
+ await u.respond({owner:'owner-did',targets:[{id:'old',kind:'migration-cutover',config:{writers_quiesced:true}}],jobs:[{state:'succeeded',job:{id:'rollback',contract:{operation:'rollback-migration',target:{id:'old'}}},result:{report:{routing:'previous configuration restored; restart clients',source_writers_fenced:false,originals:'retained',v2_history:'retained; post-cutover writes are not replayed into v1'}}}],limits:{jobs:10}});
+ assert.deepEqual(u.node('owner-operation').children.map(n=>n.value),['fence-migration','finalize-migration','activate-migration','rollback-migration']);
+ const text=walk(u.node('owner-jobs')).map(n=>n.textContent).join(' ');assert.match(text,/restart clients/);assert.match(text,/post-cutover writes are not replayed/);
+ u.node('owner-operation').value='activate-migration';u.node('owner-job-form').events.submit({preventDefault(){}});await tick();assert.equal(JSON.parse(u.pending[0].opts.body).operation,'activate-migration');
 });

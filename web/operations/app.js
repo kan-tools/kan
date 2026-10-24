@@ -1,4 +1,5 @@
 'use strict';
+const apiBase=globalThis.location?.pathname?.startsWith('/operations/')?'/operations':'';
 let token='', snapshot=null, busy=false, generation=0, inspectorTrigger=null, inspectorAttempt=null, attemptButtons=new Map();
 const $=id=>document.getElementById(id);
 const count=n=>Number(n||0).toLocaleString();
@@ -89,7 +90,7 @@ function render(s){snapshot=s;const w=s.worker,q=w?.queue;const now=Date.now()/1
   else notice('Status is current. Capture completion and archive acknowledgment are separate observations.');
   rows();if(overviewData)labelOverview();
 }
-async function refresh(){if(!token||busy)return;busy=true;const current=generation;const controller=new AbortController();const timeout=setTimeout(()=>controller.abort(),8000);try{const r=await fetch('/api/status',{headers:{Authorization:'Bearer '+token},cache:'no-store',credentials:'omit',redirect:'error',signal:controller.signal});if(!r.ok)throw new Error(r.status===401?'Token rejected. Lock and reconnect.':'Status unavailable. Retained values may be stale.');const s=await r.json();if(s.version!==2||!s.journal)throw new Error('Unsupported status version.');if(current===generation)render(s);}catch(e){if(current!==generation)return;notice(e.name==='AbortError'?'Status request timed out. Retained values may be stale.':e.message,'error');$('updated').textContent='Disconnected · last values retained';}finally{clearTimeout(timeout);busy=false;}}
+async function refresh(){if(!token||busy)return;busy=true;const current=generation;const controller=new AbortController();const timeout=setTimeout(()=>controller.abort(),8000);try{const r=await fetch(apiBase+'/api/status',{headers:{Authorization:'Bearer '+token},cache:'no-store',credentials:'omit',redirect:'error',signal:controller.signal});if(!r.ok)throw new Error(r.status===401?'Token rejected. Lock and reconnect.':'Status unavailable. Retained values may be stale.');const s=await r.json();if(s.version!==2||!s.journal)throw new Error('Unsupported status version.');if(current===generation)render(s);}catch(e){if(current!==generation)return;notice(e.name==='AbortError'?'Status request timed out. Retained values may be stale.':e.message,'error');$('updated').textContent='Disconnected · last values retained';}finally{clearTimeout(timeout);busy=false;}}
 $('connect').addEventListener('submit',e=>{e.preventDefault();generation++;token=$('token').value;$('token').value='';refresh();});
 $('refresh').addEventListener('click',refresh);$('gaps-only').addEventListener('change',rows);$('search').addEventListener('input',rows);
 $('lock').addEventListener('click',()=>{generation++;token='';snapshot=null;clearOverview();attemptButtons.clear();closeInspector();$('search').value='';$('gaps-only').checked=false;$('rows').replaceChildren();for(const id of ['pending','bytes','acked','acktime','gaps','attempts','telemetry','worker','retry','capacity-label','age','journal-state','journal-pages','journal-limits','journal-persistence','journal-scope','coverage-history','sample-count'])$(id).textContent='';$('capacity').value=0;$('journal-capacity').value=0;$('data').hidden=true;$('login').hidden=false;$('lock').hidden=true;$('refresh').disabled=true;$('updated').textContent='Locked';notice('Locked. Enter your token to reconnect.');$('token').focus();});
@@ -137,7 +138,7 @@ async function loadOverview(action=''){
   overviewRequest.controller.abort();
  }
  overviewEnabled=true;const current=generation,serial=++overviewSerial,controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),8000);overviewRequest={action,controller};$('overview-load').disabled=true;
- try{const r=await fetch('/api/overview'+action,{method:action?'POST':'GET',headers:{Authorization:'Bearer '+token},cache:'no-store',credentials:'omit',redirect:'error',signal:controller.signal});if(!r.ok)throw new Error(r.status===401?'Token rejected.':'Overview unavailable.');const s=await r.json();if(current===generation&&serial===overviewSerial)renderOverview(s);}
+ try{const r=await fetch(apiBase+'/api/overview'+action,{method:action?'POST':'GET',headers:{Authorization:'Bearer '+token},cache:'no-store',credentials:'omit',redirect:'error',signal:controller.signal});if(!r.ok)throw new Error(r.status===401?'Token rejected.':'Overview unavailable.');const s=await r.json();if(current===generation&&serial===overviewSerial)renderOverview(s);}
  catch(e){if(current===generation&&serial===overviewSerial){overviewError=e.name==='AbortError'?'Overview request timed out.':e.message;labelOverview();}}
  finally{clearTimeout(timeout);if(current===generation&&serial===overviewSerial){overviewRequest=null;$('overview-load').disabled=false;const queued=overviewQueued;overviewQueued='';if(queued)loadOverview(queued);}}
 }

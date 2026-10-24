@@ -22,6 +22,7 @@ PRAGMA user_version=3;
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct Status {
     pub original_objects: u64,
+    pub erased_original_objects: u64,
     pub copied_records: u64,
     pub planned_records: u64,
     pub source_copy_complete: bool,
@@ -173,6 +174,8 @@ fn audit_state(
     let original_objects = u64::try_from(count).map_err(|_| corrupt("copy object count"))?;
     frame(&mut hash, b"objects");
     hash.update(original_objects.to_be_bytes());
+    let erasures = erasure::load(conn)?;
+    let mut erased_original_objects = 0;
     let mut stmt = conn.prepare("SELECT cid,length FROM upgrade_objects ORDER BY cid")?;
     let mut rows = stmt.query([])?;
     while let Some(row) = rows.next()? {
@@ -181,6 +184,16 @@ fn audit_state(
         let length: i64 = row.get(1)?;
         if !(1..=MAX_CHUNK as i64).contains(&length) || id.to_string() != text {
             return Err(corrupt("original object coordinate"));
+        }
+        if let Some(erased) = erasures.objects.get(&text) {
+            erased_original_objects += 1;
+            if erased.length as i64 != length {
+                return Err(corrupt("erased copy length"));
+            }
+            erasure::check_marker(conn, &text)?;
+            frame(&mut hash, &id.to_bytes());
+            hash.update((length as u64).to_be_bytes());
+            continue;
         }
         let payload: Vec<u8> = conn
             .query_row(
@@ -203,6 +216,7 @@ fn audit_state(
     }
     Ok(Status {
         original_objects,
+        erased_original_objects,
         copied_records,
         planned_records: plan.source().through,
         source_copy_complete: complete,
@@ -234,6 +248,145 @@ pub struct Archive {
     inner: attested::Archive,
 }
 impl Archive {
+    /// Open selected authenticated metadata without rescanning the imported corpus.
+    pub fn open_indexed(
+        root: &Path,
+        binding: attested::Binding,
+        expected_erasure_tip: Option<&str>,
+    ) -> Result<Self> {
+        Ok(Self {
+            inner: attested::Archive::open_indexed_profile(
+                root,
+                binding,
+                expected_erasure_tip,
+                true,
+            )?,
+        })
+    }
+    /// Native append requires a checkpoint certifying completed copy metadata.
+    pub fn admit_indexed(
+        &mut self,
+        bytes: &[u8],
+        signer: &Identity,
+        grant: &Grant,
+        now: u64,
+        current_erasure_tip: Option<&str>,
+    ) -> std::result::Result<attested::Admission, Failure> {
+        self.inner
+            .admit_indexed(bytes, signer, grant, now, current_erasure_tip)
+    }
+    pub fn rebuild_serving_index(&self, signer: &Identity) -> Result<serving::Checkpoint> {
+        self.inner.rebuild_serving_index(signer)
+    }
+    pub fn refresh_serving_custody(
+        &self,
+        signer: &Identity,
+        expected_tip: &str,
+    ) -> Result<Option<serving::Checkpoint>> {
+        self.inner.refresh_serving_custody(signer, expected_tip)
+    }
+
+    #[cfg(feature = "v2-crypto")]
+    pub fn preview_capture_erasure(
+        &self,
+        capture: super::erasure::Capture,
+        keys: &[[u8; 32]],
+        nonce: String,
+        now: u64,
+    ) -> Result<super::erasure::CapturePreview> {
+        if !self.verify()?.copy.source_copy_complete {
+            return Err(Error::Conflict("copy incomplete"));
+        }
+        self.inner
+            .preview_capture_erasure(capture, keys, nonce, now)
+    }
+
+    #[cfg(feature = "v2-crypto")]
+    pub fn scan_capture_erasure(
+        &self,
+        capture: super::erasure::Capture,
+        keys: &[[u8; 32]],
+        previous: Option<super::erasure::CaptureScan>,
+        max_records: usize,
+        max_bytes: usize,
+    ) -> Result<super::erasure::CaptureScan> {
+        if !self.verify()?.copy.source_copy_complete {
+            return Err(Error::Conflict("copy incomplete"));
+        }
+        self.inner
+            .scan_capture_erasure(capture, keys, previous, max_records, max_bytes)
+    }
+    #[cfg(feature = "v2-crypto")]
+    pub fn finish_capture_erasure(
+        &self,
+        scan: super::erasure::CaptureScan,
+        nonce: String,
+        now: u64,
+    ) -> Result<super::erasure::CapturePreview> {
+        if !self.verify()?.copy.source_copy_complete {
+            return Err(Error::Conflict("copy incomplete"));
+        }
+        self.inner.finish_capture_erasure(scan, nonce, now)
+    }
+
+    #[cfg(feature = "v2-crypto")]
+    pub fn finish_capture_selection(
+        &self,
+        scan: super::erasure::CaptureScan,
+    ) -> Result<super::erasure::CaptureSelection> {
+        if !self.verify()?.copy.source_copy_complete {
+            return Err(Error::Conflict("copy incomplete"));
+        }
+        self.inner.finish_capture_selection(scan)
+    }
+
+    pub fn preview_erasure(
+        &self,
+        sequences: &[u64],
+        nonce: String,
+        now: u64,
+    ) -> Result<super::erasure::Plan> {
+        if !self.verify()?.copy.source_copy_complete {
+            return Err(Error::Conflict("copy incomplete"));
+        }
+        self.inner.preview_erasure(sequences, nonce, now)
+    }
+    pub fn apply_erasure(
+        &mut self,
+        record: super::erasure::Record,
+    ) -> Result<super::erasure::Package> {
+        if !self.verify()?.copy.source_copy_complete {
+            return Err(Error::Conflict("copy incomplete"));
+        }
+        self.inner.apply_erasure(record)
+    }
+    pub fn inspect_erasure_selection(
+        &self,
+        sequences: Option<&[u64]>,
+        prefix: Option<(u64, &str)>,
+    ) -> Result<super::erasure::Coordinates> {
+        if !self.verify()?.copy.source_copy_complete {
+            return Err(Error::Conflict("copy incomplete"));
+        }
+        self.inner.inspect_erasure_selection(sequences, prefix)
+    }
+    pub fn erasure_history(&self) -> Result<super::erasure::Package> {
+        self.inner.erasure_history()
+    }
+    pub fn reconcile_erasure(
+        &mut self,
+        package: &super::erasure::Package,
+        expected_tip: &str,
+    ) -> Result<super::erasure::Package> {
+        if !self.verify()?.copy.source_copy_complete {
+            return Err(Error::Conflict("copy incomplete"));
+        }
+        self.inner.reconcile_erasure(package, expected_tip)
+    }
+    pub fn reclaim_erased_pages(&self) -> Result<bool> {
+        self.inner.reclaim_erased_pages()
+    }
+
     /// The owner must retain the exact plan artifact and external binding before
     /// calling. The verified source is required even for empty initialization.
     /// This initializes an empty archive; it does not certify possession of the
@@ -259,6 +412,7 @@ impl Archive {
         )?;
         let archive = Self {
             inner: attested::Archive {
+                audit_cache: Default::default(),
                 ledger,
                 binding,
                 copy: Some(plan),
@@ -510,6 +664,13 @@ impl Archive {
             }
         }
         let status = full_audit(ledger, self.binding(), self.plan())?.copy;
+        serving::advance_copy(
+            &tx,
+            self.binding(),
+            &before.contents.snapshot,
+            &status,
+            signer,
+        )?;
         observe(CopyBoundary::BeforeCommit);
         tx.commit()?;
         observe(CopyBoundary::AfterCommit);

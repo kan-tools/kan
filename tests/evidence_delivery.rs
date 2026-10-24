@@ -190,6 +190,17 @@ async fn cli_offline_admission_lost_reply_restart_bounded_drain_and_recovery() {
     assert_eq!(String::from_utf8(first.stdout).unwrap().lines().count(), 2);
     assert_eq!(status(&path, 1)["operation"]["pending"], false);
     assert_eq!(status(&path, 2)["status"]["pending"], 1);
+    let mut concurrent = Spool::open(&path).unwrap();
+    let second = concurrent.head().unwrap();
+    assert!(
+        matches!(
+            delivery::deliver_expected(&mut concurrent, "not-an-endpoint", &original).await,
+            Err(delivery::Error::Spool(kan::evidence_spool::Error::Conflict))
+        ),
+        "a previously checked head cannot authorize its successor"
+    );
+    assert_eq!(concurrent.head().unwrap(), second);
+    drop(concurrent);
     assert!(!queue(&path, &key, 1, CANARY).status.success());
     success(&cli(
         &[
