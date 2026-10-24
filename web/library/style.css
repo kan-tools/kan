@@ -42,3 +42,7 @@ html{scroll-padding-top:1.5rem}aside nav{display:grid;gap:.2rem}aside a.nav{text
 #owner-settings{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,18rem),1fr));gap:1rem;padding:0}
 #owner-settings dt{font-weight:650;margin-bottom:.3rem}
 #owner-settings dd{margin:0;white-space:pre-wrap;overflow-wrap:anywhere;font-family:var(--mono,monospace);font-size:.85rem}
+
+/* Preserve complete identifiers without letting them widen narrow layouts. */
+.attempt button{max-width:calc(100% - 8px);white-space:normal;overflow-wrap:anywhere;text-align:left}
+#owner-maintenance{overflow-wrap:anywhere}

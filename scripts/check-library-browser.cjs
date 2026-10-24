@@ -8,6 +8,22 @@ const {spawn} = require('node:child_process');
 const {setTimeout: delay} = require('node:timers/promises');
 const {chromium} = require('playwright');
 
+async function assertNoDocumentOverflow(page, context) {
+  const layout = await page.evaluate(() => ({
+    viewport: innerWidth,
+    document: document.documentElement.scrollWidth,
+    // Keep diagnostics structural: never copy credentials or evidence text.
+    overflowing: [...document.querySelectorAll('body *')].filter(element => {
+      const rect = element.getBoundingClientRect();
+      return rect.width > 0 && (rect.right > innerWidth + 1 || rect.left < -1);
+    }).slice(0, 20).map(element => ({
+      tag: element.tagName, id: element.id, class: element.className,
+      right: element.getBoundingClientRect().right,
+    })),
+  }));
+  assert.ok(layout.document <= layout.viewport + 1, `${context}: ${JSON.stringify(layout)}`);
+}
+
 async function main() {
   const binary = fs.realpathSync(process.argv[2]);
   const output = path.resolve(process.argv[3]);
@@ -91,7 +107,7 @@ async function main() {
       await page.setViewportSize({width, height: 1000});
       for (const theme of ['light', 'dark']) {
         await page.locator('#theme').selectOption(theme);
-        assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), `body overflow at ${width}/${theme}`);
+        await assertNoDocumentOverflow(page, `source view at ${width}/${theme}`);
         await page.screenshot({path: path.join(output, `library-${width}-${theme}.png`), fullPage: true});
       }
     }
@@ -165,6 +181,7 @@ async function main() {
     assert.match(await page.locator('#session-reader-body').textContent(), /branch|compaction/);
     await page.screenshot({path:path.join(output,'library-session-390.png'),fullPage:true});
     await page.locator('#close-session-reader').click();
+    await assertNoDocumentOverflow(page, 'expanded cross-archive sessions');
     checked.push('cross-archive session reading with branch/compaction claims and incomplete-attempt disclosure');
 
     const copied = await page.locator('#scope option').evaluateAll(options => options.find(o=>o.value.startsWith('proof:copied:')).value);
@@ -193,6 +210,8 @@ async function main() {
 
     await page.locator('#owner-token').fill(fixture.owner_token);
     await page.locator('#owner-connect button').click();
+    await page.locator('#owner-controls').waitFor();
+    await assertNoDocumentOverflow(page, 'owner catalog with signing identity');
     await page.locator('#owner-operation').selectOption('rotate');
     await page.locator('#owner-maintenance-preview').click();
     await page.waitForFunction(() => !document.querySelector('#owner-submit').disabled);
@@ -203,7 +222,7 @@ async function main() {
     assert.equal(rotated.status(),200);const rotation=await rotated.json();assert.equal(rotation.state,'succeeded');assert.equal(rotation.result.report.history,'retained');
     await page.locator('#owner-refresh').click();
     await page.waitForFunction(()=>document.querySelector('#owner-jobs').textContent.includes('succeeded'));
-    for(const width of [1440,390]){await page.setViewportSize({width,height:1000});assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1));await page.screenshot({path:path.join(output,`library-owner-${width}.png`),fullPage:true});}
+    for(const width of [1440,390]){await page.setViewportSize({width,height:1000});await assertNoDocumentOverflow(page, `owner rotation at ${width}`);await page.screenshot({path:path.join(output,`library-owner-${width}.png`),fullPage:true});}
     checked.push('separate owner login, exact maintenance preview/apply and history-preserving health rotation');
     await page.locator('#lock').click();
     assert.equal(await page.locator('#library').isVisible(), false);
