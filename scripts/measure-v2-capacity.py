@@ -15,6 +15,8 @@ import shutil
 import subprocess
 import time
 
+from capacity_evidence import validate_report
+
 GIB = 1024 ** 3
 
 
@@ -34,6 +36,8 @@ def main():
     parser.add_argument("--directory", required=True, type=Path)
     parser.add_argument("--gib", required=True, type=int, choices=(10, 100))
     parser.add_argument("--samples", type=int, default=32)
+    parser.add_argument("--storage-backend", choices=("local-disk", "modal-volume"),
+                        default="local-disk")
     args = parser.parse_args()
     if platform.system() != "Linux":
         parser.error("Linux /proc accounting is required; do not run large fixtures on the laptop")
@@ -51,13 +55,19 @@ def main():
     # The wire stores payload hex. Allow 3x opaque bytes plus 2 GiB for the
     # immutable map, SQLite indexes/journal and measured append operations.
     required = args.gib * GIB * 3 + 2 * GIB
-    free = shutil.disk_usage(parent).free
-    if free < required:
+    # Modal Volumes expose placeholder statfs capacity, not reserved device space.
+    free = shutil.disk_usage(parent).free if args.storage_backend == "local-disk" else None
+    if free is not None and free < required:
         parser.error(f"need {required / GIB:.1f} GiB free; found {free / GIB:.1f} GiB")
     directory.mkdir(mode=0o700)
     archive = directory / "archive"
     report = {
-        "version": 1, "status": "running", "opaque_payload_gib": args.gib,
+        "version": 2, "status": "running",
+        "storage_backend": args.storage_backend,
+        "free_space_preflight": free,
+        "allocation_semantics": ("local filesystem allocated blocks" if free is not None
+                                 else "Modal managed volume; physical allocation not observable"),
+        "opaque_payload_gib": args.gib,
         "chunk_bytes": 1024 ** 2, "concurrency": 1, "page_rows": 1,
         "memory_limit_bytes": 512 * 1024 ** 2, "samples_per_operation": args.samples,
         "binary": str(binary), "binary_sha256": binary_digest.hexdigest(),
@@ -97,8 +107,12 @@ def main():
         report["fixture_seconds"] = time.monotonic() - start
         stat = (archive / "archive.sqlite").stat()
         report["fixture_file_bytes"] = stat.st_size
-        report["fixture_allocated_bytes"] = stat.st_blocks * 512
-        if stat.st_blocks * 512 < args.gib * GIB:
+        report["filesystem_reported_blocks_bytes"] = stat.st_blocks * 512
+        report["fixture_allocated_bytes"] = (stat.st_blocks * 512
+                                             if args.storage_backend == "local-disk" else None)
+        if stat.st_size < args.gib * GIB:
+            raise ValueError("fixture file is smaller than the requested payload")
+        if args.storage_backend == "local-disk" and stat.st_blocks * 512 < args.gib * GIB:
             raise ValueError("fixture has fewer allocated bytes than the requested opaque payload")
         for number in range(args.samples):
             for operation in ("open", "append", "page", "source"):
@@ -111,6 +125,7 @@ def main():
             for operation in ("open", "append", "page", "source")
         }
         report["status"] = "complete"
+        validate_report(report, args.gib, args.samples)
     except BaseException as error:
         report["status"] = "failed"
         report["error"] = str(error)

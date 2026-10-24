@@ -127,6 +127,18 @@ features and release qualification are implemented. Use actual Claude Code Opus 
 on the frozen integrated candidate; do not start it during feature construction. The 100 GiB Modal runner is prepared; account authentication is still
 needed before a cloud measurement can run.
 
+### Qualification update — 2026-10-24
+
+Revision `4ac7103` passed all 55 collect-all checks, all 12 real-browser workflow
+groups, PR/push CI, migration and performance. The first Modal launch stopped
+before measurement because its 350 GiB ephemeral-disk request was rejected.
+The owner now selects a uniquely named persistent Modal Volume for each fixture,
+with a separate read-only remount verification and removal only after validation
+and retained-report retrieval. The runner no longer reserves ephemeral disk.
+Volume results explicitly report a distributed-filesystem backend and unavailable
+physical-block allocation; they are not a local-SSD latency comparison. The
+100 GiB result and final fresh Opus 5.5 review remain pending.
+
 ### Expanded release qualification — implementation prepared
 
 Qualification at `3b724d6` stopped at a private-method call in the browser

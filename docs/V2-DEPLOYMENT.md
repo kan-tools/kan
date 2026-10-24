@@ -264,59 +264,70 @@ establish the specified 10 GiB storage workload only; they do not establish a
 
 ### Run the 100 GiB point on Modal
 
-The opt-in runner `scripts/modal_v2_capacity.py` uses a Modal **Function** with
-350 GiB ephemeral disk, four physical CPU cores (also the limit), 18 GiB requested
-RAM and a 24 GiB RAM limit. The storage-process RSS gate remains 512 MiB; container
-memory also covers compilation and OS cache. Disk, not RAM, is the fixture's main
-requirement. Modal currently charges large disk requests by raising the memory
-reservation at a 20:1 ratio; see [resource configuration](https://modal.com/docs/guide/resources)
-and [pricing](https://modal.com/pricing). At the documented rates the configured
-CPU/RAM request is about $0.33/hour, rising to about $0.38/hour at the RAM limit,
-plus image build/storage/network charges. The eight-hour function timeout bounds
-one attempt; these figures are estimates, not a billing guarantee.
+The opt-in runner `scripts/modal_v2_capacity.py` creates a **new persistent
+Modal Volume v2 for each run**, named `kan-v2-fixture-REVISION-RUN_UUID`. It refuses
+to reuse an existing name. The synthetic archive lives on that volume; compilation
+uses ordinary container scratch space. No `ephemeral_disk` reservation is requested.
+The measurement function uses four CPU cores, 18 GiB requested RAM, a 24 GiB RAM
+limit and an eight-hour timeout. A separate read-only verification function has
+a six-hour timeout. Neither has automatic retries. The serving-process RSS gate
+remains 512 MiB; container memory also covers compilation and OS cache.
+
+Modal Volumes grow without a fixed device allocation. Their `statfs` values are
+placeholders, so the driver explicitly uses `--storage-backend modal-volume` and
+reports physical allocation as unavailable. Its ordinary local-disk mode retains
+the original free-space and allocated-block checks. This run measures a Modal
+distributed filesystem, **not a directly comparable local-SSD latency point** for
+the prior 10 GiB baseline. It still exercises real random payloads, indexed reads,
+append operations and the original memory gates. See [Modal's volume semantics](https://modal.com/docs/guide/volumes)
+and [pricing](https://modal.com/pricing) for storage/compute billing. Retaining
+the fixture incurs storage charges until deletion (billing can lag deletion).
 
 Preparation and launch (the final command starts paid remote compute):
 
 ```sh
-# Small SDK only; no local Rust build or local large fixture.
 uv run --no-project --with-requirements scripts/requirements-modal-capacity.txt modal setup
-uv run --no-project --with-requirements scripts/requirements-modal-capacity.txt modal run --detach scripts/modal_v2_capacity.py --revision 58bea3b491759a5aa0d9c21425ffce12bec790ed --gib 100 --samples 32
+uv run --no-project --with-requirements scripts/requirements-modal-capacity.txt modal run --detach scripts/modal_v2_capacity.py --revision FULL_PUBLISHED_COMMIT_SHA --gib 100 --samples 32
 ```
 
-Use the intended Modal profile/environment (`--profile`/`--env`) when more than
-one is configured. The revision is required and must be an exact published SHA;
-replace the example only when qualifying a different candidate. Only the runner
-file is uploaded; the job fetches public Git source at that SHA, verifies HEAD,
-compiles the existing release-mode measurement executable with Rust 1.99.1 and
-runs the existing driver unchanged. No production data or keys are used. It
-checks 320 GiB free before compilation and the driver checks 302 GiB afterward.
-There are no automatic application retries; each invocation has a unique run ID
-and refuses to overwrite a prior evidence directory.
+Select the intended workspace with `--profile`/`--env` when needed. Only the runner
+and its small evidence helper are uploaded; the job fetches public Git source at
+the exact SHA and verifies HEAD before building. No production data or keys are
+used. Small logs/reports, exact revision/compiler and runner/driver/executable
+hashes are retained separately in `kan-v2-capacity-results`. Check that existing
+run at intervals of at least 30 minutes; never blindly restart a detached job.
 
-Small reports, raw worker/build logs, exact revision/compiler and runner/driver/
-executable digests are retained in the `kan-v2-capacity-results` Modal Volume.
-The runner checkpoints these artifacts every five minutes and on ordinary exit,
-including failures. Abrupt worker loss can leave only the last checkpoint; a
-`running` or absent report is **not** a successful measurement. Do not blindly
-restart a detached job when the local connection closes. Inspect its existing
-Modal app and results at intervals of at least 30 minutes.
+After all worker processes exit, the runner hashes every retained fixture file,
+commits the volume, and mounts it read-only in a second single-use container.
+That container checks the manifest identity/digest, every file's full byte hash,
+the SQLite structure, record/object counts and payload byte totals, and all sample
+counts and 512 MiB RSS gates. Only then do `run.json` and `verification.json` become
+`complete`. The volume remains available for inspection; failures also retain it.
+A detached client interruption between measurement and verification leaves a
+`measured` result, not success. Resume verification against the exact retained
+manifest rather than rerunning the measurement.
 
-The printed result gives the unique evidence directory. Retrieve only that small
-directory, for example:
+Retrieve only this run's small evidence directory (printed by the runner):
 
 ```sh
 uv run --no-project --with-requirements scripts/requirements-modal-capacity.txt modal volume get kan-v2-capacity-results REVISION-100g-RUN_ID .local-state/capacity-modal-RUN_ID
 ```
 
-Require `run.json` and `report.json` to both say `complete`, the intended revision,
-102,400 actual 1 MiB payloads / at least 100 GiB allocated, and all 128 operation
-samples before accepting a default run. Inspect the distributions and raw logs;
-retain the evidence with the release. The synthetic database stays on ephemeral
-SSD and disappears with the container; the durable Volume contains no archive.
-This establishes the same single-worker indexed-storage workload as the 10 GiB
-baseline, not full-service concurrency, encryption throughput or cold-cache
-performance. The Modal runner is prepared; a successful cloud run is still
-required before claiming the 100 GiB gate passed.
+Before cleanup, require complete `run.json`, `report.json`, and `verification.json`,
+the intended revision and unique fixture-volume identity, a matching manifest,
+102,400 seeded 1 MiB payloads plus the 32 measured appends, and all 128 samples.
+Review distributions and preserve all small reports/logs locally. Physical block
+allocation cannot be claimed from a Modal Volume. Do not download the large archive
+to the laptop. After validation and evidence retrieval, remove **only the unique
+synthetic fixture volume**; never delete `kan-v2-capacity-results`:
+
+```sh
+uv run --no-project --with-requirements scripts/requirements-modal-capacity.txt modal volume delete kan-v2-fixture-REVISION-RUN_UUID
+```
+
+Record the exact deletion result beside the retained evidence. A failed or
+incomplete run is retained for diagnosis; cleanup is separate from measurement,
+and no automatic cleanup runs on failure.
 
 
 ### Representative encrypted HTTP measurement
