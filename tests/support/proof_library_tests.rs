@@ -585,23 +585,15 @@ async fn proof_library_browser_fixture() {
                 .cid()
                 .to_string(),
         );
-        let mut request = service::SignedRequest::decode(&import_request(
+        let bytes = import_request_at_position(
             n as u8,
+            (6 + n) as u8,
             8,
             previous,
             &import_plan,
             frame,
             false,
-        ))
-        .unwrap()
-        .request;
-        if let service::Command::Append { position, .. } = &mut request.command {
-            *position = (6 + n) as u64;
-        }
-        let bytes = service::SignedRequest::sign(request, &identity(6))
-            .unwrap()
-            .bytes()
-            .unwrap();
+        );
         archive
             .admit(&bytes, &identity(8), &grant(), 300 + n as u64)
             .unwrap();
@@ -2937,15 +2929,29 @@ fn import_request(
     frame: &[u8],
     bad_operation: bool,
 ) -> Vec<u8> {
+    import_request_at_position(n, n, audience, previous, plan, frame, bad_operation)
+}
+// Import ordinals are plan-local; writer positions continue across imports
+// and captures already in the archive. Set both before signing the request.
+fn import_request_at_position(
+    ordinal: u8,
+    position: u8,
+    audience: u8,
+    previous: Option<String>,
+    plan: &str,
+    frame: &[u8],
+    bad_operation: bool,
+) -> Vec<u8> {
     use sha2::{Digest, Sha256};
-    let mut r = service::SignedRequest::decode(&encrypted_frame(n, audience, previous, frame))
-        .unwrap()
-        .request;
+    let mut r =
+        service::SignedRequest::decode(&encrypted_frame(position, audience, previous, frame))
+            .unwrap()
+            .request;
     if let service::Command::Append { id, .. } = &mut r.command {
         let mut h = Sha256::new();
         h.update(b"tools.kan.import.operation.v1\0");
         h.update(plan.as_bytes());
-        h.update((n as u64).to_be_bytes());
+        h.update((ordinal as u64).to_be_bytes());
         if !bad_operation {
             *id = service::hex(&h.finalize()[..16]);
         }
@@ -2955,6 +2961,59 @@ fn import_request(
         .bytes()
         .unwrap()
 }
+#[tokio::test]
+async fn import_after_captures_keeps_plan_ordinals_and_writer_positions_distinct() {
+    let directory = tempfile::tempdir().unwrap();
+    let mut f = fixture_requests(directory.path(), Profile::Copied, captured_request);
+    let (plan, frames, car) = imported_claim_frames(8);
+    let mut archive = copied::Archive::open(&f.root, f.binding.clone()).unwrap();
+    for (ordinal, frame) in frames.iter().enumerate() {
+        let previous = service::append_manifest(f.requests.last().unwrap())
+            .unwrap()
+            .cid()
+            .to_string();
+        let bytes = import_request_at_position(
+            ordinal as u8,
+            f.requests.len() as u8,
+            8,
+            Some(previous),
+            &plan,
+            frame,
+            false,
+        );
+        archive
+            .admit(&bytes, &identity(8), &grant(), 200 + ordinal as u64)
+            .unwrap();
+        f.requests.push(bytes);
+    }
+    drop(archive);
+    let server = Server::start(&f).await;
+    let ui = Ui::start(kan::evidence_library::Readers::new(None, vec![server.client(&f)]).unwrap())
+        .await;
+    let catalog = ui.call(json!({"action":"catalog"}), 200).await;
+    let entry = &catalog["scopes"][0];
+    let discovery = ui
+        .call(
+            json!({"action":"proof-discover","source":entry["id"],"pin":entry["pin"],"limit":20}),
+            200,
+        )
+        .await;
+    let selections: Vec<_> = discovery["records"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|r| r["description"]["kind"] == "import")
+        .map(|r| r["record"]["selection"].clone())
+        .collect();
+    assert_eq!(selections.len(), frames.len());
+    let result = ui.call(json!({"action":"proof-import","source":entry["id"],"pin":entry["pin"],"selections":selections,"plan":plan,"file":0}),200).await;
+    assert_eq!(result["state"], "inventory-verified");
+    assert_eq!(result["file"]["state"], "verified");
+    assert_eq!(result["file"]["length"], car.len().to_string());
+    ui.stop().await;
+    server.stop().await;
+}
+
 #[tokio::test]
 async fn imported_v1_browser_reconstructs_signed_claims_with_exact_ranges_and_current_grants() {
     for profile in [Profile::Admitted, Profile::Copied] {
