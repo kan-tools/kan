@@ -3,15 +3,24 @@ name: CI
 on:
   push:
   pull_request:
+  workflow_dispatch:
+    inputs:
+      collect_all:
+        description: Continue independent checks after failures and report all outcomes
+        type: boolean
+        default: false
+
+run-name: CI${{ github.event_name == 'workflow_dispatch' && inputs.collect_all && ' — collect all failures' || '' }}
 
 concurrency:
   # Preserve any pre-optimization qualification already running when this
   # build profile first lands. Subsequent pushes still supersede this profile.
-  group: ${{ github.workflow }}-${{ github.ref }}-v2-opt1
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name == 'workflow_dispatch' && github.run_id || 'automatic' }}-v2-opt1
   cancel-in-progress: true
 
 jobs:
   test:
+    if: ${{ !cancelled() && (needs.msrv.result == 'success' || (github.event_name == 'workflow_dispatch' && inputs.collect_all)) }}
     needs: msrv
     runs-on: ubuntu-latest
     env:
@@ -39,70 +48,179 @@ jobs:
       # what the first version of this script did while its own header claimed
       # otherwise. The fixture proves each defect class is still caught before
       # any repository result is believed.
-      - run: ./scripts/check-citations.sh --self-test
-      - run: ./scripts/check-citations.sh
-      - run: python3 scripts/evidence_reference.py --check
-      - run: python3 scripts/serving_index_reference.py --check
-      - run: node --test tests/library_ui.test.cjs tests/operations_ui.test.cjs tests/operations_review_ui.test.cjs tests/operations_restart_review.test.cjs tests/theme_ui.test.cjs
-      - run: python3 tests/test_revert_v2.py
-      - run: python3 tests/test_capture_claude_hook.py
+      - id: check_01_scripts_check_citations_sh_self_test
+        continue-on-error: ${{ github.event_name == 'workflow_dispatch' && inputs.collect_all }}
+        run: ./scripts/check-citations.sh --self-test
+      - id: check_02_scripts_check_citations_sh
+        continue-on-error: ${{ github.event_name == 'workflow_dispatch' && inputs.collect_all }}
+        run: ./scripts/check-citations.sh
+      - id: check_03_evidence_reference
+        continue-on-error: ${{ github.event_name == 'workflow_dispatch' && inputs.collect_all }}
+        run: python3 scripts/evidence_reference.py --check
+      - id: check_04_serving_index_reference
+        continue-on-error: ${{ github.event_name == 'workflow_dispatch' && inputs.collect_all }}
+        run: python3 scripts/serving_index_reference.py --check
+      - id: check_05_node_test_tests_library_ui_test_cjs_tests_operations_ui_test
+        continue-on-error: ${{ github.event_name == 'workflow_dispatch' && inputs.collect_all }}
+        run: node --test tests/library_ui.test.cjs tests/operations_ui.test.cjs tests/operations_review_ui.test.cjs tests/operations_restart_review.test.cjs tests/theme_ui.test.cjs
+      - id: check_06_test_revert_v2
+        continue-on-error: ${{ github.event_name == 'workflow_dispatch' && inputs.collect_all }}
+        run: python3 tests/test_revert_v2.py
+      - id: check_07_test_capture_claude_hook
+        continue-on-error: ${{ github.event_name == 'workflow_dispatch' && inputs.collect_all }}
+        run: python3 tests/test_capture_claude_hook.py
+      - id: diagnostic_report_tests
+        continue-on-error: ${{ github.event_name == 'workflow_dispatch' && inputs.collect_all }}
+        run: python3 tests/test_ci_diagnostic_report.py
 
       - uses: Swatinem/rust-cache@v2
         with:
           key: v2-optimized-integration
-      - run: cargo package --list --locked > /dev/null
-      - run: cargo build --workspace --all-targets
-      - run: cargo test --workspace
-      - run: python3 -m pip install cryptography==46.0.3
-      - run: python3 .design/tools/attestation_vectors.py --check
-      - run: python3 .design/tools/copy_plan_vectors.py --check
-      - run: python3 .design/tools/recovery_observation_vectors.py --check
-      - run: python3 .design/tools/recovery_commitments.py --check
-      - run: python3 .design/tools/recovery_member_vectors.py --check
-      - run: python3 .design/tools/recovery_replay_vectors.py --check
-      - run: python3 .design/tools/recovery_replay_review_vectors.py --check
-      - run: python3 .design/tools/recovery_bundle_review_vectors.py --check
-      - run: python3 .design/tools/recovery_bundle_schema.py
-      - run: python3 .design/tools/attestation_mutations.py
-      - run: cargo test --no-fail-fast --features v2-crypto --test evidence_contract --test evidence_attestation --test evidence_copy_plan --test evidence_copy_source --test evidence_copy_destination --test evidence_inventory --test evidence_attested_store --test evidence_attested_followups --test evidence_attested_lifecycle --test evidence_store --test evidence_service --test evidence_spool --test evidence_http --test evidence_crypto --test evidence_keys --test evidence_reconstruction --test evidence_assembly --test evidence_assembly_review_regressions --test evidence_interpretation --test evidence_interpretation_review_regressions --test evidence_interpretation_followups --test evidence_reconstruction_review_regressions --test evidence_recovery_observation --test evidence_recovery_commitment --test evidence_recovery_commitment_review_regressions --test evidence_recovery_member --test evidence_recovery_member_review_regressions --test evidence_recovery_member_corrections --test evidence_recovery_replay --test evidence_recovery_replay_review_regressions --test evidence_recovery_bundle --test evidence_bundle_creation --test evidence_capture --test evidence_capture_adversarial --test evidence_capture_deadlines --test evidence_capture_contention --test evidence_gateway --test evidence_operations --test evidence_operations_collection --test evidence_operations_overview --test evidence_overview_review_regressions --test evidence_reader --test evidence_library_cli --test evidence_workspace --test evidence_delivery --test evidence_import --test evidence_restore --test evidence_restore_adversarial --test migration_preflight --test recovery_cli --test migration_harness --test surface_conformance -- --skip large_attempt_reads_over_ten_megabytes_with_all_chunk_citations
-      - run: python3 scripts/check_gateway_global_cap.py
-      - run: python3 scripts/check_v2_supervision.py target/debug/kan-v2
-      - run: cargo test --features v2-crypto --lib evidence_recovery_commitment::polling_tests
-      - run: cargo test --features v2-crypto --lib evidence_store::bundle::snapshot_tests
-      - run: cargo test --features v2-crypto --lib evidence_assembly::tests
-      - run: cargo test --features v2-crypto --lib evidence_interpretation::tests
-      - run: cargo test --features v2-crypto --lib evidence_content
-      - run: cargo test --features v2-crypto --lib evidence_library::proof::imports::current
-      - run: cargo test --features v2-crypto --lib evidence_library::proof::knowledge
-      - run: cargo test --features v2-crypto --lib evidence_library::proof::analysis::adapters
-      - run: cargo test --features v2-crypto --lib evidence_library::mcp
-      - run: cargo test --features v2-crypto --lib evidence_gateway::admission_tests
-      - run: cargo test --features v2-crypto --lib evidence_operations::tests
-      - run: cargo test --features v2-crypto --lib evidence_operations::projection::tests
-      - run: cargo test --features v2-crypto --lib evidence_operations_collection::overview::tests
-      - run: cargo test --features v2-crypto --lib evidence_library::budget_tests
-      - run: cargo test --features v2-crypto --lib evidence_library::owner::erasure
-      - run: cargo test --features v2-crypto --lib evidence_workspace::erasure::dependencies::tests
-      - run: cargo test --features v2-crypto --lib evidence_spool::tests
-      - run: cargo test --features v2-crypto --lib evidence_store::inventory::tests
-      - run: cargo test --features v2-crypto --lib evidence_store::erasure::selection_tests
-      - run: cargo test --features v2-crypto --lib evidence_control_index::tests
-      - run: cargo test --features v2-crypto --lib evidence_index::tests
-      - run: cargo test --features v2-crypto --lib evidence_store::attested::audit_cache_tests
-      - run: cargo test --features v2-crypto --lib evidence_store::admission_tests
-      - run: cargo test --features v2-crypto --lib evidence_service::audit_tests
-      - run: cargo clippy --workspace --all-targets -- -D warnings
-      - run: cargo clippy --features v2-crypto --all-targets -- -D warnings
-      - run: cargo fmt --all -- --check
+      - id: check_08_cargo_package_list_locked_dev_null
+        continue-on-error: ${{ github.event_name == 'workflow_dispatch' && inputs.collect_all }}
+        run: cargo package --list --locked > /dev/null
+      - id: check_09_cargo_build_workspace_all_targets
+        continue-on-error: ${{ github.event_name == 'workflow_dispatch' && inputs.collect_all }}
+        run: cargo build --workspace --all-targets
+      - id: check_10_cargo_test_workspace_github_event_name_workflow_dispatch_inp
+        continue-on-error: ${{ github.event_name == 'workflow_dispatch' && inputs.collect_all }}
+        run: cargo test --workspace ${{ github.event_name == 'workflow_dispatch' && inputs.collect_all && '--no-fail-fast' || '' }}
+      - id: check_11_m
+        continue-on-error: ${{ github.event_name == 'workflow_dispatch' && inputs.collect_all }}
+        run: python3 -m pip install cryptography==46.0.3
+      - id: check_12_attestation_vectors
+        continue-on-error: ${{ github.event_name == 'workflow_dispatch' && inputs.collect_all }}
+        run: python3 .design/tools/attestation_vectors.py --check
+      - id: check_13_copy_plan_vectors
+        continue-on-error: ${{ github.event_name == 'workflow_dispatch' && inputs.collect_all }}
+        run: python3 .design/tools/copy_plan_vectors.py --check
+      - id: check_14_recovery_observation_vectors
+        continue-on-error: ${{ github.event_name == 'workflow_dispatch' && inputs.collect_all }}
+        run: python3 .design/tools/recovery_observation_vectors.py --check
+      - id: check_15_recovery_commitments
+        continue-on-error: ${{ github.event_name == 'workflow_dispatch' && inputs.collect_all }}
+        run: python3 .design/tools/recovery_commitments.py --check
+      - id: check_16_recovery_member_vectors
+        continue-on-error: ${{ github.event_name == 'workflow_dispatch' && inputs.collect_all }}
+        run: python3 .design/tools/recovery_member_vectors.py --check
+      - id: check_17_recovery_replay_vectors
+        continue-on-error: ${{ github.event_name == 'workflow_dispatch' && inputs.collect_all }}
+        run: python3 .design/tools/recovery_replay_vectors.py --check
+      - id: check_18_recovery_replay_review_vectors
+        continue-on-error: ${{ github.event_name == 'workflow_dispatch' && inputs.collect_all }}
+        run: python3 .design/tools/recovery_replay_review_vectors.py --check
+      - id: check_19_recovery_bundle_review_vectors
+        continue-on-error: ${{ github.event_name == 'workflow_dispatch' && inputs.collect_all }}
+        run: python3 .design/tools/recovery_bundle_review_vectors.py --check
+      - id: check_20_recovery_bundle_schema
+        continue-on-error: ${{ github.event_name == 'workflow_dispatch' && inputs.collect_all }}
+        run: python3 .design/tools/recovery_bundle_schema.py
+      - id: check_21_attestation_mutations
+        continue-on-error: ${{ github.event_name == 'workflow_dispatch' && inputs.collect_all }}
+        run: python3 .design/tools/attestation_mutations.py
+      - id: check_22_cargo_test_no_fail_fast_features_v2_crypto_test_evidence_con
+        continue-on-error: ${{ github.event_name == 'workflow_dispatch' && inputs.collect_all }}
+        run: cargo test --no-fail-fast --features v2-crypto --test evidence_contract --test evidence_attestation --test evidence_copy_plan --test evidence_copy_source --test evidence_copy_destination --test evidence_inventory --test evidence_attested_store --test evidence_attested_followups --test evidence_attested_lifecycle --test evidence_store --test evidence_service --test evidence_spool --test evidence_http --test evidence_crypto --test evidence_keys --test evidence_reconstruction --test evidence_assembly --test evidence_assembly_review_regressions --test evidence_interpretation --test evidence_interpretation_review_regressions --test evidence_interpretation_followups --test evidence_reconstruction_review_regressions --test evidence_recovery_observation --test evidence_recovery_commitment --test evidence_recovery_commitment_review_regressions --test evidence_recovery_member --test evidence_recovery_member_review_regressions --test evidence_recovery_member_corrections --test evidence_recovery_replay --test evidence_recovery_replay_review_regressions --test evidence_recovery_bundle --test evidence_bundle_creation --test evidence_capture --test evidence_capture_adversarial --test evidence_capture_deadlines --test evidence_capture_contention --test evidence_gateway --test evidence_operations --test evidence_operations_collection --test evidence_operations_overview --test evidence_overview_review_regressions --test evidence_reader --test evidence_library_cli --test evidence_workspace --test evidence_delivery --test evidence_import --test evidence_restore --test evidence_restore_adversarial --test migration_preflight --test recovery_cli --test migration_harness --test surface_conformance -- --skip large_attempt_reads_over_ten_megabytes_with_all_chunk_citations
+      - id: check_23_check_gateway_global_cap
+        continue-on-error: ${{ github.event_name == 'workflow_dispatch' && inputs.collect_all }}
+        run: python3 scripts/check_gateway_global_cap.py
+      - id: check_24_check_v2_supervision
+        continue-on-error: ${{ github.event_name == 'workflow_dispatch' && inputs.collect_all }}
+        run: python3 scripts/check_v2_supervision.py target/debug/kan-v2
+      - id: check_25_evidence_recovery_commitment_polling_tests
+        continue-on-error: ${{ github.event_name == 'workflow_dispatch' && inputs.collect_all }}
+        run: cargo test --features v2-crypto --lib evidence_recovery_commitment::polling_tests
+      - id: check_26_evidence_store_bundle_snapshot_tests
+        continue-on-error: ${{ github.event_name == 'workflow_dispatch' && inputs.collect_all }}
+        run: cargo test --features v2-crypto --lib evidence_store::bundle::snapshot_tests
+      - id: check_27_evidence_assembly_tests
+        continue-on-error: ${{ github.event_name == 'workflow_dispatch' && inputs.collect_all }}
+        run: cargo test --features v2-crypto --lib evidence_assembly::tests
+      - id: check_28_evidence_interpretation_tests
+        continue-on-error: ${{ github.event_name == 'workflow_dispatch' && inputs.collect_all }}
+        run: cargo test --features v2-crypto --lib evidence_interpretation::tests
+      - id: check_29_evidence_content
+        continue-on-error: ${{ github.event_name == 'workflow_dispatch' && inputs.collect_all }}
+        run: cargo test --features v2-crypto --lib evidence_content
+      - id: check_30_evidence_library_proof_imports_current
+        continue-on-error: ${{ github.event_name == 'workflow_dispatch' && inputs.collect_all }}
+        run: cargo test --features v2-crypto --lib evidence_library::proof::imports::current
+      - id: check_31_evidence_library_proof_knowledge
+        continue-on-error: ${{ github.event_name == 'workflow_dispatch' && inputs.collect_all }}
+        run: cargo test --features v2-crypto --lib evidence_library::proof::knowledge
+      - id: check_32_evidence_library_proof_analysis_adapters
+        continue-on-error: ${{ github.event_name == 'workflow_dispatch' && inputs.collect_all }}
+        run: cargo test --features v2-crypto --lib evidence_library::proof::analysis::adapters
+      - id: check_33_evidence_library_mcp
+        continue-on-error: ${{ github.event_name == 'workflow_dispatch' && inputs.collect_all }}
+        run: cargo test --features v2-crypto --lib evidence_library::mcp
+      - id: check_34_evidence_gateway_admission_tests
+        continue-on-error: ${{ github.event_name == 'workflow_dispatch' && inputs.collect_all }}
+        run: cargo test --features v2-crypto --lib evidence_gateway::admission_tests
+      - id: check_35_evidence_operations_tests
+        continue-on-error: ${{ github.event_name == 'workflow_dispatch' && inputs.collect_all }}
+        run: cargo test --features v2-crypto --lib evidence_operations::tests
+      - id: check_36_evidence_operations_projection_tests
+        continue-on-error: ${{ github.event_name == 'workflow_dispatch' && inputs.collect_all }}
+        run: cargo test --features v2-crypto --lib evidence_operations::projection::tests
+      - id: check_37_evidence_operations_collection_overview_tests
+        continue-on-error: ${{ github.event_name == 'workflow_dispatch' && inputs.collect_all }}
+        run: cargo test --features v2-crypto --lib evidence_operations_collection::overview::tests
+      - id: check_38_evidence_library_budget_tests
+        continue-on-error: ${{ github.event_name == 'workflow_dispatch' && inputs.collect_all }}
+        run: cargo test --features v2-crypto --lib evidence_library::budget_tests
+      - id: check_39_evidence_library_owner_erasure
+        continue-on-error: ${{ github.event_name == 'workflow_dispatch' && inputs.collect_all }}
+        run: cargo test --features v2-crypto --lib evidence_library::owner::erasure
+      - id: check_40_evidence_workspace_erasure_dependencies_tests
+        continue-on-error: ${{ github.event_name == 'workflow_dispatch' && inputs.collect_all }}
+        run: cargo test --features v2-crypto --lib evidence_workspace::erasure::dependencies::tests
+      - id: check_41_evidence_spool_tests
+        continue-on-error: ${{ github.event_name == 'workflow_dispatch' && inputs.collect_all }}
+        run: cargo test --features v2-crypto --lib evidence_spool::tests
+      - id: check_42_evidence_store_inventory_tests
+        continue-on-error: ${{ github.event_name == 'workflow_dispatch' && inputs.collect_all }}
+        run: cargo test --features v2-crypto --lib evidence_store::inventory::tests
+      - id: check_43_evidence_store_erasure_selection_tests
+        continue-on-error: ${{ github.event_name == 'workflow_dispatch' && inputs.collect_all }}
+        run: cargo test --features v2-crypto --lib evidence_store::erasure::selection_tests
+      - id: check_44_evidence_control_index_tests
+        continue-on-error: ${{ github.event_name == 'workflow_dispatch' && inputs.collect_all }}
+        run: cargo test --features v2-crypto --lib evidence_control_index::tests
+      - id: check_45_evidence_index_tests
+        continue-on-error: ${{ github.event_name == 'workflow_dispatch' && inputs.collect_all }}
+        run: cargo test --features v2-crypto --lib evidence_index::tests
+      - id: check_46_evidence_store_attested_audit_cache_tests
+        continue-on-error: ${{ github.event_name == 'workflow_dispatch' && inputs.collect_all }}
+        run: cargo test --features v2-crypto --lib evidence_store::attested::audit_cache_tests
+      - id: check_47_evidence_store_admission_tests
+        continue-on-error: ${{ github.event_name == 'workflow_dispatch' && inputs.collect_all }}
+        run: cargo test --features v2-crypto --lib evidence_store::admission_tests
+      - id: check_48_evidence_service_audit_tests
+        continue-on-error: ${{ github.event_name == 'workflow_dispatch' && inputs.collect_all }}
+        run: cargo test --features v2-crypto --lib evidence_service::audit_tests
+      - id: check_49_cargo_clippy_workspace_all_targets_d_warnings
+        continue-on-error: ${{ github.event_name == 'workflow_dispatch' && inputs.collect_all }}
+        run: cargo clippy --workspace --all-targets -- -D warnings
+      - id: check_50_cargo_clippy_features_v2_crypto_all_targets_d_warnings
+        continue-on-error: ${{ github.event_name == 'workflow_dispatch' && inputs.collect_all }}
+        run: cargo clippy --features v2-crypto --all-targets -- -D warnings
+      - id: check_51_cargo_fmt_all_check
+        continue-on-error: ${{ github.event_name == 'workflow_dispatch' && inputs.collect_all }}
+        run: cargo fmt --all -- --check
       # Compile the distributable, not just the checkout: optional v2 sources
       # and embedded frontends must survive Cargo's package file selection.
-      - run: cargo package --locked --features v2-crypto
+      - id: check_52_cargo_package_locked_features_v2_crypto
+        continue-on-error: ${{ github.event_name == 'workflow_dispatch' && inputs.collect_all }}
+        run: cargo package --locked --features v2-crypto
         env:
           CARGO_BUILD_JOBS: 4
       - name: HTTP encrypted capture qualification at 64 KiB and four writers
-        if: github.event_name == 'pull_request'
+        id: check_53_http_encrypted_capture_qualification_at_64_kib_and_four_writ
+        if: github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && inputs.collect_all)
         env:
           KAN_HTTP_CAPTURE_REPORT: ${{ runner.temp }}/kan-http-capture.json
+        continue-on-error: ${{ github.event_name == 'workflow_dispatch' && inputs.collect_all }}
         run: cargo test --locked --features v2-crypto --test evidence_inventory capacity_measurements::capacity_http_capture_sample -- --ignored --exact --nocapture
       - uses: actions/upload-artifact@v4
         if: always()
@@ -111,9 +229,11 @@ jobs:
           path: ${{ runner.temp }}/kan-http-capture.json
           retention-days: 30
       - name: Real Library browser and download qualification
-        if: github.event_name == 'pull_request'
+        id: check_54_real_library_browser_and_download_qualification
+        if: github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && inputs.collect_all)
         timeout-minutes: 15
         shell: bash
+        continue-on-error: ${{ github.event_name == 'workflow_dispatch' && inputs.collect_all }}
         run: |
           df -h "$RUNNER_TEMP"
           python3 - <<'PY'
@@ -145,19 +265,31 @@ jobs:
                   raise
           PY
       - uses: actions/upload-artifact@v4
-        if: always() && github.event_name == 'pull_request'
+        if: always() && (github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && inputs.collect_all))
         with:
           name: v2-library-browser-${{ github.sha }}
           path: ${{ runner.temp }}/kan-library-browser/
           if-no-files-found: ignore
           retention-days: 30
 
+      - name: Collect every check outcome and preserve failure
+        if: ${{ always() && github.event_name == 'workflow_dispatch' && inputs.collect_all }}
+        env:
+          CI_RESULTS: ${{ toJSON(steps) }}
+        run: python3 scripts/ci-diagnostic-report.py --output "$RUNNER_TEMP/ci-check-results.json" --title "Check outcomes"
+      - uses: actions/upload-artifact@v4
+        if: always() && github.event_name == 'workflow_dispatch' && inputs.collect_all
+        with:
+          name: ci-check-results-${{ github.run_id }}
+          path: ${{ runner.temp }}/ci-check-results.json
+          if-no-files-found: error
+
   # Preserve realistic large-capture qualification without blocking every
   # short integration check on rebuilding the O(n²) admission fixture. Push
   # runs own this test; the PR event uses the same head without duplicating it.
   capacity:
     needs: msrv
-    if: github.event_name == 'push'
+    if: ${{ !cancelled() && ((github.event_name == 'push' && needs.msrv.result == 'success') || (github.event_name == 'workflow_dispatch' && inputs.collect_all)) }}
     runs-on: ubuntu-latest
     timeout-minutes: 45
     env:
@@ -275,8 +407,26 @@ jobs:
       - name: Identity canary (ordinary PR) or the full suite (release PR)
         run: |
           if [ "${{ steps.release_pr.outputs.is_release }}" = yes ]; then
-            cargo test --all
+            cargo test --all ${{ github.event_name == 'workflow_dispatch' && inputs.collect_all && '--no-fail-fast' || '' }}
           else
-            cargo test --test keychain_identity --test at_rest_guards --test keychain_one_door
+            cargo test ${{ github.event_name == 'workflow_dispatch' && inputs.collect_all && '--no-fail-fast' || '' }} --test keychain_identity --test at_rest_guards --test keychain_one_door
           fi
         timeout-minutes: 45
+
+  diagnostic_summary:
+    name: Diagnostic qualification result
+    if: ${{ always() && github.event_name == 'workflow_dispatch' && inputs.collect_all }}
+    needs: [msrv, test, capacity, canary]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Report all job outcomes
+        env:
+          CI_RESULTS: ${{ toJSON(needs) }}
+        run: python3 scripts/ci-diagnostic-report.py --output "$RUNNER_TEMP/ci-job-results.json" --title "Job outcomes"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ci-job-results-${{ github.run_id }}
+          path: ${{ runner.temp }}/ci-job-results.json
+          if-no-files-found: error

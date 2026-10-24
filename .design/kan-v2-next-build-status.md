@@ -37,6 +37,16 @@ qualification can finish without those operations.
 
 ### Build loop
 
+For a single diagnostic sweep, manually dispatch `CI` with `collect_all=true`:
+`gh workflow run ci.yml --ref feat/kan-v2-proof-library -f collect_all=true`.
+The input defaults to false; push and PR runs retain their existing fail-fast
+behavior. The diagnostic run continues independent checks, runs stable tests
+even if MSRV fails, includes both browser and capacity qualification, and keeps
+original failures in summary tables and JSON artifacts. Its final result stays
+failed when any check fails or remains incomplete. Missing toolchains, failed
+compilation or fixture initialization can still block dependent checks. Manual
+runs have separate concurrency groups so a subsequent push cannot cancel them.
+
 1. Work continuously on the existing permanent integration tip
    `.worktrees/kan-v2-proof-library`, branch `feat/kan-v2-proof-library`.
    Preserve the existing draft stack and root checkout's unrelated changes.
