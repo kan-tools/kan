@@ -171,8 +171,10 @@ async function main() {
     await page.locator('#scope').selectOption(copied);
     await page.waitForFunction(()=>document.querySelectorAll('#rows .occurrence').length===9);
     await page.locator('#scan-window').click();
-    const attempt = page.locator('#attempts details.attempt').filter({has:page.getByRole('button',{name:/Read attempt · 4 observed records/})});
-    await attempt.locator('summary').click();
+    // The identifying button is hidden until its details card is opened.
+    // Select only the card's summary, not its nested source-lineage summary.
+    const attempt = page.locator('#attempts details.attempt').filter({has:page.getByRole('button',{name:'Read attempt · 4 observed records',exact:true,includeHidden:true})});
+    await attempt.locator(':scope > summary').click();
     await attempt.getByRole('button',{name:/Read attempt ·/}).click();
     await page.waitForFunction(() => document.querySelector('#content-panel').textContent.includes('Hello proof archive'));
     const attachmentEvent=page.waitForEvent('download');
