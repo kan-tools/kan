@@ -135,3 +135,13 @@ def retain_logs(source, destination):
         temporary = target.with_suffix(target.suffix + '.pending')
         shutil.copyfile(path, temporary)
         temporary.replace(target)
+
+
+def seed_frontier(lines):
+    """Read one worker frontier, including libtest's same-line test prefix."""
+    import re
+    marker = 'KAN_CAPACITY_FRONTIER='
+    values = [line.split(marker, 1)[1].strip() for line in lines if marker in line]
+    if len(values) != 1 or not re.fullmatch(r'[0-9]+', values[0]):
+        raise ValueError('missing, ambiguous or malformed authenticated seed frontier')
+    return int(values[0])

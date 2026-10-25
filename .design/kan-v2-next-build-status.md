@@ -151,6 +151,13 @@ The measurement budget is 24 hours with at most 12 preemption attempts. The next
 run reuses the same uniquely identified fixture; neither 100 GiB qualification nor
 the final review is yet complete.
 
+Revision `7d34f33` passed all four automated CI runs and the remote abrupt-worker
+recovery regression. Its resumed seed batch succeeded at frontier 40,139, but the
+Python driver rejected libtest's same-line test-name prefix before the marker.
+The parser now accepts that captured output while rejecting missing, malformed or
+duplicate frontier markers. The failed attempt and fixture remain retained; the
+next run resumes the same volume, with 100 GiB qualification and review still open.
+
 ### Expanded release qualification — implementation prepared
 
 Qualification at `3b724d6` stopped at a private-method call in the browser

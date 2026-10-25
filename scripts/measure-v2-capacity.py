@@ -15,7 +15,7 @@ import shutil
 import subprocess
 import time
 
-from capacity_evidence import atomic_json, prepare_attempt, validate_report
+from capacity_evidence import atomic_json, prepare_attempt, validate_report, seed_frontier
 
 GIB = 1024 ** 3
 
@@ -113,11 +113,7 @@ def main():
         samples = [json.loads(line.split("KAN_CAPACITY_SAMPLE=", 1)[1])
                    for line in lines if "KAN_CAPACITY_SAMPLE=" in line]
         if operation == "seed-batch":
-            frontiers = [int(line.split("=", 1)[1]) for line in lines
-                         if line.startswith("KAN_CAPACITY_FRONTIER=")]
-            if len(frontiers) != 1:
-                raise ValueError("missing authenticated seed frontier")
-            return frontiers[0]
+            return seed_frontier(lines)
         if operation != "seed":
             if len(samples) != 1 or samples[0]["operation"] != operation:
                 raise ValueError(f"missing or mismatched sample in {path}")

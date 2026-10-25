@@ -11,6 +11,20 @@ spec.loader.exec_module(evidence)
 
 
 class EvidenceTests(unittest.TestCase):
+    def test_seed_frontier_accepts_actual_libtest_output_and_rejects_ambiguity(self):
+        actual = ("\nrunning 1 test\n"
+                  "test capacity_measurements::capacity_worker ... KAN_CAPACITY_FRONTIER=40139\n"
+                  "ok\n\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; "
+                  "95 filtered out; finished in 185.70s\n")
+        self.assertEqual(evidence.seed_frontier(actual.splitlines()), 40139)
+        self.assertEqual(evidence.seed_frontier(['KAN_CAPACITY_FRONTIER=40139']), 40139)
+        for lines in ([], ['KAN_CAPACITY_FRONTIER='], ['KAN_CAPACITY_FRONTIER=-1'],
+                      ['KAN_CAPACITY_FRONTIER=40139junk'],
+                      ['KAN_CAPACITY_FRONTIER=40139', 'KAN_CAPACITY_FRONTIER=40139'],
+                      ['KAN_CAPACITY_FRONTIER=1 KAN_CAPACITY_FRONTIER=2']):
+            with self.subTest(lines=lines), self.assertRaises(ValueError):
+                evidence.seed_frontier(lines)
+
     def test_nested_attempt_logs_survive_without_copying_archive(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp) / 'fixture'; root.mkdir()
