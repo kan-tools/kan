@@ -266,11 +266,14 @@ establish the specified 10 GiB storage workload only; they do not establish a
 
 The opt-in runner `scripts/modal_v2_capacity.py` creates a **new persistent
 Modal Volume v2 for each run**, named `kan-v2-fixture-REVISION-RUN_UUID`. It refuses
-to reuse an existing name. The synthetic archive lives on that volume; compilation
+to reuse an existing name unless explicitly resuming the identified run below.
+The synthetic archive lives on that volume; compilation
 uses ordinary container scratch space. No `ephemeral_disk` reservation is requested.
 The measurement function uses four CPU cores, 18 GiB requested RAM, a 24 GiB RAM
-limit and an eight-hour timeout. A separate read-only verification function has
-a six-hour timeout. Neither has automatic retries. The serving-process RSS gate
+limit and a 24-hour timeout, with at most 12 preemption attempts within a shared
+24-hour elapsed budget. A separate read-only verification function has a six-hour
+timeout. Application error retries are disabled; Modal platform preemption can
+still replay the same input. The serving-process RSS gate
 remains 512 MiB; container memory also covers compilation and OS cache.
 
 Modal Volumes grow without a fixed device allocation. Their `statfs` values are
@@ -297,6 +300,28 @@ used. Small logs/reports, exact revision/compiler and runner/driver/executable
 hashes are retained separately in `kan-v2-capacity-results`. Check that existing
 run at intervals of at least 30 minutes; never blindly restart a detached job.
 
+Seeding closes SQLite and commits the fixture volume every 256 MiB. On platform
+preemption, a new attempt resumes from the authenticated archive frontier, keeping
+prior attempt reports/logs. The runner first executes a tiny abrupt-exit recovery
+regression remotely. Interrupted timing campaigns are retained but replaced with a
+fresh full sample set; any already-admitted appends are disclosed as
+`unmeasured_append_records` and included in `expected_records`. Existing data is
+never truncated to make counts fit.
+
+For a stopped run, explicitly select its original revision and UUID (never launch
+a second writer while its app is running):
+
+```sh
+uv run --no-project --with-requirements scripts/requirements-modal-capacity.txt modal run --detach scripts/modal_v2_capacity.py --revision FULL_PUBLISHED_COMMIT_SHA --resume-revision ORIGINAL_FULL_SHA --resume-run-id ORIGINAL_UUID --gib 100 --samples 32
+```
+
+This attaches the exact retained volume without creating another. Cross-revision
+adoption is restricted to a stopped, unsampled seed with identical production
+`src`, `Cargo.toml` and `Cargo.lock`; identity and sample parameters must match.
+New results live under the current revision and original UUID; old results remain.
+A completed timing report is reused, and a measured run proceeds to verification.
+Ordinary failures remain visible for diagnosis rather than triggering new jobs.
+
 After all worker processes exit, the runner hashes every retained fixture file,
 commits the volume, and mounts it read-only in a second single-use container.
 That container checks the manifest identity/digest, every file's full byte hash,
@@ -310,12 +335,15 @@ manifest rather than rerunning the measurement.
 Retrieve only this run's small evidence directory (printed by the runner):
 
 ```sh
+mkdir -p .local-state/capacity-modal-RUN_ID
 uv run --no-project --with-requirements scripts/requirements-modal-capacity.txt modal volume get kan-v2-capacity-results REVISION-100g-RUN_ID .local-state/capacity-modal-RUN_ID
 ```
 
 Before cleanup, require complete `run.json`, `report.json`, and `verification.json`,
 the intended revision and unique fixture-volume identity, a matching manifest,
-102,400 seeded 1 MiB payloads plus the 32 measured appends, and all 128 samples.
+102,400 seeded 1 MiB payloads plus the 32 measured appends and any explicitly
+disclosed interrupted-attempt appends, and all 128 samples. Require exact
+`expected_records` agreement with both retained object and commit counts.
 Review distributions and preserve all small reports/logs locally. Physical block
 allocation cannot be claimed from a Modal Volume. Do not download the large archive
 to the laptop. After validation and evidence retrieval, remove **only the unique

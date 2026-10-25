@@ -11,6 +11,21 @@ spec.loader.exec_module(evidence)
 
 
 class EvidenceTests(unittest.TestCase):
+    def test_nested_attempt_logs_survive_without_copying_archive(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp) / 'fixture'; root.mkdir()
+            out = Path(temp) / 'results'
+            (root / 'attempts' / 'one').mkdir(parents=True)
+            (root / 'attempts' / 'one' / 'append.log').write_text('sample')
+            (root / 'archive').mkdir()
+            (root / 'archive' / 'archive.sqlite').write_bytes(b'not evidence')
+            (root / 'archive' / 'ignored.json').write_text('also not evidence')
+            (root / 'report.json').write_text('{}')
+            evidence.retain_logs(root, out)
+            self.assertEqual((out / 'attempts' / 'one' / 'append.log').read_text(), 'sample')
+            self.assertTrue((out / 'report.json').exists())
+            self.assertFalse((out / 'archive').exists())
+
     def test_full_read_detects_changed_missing_and_extra_files(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
@@ -57,6 +72,46 @@ class EvidenceTests(unittest.TestCase):
                 with self.assertRaises(ValueError): evidence.inspect_archive(path,count,size)
             Path(str(path)+'-wal').write_bytes(b'pending')
             with self.assertRaises(ValueError): evidence.inspect_archive(path,1,7)
+
+
+class ResumeTests(unittest.TestCase):
+    def test_incomplete_attempt_preserved_and_revision_mismatch_rejected(self):
+        import json
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            old = {'source_revision':'a'*40, 'opaque_payload_gib':100,
+                   'samples_per_operation':32, 'status':'running',
+                   'samples':[{'operation':'append'}]}
+            evidence.atomic_json(root/'report.json',old)
+            attempt = evidence.prepare_attempt(root,'a'*40,100,32,True)
+            self.assertEqual(json.loads((attempt/'prior-report.json').read_text()),old)
+            self.assertEqual(json.loads((root/'report.json').read_text()),old)
+            with self.assertRaises(ValueError): evidence.prepare_attempt(root,'b'*40,100,32,True,True)
+            with self.assertRaises(ValueError): evidence.prepare_attempt(root,'a'*40,10,32,True)
+
+    def test_only_explicit_unsampled_legacy_prefix_can_be_adopted(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp)
+            old={'opaque_payload_gib':100,'samples_per_operation':32,'status':'running','samples':[]}
+            evidence.atomic_json(root/'report.json',old)
+            with self.assertRaises(ValueError): evidence.prepare_attempt(root,'a'*40,100,32,True)
+            self.assertIsNotNone(evidence.prepare_attempt(root,'a'*40,100,32,True,True))
+            (root/'report.json').unlink();(root/'archive').mkdir()
+            with self.assertRaises(ValueError): evidence.prepare_attempt(root,'a'*40,100,32,True,True)
+
+    def test_unmeasured_append_accounting_and_completed_resume(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp)
+            report={'version':3,'source_revision':'a'*40,'status':'complete',
+                    'opaque_payload_gib':100,'samples_per_operation':8,'chunk_bytes':1024**2,
+                    'fixture_file_bytes':100*evidence.GIB,'seeded_records':102400,
+                    'baseline_records':102403,'unmeasured_append_records':3,'expected_records':102411,
+                    'samples':[{'operation':op,'process_peak_rss_kib':1024}
+                               for op in ('open','append','page','source') for _ in range(8)]}
+            evidence.atomic_json(root/'report.json',report)
+            self.assertIsNone(evidence.prepare_attempt(root,'a'*40,100,8,True))
+            report['expected_records']=102408
+            with self.assertRaises(ValueError): evidence.validate_report(report,100,8)
 
 
 if __name__ == '__main__': unittest.main()

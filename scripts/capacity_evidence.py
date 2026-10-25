@@ -45,6 +45,13 @@ def validate_report(report, gib, samples):
             or report.get('chunk_bytes') != 1024 ** 2
             or report.get('fixture_file_bytes', 0) < gib * GIB):
         raise ValueError('incomplete or mismatched capacity report')
+    if report.get('version', 1) >= 3:
+        baseline = report.get('baseline_records', -1)
+        extras = report.get('unmeasured_append_records', -1)
+        if (report.get('seeded_records') != gib * 1024
+                or not 0 <= extras <= 4096 or baseline != gib * 1024 + extras
+                or report.get('expected_records') != baseline + samples):
+            raise ValueError('invalid retained seed/append accounting')
     rows = report.get('samples', [])
     if len(rows) != samples * 4:
         raise ValueError('incomplete operation samples')
@@ -73,3 +80,58 @@ def inspect_archive(path, expected_records, minimum_object_bytes):
             raise ValueError('retained SQLite archive failed quick_check')
     return {'commits': commits, 'objects': objects, 'object_bytes': byte_count,
             'sqlite_quick_check': 'ok'}
+
+
+def atomic_json(path, value):
+    import json
+    path = Path(path)
+    temporary = path.with_suffix(path.suffix + '.pending')
+    temporary.write_text(json.dumps(value, indent=2) + '\n')
+    temporary.replace(path)
+
+
+def prepare_attempt(directory, revision, gib, samples, resume, adopt_seed_prefix=False):
+    """Never silently reuse metrics from an interrupted timing attempt."""
+    import json
+    import uuid
+    directory = Path(directory)
+    report_path = directory / 'report.json'
+    old = json.loads(report_path.read_text()) if report_path.exists() else None
+    if old:
+        if not resume or old.get('opaque_payload_gib') != gib or old.get('samples_per_operation') != samples:
+            raise ValueError('resume parameters differ from retained measurement')
+        if old.get('source_revision') != revision:
+            if not adopt_seed_prefix or old.get('samples') or old.get('status') == 'complete':
+                raise ValueError('source revision differs; only explicit unsampled seed adoption is permitted')
+        if old.get('status') == 'complete':
+            validate_report(old, gib, samples)
+            return None
+    elif (directory / 'archive').exists():
+        raise ValueError('archive exists without a retained measurement identity')
+    attempt = directory / 'attempts' / uuid.uuid4().hex
+    attempt.mkdir(parents=True)
+    if old:
+        atomic_json(attempt / 'prior-report.json', old)
+    return attempt
+
+
+def retain_logs(source, destination):
+    """Copy small root/attempt evidence, never walk or copy the archive."""
+    import shutil
+    source, destination = Path(source), Path(destination)
+    if not source.exists():
+        return
+    paths = list(source.iterdir())
+    attempts = source / 'attempts'
+    if attempts.exists():
+        paths.extend(attempts.rglob('*'))
+    for path in paths:
+        if path.is_symlink():
+            raise ValueError('evidence contains a symlink')
+        if not path.is_file() or path.suffix not in ('.json', '.jsonl', '.log'):
+            continue
+        target = destination / path.relative_to(source)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        temporary = target.with_suffix(target.suffix + '.pending')
+        shutil.copyfile(path, temporary)
+        temporary.replace(target)

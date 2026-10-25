@@ -124,8 +124,8 @@ qualification or acceptance.
 
 The owner now requests one fresh full adversarial review after all remaining
 features and release qualification are implemented. Use actual Claude Code Opus 5.5
-on the frozen integrated candidate; do not start it during feature construction. The 100 GiB Modal runner is prepared; account authentication is still
-needed before a cloud measurement can run.
+on the frozen integrated candidate; do not start it during feature construction.
+Modal authentication is complete; the 100 GiB measurement is in qualification.
 
 ### Qualification update — 2026-10-24
 
@@ -138,6 +138,18 @@ and retained-report retrieval. The runner no longer reserves ephemeral disk.
 Volume results explicitly report a distributed-filesystem backend and unavailable
 physical-block allocation; they are not a local-SSD latency comparison. The
 100 GiB result and final fresh Opus 5.5 review remain pending.
+
+Revision `da3da7d` passed PR/push CI, migration and performance. Its persistent
+volume run was preempted after retaining about 38 GiB of seed payload; the platform
+replay then failed on an existing results directory. The fixture and failed-run
+evidence remain retained. The recovery change adds closed 256 MiB batch commits,
+authenticated frontier continuation, separate attempt logs, explicit legacy-seed
+adoption with production-code equivalence, and an abrupt-worker regression run
+remotely before the large fixture is touched. Interrupted timing samples remain
+inspectable but qualification uses a fresh campaign, disclosing extra appends.
+The measurement budget is 24 hours with at most 12 preemption attempts. The next
+run reuses the same uniquely identified fixture; neither 100 GiB qualification nor
+the final review is yet complete.
 
 ### Expanded release qualification — implementation prepared
 

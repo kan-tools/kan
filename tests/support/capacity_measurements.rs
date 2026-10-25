@@ -67,6 +67,97 @@ fn seed(root: &Path, chunks: u64) {
     }
 }
 
+// Qualification-only recovery: checkpoint each closed batch and derive progress
+// from authenticated archive metadata. Existing bytes are never regenerated.
+fn seed_batch(root: &Path, chunks: u64, batch: u64) -> u64 {
+    assert!(chunks > 0 && batch > 0 && batch <= 1024);
+    let signer = identity(8);
+    let writer = identity(6);
+    let permission = grant();
+    let mut archive = if root.exists() {
+        attested::Archive::open_indexed(root, binding(), None).unwrap()
+    } else {
+        let archive = attested::Archive::create(root, binding()).unwrap();
+        archive.rebuild_serving_index(&signer).unwrap();
+        archive
+    };
+    let frontier = archive.indexed_frontier(None).unwrap();
+    let start = frontier.through;
+    let end = chunks.min(start.saturating_add(batch)).max(start);
+    let mut previous = frontier.manifest.map(|cid| cid.to_string());
+    let crash_after: Option<u64> = std::env::var("KAN_CAPACITY_CRASH_AFTER")
+        .ok()
+        .map(|value| value.parse().unwrap());
+    for position in start..end {
+        let admitted = archive
+            .admit_indexed(
+                &signed(&writer, signer.did().as_str(), position, previous),
+                &signer,
+                &permission,
+                position + 1,
+                None,
+            )
+            .unwrap();
+        previous = Some(admitted.record.manifest.cid().to_string());
+        if crash_after == Some(position + 1) {
+            std::process::exit(73); // Fault probe: no destructors/clean connection close.
+        }
+    }
+    assert_eq!(archive.indexed_frontier(None).unwrap().through, end);
+    end
+}
+
+#[test]
+fn capacity_seed_resume_preserves_prefix_and_rejects_bad_checkpoint() {
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path().join("archive");
+    seed(&root, 2); // Represents the old interrupted runner's retained prefix.
+    let before = attested::Archive::open_indexed(&root, binding(), None)
+        .unwrap()
+        .indexed_frontier(None)
+        .unwrap();
+    let child = std::process::Command::new(std::env::current_exe().unwrap())
+        .args([
+            "--exact",
+            "capacity_measurements::capacity_worker",
+            "--ignored",
+            "--nocapture",
+        ])
+        .env("KAN_CAPACITY_ARCHIVE", &root)
+        .env("KAN_CAPACITY_OPERATION", "seed-batch")
+        .env("KAN_CAPACITY_CHUNKS", "6")
+        .env("KAN_CAPACITY_BATCH", "4")
+        .env("KAN_CAPACITY_CRASH_AFTER", "4")
+        .status()
+        .unwrap();
+    assert_eq!(child.code(), Some(73));
+    assert_eq!(seed_batch(&root, 6, 1), 5);
+    assert_eq!(seed_batch(&root, 6, 1), 6);
+    assert_eq!(seed_batch(&root, 6, 1), 6); // Duplicate wakeup adds nothing.
+    let conn = rusqlite::Connection::open(root.join("archive.sqlite")).unwrap();
+    let retained: String = conn
+        .query_row("SELECT cid FROM commits WHERE sequence=2", [], |row| {
+            row.get(0)
+        })
+        .unwrap();
+    assert_eq!(retained, before.manifest.unwrap().to_string());
+    let positions: i64 = conn
+        .query_row("SELECT count(DISTINCT position) FROM commits", [], |row| {
+            row.get(0)
+        })
+        .unwrap();
+    assert_eq!(positions, 6);
+    conn.execute("UPDATE serving_checkpoint SET body=x'00'", [])
+        .unwrap();
+    drop(conn);
+    assert!(std::panic::catch_unwind(|| seed_batch(&root, 7, 1)).is_err());
+    let conn = rusqlite::Connection::open(root.join("archive.sqlite")).unwrap();
+    let count: i64 = conn
+        .query_row("SELECT count(*) FROM commits", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(count, 6);
+}
+
 fn counters() -> (u64, u64) {
     let text = std::fs::read_to_string("/proc/self/io").unwrap();
     let field = |key: &str| {
@@ -220,6 +311,16 @@ fn capacity_worker() {
             .parse()
             .unwrap();
         seed(&root, chunks);
+    } else if operation == "seed-batch" {
+        let chunks = std::env::var("KAN_CAPACITY_CHUNKS")
+            .unwrap()
+            .parse()
+            .unwrap();
+        let batch = std::env::var("KAN_CAPACITY_BATCH")
+            .unwrap()
+            .parse()
+            .unwrap();
+        println!("KAN_CAPACITY_FRONTIER={}", seed_batch(&root, chunks, batch));
     } else {
         probe(&root, &operation);
     }
