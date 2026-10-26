@@ -276,6 +276,22 @@ timeout. Application error retries are disabled; Modal platform preemption can
 still replay the same input. The serving-process RSS gate
 remains 512 MiB; container memory also covers compilation and OS cache.
 
+Modal's gVisor runtime may omit `/proc/self/status`'s `VmHWM` field. The Modal
+driver explicitly selects `--rss-source rusage`: a fresh Python supervisor for
+each measured worker records Linux `getrusage(RUSAGE_CHILDREN).ru_maxrss` after the
+child exits. This is the child's lifetime peak in KiB, not a sampled current RSS
+or the peak of the seed process. Raw worker and supervisor reports are retained;
+missing/zero readings, failed workers and peaks above 512 MiB reject qualification.
+The default local-disk path continues to use `VmHWM`. Both methods include process
+startup and harness overhead; neither counts kernel page cache as process RSS.
+
+Before touching the large archive, a remote regression allocates and touches
+64 MiB, frees it, and checks the peak remains recorded. It also checks that a
+second fresh supervisor's small child does not inherit the first child's peak.
+The measurement attempt repeats the allocate/free calibration and retains its
+result. Unsupported accounting fails explicitly rather than weakening the gate.
+The kernel interface is documented in [getrusage(2)](https://man7.org/linux/man-pages/man2/getrusage.2.html).
+
 Modal Volumes grow without a fixed device allocation. Their `statfs` values are
 placeholders, so the driver explicitly uses `--storage-backend modal-volume` and
 reports physical allocation as unavailable. Its ordinary local-disk mode retains

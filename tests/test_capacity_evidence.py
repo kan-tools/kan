@@ -88,6 +88,47 @@ class EvidenceTests(unittest.TestCase):
             with self.assertRaises(ValueError): evidence.inspect_archive(path,1,7)
 
 
+class PeakAccountingTests(unittest.TestCase):
+    source = 'getrusage(RUSAGE_CHILDREN).ru_maxrss:linux-kib:fresh-supervisor'
+
+    def test_external_peak_cannot_replace_native_or_missing_evidence(self):
+        sample = {'rss_source':'pending-external-rusage','process_peak_rss_kib':None}
+        usage = {'status':'complete','source':self.source,'returncode':0,
+                 'calibration':False,'process_peak_rss_kib':512*1024}
+        good = dict(sample); evidence.attach_peak(good,usage)
+        self.assertEqual(good['process_peak_rss_kib'],512*1024)
+        for key,value in [('status','failed'),('returncode',101),('source','current-rss'),
+                          ('calibration',True),('process_peak_rss_kib',0),
+                          ('process_peak_rss_kib',None),('process_peak_rss_kib',512*1024+1)]:
+            with self.subTest(key=key,value=value), self.assertRaises(ValueError):
+                evidence.attach_peak(dict(sample),dict(usage,**{key:value}))
+        with self.assertRaises(ValueError): evidence.attach_peak(good,usage)
+
+    def test_calibration_requires_allocation_release_and_retained_peak(self):
+        probe = {'before_rss_kib':16000,'during_rss_kib':81536,'after_rss_kib':16000,
+                 'during_peak_kib':81536,'after_peak_kib':81536}
+        report = {'source':self.source,'returncode':0,'calibration':True,
+                  'process_peak_rss_kib':81536,'allocation_probe':probe}
+        evidence.validate_peak_calibration(report)
+        for key,value in [('during_rss_kib',16000),('after_rss_kib',81536),
+                          ('after_peak_kib',16000),('during_peak_kib',0)]:
+            bad = copy.deepcopy(report);bad['allocation_probe'][key]=value
+            with self.subTest(key=key),self.assertRaises(ValueError): evidence.validate_peak_calibration(bad)
+        with self.assertRaises(ValueError): evidence.validate_peak_calibration({})
+
+    @unittest.skipUnless(__import__('sys').platform == 'linux', 'Linux kernel RSS units required')
+    def test_supervisor_calibrates_then_isolates_next_child(self):
+        import json, subprocess, sys
+        script=Path(__file__).resolve().parents[1]/'scripts/capacity_rss.py'
+        with tempfile.TemporaryDirectory() as temp:
+            first=Path(temp)/'calibration.json';second=Path(temp)/'small.json'
+            subprocess.run([sys.executable,str(script),'--output',str(first),'--calibrate'],check=True)
+            subprocess.run([sys.executable,str(script),'--output',str(second),'--',sys.executable,'-c','pass'],check=True)
+            big=json.loads(first.read_text());small=json.loads(second.read_text())
+            evidence.validate_peak_calibration(big)
+            self.assertGreater(big['process_peak_rss_kib']-small['process_peak_rss_kib'],32*1024)
+
+
 class ResumeTests(unittest.TestCase):
     def test_incomplete_attempt_preserved_and_revision_mismatch_rejected(self):
         import json

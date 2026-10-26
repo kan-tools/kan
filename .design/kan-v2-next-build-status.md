@@ -158,6 +158,15 @@ The parser now accepts that captured output while rejecting missing, malformed o
 duplicate frontier markers. The failed attempt and fixture remain retained; the
 next run resumes the same volume, with 100 GiB qualification and review still open.
 
+The `a9f7c8f` run finished all 102,400 seed records (100 GiB opaque payload;
+216,900,198,400-byte archive file), then failed its first measurement because
+Modal gVisor omitted `VmHWM`. The complete seed and failed evidence are retained.
+A separate 64 MiB allocate/free probe on the same runtime confirmed kernel
+`getrusage` peak retention and parent child-usage reporting. The correction uses
+a fresh supervisor per measured worker, requires a retained runtime calibration,
+and keeps the 512 MiB peak limit. CI and the resumed run must qualify this change;
+100 GiB timing/remount verification and the final review remain outstanding.
+
 ### Expanded release qualification — implementation prepared
 
 Qualification at `3b724d6` stopped at a private-method call in the browser

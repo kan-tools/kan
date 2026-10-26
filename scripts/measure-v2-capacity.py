@@ -13,9 +13,10 @@ from pathlib import Path
 import platform
 import shutil
 import subprocess
+import sys
 import time
 
-from capacity_evidence import atomic_json, prepare_attempt, validate_report, seed_frontier
+from capacity_evidence import atomic_json, prepare_attempt, validate_report, seed_frontier, attach_peak
 
 GIB = 1024 ** 3
 
@@ -38,6 +39,7 @@ def main():
     parser.add_argument("--samples", type=int, default=32)
     parser.add_argument("--storage-backend", choices=("local-disk", "modal-volume"),
                         default="local-disk")
+    parser.add_argument("--rss-source", choices=("proc-vmhwm", "rusage"), default="proc-vmhwm")
     parser.add_argument("--resume", action="store_true")
     parser.add_argument("--adopt-seed-prefix", action="store_true")
     parser.add_argument("--revision", default="unspecified")
@@ -75,7 +77,7 @@ def main():
         print("Retained completed measurement verified; no samples rerun.", flush=True)
         return
     report = {
-        "version": 3, "status": "running", "phase": "seeding",
+        "version": 4, "rss_source": args.rss_source, "status": "running", "phase": "seeding",
         "source_revision": args.revision, "attempt_id": attempt.name,
         "storage_backend": args.storage_backend,
         "free_space_preflight": free,
@@ -104,10 +106,17 @@ def main():
                    KAN_CAPACITY_OPERATION=operation,
                    KAN_CAPACITY_CHUNKS=str(args.gib * 1024), KAN_CAPACITY_BATCH="256")
         path = attempt / f"{operation}-{number}.log"
+        command = [str(binary), "--ignored", "--exact",
+                   "capacity_measurements::capacity_worker", "--nocapture", "--test-threads=1"]
+        env.pop("KAN_CAPACITY_EXTERNAL_RSS", None)
+        external_rss = args.rss_source == "rusage" and operation not in ("seed", "seed-batch")
+        rss_path = attempt / f"{operation}-{number}-rss.json"
+        if external_rss:
+            env["KAN_CAPACITY_EXTERNAL_RSS"] = "rusage"
+            command = [sys.executable, str(Path(__file__).with_name("capacity_rss.py")),
+                       "--output", str(rss_path), "--", *command]
         with path.open("x") as log:
-            subprocess.run([str(binary), "--ignored", "--exact",
-                            "capacity_measurements::capacity_worker", "--nocapture",
-                            "--test-threads=1"], env=env, stdout=log,
+            subprocess.run(command, env=env, stdout=log,
                            stderr=subprocess.STDOUT, check=True, timeout=45 * 60)
         lines = path.read_text().splitlines()
         samples = [json.loads(line.split("KAN_CAPACITY_SAMPLE=", 1)[1])
@@ -117,12 +126,20 @@ def main():
         if operation != "seed":
             if len(samples) != 1 or samples[0]["operation"] != operation:
                 raise ValueError(f"missing or mismatched sample in {path}")
+            if external_rss:
+                attach_peak(samples[0], json.loads(rss_path.read_text()))
             report["samples"].append(samples[0])
             save()
             commit()
 
     save()
     try:
+        if args.rss_source == "rusage":
+            calibration_path = attempt / "rss-calibration.json"
+            subprocess.run([sys.executable, str(Path(__file__).with_name("capacity_rss.py")),
+                            "--output", str(calibration_path), "--calibrate"], check=True, timeout=120)
+            report["rss_calibration"] = json.loads(calibration_path.read_text())
+            save()
         start = time.monotonic()
         # Work loop, not status polling: each subprocess admits up to 256 MiB,
         # closes SQLite, and commits a durable filesystem checkpoint.

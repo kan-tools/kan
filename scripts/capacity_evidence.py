@@ -52,6 +52,19 @@ def validate_report(report, gib, samples):
                 or not 0 <= extras <= 4096 or baseline != gib * 1024 + extras
                 or report.get('expected_records') != baseline + samples):
             raise ValueError('invalid retained seed/append accounting')
+    if report.get('version', 1) >= 4:
+        if report.get('rss_source') == 'rusage':
+            calibration = report.get('rss_calibration', {})
+            if calibration.get('status') != 'complete':
+                raise ValueError('missing completed peak RSS calibration')
+            validate_peak_calibration(calibration)
+            source = 'getrusage(RUSAGE_CHILDREN).ru_maxrss:linux-kib:fresh-supervisor'
+        elif report.get('rss_source') == 'proc-vmhwm':
+            source = 'proc-vmhwm'
+        else:
+            raise ValueError('unknown RSS accounting source')
+        if any(row.get('rss_source') != source for row in report.get('samples', [])):
+            raise ValueError('sample RSS source does not match report')
     rows = report.get('samples', [])
     if len(rows) != samples * 4:
         raise ValueError('incomplete operation samples')
@@ -145,3 +158,31 @@ def seed_frontier(lines):
     if len(values) != 1 or not re.fullmatch(r'[0-9]+', values[0]):
         raise ValueError('missing, ambiguous or malformed authenticated seed frontier')
     return int(values[0])
+
+
+def attach_peak(sample, usage):
+    source = 'getrusage(RUSAGE_CHILDREN).ru_maxrss:linux-kib:fresh-supervisor'
+    peak = usage.get('process_peak_rss_kib')
+    if (sample.get('rss_source') != 'pending-external-rusage'
+            or sample.get('process_peak_rss_kib') is not None
+            or usage.get('source') != source or usage.get('status') != 'complete'
+            or usage.get('returncode') != 0 or usage.get('calibration') is not False
+            or not isinstance(peak, int) or not 0 < peak <= 512 * 1024):
+        raise ValueError('invalid external peak RSS evidence')
+    sample.update(process_peak_rss_kib=peak, rss_source=source)
+
+
+def validate_peak_calibration(report):
+    c = report.get('allocation_probe', {})
+    keys = ('before_rss_kib', 'during_rss_kib', 'after_rss_kib', 'during_peak_kib', 'after_peak_kib')
+    if (report.get('source') != 'getrusage(RUSAGE_CHILDREN).ru_maxrss:linux-kib:fresh-supervisor'
+            or report.get('returncode') != 0 or report.get('calibration') is not True
+            or any(type(c.get(k)) is not int or c[k] <= 0 for k in keys)
+            or type(report.get('process_peak_rss_kib')) is not int):
+        raise ValueError('missing kernel peak calibration evidence')
+    if (c['during_rss_kib'] - c['before_rss_kib'] < 48 * 1024
+            or c['during_rss_kib'] - c['after_rss_kib'] < 48 * 1024
+            or c['during_peak_kib'] - c['before_rss_kib'] < 48 * 1024
+            or c['after_peak_kib'] < c['during_peak_kib']
+            or not c['after_peak_kib'] <= report['process_peak_rss_kib'] <= 512 * 1024):
+        raise ValueError('kernel peak accounting failed allocate/free calibration')

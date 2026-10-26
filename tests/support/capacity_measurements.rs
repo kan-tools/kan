@@ -190,17 +190,21 @@ fn measured<T>(name: &str, operation: impl FnOnce() -> T) -> (T, Value) {
     let value = operation();
     let micros = start.elapsed().as_micros();
     let after = counters();
-    let peak = rss_kib();
+    // Modal may omit VmHWM. An explicitly selected fresh supervisor supplies
+    // kernel child-lifetime peak RSS; null is never accepted as a measurement.
+    let external_rss = std::env::var("KAN_CAPACITY_EXTERNAL_RSS").as_deref() == Ok("rusage");
+    let peak = if external_rss { None } else { Some(rss_kib()) };
     let result = json!({
         "operation": name, "latency_us": micros,
         "syscall_read_bytes": after.0 - before.0,
         "physical_read_bytes": after.1 - before.1,
         "process_peak_rss_kib": peak,
+        "rss_source": if external_rss { "pending-external-rusage" } else { "proc-vmhwm" },
     });
     // Emit failure evidence before the memory gate. Process RSS includes the
     // harness/crypto/SQLite; kernel page cache is deliberately not process RSS.
     println!("KAN_CAPACITY_SAMPLE={result}");
-    if std::env::var_os("KAN_CAPACITY_OPERATION").is_some() {
+    if let (true, Some(peak)) = (std::env::var_os("KAN_CAPACITY_OPERATION").is_some(), peak) {
         assert!(peak <= 512 * 1024, "storage process exceeded 512 MiB");
     }
     (value, result)

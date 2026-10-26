@@ -188,6 +188,11 @@ def measure(revision: str, gib: int, samples: int, run_id: str, origin_revision:
         state["compiler"] = subprocess.check_output(["rustc", "--version"], text=True).strip()
         state["driver_sha256"] = hashlib.sha256(
             (checkout / "scripts/measure-v2-capacity.py").read_bytes()).hexdigest()
+        # Exercise the actual Linux accounting supervisor before compiling or
+        # touching the retained archive; unsupported peak accounting fails early.
+        run_command(["python3", "tests/test_capacity_evidence.py", "-v"], checkout,
+                    logs / "memory-accounting-regression.log",
+                    logs / "memory-accounting-regression-stderr.log", 120)
         run_command(["cargo", "test", "--release", "--locked", "--features", "v2-crypto",
                      "--test", "evidence_inventory", "--no-run", "--message-format=json"],
                     checkout, logs / "build.jsonl", logs / "build-stderr.log", 3600)
@@ -204,7 +209,7 @@ def measure(revision: str, gib: int, samples: int, run_id: str, origin_revision:
         checkpoint()
         run_command(["python3", "scripts/measure-v2-capacity.py", "--binary", binary,
                      "--directory", str(fixture), "--gib", str(gib), "--samples", str(samples),
-                     "--storage-backend", "modal-volume", "--resume", "--adopt-seed-prefix",
+                     "--storage-backend", "modal-volume", "--rss-source", "rusage", "--resume", "--adopt-seed-prefix",
                      "--revision", revision, "--checkpoint-volume", fixture_volume],
                     checkout, logs / "measurement.log", logs / "measurement-stderr.log",
                     max(1, state["deadline_unix"] - time.time()))
