@@ -77,22 +77,72 @@ def validate_report(report, gib, samples):
             raise ValueError('serving process exceeds or lacks the 512 MiB RSS gate')
 
 
-def inspect_archive(path, expected_records, minimum_object_bytes):
-    """Verify the closed SQLite archive's retained rows on the fresh mount."""
+def inspect_archive(path, expected_records, minimum_object_bytes, *, expected_staged=None, progress=None):
+    """Check committed evidence separately from explicitly pinned staged objects.
+
+    Staging is durable before admission. Extras are never discovered and accepted
+    implicitly: a diagnostic must supply their exact CID/length allowlist.
+    """
+    import base64
     import sqlite3
+    expected_staged = dict(expected_staged or {})
+    if len(expected_staged) > 32 or any(type(n) is not int or not 0 < n <= 4194304 for n in expected_staged.values()):
+        raise ValueError('invalid staged-object allowance')
+    progress = progress or (lambda phase, value: None)
     path = Path(path)
     wal = Path(str(path) + '-wal')
     if wal.exists() and wal.stat().st_size:
         raise ValueError('archive still has an uncheckpointed WAL')
     with sqlite3.connect(path.resolve().as_uri() + '?mode=ro&immutable=1', uri=True) as db:
         commits = db.execute('SELECT count(*) FROM commits').fetchone()[0]
-        objects, byte_count = db.execute('SELECT count(*), coalesce(sum(length(bytes)),0) FROM objects').fetchone()
-        if commits != expected_records or objects != expected_records or byte_count < minimum_object_bytes:
-            raise ValueError('retained archive record count or object bytes mismatch')
+        objects = db.execute('SELECT count(*) FROM objects').fetchone()[0]
+        progress('counts', {'commits': commits, 'objects': objects})
+        if commits != expected_records or objects != expected_records + len(expected_staged):
+            raise ValueError(f'retained archive mismatch: commits={commits}, objects={objects}, '
+                             f'expected_records={expected_records}, expected_staged={len(expected_staged)}')
+        bindings, bound_commits = {}, set()
+        for cid, length, present in db.execute('SELECT b.ciphertext,b.length,c.cid FROM bindings b LEFT JOIN commits c ON c.cid=b.first_manifest'):
+            if present is None or present in bound_commits or cid in bindings or type(length) is not int or not 0 < length <= 4194304:
+                raise ValueError('missing commit, duplicate object binding or invalid binding length')
+            bindings[cid] = length
+            bound_commits.add(present)
+            if len(bindings) > expected_records:
+                raise ValueError('extra committed object bindings')
+        if len(bindings) != expected_records or set(bindings) & set(expected_staged):
+            raise ValueError('missing bindings or staged allowance overlaps committed evidence')
+        progress('bindings', {'count': len(bindings)})
+        byte_count, referenced_bytes, staged, seen = 0, 0, {}, set()
+        # Rowid order avoids CID-order random seeks. Read only record headers for
+        # bound payload lengths; full file bytes are independently hash-checked.
+        for cid, length, kind in db.execute('SELECT cid,length(bytes),typeof(bytes) FROM objects NOT INDEXED'):
+            if kind != 'blob' or not 0 < length <= 4194304:
+                raise ValueError('invalid stored object')
+            if cid in bindings:
+                if length != bindings[cid]:
+                    raise ValueError('committed object length mismatch')
+                referenced_bytes += length
+            elif expected_staged.get(cid) == length:
+                payload = db.execute('SELECT bytes FROM objects WHERE cid=?', (cid,)).fetchone()[0]
+                actual = 'b' + base64.b32encode(b'\x01\x55\x12\x20' + hashlib.sha256(payload).digest()).decode().lower().rstrip('=')
+                if actual != cid:
+                    raise ValueError('staged object CID does not match retained bytes')
+                staged[cid] = length
+            else:
+                raise ValueError('unexpected unreferenced object')
+            seen.add(cid)
+            byte_count += length
+            if len(seen) % 1024 == 0:
+                progress('object_lengths', {'checked': len(seen), 'referenced_bytes': referenced_bytes})
+        if seen != set(bindings) | set(expected_staged) or staged != expected_staged:
+            raise ValueError('missing retained objects')
+        if referenced_bytes < minimum_object_bytes:
+            raise ValueError(f'referenced object bytes={referenced_bytes}, minimum_object_bytes={minimum_object_bytes}')
+        progress('sqlite_quick_check', {'objects': len(seen)})
         if db.execute('PRAGMA quick_check').fetchall() != [('ok',)]:
             raise ValueError('retained SQLite archive failed quick_check')
     return {'commits': commits, 'objects': objects, 'object_bytes': byte_count,
-            'sqlite_quick_check': 'ok'}
+            'referenced_objects': len(bindings), 'referenced_object_bytes': referenced_bytes,
+            'staged_objects': staged, 'sqlite_quick_check': 'ok'}
 
 
 def atomic_json(path, value):

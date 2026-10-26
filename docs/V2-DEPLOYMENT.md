@@ -348,6 +348,15 @@ A detached client interruption between measurement and verification leaves a
 `measured` result, not success. Resume verification against the exact retained
 manifest rather than rerunning the measurement.
 
+For a count/byte mismatch, diagnose the retained archive read-only before repeating
+work. `scripts/capacity_diagnostic.py` uses covering CID indexes for commit/object
+counts and checkpoints each result through its caller-provided save callback. It
+then compares binding references, reports missing and unreferenced objects, and
+reads lengths for at most 32 unreferenced objects. Its binding byte total is a
+**declared** total, not independently verified payload bytes; a completed diagnostic
+is not a substitute for the full remount verifier. Preserve partial results on
+failure and never infer missing data solely from a timed-out diagnostic.
+
 Retrieve only this run's small evidence directory (printed by the runner):
 
 ```sh
@@ -359,7 +368,21 @@ Before cleanup, require complete `run.json`, `report.json`, and `verification.js
 the intended revision and unique fixture-volume identity, a matching manifest,
 102,400 seeded 1 MiB payloads plus the 32 measured appends and any explicitly
 disclosed interrupted-attempt appends, and all 128 samples. Require exact
-`expected_records` agreement with both retained object and commit counts.
+`expected_records` agreement with commits and distinct referenced objects. Durable
+staging precedes admission, so interrupted admission can also leave unreferenced
+objects. The default verifier rejects extras. A diagnostic can justify an explicit
+CID/length allowlist (at most 32) for `scripts/modal_verify_v2_capacity.py`, which
+checks each staged object's CID against its bytes, reports it separately, and
+excludes staged bytes from the committed capacity threshold. Missing references,
+unlisted extras, binding length changes and corrupt staged bytes still fail.
+The read-only verifier writes a distinct verification directory with both measured
+and verifier revisions; it preserves the original failed report and never reruns
+seed or sample workers. Invoke it with `modal run --detach
+scripts/modal_verify_v2_capacity.py --request-file REQUEST.json`; the request pins
+`measured_revision`, `verifier_revision`, `seed_origin_revision`, `run_id`,
+`fixture_volume`, `gib`, `samples`, `manifest_sha256` and `expected_staged` (CID to
+byte length). A separate verification must finish all SQLite and full-file hash
+checks before cleanup; a successful diagnostic alone is insufficient.
 Review distributions and preserve all small reports/logs locally. Physical block
 allocation cannot be claimed from a Modal Volume. Do not download the large archive
 to the laptop. After validation and evidence retrieval, remove **only the unique

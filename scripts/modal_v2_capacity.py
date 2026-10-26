@@ -215,6 +215,8 @@ def measure(revision: str, gib: int, samples: int, run_id: str, origin_revision:
                     max(1, state["deadline_unix"] - time.time()))
         report = json.loads((fixture / "report.json").read_text())
         validate_report(report, gib, samples)
+        state["samples_completed"] = len(report["samples"])
+        state["seeded_records"] = report["seeded_records"]
         state["phase"] = "hashing_retained_fixture"
         checkpoint()
         manifest = {"revision": revision, "run_id": run_id, "gib": gib,

@@ -605,3 +605,19 @@ is retained in `.design/measurements/kan-v2-10g-9cd3adb.json`; distributions and
 limits are in `docs/V2-DEPLOYMENT.md`. This qualifies one single-worker admitted
 storage workload with retained OS cache, not the outstanding 100 GiB growth
 comparison or a whole-service concurrency promise.
+
+## Retained capacity verifier correction (2026-10-26)
+
+The indexed read-only diagnostic of the completed `4ce6e66` measurement found
+102432 commits, 102432 distinct referenced objects/bindings, no missing object or
+commit references, and two additional unreferenced objects of 2097732 bytes each.
+This is compatible with durable staging before ledger admission; the diagnostic
+does not establish which interruption produced them. The verifier's equality of
+all objects with committed records was too strict for this recovery fixture.
+
+The correction preserves exact committed counts, validates binding lengths and
+explicitly pinned staged CID/length pairs, excludes staged bytes from the 200 GiB
+threshold, and retains the complete SQLite/full-file hash gates. A standalone
+read-only verifier records measured and verifier revisions separately without
+changing the fixture, previous failures, seed or 128 completed measurements.
+Qualification is pending its result, not established by the diagnostic.

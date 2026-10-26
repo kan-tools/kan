@@ -76,16 +76,35 @@ class EvidenceTests(unittest.TestCase):
                 evidence.validate_report(bad,100,8)
 
     def test_archive_counts_bytes_and_uncheckpointed_wal(self):
+        import base64, hashlib
+        payload=b'staged'
+        cid='b'+base64.b32encode(b'\x01\x55\x12\x20'+hashlib.sha256(payload).digest()).decode().lower().rstrip('=')
         with tempfile.TemporaryDirectory() as temp:
             path=Path(temp)/'archive.sqlite'
             with sqlite3.connect(path) as db:
-                db.executescript('CREATE TABLE commits(sequence INTEGER); CREATE TABLE objects(bytes BLOB);')
-                db.execute('INSERT INTO commits VALUES (1)');db.execute('INSERT INTO objects VALUES (?)',(b'payload',))
+                db.executescript('CREATE TABLE commits(cid TEXT PRIMARY KEY); CREATE TABLE objects(cid TEXT PRIMARY KEY,bytes BLOB); CREATE TABLE bindings(ciphertext TEXT,length INTEGER,first_manifest TEXT);')
+                db.execute("INSERT INTO commits VALUES ('commit')")
+                db.execute("INSERT INTO objects VALUES ('bound',?)",(b'payload',))
+                db.execute("INSERT INTO bindings VALUES ('bound',7,'commit')")
             self.assertEqual(evidence.inspect_archive(path,1,7)['objects'],1)
             for count,size in [(2,7),(1,8)]:
                 with self.assertRaises(ValueError): evidence.inspect_archive(path,count,size)
-            Path(str(path)+'-wal').write_bytes(b'pending')
+            with sqlite3.connect(path) as db: db.execute('INSERT INTO objects VALUES (?,?)',(cid,payload))
             with self.assertRaises(ValueError): evidence.inspect_archive(path,1,7)
+            result=evidence.inspect_archive(path,1,7,expected_staged={cid:len(payload)})
+            self.assertEqual(result['referenced_object_bytes'],7)
+            self.assertEqual(result['staged_objects'],{cid:len(payload)})
+            # Staged bytes cannot satisfy the committed capacity threshold.
+            with self.assertRaises(ValueError): evidence.inspect_archive(path,1,8,expected_staged={cid:len(payload)})
+            with self.assertRaises(ValueError): evidence.inspect_archive(path,1,7,expected_staged={'wrong':len(payload)})
+            with sqlite3.connect(path) as db: db.execute('UPDATE objects SET bytes=? WHERE cid=?',(b'BROKEN',cid))
+            with self.assertRaisesRegex(ValueError,'CID'): evidence.inspect_archive(path,1,7,expected_staged={cid:len(payload)})
+            with sqlite3.connect(path) as db:
+                db.execute('UPDATE objects SET bytes=? WHERE cid=?',(payload,cid))
+                db.execute("UPDATE bindings SET first_manifest='missing'")
+            with self.assertRaisesRegex(ValueError,'missing commit'): evidence.inspect_archive(path,1,7,expected_staged={cid:len(payload)})
+            Path(str(path)+'-wal').write_bytes(b'pending')
+            with self.assertRaisesRegex(ValueError,'WAL'): evidence.inspect_archive(path,1,7)
 
 
 class PeakAccountingTests(unittest.TestCase):
