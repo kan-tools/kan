@@ -78,11 +78,21 @@ fn unsigned(r: &rusqlite::Row<'_>, i: usize) -> rusqlite::Result<u64> {
     let n: i64 = r.get(i)?;
     u64::try_from(n).map_err(|_| rusqlite::Error::IntegralValueOutOfRange(i, n))
 }
+// CLOEXEC does not prevent a concurrent fork from briefly sharing the open
+// file description. End the owner's lock explicitly, rather than waiting for
+// every inherited descriptor to close. Keep this after `conn` in Journal so
+// SQLite closes before another journal owner can acquire the lock.
+struct JournalLock(std::fs::File);
+impl Drop for JournalLock {
+    fn drop(&mut self) {
+        let _ = fs4::FileExt::unlock(&self.0);
+    }
+}
 pub struct Journal {
     conn: Connection,
     schema: u8,
     read_only: bool,
-    _file_lock: std::fs::File,
+    _file_lock: JournalLock,
     pub(crate) collection_lock: Option<crate::evidence_operations_collection::CollectionLock>,
     pub(crate) scope: String,
     pub(crate) active_generation: Option<String>,
@@ -233,6 +243,7 @@ impl Journal {
         } else {
             fs4::FileExt::try_lock_shared(&file_lock)?;
         }
+        let file_lock = JournalLock(file_lock);
         let conn = Connection::open_with_flags(
             path,
             if read_only {
@@ -1068,6 +1079,35 @@ pub async fn drain_with_publication(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    #[cfg(unix)]
+    fn journal_owner_unlocks_after_drop_even_with_inherited_descriptor() {
+        let dir = tempfile::tempdir().unwrap();
+        let spool = dir.path().join("spool");
+        let identity = crate::sign::Identity::generate();
+        crate::evidence_spool::Spool::create(
+            &spool,
+            &"03".repeat(32),
+            identity.did().as_str(),
+            identity.did().as_str(),
+            1 << 20,
+        )
+        .unwrap();
+        let path = dir.path().join("health");
+        drop(Journal::create(&path, &spool).unwrap());
+        for exclusive in [true, false] {
+            let owner = Journal::open_file(&path, exclusive, false).unwrap();
+            // dup models fork's shared open file description without timing.
+            let inherited = owner._file_lock.0.try_clone().unwrap();
+            assert!(Journal::open_file(&path, true, false).is_err());
+            drop(owner);
+            let replacement = Journal::open_file(&path, true, false).unwrap();
+            assert!(Journal::open_file(&path, false, false).is_err());
+            drop(replacement);
+            drop(inherited);
+        }
+    }
+
     #[test]
     fn burst_keeps_final_cumulative_summary_and_terminal_gap() {
         use std::sync::atomic::AtomicBool;

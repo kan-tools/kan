@@ -23,6 +23,16 @@ const MAX: usize = 12 * 1024 * 1024;
 const SCHEMA: &str = "PRAGMA application_id=1264014129; PRAGMA user_version=1;
 CREATE TABLE entries(kind TEXT NOT NULL, id TEXT NOT NULL, body BLOB NOT NULL, PRIMARY KEY(kind,id));";
 const DOMAIN: &[u8] = b"tools.kan.reader.workspace.v1\0";
+// A scheduler owns this lease independently of database/maintenance locks.
+// Explicit unlock prevents fork-inherited descriptors delaying a clean restart.
+// This lease is deliberately not clonable; maintenance leases have a separate
+// transfer lifetime during recovery and retain their existing behavior.
+pub(crate) struct AnalysisLease(std::fs::File);
+impl Drop for AnalysisLease {
+    fn drop(&mut self) {
+        let _ = fs4::FileExt::unlock(&self.0);
+    }
+}
 pub struct Workspace {
     conn: Mutex<Connection>,
     _maintenance: std::fs::File,
@@ -469,8 +479,8 @@ impl Workspace {
     }
     /// A single analysis scheduler owns this workspace at a time. The advisory
     /// lifetime lock does not modify the database or replace SQLite transactions.
-    pub(crate) fn analysis_lease(&self) -> Result<std::fs::File> {
-        lease(&self.path, ".scheduler-lock", true)
+    pub(crate) fn analysis_lease(&self) -> Result<AnalysisLease> {
+        lease(&self.path, ".scheduler-lock", true).map(AnalysisLease)
     }
     pub fn author(&self) -> String {
         self.signer.did().to_string()
@@ -771,5 +781,29 @@ impl Workspace {
             return Err(Failure::Invalid);
         }
         Ok(out)
+    }
+}
+
+#[cfg(all(test, unix))]
+mod lease_tests {
+    use super::*;
+
+    #[test]
+    fn scheduler_owner_unlocks_even_with_inherited_descriptor() {
+        let file = tempfile::NamedTempFile::new().unwrap();
+        let owner = std::fs::File::open(file.path()).unwrap();
+        fs4::FileExt::try_lock(&owner).unwrap();
+        let owner = AnalysisLease(owner);
+        let inherited = owner.0.try_clone().unwrap();
+        let contender = std::fs::File::open(file.path()).unwrap();
+        assert!(fs4::FileExt::try_lock(&contender).is_err());
+        drop(owner);
+        fs4::FileExt::try_lock(&contender).unwrap();
+        // Dropping only the stale descriptor must not unlock the new owner.
+        drop(inherited);
+        let third = std::fs::File::open(file.path()).unwrap();
+        assert!(fs4::FileExt::try_lock(&third).is_err());
+        fs4::FileExt::unlock(&contender).unwrap();
+        fs4::FileExt::try_lock(&third).unwrap();
     }
 }

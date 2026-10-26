@@ -45,9 +45,20 @@ inception file in the repository's own workspace import, requires its exact proo
 in admitted selected authority, and checks signed names for named legacy targets.
 The native/imported integration regression now includes foreign direct and named
 scopes, invented names, absent installed evidence and invalid selected proof.
-Qualification and a narrow independent re-review are pending; no acceptance,
-merge, release or production action is implied. Storage/admission code and the
-retained capacity measurements are unchanged.
+At `7b949cb`, the new URI regression passed in both PR and collect-all CI;
+54/55 diagnostic checks and all 19 browser groups passed. Two other tests stopped
+on transient lock acquisition: journal collection adoption (`WouldBlock`) and
+analysis scheduler initialization (`Unavailable`). Journal and scheduler guards
+still relied on close-only unlock, which can retain a flock through a duplicated
+or fork-inherited descriptor. Explicit owner unlocks now follow the existing
+collection-lock pattern; deterministic duplicate-descriptor regressions cover
+release and retained exclusion while owned. Local OS reproduction confirmed this
+mechanism; the CI failures did not capture descriptor provenance, so the remote
+rerun must still establish workflow stability. Workspace maintenance/recovery
+lease transfer is unchanged. Qualification and a narrow independent review of
+both scope binding and these lock lifetime changes remain pending; no acceptance,
+merge, release or production action is implied. Archive storage/admission code
+and retained capacity measurements are unchanged.
 
 ### Build loop
 

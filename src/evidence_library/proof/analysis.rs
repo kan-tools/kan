@@ -61,7 +61,7 @@ pub struct Draft {
     pub trigger_annotation: Option<String>,
 }
 pub struct Engine {
-    _lease: std::fs::File,
+    _lease: crate::evidence_workspace::AnalysisLease,
     readers: BTreeMap<String, Arc<crate::evidence_reader::proof::Reader>>,
     slots: Arc<tokio::sync::Semaphore>,
     config: Config,
