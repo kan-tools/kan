@@ -110,6 +110,8 @@ pub(super) fn inspect(
     controls: &[Control],
     options: &View,
 ) -> Result<Value, ContentError> {
+    super::uri::validate(options)?;
+    let principals = super::uri::principals(options)?;
     let typed = controls
         .iter()
         .filter_map(|c| c.preserved.typed())
@@ -246,13 +248,7 @@ pub(super) fn inspect(
     if authors.len() > 128 {
         return Err(ContentError::Limited);
     }
-    let trust = ClaimTrustBase::local(
-        options
-            .principals
-            .iter()
-            .cloned()
-            .map(ClaimAuthor::Principal),
-    );
+    let trust = ClaimTrustBase::local(principals.iter().cloned().map(ClaimAuthor::Principal));
     let claims = view::project(decoded.into_values(), &trust, |claim| {
         let standing = match claim.content().author().identity_version() {
             IdentityVersion::Static => IdentityStateStanding::Static,
@@ -360,8 +356,13 @@ pub(super) fn inspect(
         }
         classes.push(value);
     }
+    let scopes = scopes
+        .into_iter()
+        .map(|(id, s)| json!({"scope":id,"authority":s.value}))
+        .collect::<Vec<_>>();
+    let uri = super::uri::resolve(options, &claims, &scopes, &positions)?;
     let next = options.current_after + classes.len();
-    let value = json!({"version":"kan-current-claim-view/1","coverage":"Relative to this imported HEAD and explicitly selected control records. This does not establish global history completeness, trusted wall-clock time or network freshness. Native identity, governance, capability and fold rules apply; unsupported or absent authority remains unresolved. No legacy subject mapping is inferred.","authors":authors,"trust":options.principals,"verified_claims":claims.len(),"excluded_by_trust":claims.iter().filter(|c|matches!(c.judgments().view_trust,identity::ViewTrust::Excluded)).count(),"unresolved":excluded,"identities":identities,"scopes":scopes.into_iter().map(|(id,s)|json!({"scope":id,"authority":s.value})).collect::<Vec<_>>(),"controls":controls.iter().map(|c|json!({"id":c.preserved.logical_cid().ok().map(|id|id.to_string()),"supported":c.preserved.is_supported(),"sources":c.sources})).collect::<Vec<_>>(),"classes":classes,"total_classes":total,"next":(next<total).then_some(next)});
+    let value = json!({"version":"kan-current-claim-view/1","coverage":"Relative to this imported HEAD and explicitly selected control records. This does not establish global history completeness, trusted wall-clock time or network freshness. Native identity, governance, capability and fold rules apply; unsupported or absent authority remains unresolved. No legacy subject mapping is inferred.","authors":authors,"trust":principals,"verified_claims":claims.len(),"excluded_by_trust":claims.iter().filter(|c|matches!(c.judgments().view_trust,identity::ViewTrust::Excluded)).count(),"unresolved":excluded,"identities":identities,"scopes":scopes,"uri":uri,"controls":controls.iter().map(|c|json!({"id":c.preserved.logical_cid().ok().map(|id|id.to_string()),"supported":c.preserved.is_supported(),"sources":c.sources})).collect::<Vec<_>>(),"classes":classes,"total_classes":total,"next":(next<total).then_some(next)});
     if serde_json::to_vec(&value).map_err(|_| invalid())?.len() > 2 * 1024 * 1024 {
         return Err(ContentError::Limited);
     }

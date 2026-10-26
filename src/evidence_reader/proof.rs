@@ -77,6 +77,32 @@ pub struct Reference {
     pub receipt: String,
 }
 impl Reference {
+    /// Versioned capture occurrence URI. The encoded reference is public identity,
+    /// never a capability; resolution still rechecks current grants and membership.
+    pub fn canonical_uri(&self) -> Result<String> {
+        if self.version != 1 {
+            return Err(Failure::Invalid);
+        }
+        let uri = format!("kan+capture://v1/occurrence/{}", service::hex(&json(self)?));
+        if uri.len() > 32768 {
+            return Err(Failure::Invalid);
+        }
+        Ok(uri)
+    }
+    pub fn from_uri(uri: &str) -> Result<Self> {
+        if uri.len() > 32768 {
+            return Err(Failure::Invalid);
+        }
+        let encoded = uri
+            .strip_prefix("kan+capture://v1/occurrence/")
+            .ok_or(Failure::Invalid)?;
+        let bytes = service::unhex(encoded, 16384)?;
+        let reference: Self = serde_json::from_slice(&bytes).map_err(|_| Failure::Invalid)?;
+        if reference.canonical_uri()? != uri {
+            return Err(Failure::Invalid);
+        }
+        Ok(reference)
+    }
     pub fn new(binding: &wire::Binding, record: &Occurrence) -> Self {
         Self {
             version: 1,

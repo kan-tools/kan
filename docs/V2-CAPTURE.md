@@ -82,7 +82,7 @@ bytes. Operation ID is the first 16 bytes of SHA-256 over
 `tools.kan.capture.operation.v1\0`, raw attempt bytes, observer byte (collector 0,
 gateway 1), and ordinal as unsigned big-endian u64. The outer signed request
 binds scope/writer; an event does not establish another observer's behavior.
-KANC2 IDs do not extend the accepted kan URI grammar.
+KANC2 attempt/session IDs do not extend the accepted claim URI grammar. Portable occurrence links use the separate, explicitly versioned `kan+capture://v1/occurrence/<reference-hex>` extension in [RFC 2](../rfcs/2-kan-uri-scheme.md). Resolving one rechecks current grants and membership; it carries no reader credential.
 
 Only body bytes and the explicit lifecycle fields are covered here. TLS packets,
 HTTP transfer framing, arbitrary headers/trailers, expanded attachments, tool hooks

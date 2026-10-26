@@ -11,7 +11,7 @@
 
 ## Summary
 
-Propose version 1 of a new evidence protocol for the kan v2 service architecture. Define private capture records, public-to-storage ciphertext manifests, receipt statements, signing preimages, inventory states and append decision semantics. The reference implementation is experimental and disabled by default. Protocol version 1 is unrelated to product version 1 and to the existing `kan-claim-v2` codec. No existing format, URI or Lexicon changes.
+Propose version 1 of a new evidence protocol for the kan v2 service architecture. Define private capture records, public-to-storage ciphertext manifests, receipt statements, signing preimages, inventory states and append decision semantics. The reference implementation is experimental and disabled by default. Protocol version 1 is unrelated to product version 1 and to the existing `kan-claim-v2` codec. No existing format, URI or Lexicon changes. The later separately versioned capture occurrence URI extension is specified in RFC 2; it wraps portable occurrence identity without changing these wire bytes.
 
 ## Motivation
 

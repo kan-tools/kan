@@ -220,6 +220,29 @@ fn probe(root: &Path, operation: &str) -> Value {
             })
             .1
         }
+        "append-phases" => {
+            let start = Instant::now();
+            let mut archive =
+                attested::Archive::open_indexed(root, owner_binding.clone(), None).unwrap();
+            let opened = start.elapsed().as_micros();
+            let frontier = archive.indexed_frontier(None).unwrap();
+            let request = signed(
+                &identity(6),
+                &owner_binding.issuer,
+                frontier.through,
+                frontier.manifest.map(|id| id.to_string()),
+            );
+            let prepared = start.elapsed().as_micros();
+            let mut events = Vec::new();
+            archive.admit_indexed_observed(&request,&identity(8),&grant(),frontier.through+1,None,&mut |boundary| {
+                events.push(json!({"boundary":format!("{boundary:?}"),"elapsed_us":start.elapsed().as_micros()}));
+            }).unwrap();
+            let admitted = start.elapsed().as_micros();
+            drop(archive);
+            let result = json!({"operation":"append-phases","prior_records":frontier.through,"open_us":opened,"prepared_us":prepared,"admitted_us":admitted,"closed_us":start.elapsed().as_micros(),"boundaries":events});
+            println!("KAN_APPEND_PHASES={result}");
+            result
+        }
         "append" => {
             let mut archive =
                 attested::Archive::open_indexed(root, owner_binding.clone(), None).unwrap();

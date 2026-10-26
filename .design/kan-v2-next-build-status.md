@@ -20,7 +20,7 @@ and reviews are foundations, not automatic end-to-end completion.
 
 | Work package | Completion means | Current position |
 |---|---|---|
-| Capture, storage and migration | Supported harness/provider traffic reaches the centralized encrypted ledger; spool/retry and visible recording gaps work; v1 imports reconcile against preserved originals; local and remote use the same server architecture | Implemented centralized encrypted capture/import, proxy/gateway forwarding, durable spool and exact retry, visible recording gaps, preserved-source v1 reconciliation, and admitted/copied proof archives. Indexed archive and current-control reads separate ordinary service I/O from explicit full audits. Managed root-path launch, live spool delivery and cold restore extensions are in remote qualification. The 11 MiB / 179-frame indexed workload and real 10 GiB storage measurement pass; 100 GiB still needs the selected larger remote disk. |
+| Capture, storage and migration | Supported harness/provider traffic reaches the centralized encrypted ledger; spool/retry and visible recording gaps work; v1 imports reconcile against preserved originals; local and remote use the same server architecture | Implemented centralized encrypted capture/import, proxy/gateway forwarding, durable spool and exact retry, visible recording gaps, preserved-source v1 reconciliation, and admitted/copied proof archives. Indexed archive and current-control reads separate ordinary service I/O from explicit full audits. Managed root-path launch, live spool delivery and cold restore extensions are in remote qualification. The 11 MiB / 179-frame indexed workload and real 10 GiB storage measurement pass; 100 GiB measurement and independent remount validation passed; the exact synthetic fixture was removed after validation. The 79.77-second first append remains disclosed and a focused 10 GiB remount probe is pending. |
 | Library and sessions | Authorized cross-project browsing, readable complete supported conversations/tools/attachments/branches/compaction/gaps, exact source/provenance and working downloads; missing/corrupt evidence stays visible | Implemented cross-archive browsing, reconstructed supported conversations, explicit sessions/parents/branches/compaction, streaming gaps, attachments, exact provenance and native downloads. Existing API/browser checks pass. Current indexed managed CLI composition, current loss and live revocation are being requalified; final integrated acceptance remains. |
 | Search and views | Authorized search/facets, stable references, honest index coverage, reproducible saved scope/trust views and relation inspection | Implemented encrypted persistent raw/reconstructed search, filters/facets, current source authorization, pinned saved views and portable references. View lists page beyond 200 records, survive restart and withhold revoked evidence. Source, annotation and import-trust filters have passing runtime coverage; final integrated acceptance remains. |
 | Knowledge and annotations | Imported v1 claims and raw/derived evidence remain distinguishable; human/agent tags, annotations, relations and corrections use shared attributed append-only records with citations/history | Implemented signed attributed annotations/tags/relations, corrections/withdrawals, exact citations, publication/restoration and imported v1 identity/trust/fold views. Annotation pages cross 1,000 records with off-page history and current access checks. Shared API/CLI/MCP/UI knowledge-graph pagination is implemented; 119 Library UI checks pass and extended graph runtime qualification is pending. |
@@ -621,3 +621,28 @@ threshold, and retains the complete SQLite/full-file hash gates. A standalone
 read-only verifier records measured and verifier revisions separately without
 changing the fixture, previous failures, seed or 128 completed measurements.
 Qualification is pending its result, not established by the diagnostic.
+
+
+### Final review repair pass — 2026-10-26
+
+The completed actual Claude Code Opus 5.5 review at `4427b08` blocked acceptance
+on torn migration-fence recovery and identified URI continuity and owner-browser
+qualification gaps. The current repair pass adds atomic migration control-file
+publication with durable owned-fence intent, native/imported URI target checks,
+a separate versioned capture occurrence URI, and real browser workflows for
+access, keys, backup/restore, cutover, erasure/resume and backup purge. These
+changes await remote qualification and targeted review; they are not yet accepted.
+
+Published 100 GiB evidence is under `.design/measurements/kan-v2-100g-*` and
+explained in `docs/V2-DEPLOYMENT.md`, including the first-append outlier. No 100 GiB
+reseed or benchmark repeat is planned. The small diagnostic records existing
+admission-boundary and syscall timing on a fresh 10 GiB Modal fixture.
+
+Nonblocking review follow-ups remain explicit: owner-visible staged-object
+accounting/reclamation, and a separate read-only Library HTTP credential. Existing
+operations read-only credentials remain separate from owner authority. The first
+live frontend deployment is an owner-selected operation after acceptance. Default
+extractor policy remains opt-in: no source or destination grant, automatic provider
+call, or trust inclusion is inferred from installation or capture alone. The final
+step is targeted review of these material fixes and their affected boundaries;
+the completed full review is not restarted.

@@ -1174,3 +1174,56 @@ and migrates `dev.kan.claim`, coalesces identical mixed collections, rejects
 conflicts and unverifiable or unsupported history, removes legacy keys from the
 live MST without deleting historical CAR blocks, and is idempotent across
 reopen. The second generated-client witness remains outstanding before Review.
+
+
+## Versioned capture occurrence extension — v1
+
+The evidence reader adds a separate scheme, without changing any RFC 2 claim,
+subject, scope or identity target:
+
+`kan+capture://v1/occurrence/<reference-hex>`
+
+`reference-hex` is lowercase hexadecimal of the UTF-8 compact JSON serialization
+of the closed `evidence_reader::proof::Reference` v1 structure, in its declared
+field order (`version`, `binding`, `coordinate`, `receipt`). Its nested binding
+and coordinate use the existing proof protocol's declared field order. The
+complete URI is limited to 32,768 bytes. Query strings, fragments, extra fields,
+other versions, noncanonical hex or JSON, and alternate spellings are rejected;
+parsing must round-trip to exactly the same URI. Receipt, manifest and attestation
+identify one retained occurrence, not merely matching content. This representation
+is intentionally verbose so it carries the existing complete portable reference.
+
+The URI contains no reader token or decryption key. It is not authority to read,
+not a capture author's endorsement, and not a guarantee of current availability.
+`resolve-capture-uri` uses exactly the `resolve-reference` authorization and
+membership path, returning fresh reader-local selections and the current state.
+CLI, MCP and HTTP use this shared query; Library export/open accepts it alongside
+legacy reference JSON. KANC2 attempt/session IDs do not become URI resource names.
+The RFC 2 `ResolutionRequest` parser remains unchanged and rejects this separate
+scheme; `Reference::from_uri` is its explicit versioned parser.
+
+### Imported RFC 2 targets
+
+`proof-import.view.uri` accepts existing `kan://local/<scope>/claim/<CID>` and
+`kan://local/<scope>/identity/scope` requests against the explicitly selected,
+verified repository HEAD. Direct `@id:` scope selectors keep their signed scope
+identity. Named locators require an explicit `view.scope_aliases` map from names
+to ScopeIds; the response discloses this consumer-selected map and never derives
+identity from a project label or storage token. The original scope inception and
+other control evidence still determine authority and admission.
+
+Resolution operates before presentation pagination. Claim IDs, content and all
+four native judgments are returned independently of whether trust includes that
+claim in a fold. URI principal trust selectors of unit weight override the
+view's principal list for current claims. Legacy claims keep their explicit author/agent trust list; URI trust selectors requiring legacy context are refused. Network routes, source/replay selectors, time, local roles,
+weighted trust and resource kinds requiring unavailable context fail explicitly.
+They are never silently redirected to the selected archive. The response records
+the exact repository HEAD and control citations; a saved import view retains the
+pin, selections, controls, locator bindings and trust for replay with fresh access
+checks. It does not claim global history completeness or network freshness.
+
+Conformance: the imported-current-claims integration fixture compares named
+claim and named/direct scope URIs with the native local resolver before import,
+including all four judgments, excluded trust and pagination. Portable-reference
+fixtures exercise canonical capture parsing, malformed/unknown versions, receipt
+substitution, missing bytes and current authorization through the same resolver.

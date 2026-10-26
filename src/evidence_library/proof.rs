@@ -137,7 +137,14 @@ impl Readers {
         })
     }
     pub(super) async fn query(&self, request: Query) -> Result<Vec<u8>, ContentError> {
+        let request = match request {
+            Query::ResolveCaptureUri { uri } => Query::ResolveReference {
+                reference: proof::Reference::from_uri(&uri)?,
+            },
+            other => other,
+        };
         let value = match request {
+            Query::ResolveCaptureUri { .. } => return Err(Failure::Invalid.into()),
             Query::ProofImport {
                 source,
                 pin,
@@ -510,7 +517,7 @@ impl Readers {
                     .selected(&source)?
                     .resolve_reference(&reference)
                     .await?;
-                json!({"source":source,"pin":pin,"pin_wire":serde_json::to_string(&pin).map_err(|_|Failure::Invalid)?,"record":record,"reference":reference})
+                json!({"source":source,"pin":pin,"pin_wire":serde_json::to_string(&pin).map_err(|_|Failure::Invalid)?,"record":record,"reference":reference,"uri":reference.canonical_uri()?})
             }
             Query::ProofSnapshot { source } => {
                 let pin = self.selected(&source)?.snapshot().await?;
@@ -591,7 +598,7 @@ fn source_value(
         proof::Source::Corrupt { record } => (record, None, None, "corrupt"),
     };
     let reference = proof::Reference::new(binding, &record);
-    let mut result = json!({"reference":reference,"scope":binding.scope,"archive":binding.archive,"profile":binding.profile,
+    let mut result = json!({"uri":reference.canonical_uri()?,"reference":reference,"scope":binding.scope,"archive":binding.archive,"profile":binding.profile,
         "record":record,"writer":writer,"service_issuer":binding.issuer,"availability":availability,
         "signature":if plaintext.is_some() || availability=="key-unavailable" {"Retained writer signature verified on this read"} else {"Writer signature cannot be rechecked without valid retained source"},
         "admission":"Issuer-attested metadata; proof purpose shown separately",

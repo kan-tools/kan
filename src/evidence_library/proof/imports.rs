@@ -12,6 +12,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 mod current;
 mod repository;
+mod uri;
 #[derive(Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct ControlEvidence {
@@ -31,6 +32,12 @@ pub struct View {
     pub controls: Vec<ControlEvidence>,
     #[serde(default)]
     pub current_after: usize,
+    /// RFC 2 local claim/scope request evaluated over this exact imported HEAD.
+    #[serde(default)]
+    pub uri: Option<String>,
+    /// Explicit caller-selected locator bindings, separate from signed identity.
+    #[serde(default)]
+    pub scope_aliases: BTreeMap<String, crate::identity::scope_inception::ScopeId>,
 }
 
 use sha2::{Digest, Sha256};
@@ -95,6 +102,7 @@ impl Readers {
         {
             return Err(invalid());
         }
+        uri::validate(&view)?;
         let _permit = self
             .workers
             .clone()

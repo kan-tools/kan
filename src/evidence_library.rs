@@ -171,6 +171,9 @@ pub enum Query {
         reference: verified::Reference,
         preview: Option<String>,
     },
+    ResolveCaptureUri {
+        uri: String,
+    },
     ResolveReference {
         reference: verified::Reference,
     },
@@ -282,6 +285,7 @@ async fn query(reader: &Reader, query: Query) -> Result<Vec<u8>, ContentError> {
         | Query::Views { .. }
         | Query::ProofAttempt { .. }
         | Query::ResolveReference { .. }
+        | Query::ResolveCaptureUri { .. }
         | Query::RestoreAnnotation { .. }
         | Query::CitationSource { .. }
         | Query::ProofDiscover { .. }

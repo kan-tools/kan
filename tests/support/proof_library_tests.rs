@@ -711,7 +711,21 @@ async fn proof_library_browser_fixture() {
     kan::evidence_operations_collection::adopt(&journal, &collection).unwrap();
     const OWNER: &str = "synthetic-browser-owner-credential-1234";
     const OPS: &str = "synthetic-browser-operations-credential-1234";
-    let owner=kan::evidence_library::Owner::new(serde_json::from_value(json!({"token":OWNER,"max_jobs":10,"targets":[{"kind":"operations","id":"health","collection":collection}]})).unwrap(),kan::evidence_workspace::Workspace::open(&workspace.path().join("owner.sqlite"),identity(9),[84;32]).unwrap()).unwrap();
+    let mut targets = browser_owner_targets(workspace.path(), &mut tasks).await;
+    targets.insert(
+        0,
+        json!({"kind":"operations","id":"health","collection":collection}),
+    );
+    let owner = kan::evidence_library::Owner::new(
+        serde_json::from_value(json!({"token":OWNER,"max_jobs":64,"targets":targets})).unwrap(),
+        kan::evidence_workspace::Workspace::open(
+            &workspace.path().join("owner.sqlite"),
+            identity(9),
+            [84; 32],
+        )
+        .unwrap(),
+    )
+    .unwrap();
     let readers = kan::evidence_library::Readers::new(None, clients).unwrap();
     let catalog_ui =
         Ui::start(kan::evidence_library::Readers::new(None, catalog_clients).unwrap()).await;
@@ -727,7 +741,7 @@ async fn proof_library_browser_fixture() {
         .with_analysis(serde_json::from_value(json!({"endpoint":endpoint,"token":"synthetic-browser-analysis-credential","model":"synthetic-browser-model","sources":sources,"recipes":[{"id":"assess","revision":"1","purpose":"day-assessment","instructions":"Assess only cited synthetic evidence."}],"max_input_bytes":4096,"max_output_tokens":128,"max_jobs":10})).unwrap()).unwrap()
         .with_owner(owner).with_operations(kan::evidence_dashboard::Embedded::new(collection,OPS.into()).unwrap());
     let ui = Ui::start(readers).await;
-    std::fs::write(&output,serde_json::to_vec(&json!({"url":ui.url.trim_end_matches("/api/library"),"token":TOKEN,"owner_token":OWNER,"operations_token":OPS,"expected_hex":service::hex(RAW),"import_plan":import_plan,"stop":stop})).unwrap()).unwrap();
+    std::fs::write(&output,serde_json::to_vec(&json!({"url":ui.url.trim_end_matches("/api/library"),"token":TOKEN,"owner_token":OWNER,"operations_token":OPS,"owner_principal":identity(9).did(),"share_recipient":service::hex(&kan::evidence_crypto::public_key(&[85;32]).unwrap()),"expected_hex":service::hex(RAW),"import_plan":import_plan,"stop":stop})).unwrap()).unwrap();
     let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(600);
     while !stop.exists() && tokio::time::Instant::now() < deadline {
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
@@ -784,6 +798,211 @@ fn encrypted_frame(n: u8, audience: u8, previous: Option<String>, frame: &[u8]) 
         .bytes()
         .unwrap()
 }
+// Dedicated healthy owner targets. The browsing archives above deliberately
+// contain loss; maintenance must not accidentally certify those as healthy.
+async fn browser_owner_targets(
+    base: &Path,
+    tasks: &mut Vec<tokio::task::JoinHandle<std::io::Result<()>>>,
+) -> Vec<Value> {
+    fn directory(base: &Path, name: &str) -> PathBuf {
+        let path = base.join(name);
+        std::fs::create_dir_all(&path).unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o700)).unwrap();
+        }
+        path
+    }
+    fn secret(base: &Path, name: &str, bytes: [u8; 32]) -> PathBuf {
+        let path = base.join(name);
+        std::fs::write(&path, bytes).unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).unwrap();
+        }
+        path
+    }
+    let signing = secret(base, "owner.key", [9; 32]);
+    let recovery = secret(base, "recovery.key", [83; 32]);
+    let issuer = secret(base, "issuer.key", [8; 32]);
+    let private = secret(base, "capture.key", PRIVATE);
+    let archive_dir = directory(base, "owner-archive");
+    let f = fixture_requests(&archive_dir, Profile::Admitted, |n, a, p| {
+        if n < 2 {
+            captured_request(n, a, p)
+        } else {
+            encrypted_frame(
+                n,
+                a,
+                p,
+                &frame_bytes(
+                    &"a".repeat(64),
+                    u64::from(n),
+                    json!({"type":"terminal","outcome":"completed"}),
+                    &[],
+                ),
+            )
+        }
+    });
+    let binding_json = json!({"profile":"admitted","archive":service::hex(&f.binding.archive),"scope":service::hex(&f.binding.scope),"issuer":f.binding.issuer});
+    let output = directory(base, "owner-backups");
+    let database = output.join("independent.sqlite");
+    attested::Archive::open(&f.root, f.binding.clone())
+        .unwrap()
+        .backup(&database)
+        .unwrap();
+    let checkpoint = output.join("checkpoint.json");
+    let statement = kan::evidence_backup::inspect(
+        &database,
+        &binding(&f),
+        "synthetic-browser-independent-copy",
+        true,
+    )
+    .unwrap();
+    std::fs::write(
+        &checkpoint,
+        serde_json::to_vec(
+            &kan::evidence_backup::Checkpoint::sign(statement, &identity(9)).unwrap(),
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    let policy:kan::evidence_policy::Access=serde_json::from_value(json!({"directory":directory(base,"policy"),"binding":binding_json,"owner":identity(9).did()})).unwrap();
+    policy.initialize().unwrap();
+    let mut history:kan::evidence_erasure_history::Access=serde_json::from_value(json!({"directory":directory(base,"erasure"),"binding":binding_json,"owner":identity(9).did()})).unwrap();
+    history.initialize().unwrap();
+    let genesis = kan::evidence_erasure_history::Record::sign(
+        history.preview(None, "b".repeat(64)).unwrap(),
+        &identity(9),
+    )
+    .unwrap();
+    let minimum = genesis.id().unwrap();
+    history.append(genesis).unwrap();
+    history.minimum = Some(minimum);
+    let mut targets = vec![
+        json!({"kind":"archive","id":"archive","root":f.root,"output":output,"binding":binding_json}),
+        json!({"kind":"backup-verification","id":"verification","config":{"database":database,"binding":binding(&f),"destination":"synthetic-browser-independent-copy","independent":true,"checkpoints":output,"checkpoint":checkpoint,"checkpoint_author":identity(9).did()}}),
+        json!({"kind":"access-policy","id":"access","policy":policy,"signing_key":signing}),
+        json!({"kind":"capture-erasure","id":"erasure","root":f.root,"history":history,"signing_key":signing,"issuer_key":issuer,"private_keys":[private],"root_batch_records":1}),
+    ];
+    for id in ["keys", "restored-keys"] {
+        let history:kan::evidence_keys::Access=serde_json::from_value(json!({"directory":directory(base,id),"binding":binding_json,"owner":identity(9).did(),"recovery_recipient":service::hex(&kan::evidence_crypto::public_key(&[83;32]).unwrap())})).unwrap();
+        history.initialize().unwrap();
+        targets.push(json!({"kind":"key-history","id":id,"history":history,"signing_key":signing,"recovery_key":recovery}));
+    }
+    // Pre-deliver a real tiny import, so the browser can exercise fenced
+    // cutover against an independently checked destination without a mock RPC.
+    let source = directory(base, "migration-source");
+    let mut log = kan::store::log::Log::open_or_create(&source, &identity(6))
+        .await
+        .unwrap();
+    log.append(
+        kan::claim::v1::ClaimContent {
+            author: kan::claim::v1::AuthorId {
+                did: identity(6).did(),
+                agent: None,
+            },
+            workspace: kan::claim::v1::Anchor::Workspace("browser-source".into()),
+            subject: kan::claim::v1::SubjectRef::Local("telos/browser-migration".into()),
+            body: kan::claim::v1::ClaimBody::Observation {
+                text: "Retained browser migration source".into(),
+            },
+            cites: vec![],
+            artifacts: vec![],
+            recorded_at: None,
+        },
+        &identity(6),
+    )
+    .await
+    .unwrap();
+    drop(log);
+    let spool = base.join("migration-spool.sqlite");
+    let mut queue = kan::evidence_spool::Spool::create(
+        &spool,
+        &service::hex(&[1; 32]),
+        identity(9).did().as_str(),
+        identity(8).did().as_str(),
+        16 * 1024 * 1024,
+    )
+    .unwrap();
+    let recipient = kan::evidence_crypto::public_key(&PRIVATE).unwrap();
+    let plan = kan::evidence_import::Plan::build(
+        &source,
+        kan::evidence_import::Selection::Store,
+        [44; 32],
+        recipient,
+        &mut queue,
+    )
+    .unwrap();
+    plan.enqueue(plan.id(), &mut queue, &identity(9), 100)
+        .unwrap();
+    let root = base.join("migration-destination");
+    let grants = vec![service::Grant {
+        principal: identity(9).did(),
+        append: true,
+        inventory: true,
+    }];
+    let mut destination = service::AdmittingService::new(
+        attested::Archive::create(&root, f.binding.clone()).unwrap(),
+        identity(8),
+        grants.clone(),
+    )
+    .unwrap();
+    while let Some(bytes) = queue.head().unwrap() {
+        let reply = destination.dispatch(&bytes, 1000).unwrap();
+        assert!(reply.reply.result.is_ok());
+        queue.acknowledge(&reply.bytes().unwrap()).unwrap();
+    }
+    drop(queue);
+    drop(destination);
+    let backup = output.join("migration.sqlite");
+    attested::Archive::open(&root, f.binding.clone())
+        .unwrap()
+        .backup(&backup)
+        .unwrap();
+    let checkpoint = output.join("migration-checkpoint.json");
+    let statement = kan::evidence_backup::inspect(
+        &backup,
+        &binding(&f),
+        "synthetic-browser-migration-copy",
+        true,
+    )
+    .unwrap();
+    std::fs::write(
+        &checkpoint,
+        serde_json::to_vec(
+            &kan::evidence_backup::Checkpoint::sign(statement, &identity(9)).unwrap(),
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    let listener = kan::evidence_http::bind("127.0.0.1:0".parse().unwrap())
+        .await
+        .unwrap();
+    let endpoint = format!("http://{}/v2/read", listener.local_addr().unwrap());
+    let live = kan::evidence_proof_service::Service::new(
+        root.join("archive.sqlite"),
+        binding(&f),
+        identity(8),
+        grants,
+        budget(),
+    )
+    .unwrap();
+    tasks.push(tokio::spawn(kan::evidence_http::serve_proof(
+        listener, live,
+    )));
+    let client_signing = base.join("migration-reader.key");
+    identity(9).save(&client_signing).unwrap();
+    let old = base.join("migration-client.json");
+    let candidate = base.join("migration-candidate.json");
+    std::fs::write(&old,serde_json::to_vec(&json!([{"scope":service::hex(&[9;32]),"endpoint":"http://127.0.0.1:1/v1/rpc","issuer":f.binding.issuer,"private_key_file":private}])).unwrap()).unwrap();
+    std::fs::write(&candidate,serde_json::to_vec(&json!([{"scope":binding(&f).scope,"archive":binding(&f).archive,"issuer":f.binding.issuer,"profile":"admitted","protocol":"kan-proof-reader/1","endpoint":endpoint,"private_key_file":private}])).unwrap()).unwrap();
+    targets.push(json!({"kind":"migration-cutover","id":"migration","config":{"source":source,"selection":"store","source_id":service::hex(&[44;32]),"recipient":service::hex(&recipient),"spool":spool,"state":directory(base,"migration-control"),"client_config":old,"candidate_config":candidate,"client_signing_key":client_signing,"backup_database":backup,"backup_checkpoint":checkpoint,"backup_author":identity(9).did(),"binding":binding(&f),"recipient_key":private,"max_records":100,"batch":100,"writers_quiesced":true,"allow_uninterpreted":false}}));
+    targets
+}
+
 #[tokio::test]
 async fn proof_content_preserves_missing_inputs_and_exact_source_citations() {
     for profile in [Profile::Admitted, Profile::Copied] {
@@ -3689,7 +3908,23 @@ async fn portable_references_rebind_for_another_reader_without_granting_access_o
         ));
         let ui =
             Ui::start(kan::evidence_library::Readers::new(None, vec![second()]).unwrap()).await;
-        let request = json!({"action":"resolve-reference","reference":reference});
+        let uri = reference.canonical_uri().unwrap();
+        assert!(kan::uri::ResolutionRequest::parse(&uri).is_err()); // separate versioned grammar
+        assert_eq!(
+            serde_json::to_value(kan::evidence_reader::proof::Reference::from_uri(&uri).unwrap())
+                .unwrap(),
+            serde_json::to_value(&reference).unwrap()
+        );
+        for malformed in [
+            uri.replace("/v1/", "/v2/"),
+            format!("{uri}?trust=me"),
+            format!("{uri}#x"),
+            "kan+capture://v1/occurrence/00".into(),
+            "x".repeat(32769),
+        ] {
+            assert!(kan::evidence_reader::proof::Reference::from_uri(&malformed).is_err());
+        }
+        let request = json!({"action":"resolve-capture-uri","uri":uri});
         let resolved = ui.call(request.clone(), 200).await;
         assert_eq!(resolved["record"]["manifest"], row.manifest);
         assert_eq!(resolved["record"]["receipt"], row.receipt);
@@ -3703,7 +3938,7 @@ async fn portable_references_rebind_for_another_reader_without_granting_access_o
             source["reference"],
             serde_json::to_value(&reference).unwrap()
         );
-        let mut forged = request.clone();
+        let mut forged = json!({"action":"resolve-reference","reference":reference});
         forged["reference"]["receipt"] = json!(page.records[1].receipt);
         ui.call(forged, 503).await;
         f.remove(2);
@@ -4514,6 +4749,110 @@ async fn imported_current_claims_keep_signature_scope_authority_and_selected_tru
             );
         }
         if !damaged {
+            // AC-18: the same old URI resolves through the native workspace and
+            // the imported, authenticated repository, with all four judgments.
+            let native = private_workspace_directory();
+            assert!(std::process::Command::new("git")
+                .args(["init", "-q"])
+                .arg(native.path())
+                .status()
+                .unwrap()
+                .success());
+            let logdir = native.path().join(".kan/log");
+            std::fs::create_dir_all(&logdir).unwrap();
+            for (frame, name) in [(&frames[1], "repo.car"), (&frames[2], "HEAD")] {
+                let offset = 9 + u32::from_be_bytes(frame[5..9].try_into().unwrap()) as usize;
+                std::fs::write(logdir.join(name), &frame[offset..]).unwrap();
+            }
+            let (inception, scope_event) = current_import_scope();
+            kan::identity::scope_store::ScopeIdentityStore::at(native.path().join(".kan/scope"))
+                .install(&scope_event)
+                .unwrap();
+            let system =
+                kan::identity::system::SystemIdentityStore::at(&native.path().join("system"));
+            let resolver = kan::uri::local::LocalResolver::new(native.path(), &system);
+            for claim in current["classes"][0]["claims"].as_array().unwrap() {
+                let uri = format!(
+                    "kan://local/current/claim/{}",
+                    claim["id"].as_str().unwrap()
+                );
+                let before = resolver.resolve_uri(&uri).await.unwrap();
+                let mut request = query.clone();
+                request["view"]["uri"] = json!(uri);
+                request["view"]["scope_aliases"] = json!({"current":inception.scope_id().unwrap()});
+                request["view"]["current_after"] = json!(4096); // target independent of presentation page
+                let after = ui.call(request.clone(), 200).await;
+                let after = &after["file"]["car"]["repository"]["current"]["uri"];
+                assert_eq!(after["state"], "resolved");
+                assert_eq!(
+                    after["target"]["scope"],
+                    serde_json::to_value(before.target.scope.unwrap()).unwrap()
+                );
+                let kan::uri::local::ResolvedResource::Claim(before) = before.resource else {
+                    panic!("claim target")
+                };
+                assert_eq!(
+                    after["resource"]["judgments"],
+                    serde_json::to_value(before.judgments()).unwrap()
+                );
+                assert_eq!(after["resource"]["id"], before.claim_id().to_string());
+                request["view"]["principals"] = json!([]);
+                let excluded = ui.call(request.clone(), 200).await;
+                assert_eq!(
+                    excluded["file"]["car"]["repository"]["current"]["uri"]["resource"]
+                        ["judgments"]["viewTrust"],
+                    "excluded"
+                );
+                request["view"]["uri"] = json!(format!("{uri}?at=100"));
+                ui.call(request, 400).await; // never ignore unsupported evaluation
+            }
+            let mut legacy_query = query.clone();
+            legacy_query["view"]["trust"] =
+                resolved["file"]["car"]["repository"]["authors"].clone();
+            let legacy = ui.call(legacy_query.clone(), 200).await;
+            for group in legacy["file"]["car"]["repository"]["fold"]["classes"]
+                .as_array()
+                .unwrap()
+            {
+                for claim in group["claims"].as_array().unwrap() {
+                    let uri = format!(
+                        "kan://local/current/claim/{}",
+                        claim["id"].as_str().unwrap()
+                    );
+                    let before = resolver.resolve_uri(&uri).await.unwrap();
+                    legacy_query["view"]["uri"] = json!(uri);
+                    legacy_query["view"]["scope_aliases"] =
+                        json!({"current":inception.scope_id().unwrap()});
+                    let after = ui.call(legacy_query.clone(), 200).await;
+                    let after = &after["file"]["car"]["repository"]["current"]["uri"];
+                    assert_eq!(after["state"], "resolved");
+                    let kan::uri::local::ResolvedResource::Claim(before) = before.resource else {
+                        panic!("legacy claim target")
+                    };
+                    assert_eq!(after["resource"]["id"], before.claim_id().to_string());
+                    assert_eq!(
+                        after["resource"]["judgments"],
+                        serde_json::to_value(before.judgments()).unwrap()
+                    );
+                }
+            }
+            for uri in [
+                "kan://local/current/identity/scope".to_owned(),
+                format!(
+                    "kan://local/@id:{}/identity/scope",
+                    inception.scope_id().unwrap()
+                ),
+            ] {
+                let before = resolver.resolve_uri(&uri).await.unwrap();
+                let mut request = query.clone();
+                request["view"]["uri"] = json!(uri);
+                request["view"]["scope_aliases"] = json!({"current":inception.scope_id().unwrap()});
+                let after = ui.call(request, 200).await;
+                assert_eq!(
+                    after["file"]["car"]["repository"]["current"]["uri"]["resource"]["identifier"],
+                    serde_json::to_value(before.target.scope.unwrap()).unwrap()
+                );
+            }
             let mut save = query.clone();
             save["action"] = json!("save-import-view");
             save["name"] = json!("Pinned current claim authority");
@@ -7756,7 +8095,7 @@ async fn migration_cutover_fences_final_delta_requires_verified_backup_and_rolls
     let receipt = backups.path().join("checkpoint.json");
     const OWNER: &str = "synthetic-owner-migration-cutover-token";
     let config = json!({"source":source,"selection":"store","source_id":service::hex(&[44;32]),"recipient":service::hex(&recipient),"spool":spool,"state":control.path(),"client_config":config_path,"candidate_config":candidate_path,"client_signing_key":client_signing_key,"backup_database":database,"backup_checkpoint":receipt,"backup_author":identity(9).did().to_string(),"binding":binding,"recipient_key":key,"max_records":100,"batch":100,"writers_quiesced":true,"allow_uninterpreted":false});
-    let owner=kan::evidence_library::Owner::new(serde_json::from_value(json!({"token":OWNER,"max_jobs":20,"targets":[{"kind":"migration-cutover","id":"old","config":config}]})).unwrap(),kan::evidence_workspace::Workspace::open(&local.path().join("owner.sqlite"),identity(6),[84;32]).unwrap()).unwrap();
+    let owner=kan::evidence_library::Owner::new(serde_json::from_value(json!({"token":OWNER,"max_jobs":64,"targets":[{"kind":"migration-cutover","id":"old","config":config}]})).unwrap(),kan::evidence_workspace::Workspace::open(&local.path().join("owner.sqlite"),identity(6),[84;32]).unwrap()).unwrap();
     let ui = Ui::start(
         kan::evidence_library::Readers::new(None, vec![server.client(&f)])
             .unwrap()
@@ -7859,6 +8198,45 @@ async fn migration_cutover_fences_final_delta_requires_verified_backup_and_rolls
     assert!(!source.join("V2_FENCE").exists());
     assert!(database.exists());
     assert_eq!(std::fs::read(source.join("repo.car")).unwrap(), original);
+    // A torn owned marker must not permanently fence the v1 writer. Intent
+    // was durably published before any marker; foreign bytes remain refused.
+    let marker = std::fs::read(control.path().join("fence-intent.json")).unwrap();
+    for bytes in [&marker[..0], &marker[..marker.len() / 2]] {
+        std::fs::write(source.join("V2_FENCE"), bytes).unwrap();
+        assert!(log
+            .append(claim("still fenced"), &identity(6))
+            .await
+            .is_err());
+        let retried = job(&ui, "fence-migration").await;
+        assert_eq!(retried["state"], "succeeded", "{retried}");
+        assert_eq!(std::fs::read(source.join("V2_FENCE")).unwrap(), marker);
+        std::fs::write(source.join("V2_FENCE"), bytes).unwrap();
+        let restored = job(&ui, "rollback-migration").await;
+        assert_eq!(restored["state"], "succeeded", "{restored}");
+        assert!(!source.join("V2_FENCE").exists());
+        log.append(claim("recovered torn fence"), &identity(6))
+            .await
+            .unwrap();
+    }
+    // A prefix alone cannot establish ownership of a fence.
+    std::fs::remove_file(control.path().join("fence-intent.json")).unwrap();
+    std::fs::write(source.join("V2_FENCE"), &marker[..0]).unwrap();
+    for operation in ["fence-migration", "rollback-migration"] {
+        assert_eq!(job(&ui, operation).await["state"], "failed");
+        assert_eq!(std::fs::read(source.join("V2_FENCE")).unwrap(), b"");
+        assert!(!control.path().join("fence-intent.json").exists());
+    }
+    std::fs::write(control.path().join("fence-intent.json"), &marker).unwrap();
+    let mut foreign: Value = serde_json::from_slice(&marker).unwrap();
+    foreign["source_id"] = json!(service::hex(&[99; 32]));
+    let foreign = serde_json::to_vec(&foreign).unwrap();
+    std::fs::write(source.join("V2_FENCE"), &foreign).unwrap();
+    for operation in ["fence-migration", "rollback-migration"] {
+        let refused = job(&ui, operation).await;
+        assert_eq!(refused["state"], "failed", "{refused}");
+        assert_eq!(std::fs::read(source.join("V2_FENCE")).unwrap(), foreign);
+    }
+    std::fs::remove_file(source.join("V2_FENCE")).unwrap();
     log.append(claim("v1 resumed"), &identity(6)).await.unwrap();
     ui.stop().await;
     live_task.abort();

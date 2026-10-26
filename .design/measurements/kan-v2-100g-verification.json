@@ -1,0 +1,35 @@
+{
+  "measured_revision": "4ce6e667830974cfdb39c167439048b807e5daae",
+  "verifier_revision": "4427b08ad8624c95cc2b5371605678a2db46a147",
+  "seed_origin_revision": "da3da7d8805bbd1657710246115beb8a905fe01a",
+  "run_id": "908f1d55639041bd80b4502b56f60447",
+  "fixture_volume": "kan-v2-fixture-da3da7d8805b-908f1d55639041bd80b4502b56f60447",
+  "gib": 100,
+  "samples": 32,
+  "manifest_sha256": "ec9cac274bdbcfcf2fe0182e3e4f08a1d71385fadabd29d44772c08656bb51b6",
+  "expected_staged": {
+    "bafkreiav42wqkhehzn3ougbr25iduvn6aeja7cjepxa7hctqcan73t2g2y": 2097732,
+    "bafkreic5vxnjn32iw7m7z3bco2tnanghwpjg2x37abxfwue5wftji2353y": 2097732
+  },
+  "status": "complete",
+  "phase": "validated_retained_fixture",
+  "verification_id": "6c16a95389534338bd300de93ee284b8",
+  "evidence_helper_sha256": "ee8612cf546c80103f1cd9347a3fe02f654524517a871d56c2e9dc05b9f9590d",
+  "mount": "read-only in separate single-use container",
+  "progress": null,
+  "samples_completed": 128,
+  "archive": {
+    "commits": 102432,
+    "objects": 102434,
+    "object_bytes": 214879070953,
+    "referenced_objects": 102432,
+    "referenced_object_bytes": 214874875489,
+    "staged_objects": {
+      "bafkreiav42wqkhehzn3ougbr25iduvn6aeja7cjepxa7hctqcan73t2g2y": 2097732,
+      "bafkreic5vxnjn32iw7m7z3bco2tnanghwpjg2x37abxfwue5wftji2353y": 2097732
+    },
+    "sqlite_quick_check": "ok"
+  },
+  "files": 516,
+  "bytes_read": 216968227029
+}

@@ -189,7 +189,10 @@ pub(super) fn inspect(
     if let Err(reason) = walk.node(&commit.data, 0) {
         return Ok(unavailable("membership-incomplete", reason, head));
     }
-    let current = super::current::inspect(&walk.entries, &blocks, controls, view)?;
+    let mut current = super::current::inspect(&walk.entries, &blocks, controls, view)?;
+    if !current["uri"].is_null() {
+        current["uri"]["repository_head"] = json!(head_cid.to_string());
+    }
     let mut members = BTreeMap::<String, Vec<String>>::new();
     let mut records = BTreeMap::<String, (Cid, StoredClaim)>::new();
     let mut positions = BTreeMap::<String, Value>::new();
@@ -237,6 +240,36 @@ pub(super) fn inspect(
     }
     let trust = crate::fold::TrustBase::local(view.trust.clone());
     let claims = records.into_values().collect::<Vec<_>>();
+    if current["uri"]["state"] == "not-found-at-selected-evidence" {
+        use crate::claim::{
+            codec::{DecodedClaim, DecodedRecord, SupportedClaim},
+            view::{self as projection, ClaimTrustBase},
+        };
+        let legacy_views = projection::project(
+            claims.iter().map(|(_, record)| DecodedRecord {
+                rev: record.rev.clone(),
+                claim: DecodedClaim::Supported(SupportedClaim::V1(record.claim.clone())),
+            }),
+            &ClaimTrustBase::from_v1(&trust),
+            |_| unreachable!("legacy records only"),
+        )
+        .map_err(|_| invalid())?;
+        let scopes = current["scopes"].as_array().ok_or_else(invalid)?;
+        let resolved = super::uri::resolve(view, &legacy_views, scopes, &positions)?;
+        if resolved["state"] == "resolved" {
+            if crate::uri::ResolutionRequest::parse(view.uri.as_deref().ok_or_else(invalid)?)
+                .map_err(|_| invalid())?
+                .evaluation()
+                .trust
+                .is_some()
+            {
+                return Err(invalid()); // legacy agent/role trust needs the original context
+            }
+            current["uri"] = resolved;
+            current["uri"]["repository_head"] = json!(head_cid.to_string());
+            current["uri"]["legacy_trust"] = json!(view.trust);
+        }
+    }
     let excluded = crate::fold::excluded_by_trust(&claims, &trust);
     let classes = crate::fold::fold(claims.clone(), &trust).classes;
     let total = classes.len();

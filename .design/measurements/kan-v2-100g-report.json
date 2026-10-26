@@ -1,0 +1,1194 @@
+{
+  "version": 4,
+  "rss_source": "rusage",
+  "status": "complete",
+  "phase": "sampled",
+  "source_revision": "4ce6e667830974cfdb39c167439048b807e5daae",
+  "attempt_id": "1701d522852742259a8a0aae0317eeca",
+  "storage_backend": "modal-volume",
+  "free_space_preflight": null,
+  "allocation_semantics": "Modal managed volume; physical allocation not observable",
+  "opaque_payload_gib": 100,
+  "chunk_bytes": 1048576,
+  "concurrency": 1,
+  "page_rows": 1,
+  "memory_limit_bytes": 536870912,
+  "samples_per_operation": 32,
+  "binary": "/tmp/kan-capacity-e8772c5f857848a096b4d029aafb2e62/source/target/release/deps/evidence_inventory-cce258b7c87ca7f9",
+  "binary_sha256": "18fc42ee193a08925b6f96fab31e491eae34bac7c16bea66b41cba4545da0f34",
+  "platform": "Linux-4.19.0-gvisor-x86_64-with-glibc2.36",
+  "cache_policy": "OS cache retained; each operation uses a fresh process",
+  "read_accounting": "Linux rchar includes small harness reads; read_bytes is physical I/O",
+  "scope": "indexed admitted storage; excludes HTTP, encryption and control history",
+  "samples": [
+    {
+      "latency_us": 18977,
+      "operation": "open",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 38868,
+      "rss_source": "getrusage(RUSAGE_CHILDREN).ru_maxrss:linux-kib:fresh-supervisor",
+      "syscall_read_bytes": 262383
+    },
+    {
+      "latency_us": 79770901,
+      "operation": "append",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 38308,
+      "rss_source": "getrusage(RUSAGE_CHILDREN).ru_maxrss:linux-kib:fresh-supervisor",
+      "syscall_read_bytes": 2809955
+    },
+    {
+      "latency_us": 20145,
+      "operation": "page",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 38916,
+      "rss_source": "getrusage(RUSAGE_CHILDREN).ru_maxrss:linux-kib:fresh-supervisor",
+      "syscall_read_bytes": 2330723
+    },
+    {
+      "latency_us": 51232,
+      "operation": "source",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 37152,
+      "rss_source": "getrusage(RUSAGE_CHILDREN).ru_maxrss:linux-kib:fresh-supervisor",
+      "syscall_read_bytes": 2601162
+    },
+    {
+      "latency_us": 13406,
+      "operation": "open",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 37312,
+      "rss_source": "getrusage(RUSAGE_CHILDREN).ru_maxrss:linux-kib:fresh-supervisor",
+      "syscall_read_bytes": 270575
+    },
+    {
+      "latency_us": 206510,
+      "operation": "append",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 36948,
+      "rss_source": "getrusage(RUSAGE_CHILDREN).ru_maxrss:linux-kib:fresh-supervisor",
+      "syscall_read_bytes": 2707555
+    },
+    {
+      "latency_us": 15673,
+      "operation": "page",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 38184,
+      "rss_source": "getrusage(RUSAGE_CHILDREN).ru_maxrss:linux-kib:fresh-supervisor",
+      "syscall_read_bytes": 2293859
+    },
+    {
+      "latency_us": 35615,
+      "operation": "source",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 37284,
+      "rss_source": "getrusage(RUSAGE_CHILDREN).ru_maxrss:linux-kib:fresh-supervisor",
+      "syscall_read_bytes": 2564298
+    },
+    {
+      "latency_us": 11505,
+      "operation": "open",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 37764,
+      "rss_source": "getrusage(RUSAGE_CHILDREN).ru_maxrss:linux-kib:fresh-supervisor",
+      "syscall_read_bytes": 270575
+    },
+    {
+      "latency_us": 176984,
+      "operation": "append",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 37964,
+      "rss_source": "getrusage(RUSAGE_CHILDREN).ru_maxrss:linux-kib:fresh-supervisor",
+      "syscall_read_bytes": 2924643
+    },
+    {
+      "latency_us": 15226,
+      "operation": "page",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 38120,
+      "rss_source": "getrusage(RUSAGE_CHILDREN).ru_maxrss:linux-kib:fresh-supervisor",
+      "syscall_read_bytes": 2363491
+    },
+    {
+      "latency_us": 35814,
+      "operation": "source",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 37444,
+      "rss_source": "getrusage(RUSAGE_CHILDREN).ru_maxrss:linux-kib:fresh-supervisor",
+      "syscall_read_bytes": 2642121
+    },
+    {
+      "latency_us": 13095,
+      "operation": "open",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 37152,
+      "rss_source": "getrusage(RUSAGE_CHILDREN).ru_maxrss:linux-kib:fresh-supervisor",
+      "syscall_read_bytes": 278767
+    },
+    {
+      "latency_us": 204238,
+      "operation": "append",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 38624,
+      "rss_source": "getrusage(RUSAGE_CHILDREN).ru_maxrss:linux-kib:fresh-supervisor",
+      "syscall_read_bytes": 2642019
+    },
+    {
+      "latency_us": 15725,
+      "operation": "page",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 38224,
+      "rss_source": "getrusage(RUSAGE_CHILDREN).ru_maxrss:linux-kib:fresh-supervisor",
+      "syscall_read_bytes": 2314339
+    },
+    {
+      "latency_us": 36770,
+      "operation": "source",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 36996,
+      "rss_source": "getrusage(RUSAGE_CHILDREN).ru_maxrss:linux-kib:fresh-supervisor",
+      "syscall_read_bytes": 2580682
+    },
+    {
+      "latency_us": 11377,
+      "operation": "open",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 37104,
+      "rss_source": "getrusage(RUSAGE_CHILDREN).ru_maxrss:linux-kib:fresh-supervisor",
+      "syscall_read_bytes": 266479
+    },
+    {
+      "latency_us": 217626,
+      "operation": "append",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 37428,
+      "rss_source": "getrusage(RUSAGE_CHILDREN).ru_maxrss:linux-kib:fresh-supervisor",
+      "syscall_read_bytes": 2719843
+    },
+    {
+      "latency_us": 17467,
+      "operation": "page",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 37168,
+      "rss_source": "getrusage(RUSAGE_CHILDREN).ru_maxrss:linux-kib:fresh-supervisor",
+      "syscall_read_bytes": 2326627
+    },
+    {
+      "latency_us": 36795,
+      "operation": "source",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 38952,
+      "rss_source": "getrusage(RUSAGE_CHILDREN).ru_maxrss:linux-kib:fresh-supervisor",
+      "syscall_read_bytes": 2592970
+    },
+    {
+      "latency_us": 11417,
+      "operation": "open",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 37932,
+      "rss_source": "getrusage(RUSAGE_CHILDREN).ru_maxrss:linux-kib:fresh-supervisor",
+      "syscall_read_bytes": 266479
+    },
+    {
+      "latency_us": 147297,
+      "operation": "append",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 38180,
+      "rss_source": "getrusage(RUSAGE_CHILDREN).ru_maxrss:linux-kib:fresh-supervisor",
+      "syscall_read_bytes": 2691171
+    },
+    {
+      "latency_us": 11716,
+      "operation": "page",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 37508,
+      "rss_source": "getrusage(RUSAGE_CHILDREN).ru_maxrss:linux-kib:fresh-supervisor",
+      "syscall_read_bytes": 2306147
+    },
+    {
+      "latency_us": 36304,
+      "operation": "source",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 37956,
+      "rss_source": "getrusage(RUSAGE_CHILDREN).ru_maxrss:linux-kib:fresh-supervisor",
+      "syscall_read_bytes": 2572490
+    },
+    {
+      "latency_us": 11248,
+      "operation": "open",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 38168,
+      "rss_source": "getrusage(RUSAGE_CHILDREN).ru_maxrss:linux-kib:fresh-supervisor",
+      "syscall_read_bytes": 266479
+    },
+    {
+      "latency_us": 171553,
+      "operation": "append",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 38480,
+      "rss_source": "getrusage(RUSAGE_CHILDREN).ru_maxrss:linux-kib:fresh-supervisor",
+      "syscall_read_bytes": 2617443
+    },
+    {
+      "latency_us": 14183,
+      "operation": "page",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 38112,
+      "rss_source": "getrusage(RUSAGE_CHILDREN).ru_maxrss:linux-kib:fresh-supervisor",
+      "syscall_read_bytes": 2330723
+    },
+    {
+      "latency_us": 38445,
+      "operation": "source",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 38300,
+      "rss_source": "getrusage(RUSAGE_CHILDREN).ru_maxrss:linux-kib:fresh-supervisor",
+      "syscall_read_bytes": 2576586
+    },
+    {
+      "latency_us": 13115,
+      "operation": "open",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 38284,
+      "rss_source": "getrusage(RUSAGE_CHILDREN).ru_maxrss:linux-kib:fresh-supervisor",
+      "syscall_read_bytes": 245999
+    },
+    {
+      "latency_us": 166395,
+      "operation": "append",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 38776,
+      "rss_source": "getrusage(RUSAGE_CHILDREN).ru_maxrss:linux-kib:fresh-supervisor",
+      "syscall_read_bytes": 2764899
+    },
+    {
+      "latency_us": 12658,
+      "operation": "page",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 37888,
+      "rss_source": "getrusage(RUSAGE_CHILDREN).ru_maxrss:linux-kib:fresh-supervisor",
+      "syscall_read_bytes": 2310243
+    },
+    {
+      "latency_us": 39931,
+      "operation": "source",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 38440,
+      "rss_source": "getrusage(RUSAGE_CHILDREN).ru_maxrss:linux-kib:fresh-supervisor",
+      "syscall_read_bytes": 2576586
+    },
+    {
+      "latency_us": 11637,
+      "operation": "open",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 37320,
+      "rss_source": "getrusage(RUSAGE_CHILDREN).ru_maxrss:linux-kib:fresh-supervisor",
+      "syscall_read_bytes": 266479
+    },
+    {
+      "latency_us": 208764,
+      "operation": "append",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 38412,
+      "rss_source": "getrusage(RUSAGE_CHILDREN).ru_maxrss:linux-kib:fresh-supervisor",
+      "syscall_read_bytes": 2728035
+    },
+    {
+      "latency_us": 15878,
+      "operation": "page",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 38736,
+      "rss_source": "getrusage(RUSAGE_CHILDREN).ru_maxrss:linux-kib:fresh-supervisor",
+      "syscall_read_bytes": 2297955
+    },
+    {
+      "latency_us": 36084,
+      "operation": "source",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 38636,
+      "rss_source": "getrusage(RUSAGE_CHILDREN).ru_maxrss:linux-kib:fresh-supervisor",
+      "syscall_read_bytes": 2592970
+    },
+    {
+      "latency_us": 14105,
+      "operation": "open",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 37668,
+      "rss_source": "getrusage(RUSAGE_CHILDREN).ru_maxrss:linux-kib:fresh-supervisor",
+      "syscall_read_bytes": 295151
+    },
+    {
+      "latency_us": 181597,
+      "operation": "append",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 37948,
+      "rss_source": "getrusage(RUSAGE_CHILDREN).ru_maxrss:linux-kib:fresh-supervisor",
+      "syscall_read_bytes": 2625635
+    },
+    {
+      "latency_us": 15618,
+      "operation": "page",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 38456,
+      "rss_source": "getrusage(RUSAGE_CHILDREN).ru_maxrss:linux-kib:fresh-supervisor",
+      "syscall_read_bytes": 2293859
+    },
+    {
+      "latency_us": 36176,
+      "operation": "source",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 37176,
+      "rss_source": "getrusage(RUSAGE_CHILDREN).ru_maxrss:linux-kib:fresh-supervisor",
+      "syscall_read_bytes": 2552010
+    },
+    {
+      "latency_us": 10883,
+      "operation": "open",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 37900,
+      "rss_source": "getrusage(RUSAGE_CHILDREN).ru_maxrss:linux-kib:fresh-supervisor",
+      "syscall_read_bytes": 258287
+    },
+    {
+      "latency_us": 185859,
+      "operation": "append",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 38824,
+      "rss_source": "getrusage(RUSAGE_CHILDREN).ru_maxrss:linux-kib:fresh-supervisor",
+      "syscall_read_bytes": 2875491
+    },
+    {
+      "latency_us": 16000,
+      "operation": "page",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 37348,
+      "rss_source": "getrusage(RUSAGE_CHILDREN).ru_maxrss:linux-kib:fresh-supervisor",
+      "syscall_read_bytes": 2363491
+    },
+    {
+      "latency_us": 39026,
+      "operation": "source",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 37288,
+      "rss_source": "getrusage(RUSAGE_CHILDREN).ru_maxrss:linux-kib:fresh-supervisor",
+      "syscall_read_bytes": 2646218
+    },
+    {
+      "latency_us": 14348,
+      "operation": "open",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 38448,
+      "rss_source": "getrusage(RUSAGE_CHILDREN).ru_maxrss:linux-kib:fresh-supervisor",
+      "syscall_read_bytes": 282863
+    },
+    {
+      "latency_us": 141045,
+      "operation": "append",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 37312,
+      "rss_source": "getrusage(RUSAGE_CHILDREN).ru_maxrss:linux-kib:fresh-supervisor",
+      "syscall_read_bytes": 2744419
+    },
+    {
+      "latency_us": 16373,
+      "operation": "page",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 38520,
+      "rss_source": "getrusage(RUSAGE_CHILDREN).ru_maxrss:linux-kib:fresh-supervisor",
+      "syscall_read_bytes": 2351203
+    },
+    {
+      "latency_us": 36916,
+      "operation": "source",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 37396,
+      "rss_source": "getrusage(RUSAGE_CHILDREN).ru_maxrss:linux-kib:fresh-supervisor",
+      "syscall_read_bytes": 2605258
+    },
+    {
+      "latency_us": 11506,
+      "operation": "open",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 37368,
+      "rss_source": "getrusage(RUSAGE_CHILDREN).ru_maxrss:linux-kib:fresh-supervisor",
+      "syscall_read_bytes": 254191
+    },
+    {
+      "latency_us": 192992,
+      "operation": "append",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 38596,
+      "rss_source": "getrusage(RUSAGE_CHILDREN).ru_maxrss:linux-kib:fresh-supervisor",
+      "syscall_read_bytes": 2826339
+    },
+    {
+      "latency_us": 15923,
+      "operation": "page",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 37408,
+      "rss_source": "getrusage(RUSAGE_CHILDREN).ru_maxrss:linux-kib:fresh-supervisor",
+      "syscall_read_bytes": 2314339
+    },
+    {
+      "latency_us": 35085,
+      "operation": "source",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 38856,
+      "rss_source": "getrusage(RUSAGE_CHILDREN).ru_maxrss:linux-kib:fresh-supervisor",
+      "syscall_read_bytes": 2584778
+    },
+    {
+      "latency_us": 11269,
+      "operation": "open",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 38416,
+      "rss_source": "getrusage(RUSAGE_CHILDREN).ru_maxrss:linux-kib:fresh-supervisor",
+      "syscall_read_bytes": 270575
+    },
+    {
+      "latency_us": 171100,
+      "operation": "append",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 37040,
+      "rss_source": "getrusage(RUSAGE_CHILDREN).ru_maxrss:linux-kib:fresh-supervisor",
+      "syscall_read_bytes": 2719843
+    },
+    {
+      "latency_us": 15471,
+      "operation": "page",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 37304,
+      "rss_source": "getrusage(RUSAGE_CHILDREN).ru_maxrss:linux-kib:fresh-supervisor",
+      "syscall_read_bytes": 2310243
+    },
+    {
+      "latency_us": 38389,
+      "operation": "source",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 38836,
+      "rss_source": "getrusage(RUSAGE_CHILDREN).ru_maxrss:linux-kib:fresh-supervisor",
+      "syscall_read_bytes": 2568394
+    },
+    {
+      "latency_us": 11484,
+      "operation": "open",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 38588,
+      "rss_source": "getrusage(RUSAGE_CHILDREN).ru_maxrss:linux-kib:fresh-supervisor",
+      "syscall_read_bytes": 258287
+    },
+    {
+      "latency_us": 236646,
+      "operation": "append",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 37480,
+      "rss_source": "getrusage(RUSAGE_CHILDREN).ru_maxrss:linux-kib:fresh-supervisor",
+      "syscall_read_bytes": 2809955
+    },
+    {
+      "latency_us": 16445,
+      "operation": "page",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 37880,
+      "rss_source": "getrusage(RUSAGE_CHILDREN).ru_maxrss:linux-kib:fresh-supervisor",
+      "syscall_read_bytes": 2347107
+    },
+    {
+      "latency_us": 36680,
+      "operation": "source",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 37168,
+      "rss_source": "getrusage(RUSAGE_CHILDREN).ru_maxrss:linux-kib:fresh-supervisor",
+      "syscall_read_bytes": 2625738
+    },
+    {
+      "latency_us": 11618,
+      "operation": "open",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 38784,
+      "rss_source": "getrusage(RUSAGE_CHILDREN).ru_maxrss:linux-kib:fresh-supervisor",
+      "syscall_read_bytes": 278767
+    },
+    {
+      "latency_us": 264391,
+      "operation": "append",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 37300,
+      "rss_source": "getrusage(RUSAGE_CHILDREN).ru_maxrss:linux-kib:fresh-supervisor",
+      "syscall_read_bytes": 2777187
+    },
+    {
+      "latency_us": 16396,
+      "operation": "page",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 38612,
+      "rss_source": "getrusage(RUSAGE_CHILDREN).ru_maxrss:linux-kib:fresh-supervisor",
+      "syscall_read_bytes": 2302051
+    },
+    {
+      "latency_us": 39119,
+      "operation": "source",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 37488,
+      "rss_source": "getrusage(RUSAGE_CHILDREN).ru_maxrss:linux-kib:fresh-supervisor",
+      "syscall_read_bytes": 2584778
+    },
+    {
+      "latency_us": 12697,
+      "operation": "open",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 37380,
+      "rss_source": "getrusage(RUSAGE_CHILDREN).ru_maxrss:linux-kib:fresh-supervisor",
+      "syscall_read_bytes": 282863
+    },
+    {
+      "latency_us": 185798,
+      "operation": "append",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 37032,
+      "rss_source": "getrusage(RUSAGE_CHILDREN).ru_maxrss:linux-kib:fresh-supervisor",
+      "syscall_read_bytes": 2740323
+    },
+    {
+      "latency_us": 15842,
+      "operation": "page",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 37288,
+      "rss_source": "getrusage(RUSAGE_CHILDREN).ru_maxrss:linux-kib:fresh-supervisor",
+      "syscall_read_bytes": 2343011
+    },
+    {
+      "latency_us": 39495,
+      "operation": "source",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 37908,
+      "rss_source": "getrusage(RUSAGE_CHILDREN).ru_maxrss:linux-kib:fresh-supervisor",
+      "syscall_read_bytes": 2613450
+    },
+    {
+      "latency_us": 15252,
+      "operation": "open",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 37676,
+      "rss_source": "getrusage(RUSAGE_CHILDREN).ru_maxrss:linux-kib:fresh-supervisor",
+      "syscall_read_bytes": 270575
+    },
+    {
+      "latency_us": 261104,
+      "operation": "append",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 37808,
+      "rss_source": "getrusage(RUSAGE_CHILDREN).ru_maxrss:linux-kib:fresh-supervisor",
+      "syscall_read_bytes": 2666595
+    },
+    {
+      "latency_us": 16358,
+      "operation": "page",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 37832,
+      "rss_source": "getrusage(RUSAGE_CHILDREN).ru_maxrss:linux-kib:fresh-supervisor",
+      "syscall_read_bytes": 2306147
+    },
+    {
+      "latency_us": 36298,
+      "operation": "source",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 37444,
+      "rss_source": "getrusage(RUSAGE_CHILDREN).ru_maxrss:linux-kib:fresh-supervisor",
+      "syscall_read_bytes": 2584777
+    },
+    {
+      "latency_us": 11414,
+      "operation": "open",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 38184,
+      "rss_source": "getrusage(RUSAGE_CHILDREN).ru_maxrss:linux-kib:fresh-supervisor",
+      "syscall_read_bytes": 278767
+    },
+    {
+      "latency_us": 170635,
+      "operation": "append",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 37604,
+      "rss_source": "getrusage(RUSAGE_CHILDREN).ru_maxrss:linux-kib:fresh-supervisor",
+      "syscall_read_bytes": 2609251
+    },
+    {
+      "latency_us": 16861,
+      "operation": "page",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 38432,
+      "rss_source": "getrusage(RUSAGE_CHILDREN).ru_maxrss:linux-kib:fresh-supervisor",
+      "syscall_read_bytes": 2318435
+    },
+    {
+      "latency_us": 35960,
+      "operation": "source",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 37492,
+      "rss_source": "getrusage(RUSAGE_CHILDREN).ru_maxrss:linux-kib:fresh-supervisor",
+      "syscall_read_bytes": 2597065
+    },
+    {
+      "latency_us": 11189,
+      "operation": "open",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 38936,
+      "rss_source": "getrusage(RUSAGE_CHILDREN).ru_maxrss:linux-kib:fresh-supervisor",
+      "syscall_read_bytes": 278767
+    },
+    {
+      "latency_us": 221677,
+      "operation": "append",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 38316,
+      "rss_source": "getrusage(RUSAGE_CHILDREN).ru_maxrss:linux-kib:fresh-supervisor",
+      "syscall_read_bytes": 2863203
+    },
+    {
+      "latency_us": 14061,
+      "operation": "page",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 38308,
+      "rss_source": "getrusage(RUSAGE_CHILDREN).ru_maxrss:linux-kib:fresh-supervisor",
+      "syscall_read_bytes": 2351203
+    },
+    {
+      "latency_us": 37791,
+      "operation": "source",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 38636,
+      "rss_source": "getrusage(RUSAGE_CHILDREN).ru_maxrss:linux-kib:fresh-supervisor",
+      "syscall_read_bytes": 2617546
+    },
+    {
+      "latency_us": 10928,
+      "operation": "open",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 38020,
+      "rss_source": "getrusage(RUSAGE_CHILDREN).ru_maxrss:linux-kib:fresh-supervisor",
+      "syscall_read_bytes": 266479
+    },
+    {
+      "latency_us": 151325,
+      "operation": "append",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 38060,
+      "rss_source": "getrusage(RUSAGE_CHILDREN).ru_maxrss:linux-kib:fresh-supervisor",
+      "syscall_read_bytes": 2678883
+    },
+    {
+      "latency_us": 16220,
+      "operation": "page",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 38544,
+      "rss_source": "getrusage(RUSAGE_CHILDREN).ru_maxrss:linux-kib:fresh-supervisor",
+      "syscall_read_bytes": 2363491
+    },
+    {
+      "latency_us": 36883,
+      "operation": "source",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 37612,
+      "rss_source": "getrusage(RUSAGE_CHILDREN).ru_maxrss:linux-kib:fresh-supervisor",
+      "syscall_read_bytes": 2642121
+    },
+    {
+      "latency_us": 11346,
+      "operation": "open",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 38592,
+      "rss_source": "getrusage(RUSAGE_CHILDREN).ru_maxrss:linux-kib:fresh-supervisor",
+      "syscall_read_bytes": 278767
+    },
+    {
+      "latency_us": 127428,
+      "operation": "append",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 37604,
+      "rss_source": "getrusage(RUSAGE_CHILDREN).ru_maxrss:linux-kib:fresh-supervisor",
+      "syscall_read_bytes": 2781283
+    },
+    {
+      "latency_us": 15178,
+      "operation": "page",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 38336,
+      "rss_source": "getrusage(RUSAGE_CHILDREN).ru_maxrss:linux-kib:fresh-supervisor",
+      "syscall_read_bytes": 2273379
+    },
+    {
+      "latency_us": 38764,
+      "operation": "source",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 37408,
+      "rss_source": "getrusage(RUSAGE_CHILDREN).ru_maxrss:linux-kib:fresh-supervisor",
+      "syscall_read_bytes": 2556106
+    },
+    {
+      "latency_us": 11401,
+      "operation": "open",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 38924,
+      "rss_source": "getrusage(RUSAGE_CHILDREN).ru_maxrss:linux-kib:fresh-supervisor",
+      "syscall_read_bytes": 282863
+    },
+    {
+      "latency_us": 199870,
+      "operation": "append",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 38220,
+      "rss_source": "getrusage(RUSAGE_CHILDREN).ru_maxrss:linux-kib:fresh-supervisor",
+      "syscall_read_bytes": 2576483
+    },
+    {
+      "latency_us": 12919,
+      "operation": "page",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 38588,
+      "rss_source": "getrusage(RUSAGE_CHILDREN).ru_maxrss:linux-kib:fresh-supervisor",
+      "syscall_read_bytes": 2306147
+    },
+    {
+      "latency_us": 36191,
+      "operation": "source",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 37092,
+      "rss_source": "getrusage(RUSAGE_CHILDREN).ru_maxrss:linux-kib:fresh-supervisor",
+      "syscall_read_bytes": 2560202
+    },
+    {
+      "latency_us": 11223,
+      "operation": "open",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 38272,
+      "rss_source": "getrusage(RUSAGE_CHILDREN).ru_maxrss:linux-kib:fresh-supervisor",
+      "syscall_read_bytes": 254191
+    },
+    {
+      "latency_us": 195201,
+      "operation": "append",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 38160,
+      "rss_source": "getrusage(RUSAGE_CHILDREN).ru_maxrss:linux-kib:fresh-supervisor",
+      "syscall_read_bytes": 2785379
+    },
+    {
+      "latency_us": 17396,
+      "operation": "page",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 37280,
+      "rss_source": "getrusage(RUSAGE_CHILDREN).ru_maxrss:linux-kib:fresh-supervisor",
+      "syscall_read_bytes": 2318435
+    },
+    {
+      "latency_us": 35039,
+      "operation": "source",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 38196,
+      "rss_source": "getrusage(RUSAGE_CHILDREN).ru_maxrss:linux-kib:fresh-supervisor",
+      "syscall_read_bytes": 2572490
+    },
+    {
+      "latency_us": 10936,
+      "operation": "open",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 38024,
+      "rss_source": "getrusage(RUSAGE_CHILDREN).ru_maxrss:linux-kib:fresh-supervisor",
+      "syscall_read_bytes": 254191
+    },
+    {
+      "latency_us": 170531,
+      "operation": "append",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 38248,
+      "rss_source": "getrusage(RUSAGE_CHILDREN).ru_maxrss:linux-kib:fresh-supervisor",
+      "syscall_read_bytes": 2756707
+    },
+    {
+      "latency_us": 13322,
+      "operation": "page",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 37232,
+      "rss_source": "getrusage(RUSAGE_CHILDREN).ru_maxrss:linux-kib:fresh-supervisor",
+      "syscall_read_bytes": 2310243
+    },
+    {
+      "latency_us": 35575,
+      "operation": "source",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 38048,
+      "rss_source": "getrusage(RUSAGE_CHILDREN).ru_maxrss:linux-kib:fresh-supervisor",
+      "syscall_read_bytes": 2597066
+    },
+    {
+      "latency_us": 12311,
+      "operation": "open",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 37564,
+      "rss_source": "getrusage(RUSAGE_CHILDREN).ru_maxrss:linux-kib:fresh-supervisor",
+      "syscall_read_bytes": 286959
+    },
+    {
+      "latency_us": 114682,
+      "operation": "append",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 38872,
+      "rss_source": "getrusage(RUSAGE_CHILDREN).ru_maxrss:linux-kib:fresh-supervisor",
+      "syscall_read_bytes": 2654307
+    },
+    {
+      "latency_us": 16449,
+      "operation": "page",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 38796,
+      "rss_source": "getrusage(RUSAGE_CHILDREN).ru_maxrss:linux-kib:fresh-supervisor",
+      "syscall_read_bytes": 2343011
+    },
+    {
+      "latency_us": 36097,
+      "operation": "source",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 37180,
+      "rss_source": "getrusage(RUSAGE_CHILDREN).ru_maxrss:linux-kib:fresh-supervisor",
+      "syscall_read_bytes": 2617546
+    },
+    {
+      "latency_us": 15623,
+      "operation": "open",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 37176,
+      "rss_source": "getrusage(RUSAGE_CHILDREN).ru_maxrss:linux-kib:fresh-supervisor",
+      "syscall_read_bytes": 274671
+    },
+    {
+      "latency_us": 165545,
+      "operation": "append",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 38420,
+      "rss_source": "getrusage(RUSAGE_CHILDREN).ru_maxrss:linux-kib:fresh-supervisor",
+      "syscall_read_bytes": 2764899
+    },
+    {
+      "latency_us": 15946,
+      "operation": "page",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 37496,
+      "rss_source": "getrusage(RUSAGE_CHILDREN).ru_maxrss:linux-kib:fresh-supervisor",
+      "syscall_read_bytes": 2322531
+    },
+    {
+      "latency_us": 38865,
+      "operation": "source",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 38652,
+      "rss_source": "getrusage(RUSAGE_CHILDREN).ru_maxrss:linux-kib:fresh-supervisor",
+      "syscall_read_bytes": 2576586
+    },
+    {
+      "latency_us": 11289,
+      "operation": "open",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 38992,
+      "rss_source": "getrusage(RUSAGE_CHILDREN).ru_maxrss:linux-kib:fresh-supervisor",
+      "syscall_read_bytes": 254191
+    },
+    {
+      "latency_us": 217821,
+      "operation": "append",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 38556,
+      "rss_source": "getrusage(RUSAGE_CHILDREN).ru_maxrss:linux-kib:fresh-supervisor",
+      "syscall_read_bytes": 2809955
+    },
+    {
+      "latency_us": 15853,
+      "operation": "page",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 38504,
+      "rss_source": "getrusage(RUSAGE_CHILDREN).ru_maxrss:linux-kib:fresh-supervisor",
+      "syscall_read_bytes": 2347107
+    },
+    {
+      "latency_us": 37528,
+      "operation": "source",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 38816,
+      "rss_source": "getrusage(RUSAGE_CHILDREN).ru_maxrss:linux-kib:fresh-supervisor",
+      "syscall_read_bytes": 2629834
+    },
+    {
+      "latency_us": 12883,
+      "operation": "open",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 37780,
+      "rss_source": "getrusage(RUSAGE_CHILDREN).ru_maxrss:linux-kib:fresh-supervisor",
+      "syscall_read_bytes": 282863
+    },
+    {
+      "latency_us": 113574,
+      "operation": "append",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 37556,
+      "rss_source": "getrusage(RUSAGE_CHILDREN).ru_maxrss:linux-kib:fresh-supervisor",
+      "syscall_read_bytes": 2752611
+    },
+    {
+      "latency_us": 15949,
+      "operation": "page",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 38688,
+      "rss_source": "getrusage(RUSAGE_CHILDREN).ru_maxrss:linux-kib:fresh-supervisor",
+      "syscall_read_bytes": 2343011
+    },
+    {
+      "latency_us": 39126,
+      "operation": "source",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 38872,
+      "rss_source": "getrusage(RUSAGE_CHILDREN).ru_maxrss:linux-kib:fresh-supervisor",
+      "syscall_read_bytes": 2625738
+    },
+    {
+      "latency_us": 11090,
+      "operation": "open",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 37096,
+      "rss_source": "getrusage(RUSAGE_CHILDREN).ru_maxrss:linux-kib:fresh-supervisor",
+      "syscall_read_bytes": 282863
+    },
+    {
+      "latency_us": 184221,
+      "operation": "append",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 37308,
+      "rss_source": "getrusage(RUSAGE_CHILDREN).ru_maxrss:linux-kib:fresh-supervisor",
+      "syscall_read_bytes": 2752611
+    },
+    {
+      "latency_us": 15650,
+      "operation": "page",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 38272,
+      "rss_source": "getrusage(RUSAGE_CHILDREN).ru_maxrss:linux-kib:fresh-supervisor",
+      "syscall_read_bytes": 2318435
+    },
+    {
+      "latency_us": 36766,
+      "operation": "source",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 38260,
+      "rss_source": "getrusage(RUSAGE_CHILDREN).ru_maxrss:linux-kib:fresh-supervisor",
+      "syscall_read_bytes": 2597065
+    },
+    {
+      "latency_us": 11233,
+      "operation": "open",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 38636,
+      "rss_source": "getrusage(RUSAGE_CHILDREN).ru_maxrss:linux-kib:fresh-supervisor",
+      "syscall_read_bytes": 278767
+    },
+    {
+      "latency_us": 138841,
+      "operation": "append",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 38488,
+      "rss_source": "getrusage(RUSAGE_CHILDREN).ru_maxrss:linux-kib:fresh-supervisor",
+      "syscall_read_bytes": 2703459
+    },
+    {
+      "latency_us": 16876,
+      "operation": "page",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 37740,
+      "rss_source": "getrusage(RUSAGE_CHILDREN).ru_maxrss:linux-kib:fresh-supervisor",
+      "syscall_read_bytes": 2322531
+    },
+    {
+      "latency_us": 36516,
+      "operation": "source",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 37980,
+      "rss_source": "getrusage(RUSAGE_CHILDREN).ru_maxrss:linux-kib:fresh-supervisor",
+      "syscall_read_bytes": 2601161
+    },
+    {
+      "latency_us": 15106,
+      "operation": "open",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 38188,
+      "rss_source": "getrusage(RUSAGE_CHILDREN).ru_maxrss:linux-kib:fresh-supervisor",
+      "syscall_read_bytes": 278767
+    },
+    {
+      "latency_us": 216412,
+      "operation": "append",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 37180,
+      "rss_source": "getrusage(RUSAGE_CHILDREN).ru_maxrss:linux-kib:fresh-supervisor",
+      "syscall_read_bytes": 2756707
+    },
+    {
+      "latency_us": 16160,
+      "operation": "page",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 38392,
+      "rss_source": "getrusage(RUSAGE_CHILDREN).ru_maxrss:linux-kib:fresh-supervisor",
+      "syscall_read_bytes": 2334819
+    },
+    {
+      "latency_us": 38060,
+      "operation": "source",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 37004,
+      "rss_source": "getrusage(RUSAGE_CHILDREN).ru_maxrss:linux-kib:fresh-supervisor",
+      "syscall_read_bytes": 2597065
+    }
+  ],
+  "rss_calibration": {
+    "status": "complete",
+    "source": "getrusage(RUSAGE_CHILDREN).ru_maxrss:linux-kib:fresh-supervisor",
+    "calibration": true,
+    "process_peak_rss_kib": 101892,
+    "returncode": 0,
+    "allocation_probe": {
+      "before_rss_kib": 36356,
+      "during_rss_kib": 101892,
+      "after_rss_kib": 36356,
+      "during_peak_kib": 101892,
+      "after_peak_kib": 101892
+    }
+  },
+  "seeded_records": 102400,
+  "archive_frontier": 102400,
+  "baseline_records": 102400,
+  "unmeasured_append_records": 0,
+  "expected_records": 102432,
+  "fixture_seconds": 27.83568612700003,
+  "fixture_file_bytes": 216900198400,
+  "filesystem_reported_blocks_bytes": 216900198400,
+  "fixture_allocated_bytes": null,
+  "distributions": {
+    "open": {
+      "latency_us": {
+        "count": 32,
+        "p50": 11484,
+        "p95": 15623,
+        "p99": 18977,
+        "max": 18977
+      },
+      "syscall_read_bytes": {
+        "count": 32,
+        "p50": 270575,
+        "p95": 286959,
+        "p99": 295151,
+        "max": 295151
+      },
+      "physical_read_bytes": {
+        "count": 32,
+        "p50": 0,
+        "p95": 0,
+        "p99": 0,
+        "max": 0
+      },
+      "process_peak_rss_kib": {
+        "count": 32,
+        "p50": 38020,
+        "p95": 38936,
+        "p99": 38992,
+        "max": 38992
+      }
+    },
+    "append": {
+      "latency_us": {
+        "count": 32,
+        "p50": 184221,
+        "p95": 264391,
+        "p99": 79770901,
+        "max": 79770901
+      },
+      "syscall_read_bytes": {
+        "count": 32,
+        "p50": 2744419,
+        "p95": 2875491,
+        "p99": 2924643,
+        "max": 2924643
+      },
+      "physical_read_bytes": {
+        "count": 32,
+        "p50": 0,
+        "p95": 0,
+        "p99": 0,
+        "max": 0
+      },
+      "process_peak_rss_kib": {
+        "count": 32,
+        "p50": 38060,
+        "p95": 38824,
+        "p99": 38872,
+        "max": 38872
+      }
+    },
+    "page": {
+      "latency_us": {
+        "count": 32,
+        "p50": 15878,
+        "p95": 17467,
+        "p99": 20145,
+        "max": 20145
+      },
+      "syscall_read_bytes": {
+        "count": 32,
+        "p50": 2318435,
+        "p95": 2363491,
+        "p99": 2363491,
+        "max": 2363491
+      },
+      "physical_read_bytes": {
+        "count": 32,
+        "p50": 0,
+        "p95": 0,
+        "p99": 0,
+        "max": 0
+      },
+      "process_peak_rss_kib": {
+        "count": 32,
+        "p50": 38184,
+        "p95": 38796,
+        "p99": 38916,
+        "max": 38916
+      }
+    },
+    "source": {
+      "latency_us": {
+        "count": 32,
+        "p50": 36770,
+        "p95": 39931,
+        "p99": 51232,
+        "max": 51232
+      },
+      "syscall_read_bytes": {
+        "count": 32,
+        "p50": 2592970,
+        "p95": 2642121,
+        "p99": 2646218,
+        "max": 2646218
+      },
+      "physical_read_bytes": {
+        "count": 32,
+        "p50": 0,
+        "p95": 0,
+        "p99": 0,
+        "max": 0
+      },
+      "process_peak_rss_kib": {
+        "count": 32,
+        "p50": 37612,
+        "p95": 38872,
+        "p99": 38952,
+        "max": 38952
+      }
+    }
+  }
+}

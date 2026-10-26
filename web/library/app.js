@@ -110,7 +110,7 @@
       const dt = document.createElement('dt'), dd = document.createElement('dd'); dt.textContent = key; dd.textContent = val; $('provenance').append(dt); $('provenance').append(dd);
     }
     if(annotationsEnabled&&value.reference&&value.offset==='0'&&typeof value.utf8==='string'){try{$('restore-annotation').hidden=JSON.parse(value.utf8).format!=='kan-annotation/1';}catch{$('restore-annotation').hidden=true;}}
-    if(value.reference){$('reference-value').value=JSON.stringify({reference:value.reference,offset:String(value.offset||'0')},null,2);$('reference-export').hidden=false;}
+    if(value.reference){$('reference-value').value=value.uri||JSON.stringify({reference:value.reference,offset:String(value.offset||'0')},null,2);$('reference-export').hidden=false;}
     notice(unavailable ? `Source ${value.availability} · provenance retained; no bytes substituted.` : 'Source verified · this is one retained occurrence, not a reconstructed session.');
   }
   async function inspect(sequence, offset = 0) {
@@ -132,11 +132,12 @@
     annotationRecovery=null;$('annotation-recovery-preview').textContent=`Restored ${result.annotation.id} · original author ${result.annotation.author}. No analysis or publication triggered.`;notice('Published annotation restored. Load annotations to inspect its retained history.');
   }));
   $('reference-form').addEventListener('submit',event=>{event.preventDefault();run(async()=>{
-    const text=$('reference-input').value;if(text.length>4096)throw new Error('Reference too large.');
-    const input=JSON.parse(text),reference=input.reference||input,offset=input.offset||'0';
+    const text=$('reference-input').value;if(text.length>32768)throw new Error('Reference too large.');
+    const captureUri=text.startsWith('kan+capture:');
+    const input=captureUri?{}:JSON.parse(text),reference=input.reference||input,offset=input.offset||'0';
     if(typeof offset!=='string'||!/^(0|[1-9][0-9]{0,19})$/.test(offset))throw new Error('Invalid source offset.');
     cancelWork();clearContent();clearInspector();
-    const resolved=await rpc({action:'resolve-reference',reference});if(!resolved)return;
+    const resolved=await rpc(captureUri?{action:'resolve-capture-uri',uri:text}:{action:'resolve-reference',reference});if(!resolved)return;
     const configured=scopes.find(s=>sourceId(s)===resolved.source);
     if(!configured||!resolved.pin||!resolved.record?.selection)throw new Error('Reference archive is unavailable.');
     const entry={...configured,pin:resolved.pin,pin_wire:resolved.pin_wire};
@@ -174,8 +175,8 @@
   }
   function renderCapabilities(value) {
     if (!Array.isArray(value.capabilities) || !Array.isArray(value.unavailable)) throw new Error('Unsupported capability response.');
-    const labels = {'portable-references':'Portable evidence references','import-content':'Imported v1 files and claims','owner-maintenance':'Owner maintenance','operations-read':'Operations reader','text-search':'Persistent text search','attempt-content':'Large attempt Content','session-content':'Conversation reader','session-links':'Explicit session relationships','attempt-discovery':'Captured attempt discovery','snapshot-inventory':'Snapshot inventory','source-ranges':'Source ranges','provenance':'Provenance','content-inspection':'Selected Content','payload-availability':'Payload availability','semantic-search':'Search','normalized-sessions':'Sessions','annotations':'Annotations','saved-views':'Saved views','analysis':'Analysis','administrative-jobs':'Admin jobs'};
-    const supported = new Set(['portable-references','import-content','owner-maintenance','analysis','operations-read','text-search','saved-views','annotations','snapshot-inventory','source-ranges','provenance','content-inspection','payload-availability','attempt-discovery','attempt-content','session-links','session-content']), seen = new Set();
+    const labels = {'attachment-export':'Attachment downloads','harness-jsonl':'Harness snapshots','portable-references':'Portable evidence references','import-content':'Imported v1 files and claims','owner-maintenance':'Owner maintenance','operations-read':'Operations reader','text-search':'Persistent text search','attempt-content':'Large attempt Content','session-content':'Conversation reader','session-links':'Explicit session relationships','attempt-discovery':'Captured attempt discovery','snapshot-inventory':'Snapshot inventory','source-ranges':'Source ranges','provenance':'Provenance','content-inspection':'Selected Content','payload-availability':'Payload availability','semantic-search':'Semantic search','normalized-sessions':'Sessions','annotations':'Annotations','saved-views':'Saved views','analysis':'Analysis','administrative-jobs':'Admin jobs'};
+    const supported = new Set(['attachment-export','harness-jsonl','portable-references','import-content','owner-maintenance','analysis','operations-read','text-search','saved-views','annotations','snapshot-inventory','source-ranges','provenance','content-inspection','payload-availability','attempt-discovery','attempt-content','session-links','session-content']), seen = new Set();
     $('capability-list').replaceChildren();
     for (const [items, available] of [[value.capabilities,true],[value.unavailable,false]]) {
       for (const capability of items) {
@@ -410,6 +411,10 @@
                 const frame=document.createElement('fieldset');frame.append(textNode('legend','Current principals included in this view'));const selectedPrincipals=[];
                 for(const principal of current.authors){const label=document.createElement('label'),input=document.createElement('input');input.type='checkbox';input.checked=(view.principals||[]).includes(principal);label.append(input);label.append(textNode('span',principal));frame.append(label);selectedPrincipals.push({principal,input});}
                 const applyCurrent=textNode('button','Apply current principal trust');applyCurrent.addEventListener('click',()=>run(()=>readImport(entry,items,file,after,{...view,principals:selectedPrincipals.filter(p=>p.input.checked).map(p=>p.principal),current_after:0},lockedControls)));frame.append(applyCurrent);panel.append(frame);
+                const uriLabel=textNode('label','Resolve an existing claim or scope URI'),uriInput=document.createElement('input');uriInput.value=view.uri||'';uriInput.maxLength=32768;uriLabel.append(uriInput);panel.append(uriLabel);
+                const aliasesLabel=textNode('label','Explicit scope locator bindings (JSON object)'),aliasesInput=document.createElement('textarea');aliasesInput.value=JSON.stringify(view.scope_aliases||{});aliasesInput.maxLength=32768;aliasesLabel.append(aliasesInput);panel.append(aliasesLabel);
+                const resolveUri=textNode('button','Resolve imported URI');resolveUri.addEventListener('click',()=>run(()=>readImport(entry,items,file,after,{...view,uri:uriInput.value||null,scope_aliases:JSON.parse(aliasesInput.value)},lockedControls)));panel.append(resolveUri);
+                if(current.uri)details(panel,'Imported URI target and judgments',JSON.stringify(current.uri,null,2));
                 details(panel,'Identity, governance and control evidence',JSON.stringify({identities:current.identities,scopes:current.scopes,controls:current.controls},null,2));
                 for(const unresolved of current.unresolved){const row=document.createElement('article');row.append(textNode('p',`${unresolved.state} · ${unresolved.reason}`));openBlock(row,'Inspect unresolved current claim',unresolved.after);panel.append(row);}
                 for(const group of current.classes){const article=document.createElement('article');article.append(textNode('h4',group.subjects.map(s=>`${s.scope}: ${s.path}`).join(' · ')));article.append(textNode('p',`${group.status.kind}${group.status.value?' · '+group.status.value:''}`));for(const claim of group.claims){article.append(textNode('pre',JSON.stringify({content:claim.content,judgments:claim.judgments},null,2)));openBlock(article,`Inspect current claim ${claim.id}`,claim.source.after);}details(article,'Current identity witnesses and live status',JSON.stringify({witnesses:group.witnesses,live_status_claims:group.live_status_claims},null,2));panel.append(article);}

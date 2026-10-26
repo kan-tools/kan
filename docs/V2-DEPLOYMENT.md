@@ -238,8 +238,8 @@ runner only after a 38 GiB free-space preflight; the measurement driver rechecks
 its own 32 GiB requirement after compilation. It uses a release executable and
 uploads the exact revision, compiler, report and raw failure logs for 30 days.
 It does not upload the synthetic database, which disappears with the hosted
-runner. This workflow cannot establish the 100 GiB point; that still requires
-the separately selected larger host/disk. Copy the reports into durable release
+runner. This workflow itself cannot establish the 100 GiB point; the separate Modal
+qualification below supplies that evidence. Copy the reports into durable release
 evidence before their artifact retention expires.
 
 The first real 10 GiB run passed at `9cd3adb6b809a43e27a2ca927fd361099906c76f`
@@ -261,6 +261,51 @@ Physical read counters were zero with the retained OS cache. These measurements
 establish the specified 10 GiB storage workload only; they do not establish a
 100 GiB growth ratio, cold-cache behavior or whole-service concurrency/latency.
 
+
+### Completed 100 GiB qualification and first-append investigation
+
+The retained [128-sample report](../.design/measurements/kan-v2-100g-report.json)
+measured production revision `4ce6e667830974cfdb39c167439048b807e5daae` on a
+Modal Volume. The separate [remount verifier](../.design/measurements/kan-v2-100g-verification.json)
+at `4427b08ad8624c95cc2b5371605678a2db46a147` passed, including SQLite
+`quick_check`, exact bindings, and 516 full-file hashes (216,968,227,029 bytes).
+The [qualification summary](../.design/measurements/kan-v2-100g-summary.json)
+records the source identities, manifest SHA and disclosed staged objects.
+
+| Operation | p50 / p95 / maximum latency (ms) |
+|---|---:|
+| Open | 11.484 / 15.623 / 18.977 |
+| Append 1 MiB | 184.221 / 264.391 / **79,770.901** |
+| Page one row | 15.878 / 17.467 / 20.145 |
+| Read selected source | 36.770 / 39.931 / 51.232 |
+
+All 128 samples (32 per operation) had positive kernel peak RSS below 512 MiB;
+the maximum was 38,992 KiB (38.08 MiB). A fresh Linux child supervisor measured
+`getrusage(RUSAGE_CHILDREN).ru_maxrss`; allocate/free calibration confirmed that
+the peak survives release. The archive retained 102,400 seeded records plus
+32 measured appends: 102,432 committed/referenced objects and 214,874,875,489
+committed encoded bytes. Two independently hashed, explicitly pinned staged
+objects (2,097,732 bytes each) were retained and excluded from that threshold.
+The original overly strict total-object-count failure remains preserved; the
+separate verifier accounts for production staging-before-commit semantics.
+
+The first append took **79.77 seconds**; the remaining 31 took about 114–264 ms.
+This outlier remains in the report. Its cause is **unresolved**. Zero physical
+read bytes and about 2.81 MB of syscall reads do not establish whether the delay
+was volume first-write behavior, SQLite synchronization, scheduling, or another
+cause. `scripts/modal_append_probe.py` runs one fresh 10 GiB fixture, remounts it
+in a separate worker and records the first two append boundary times plus
+synchronization/write syscall durations where gVisor permits tracing. It does
+not repeat the 100 GiB measurement. Probe results must be inspected before
+making a causal claim.
+
+This is single-worker opaque indexed storage with retained OS cache, not a
+100 GiB encrypted HTTP or concurrent-service benchmark. Modal Volumes do not
+report meaningful physical allocation and are not a local-SSD comparison.
+The separately retained four-writer 64 MiB encrypted HTTP/browser qualification
+covers that path at its stated size. After independent validation and retrieval,
+the owner-authorized unique 100 GiB synthetic fixture was deleted; result
+artifacts remain retained. No production data was involved.
 
 ### Run the 100 GiB point on Modal
 

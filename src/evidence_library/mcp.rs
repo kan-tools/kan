@@ -104,6 +104,7 @@ fn mutates(request: &Query) -> bool {
         | Query::ProofDiscover { .. }
         | Query::ProofImport { .. }
         | Query::ResolveReference { .. }
+        | Query::ResolveCaptureUri { .. }
         | Query::KnowledgeGraph { .. }
         | Query::Annotations { .. }
         | Query::AnnotationPreview { .. }

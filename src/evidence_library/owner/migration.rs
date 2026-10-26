@@ -52,21 +52,41 @@ fn sync_parent(path: &Path) -> Result<()> {
     fs::File::open(path.parent().ok_or("missing parent")?)?.sync_all()?;
     Ok(())
 }
-fn install(path: &Path, bytes: &[u8]) -> Result<()> {
-    match read(path, 4 * 1024 * 1024) {
-        Ok(old) if old == bytes => return Ok(()),
-        Ok(_) => return Err("existing migration artifact differs".into()),
-        Err(_) if path.try_exists()? => return Err("unreadable migration artifact".into()),
-        Err(_) => {}
-    }
+fn replace_atomic(path: &Path, bytes: &[u8]) -> Result<()> {
+    // All callers hold the controller/source locks. A fresh sibling keeps a
+    // process death from exposing a partial authoritative artifact.
+    let stage = path.parent().ok_or("missing parent")?.join(format!(
+        ".kan-migration-install-{}",
+        service::hex(&rand::random::<[u8; 16]>())
+    ));
     // surface-write: evidence-migration:control
     crate::persistence::write_new_owner_only(
         crate::persistence::SurfaceWrite::EvidenceMigration,
-        path,
+        &stage,
         bytes,
+    )?;
+    // surface-write: evidence-migration:control
+    crate::persistence::rename(
+        crate::persistence::SurfaceWrite::EvidenceMigration,
+        &stage,
+        path,
     )?;
     sync_parent(path)
 }
+fn install(path: &Path, bytes: &[u8]) -> Result<()> {
+    match fs::symlink_metadata(path) {
+        Ok(_) => {
+            if read(path, 4 * 1024 * 1024)? != bytes {
+                return Err("existing migration artifact differs".into());
+            }
+            return sync_parent(path);
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => return Err(error.into()),
+    }
+    replace_atomic(path, bytes)
+}
+
 impl Config {
     pub(super) fn validate(&self) -> std::result::Result<(), Failure> {
         let check = || -> Result<()> {
@@ -127,6 +147,25 @@ impl Config {
         Ok(serde_json::to_vec(
             &json!({"version":"kan-migration-fence/1","source":self.source.canonicalize()?,"state":self.state.canonicalize()?,"source_id":self.source_id}),
         )?)
+    }
+    fn owned_fence(&self, marker: &[u8]) -> Result<bool> {
+        let bytes = match fs::symlink_metadata(self.fence()) {
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+            Err(error) => return Err(error.into()),
+            Ok(_) => read(&self.fence(), 4096)?,
+        };
+        if bytes == marker {
+            return Ok(true);
+        }
+        // A partial marker is recoverable only with prior durable intent tied
+        // to this exact source, state directory and source identity.
+        if bytes.len() < marker.len()
+            && marker.starts_with(&bytes)
+            && read(&self.state.join("fence-intent.json"), 4096)? == marker
+        {
+            return Ok(true);
+        }
+        Err("foreign fence; refusing to replace or remove".into())
     }
     fn routes(&self) -> Result<(Vec<u8>, Vec<u8>)> {
         let old = read(&self.client_config, 1048576)?;
@@ -250,7 +289,11 @@ impl Config {
             // with a different pre-migration configuration.
             install(&prior, &current)?;
             install(&self.state.join("candidate-client.json"), &candidate)?;
-            install(&self.fence(), &marker)?;
+            // Validate existing bytes before creating intent: never legitimize
+            // an unknown partial fence merely by retrying this operation.
+            self.owned_fence(&marker)?;
+            install(&self.state.join("fence-intent.json"), &marker)?;
+            replace_atomic(&self.fence(), &marker)?;
             let (plan, mut spool) = self.plan()?;
             return Ok(
                 json!({"source_writers_fenced":true,"plan":plan.id(),"progress":plan.progress(&mut spool)?,"originals":"retained","next":"Queue final snapshot, deliver, and checkpoint an independent backup before activation"}),
@@ -266,11 +309,9 @@ impl Config {
         if operation == Operation::RollbackMigration {
             // Restore route first. An interruption may leave v1 writes fenced,
             // but never enables v1 writes while routing still selects v2.
+            let fenced = self.owned_fence(&marker)?;
             self.replace_route(&previous, nonce)?;
-            if self.fence().try_exists()? {
-                if read(&self.fence(), 4096)? != marker {
-                    return Err("foreign fence; refusing to remove".into());
-                }
+            if fenced {
                 // surface-write: evidence-migration:control
                 crate::persistence::remove_file(
                     crate::persistence::SurfaceWrite::EvidenceMigration,

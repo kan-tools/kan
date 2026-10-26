@@ -1052,3 +1052,15 @@ test('migration cutover exposes final delta and explicit rollback without hiding
  const text=walk(u.node('owner-jobs')).map(n=>n.textContent).join(' ');assert.match(text,/restart clients/);assert.match(text,/post-cutover writes are not replayed/);
  u.node('owner-operation').value='activate-migration';u.node('owner-job-form').events.submit({preventDefault(){}});await tick();assert.equal(JSON.parse(u.pending[0].opts.body).operation,'activate-migration');
 });
+
+
+test('capture URI resolution uses fresh authorization and exports the versioned occurrence link',async()=>{
+ const u=ui(),fresh={...proofCatalog,scopes:[proofEntry('archive-A')]};await u.login();await u.respond(fresh);await u.respond(proofPage);
+ const uri='kan+capture://v1/occurrence/7b7d';
+ u.node('reference-input').value=uri;u.node('reference-form').events.submit({preventDefault(){}});await tick();
+ assert.deepEqual(JSON.parse(u.pending[0].opts.body),{action:'resolve-capture-uri',uri});
+ await u.respond({source:'archive-A',pin:fresh.scopes[0].pin,pin_wire:fresh.scopes[0].pin_wire,record:proofRow});
+ assert.equal(JSON.parse(u.pending[0].opts.body).offset,'0');
+ await u.respond({...proofSource,reference:{version:1},uri});assert.equal(u.node('reference-value').value,uri);
+ u.node('lock').click();assert.equal(u.node('reference-value').value,'');
+});

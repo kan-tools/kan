@@ -212,6 +212,7 @@ async function main() {
     await page.locator('#owner-connect button').click();
     await page.locator('#owner-controls').waitFor();
     await assertNoDocumentOverflow(page, 'owner catalog with signing identity');
+    await page.locator('#owner-target').selectOption('health');
     await page.locator('#owner-operation').selectOption('rotate');
     await page.locator('#owner-maintenance-preview').click();
     await page.waitForFunction(() => !document.querySelector('#owner-submit').disabled);
@@ -224,6 +225,83 @@ async function main() {
     await page.waitForFunction(()=>document.querySelector('#owner-jobs').textContent.includes('succeeded'));
     for(const width of [1440,390]){await page.setViewportSize({width,height:1000});await assertNoDocumentOverflow(page, `owner rotation at ${width}`);await page.screenshot({path:path.join(output,`library-owner-${width}.png`),fullPage:true});}
     checked.push('separate owner login, exact maintenance preview/apply and history-preserving health rotation');
+    // Every mutation originates from the actual owner UI. Reattach to the same
+    // idempotent request with wait:true only to await its existing background job.
+    async function ownerAction(button, action, job=false) {
+      const sent=page.waitForRequest(r=>r.url()===`${origin}/api/owner`&&r.postDataJSON()?.action===action);
+      const response=page.waitForResponse(r=>r.url()===`${origin}/api/owner`&&r.request().postDataJSON()?.action===action);
+      await button.click();const request=(await sent).postDataJSON();const first=await response;
+      assert.equal(first.status(),200,`${action}: ${await first.text()}`);
+      let result=await first.json();
+      if(job){const awaited=await page.request.post(`${origin}/api/owner`,{headers:{Authorization:`Bearer ${fixture.owner_token}`},data:{...request,wait:true}});assert.equal(awaited.status(),200);result=await awaited.json();}
+      return result;
+    }
+    async function refreshOwner(){const old=await page.locator('#owner-target option').first().elementHandle();const response=page.waitForResponse(r=>r.url()===`${origin}/api/owner`&&r.request().postDataJSON()?.action==='catalog');await page.locator('#owner-refresh').click();assert.equal((await response).status(),200);await page.waitForFunction(option=>!option.isConnected,old);await old.dispose();}
+    async function maintenance(target,operation){
+      await page.locator('#owner-target').selectOption(target);await page.locator('#owner-operation').selectOption(operation);
+      await page.locator('#owner-maintenance-preview').click();await page.waitForFunction(()=>!document.querySelector('#owner-submit').disabled);
+      const result=await ownerAction(page.locator('#owner-submit'),'submit',true);assert.equal(result.state,'succeeded',JSON.stringify(result));await refreshOwner();return result;
+    }
+    const backup=await maintenance('archive','backup');
+    await maintenance('archive','recover');
+    await maintenance('verification','verify-backup');
+    await maintenance('verification','verify-restore');
+    checked.push('browser archive backup/recovery and independent backup/restore verification');
+
+    await page.locator('#owner-target').selectOption('access');await page.locator('#access-load').click();
+    await page.locator('#access-editor').waitFor();await page.locator('#access-add').click();
+    await page.getByRole('textbox',{name:'Principal DID',exact:true}).fill(fixture.owner_principal);
+    await page.getByLabel('Read inventory and ciphertext',{exact:true}).check();
+    await page.locator('#access-preview').click();await page.waitForFunction(()=>!document.querySelector('#access-apply').disabled);
+    assert.equal((await ownerAction(page.locator('#access-apply'),'apply-access')).state,'applied');
+    await page.waitForFunction(()=>document.querySelector('#access-status').textContent.startsWith('1 signed'));
+    checked.push('browser access policy inspection, exact preview, apply and retained signed history');
+
+    await page.locator('#owner-target').selectOption('keys');await page.locator('#key-preview').click();
+    await page.waitForFunction(()=>!document.querySelector('#key-apply').disabled);
+    assert.equal((await ownerAction(page.locator('#key-apply'),'apply-key-rotation')).state,'applied');
+    await page.waitForFunction(()=>document.querySelector('#key-transfer-epochs').children.length===1);
+    await page.locator('#key-controls details > summary').click();await page.locator('#key-recipient').fill(fixture.share_recipient);
+    await page.locator('#key-transfer-epochs input').check();await page.locator('#key-transfer-preview').click();
+    await page.waitForFunction(()=>!document.querySelector('#key-transfer-apply').disabled);
+    const transfer=await ownerAction(page.locator('#key-transfer-apply'),'apply-key-transfer');assert.equal(transfer.package.records.length,1);
+    const exported=await ownerAction(page.locator('#key-export'),'export-keys');assert.equal(exported.package.records.length,1);
+    await page.locator('#owner-target').selectOption('restored-keys');await page.locator('#key-package').fill(JSON.stringify(exported.package));
+    await page.locator('#key-restore-preview').click();await page.waitForFunction(()=>!document.querySelector('#key-restore-apply').disabled);
+    assert.equal((await ownerAction(page.locator('#key-restore-apply'),'restore-keys')).state,'restored');
+    await page.waitForFunction(()=>document.querySelector('#key-history').textContent.includes('Epoch'));
+    checked.push('browser key rotation, explicit epoch transfer, wrapped export and restore into a separate key history');
+
+    for(const operation of ['fence-migration','finalize-migration','activate-migration','rollback-migration'])await maintenance('migration',operation);
+    checked.push('browser migration fence, final snapshot, verified activation and rollback of synthetic client routing');
+
+    await page.locator('#owner-target').selectOption('erasure');await page.locator('#erasure-kind').selectOption('archive-prefix');
+    await page.locator('#erasure-preview').click();await page.waitForFunction(()=>!document.querySelector('#erasure-apply').disabled);
+    assert.match(await page.locator('#erasure-status').textContent(),/3 records selected/);
+    await page.locator('#erasure-inspect').click();await page.waitForFunction(()=>document.querySelector('#erasure-coordinates').textContent.includes('targets'));
+    let erased=await ownerAction(page.locator('#erasure-apply'),'apply-erasure',true);
+    assert.notEqual(erased.state,'succeeded','one-record batch must require explicit resume');await refreshOwner();
+    for(let batch=0;batch<2;batch++){
+      const row=page.locator('#owner-jobs article').filter({has:page.locator('p.content-identity',{hasText:erased.job.id})});
+      erased=await ownerAction(row.getByRole('button',{name:'Resume erasure cleanup',exact:true}),'resume-erasure',true);await refreshOwner();
+    }
+    assert.equal(erased.state,'succeeded',JSON.stringify(erased));
+    checked.push('browser exact erasure preview/coordinate inspection, apply and bounded cleanup resumes');
+
+    const backupRow=page.locator('#owner-jobs article').filter({hasText:backup.job.id});
+    await backupRow.getByRole('button',{name:'Preview backup purge',exact:true}).click();
+    const purged=await ownerAction(page.getByRole('button',{name:'Delete entire backup',exact:true}),'apply-backup-purge',true);
+    assert.equal(purged.state,'succeeded',JSON.stringify(purged));assert.equal(purged.result.report.backup_purge,'removed-configured-copy');
+    await refreshOwner();
+    await assertNoDocumentOverflow(page,'completed owner workflows');await page.screenshot({path:path.join(output,'library-owner-complete.png'),fullPage:true});
+    checked.push('browser separately previewed purge of one synthetic backup copy');
+
+    await page.locator('#owner-lock').click();await page.locator('#owner-token').fill(fixture.operations_token);
+    const deniedOwner=page.waitForResponse(r=>r.url()===`${origin}/api/owner`);
+    await page.locator('#owner-connect button').click();assert.equal((await deniedOwner).status(),401);
+    assert.equal(await page.locator('#owner-controls').isVisible(),false);
+    checked.push('operations reader credential denied owner authority through browser login');
+
     await page.locator('#lock').click();
     assert.equal(await page.locator('#library').isVisible(), false);
     assert.equal(await page.locator('#source').textContent(), '');
