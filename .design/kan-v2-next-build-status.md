@@ -682,3 +682,16 @@ records, reconciled configured cleanup, and no implicit backup purge. Later
 backup-purge and credential-denial browser flows remain unqualified until CI.
 No production acceptance check was relaxed. The authorized one-time probe
 launch at `5968aaf` is independent of these test-only corrections.
+
+The `bc78579` sweep passed 54/55 checks and all 19 real-browser groups,
+including final erasure, separate backup purge, owner denial for operations
+credentials, and lock/history flows. The remaining imported-URI test exposed
+an API serialization defect: `view.scope_aliases` used the signed-object
+binary-only `ScopeId` codec, so JSON requests could not deserialize its own
+byte-array output. The API now carries canonical base32lower strings and parses
+them strictly at the resolution boundary; the signed identity codec is unchanged.
+The focused regression covers JSON roundtrip/replay, resolution, malformed and
+noncanonical identifiers, byte-array rejection, and missing locator bindings.
+CI includes this regression alongside current import projection tests. Rust
+validation remains remote. The one existing 10 GiB probe reached 5,120/10,240
+seed records at the 20:00 UTC observation; no restart or new probe was launched.

@@ -37,7 +37,7 @@ pub struct View {
     pub uri: Option<String>,
     /// Explicit caller-selected locator bindings, separate from signed identity.
     #[serde(default)]
-    pub scope_aliases: BTreeMap<String, crate::identity::scope_inception::ScopeId>,
+    pub scope_aliases: BTreeMap<String, String>,
 }
 
 use sha2::{Digest, Sha256};

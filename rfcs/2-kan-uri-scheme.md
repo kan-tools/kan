@@ -1208,7 +1208,8 @@ scheme; `Reference::from_uri` is its explicit versioned parser.
 `kan://local/<scope>/identity/scope` requests against the explicitly selected,
 verified repository HEAD. Direct `@id:` scope selectors keep their signed scope
 identity. Named locators require an explicit `view.scope_aliases` map from names
-to ScopeIds; the response discloses this consumer-selected map and never derives
+to canonical base32lower ScopeId strings (not binary-codec byte arrays);
+the response discloses this consumer-selected map and never derives
 identity from a project label or storage token. The original scope inception and
 other control evidence still determine authority and admission.
 

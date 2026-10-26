@@ -15,6 +15,11 @@ pub(super) fn validate(options: &View) -> Result<(), ContentError> {
     if options.uri.as_ref().is_some_and(|u| u.len() > 32768)
         || options.scope_aliases.len() > 128
         || options.scope_aliases.keys().any(|k| k.len() > 256)
+        || options.scope_aliases.values().any(|v| {
+            v.len() > 256
+                || v.parse::<crate::identity::scope_inception::ScopeId>()
+                    .is_err()
+        })
     {
         return Err(invalid());
     }
@@ -72,10 +77,12 @@ pub(super) fn resolve(
     let request = ResolutionRequest::parse(uri).map_err(|_| invalid())?;
     let scope = match request.scope().ok_or_else(invalid)? {
         ScopeSelector::Direct(scope) => *scope,
-        ScopeSelector::Named(name) => *options
+        ScopeSelector::Named(name) => options
             .scope_aliases
             .get(name.as_str())
-            .ok_or_else(invalid)?,
+            .ok_or_else(invalid)?
+            .parse::<crate::identity::scope_inception::ScopeId>()
+            .map_err(|_| invalid())?,
     };
     let authority = scopes.iter().find(|s| s["scope"] == scope.to_string());
     let resource = match request.resource() {
@@ -96,4 +103,44 @@ pub(super) fn resolve(
     Ok(
         json!({"request":request.canonical_uri(),"target":{"scope":scope,"kind":request.resource().kind_name()},"state":if resource.is_some(){"resolved"}else{"not-found-at-selected-evidence"},"resource":resource,"locator_bindings":options.scope_aliases,"trust":principals(options)?,"coverage":"Only this imported HEAD and selected control evidence. Locator bindings are explicit caller inputs; access, signed identity, scope admission and view trust remain separate."}),
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn scope_aliases_roundtrip_as_canonical_json_text_and_reject_invalid_ids() {
+        let mut bytes = [7; 34];
+        bytes[0] = 0x12;
+        bytes[1] = 0x20;
+        let scope = crate::identity::scope_inception::ScopeId::from_bytes(bytes).unwrap();
+        let input = json!({"uri":"kan://local/project/identity/scope", "scope_aliases":{"project":scope.to_string()}});
+        let view: View = serde_json::from_value(input.clone()).unwrap();
+        validate(&view).unwrap();
+        let saved = serde_json::to_value(&view).unwrap();
+        assert_eq!(saved["scope_aliases"], input["scope_aliases"]);
+        let replay: View = serde_json::from_value(saved).unwrap();
+        let result = resolve(
+            &replay,
+            &[],
+            &[json!({"scope":scope.to_string(),"authority":{"state":"test"}})],
+            &BTreeMap::new(),
+        )
+        .unwrap();
+        assert_eq!(result["state"], "resolved");
+        assert_eq!(result["locator_bindings"], input["scope_aliases"]);
+        for invalid_id in ["not-a-scope".to_owned(), scope.to_string().to_uppercase()] {
+            let bad: View =
+                serde_json::from_value(json!({"scope_aliases":{"project":invalid_id}})).unwrap();
+            assert!(validate(&bad).is_err());
+        }
+        // The binary signed-object codec is not an alternate JSON API grammar.
+        assert!(
+            serde_json::from_value::<View>(json!({"scope_aliases":{"project":scope}})).is_err()
+        );
+        let mut missing = view;
+        missing.scope_aliases.clear();
+        assert!(resolve(&missing, &[], &[], &BTreeMap::new()).is_err());
+    }
 }

@@ -147,7 +147,7 @@ jobs:
         run: cargo test --features v2-crypto --lib evidence_content
       - id: check_30_evidence_library_proof_imports_current
         continue-on-error: ${{ github.event_name == 'workflow_dispatch' && inputs.collect_all }}
-        run: cargo test --features v2-crypto --lib evidence_library::proof::imports::current
+        run: cargo test --features v2-crypto --lib evidence_library::proof::imports
       - id: check_31_evidence_library_proof_knowledge
         continue-on-error: ${{ github.event_name == 'workflow_dispatch' && inputs.collect_all }}
         run: cargo test --features v2-crypto --lib evidence_library::proof::knowledge

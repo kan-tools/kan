@@ -58,8 +58,10 @@ impl Ui {
         assert_eq!(
             response.status().as_u16(),
             status,
-            "Library action {}",
-            value["action"]
+            "Library action {}, URI {}, current page {}",
+            value["action"],
+            value["view"]["uri"],
+            value["view"]["current_after"]
         );
         assert_eq!(response.headers()["cache-control"], "no-store");
         response.json().await.unwrap()
@@ -4840,7 +4842,8 @@ async fn imported_current_claims_keep_signature_scope_authority_and_selected_tru
                 let before = resolver.resolve_uri(&uri).await.unwrap();
                 let mut request = query.clone();
                 request["view"]["uri"] = json!(uri);
-                request["view"]["scope_aliases"] = json!({"current":inception.scope_id().unwrap()});
+                request["view"]["scope_aliases"] =
+                    json!({"current":inception.scope_id().unwrap().to_string()});
                 request["view"]["current_after"] = json!(4096); // target independent of presentation page
                 let after = ui.call(request.clone(), 200).await;
                 let after = &after["file"]["car"]["repository"]["current"]["uri"];
@@ -4883,7 +4886,7 @@ async fn imported_current_claims_keep_signature_scope_authority_and_selected_tru
                     let before = resolver.resolve_uri(&uri).await.unwrap();
                     legacy_query["view"]["uri"] = json!(uri);
                     legacy_query["view"]["scope_aliases"] =
-                        json!({"current":inception.scope_id().unwrap()});
+                        json!({"current":inception.scope_id().unwrap().to_string()});
                     let after = ui.call(legacy_query.clone(), 200).await;
                     let after = &after["file"]["car"]["repository"]["current"]["uri"];
                     assert_eq!(after["state"], "resolved");
@@ -4907,7 +4910,8 @@ async fn imported_current_claims_keep_signature_scope_authority_and_selected_tru
                 let before = resolver.resolve_uri(&uri).await.unwrap();
                 let mut request = query.clone();
                 request["view"]["uri"] = json!(uri);
-                request["view"]["scope_aliases"] = json!({"current":inception.scope_id().unwrap()});
+                request["view"]["scope_aliases"] =
+                    json!({"current":inception.scope_id().unwrap().to_string()});
                 let after = ui.call(request, 200).await;
                 assert_eq!(
                     after["file"]["car"]["repository"]["current"]["uri"]["resource"]["identifier"],
