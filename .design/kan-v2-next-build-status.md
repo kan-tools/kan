@@ -20,7 +20,7 @@ and reviews are foundations, not automatic end-to-end completion.
 
 | Work package | Completion means | Current position |
 |---|---|---|
-| Capture, storage and migration | Supported harness/provider traffic reaches the centralized encrypted ledger; spool/retry and visible recording gaps work; v1 imports reconcile against preserved originals; local and remote use the same server architecture | Implemented centralized encrypted capture/import, proxy/gateway forwarding, durable spool and exact retry, visible recording gaps, preserved-source v1 reconciliation, and admitted/copied proof archives. Indexed archive and current-control reads separate ordinary service I/O from explicit full audits. Managed root-path launch, live spool delivery and cold restore extensions are in remote qualification. The 11 MiB / 179-frame indexed workload and real 10 GiB storage measurement pass; 100 GiB measurement and independent remount validation passed; the exact synthetic fixture was removed after validation. The 79.77-second first append remains disclosed and a focused 10 GiB remount probe is pending. |
+| Capture, storage and migration | Supported harness/provider traffic reaches the centralized encrypted ledger; spool/retry and visible recording gaps work; v1 imports reconcile against preserved originals; local and remote use the same server architecture | Implemented centralized encrypted capture/import, proxy/gateway forwarding, durable spool and exact retry, visible recording gaps, preserved-source v1 reconciliation, and admitted/copied proof archives. Indexed archive and current-control reads separate ordinary service I/O from explicit full audits. Managed root-path launch, live spool delivery and cold restore extensions are in remote qualification. The 11 MiB / 179-frame indexed workload and real 10 GiB storage measurement pass; 100 GiB measurement and independent remount validation passed; the exact synthetic fixture was removed after validation. The 79.77-second first append remains disclosed and the focused 10 GiB remount probe failed before volume creation because its generated name exceeded Modal’s limit. The name is repaired; a new launch awaits authorization. |
 | Library and sessions | Authorized cross-project browsing, readable complete supported conversations/tools/attachments/branches/compaction/gaps, exact source/provenance and working downloads; missing/corrupt evidence stays visible | Implemented cross-archive browsing, reconstructed supported conversations, explicit sessions/parents/branches/compaction, streaming gaps, attachments, exact provenance and native downloads. Existing API/browser checks pass. Current indexed managed CLI composition, current loss and live revocation are being requalified; final integrated acceptance remains. |
 | Search and views | Authorized search/facets, stable references, honest index coverage, reproducible saved scope/trust views and relation inspection | Implemented encrypted persistent raw/reconstructed search, filters/facets, current source authorization, pinned saved views and portable references. View lists page beyond 200 records, survive restart and withhold revoked evidence. Source, annotation and import-trust filters have passing runtime coverage; final integrated acceptance remains. |
 | Knowledge and annotations | Imported v1 claims and raw/derived evidence remain distinguishable; human/agent tags, annotations, relations and corrections use shared attributed append-only records with citations/history | Implemented signed attributed annotations/tags/relations, corrections/withdrawals, exact citations, publication/restoration and imported v1 identity/trust/fold views. Annotation pages cross 1,000 records with off-page history and current access checks. Shared API/CLI/MCP/UI knowledge-graph pagination is implemented; 119 Library UI checks pass and extended graph runtime qualification is pending. |
@@ -646,3 +646,27 @@ extractor policy remains opt-in: no source or destination grant, automatic provi
 call, or trust inclusion is inferred from installation or capture alone. The final
 step is targeted review of these material fixes and their affected boundaries;
 the completed full review is not restarted.
+
+### Qualification repair follow-up — 2026-10-26
+
+The `79ceac0` collect-all run completed with 51 of 55 checks passing. Four
+checks failed: persistence mutation inventory, the v2 test group, v2 Clippy,
+and real browser qualification. The v2 group contained the same inventory
+failure plus a native URI fixture with non-CID repository keys. Clippy rejected
+a redundant fixture borrow. Browser qualification passed 13 groups, then
+correctly refused migration activation before final-snapshot delivery. Erasure,
+backup purge, and later owner-denial browser flows were blocked by that stop,
+not established as passing. Migration, performance, MSRV, canary, capacity, and
+encrypted HTTP qualification passed. The gateway cap assertion in the log is
+an intentional killed mutant; baseline and restored runs passed.
+
+The follow-up classifies the added atomic rename, uses native-compatible claim
+keys in the imported URI fixture, and explicitly delivers/acknowledges the final
+browser migration snapshot before creating its independent backup/checkpoint.
+Production admission/activation checks are unchanged. Rust/browser verification
+of these repairs runs in CI, never through a local Rust build.
+
+The first-append probe exited before fixture creation: its 65-character volume
+name exceeded Modal’s shorter-than-64 limit. A shorter prefix preserves the full
+run UUID, with a pure identity regression. The original failure is retained and
+no diagnostic retry, measurement, review, or volume deletion was launched.

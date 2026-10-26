@@ -575,7 +575,7 @@ const PERSISTENCE_MUTATION_SITES: &[(&str, &str, &str, usize)] = &[
         "src/evidence_library/owner/migration.rs",
         "rename",
         "EvidenceMigration",
-        1,
+        2,
     ),
     (
         "src/evidence_library/owner/migration.rs",

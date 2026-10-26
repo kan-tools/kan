@@ -272,7 +272,14 @@ async function main() {
     await page.waitForFunction(()=>document.querySelector('#key-history').textContent.includes('Epoch'));
     checked.push('browser key rotation, explicit epoch transfer, wrapped export and restore into a separate key history');
 
-    for(const operation of ['fence-migration','finalize-migration','activate-migration','rollback-migration'])await maintenance('migration',operation);
+    await maintenance('migration','fence-migration');
+    await maintenance('migration','finalize-migration');
+    fs.writeFileSync(fixture.migration_deliver,'deliver final snapshot',{flag:'wx',mode:0o600});
+    const deliveryDeadline=Date.now()+30000;
+    while(!fs.existsSync(`${fixture.migration_deliver}.done`)&&Date.now()<deliveryDeadline)await delay(100);
+    assert.ok(fs.existsSync(`${fixture.migration_deliver}.done`),'fixture final delivery and independent checkpoint completed');
+    await maintenance('migration','activate-migration');
+    await maintenance('migration','rollback-migration');
     checked.push('browser migration fence, final snapshot, verified activation and rollback of synthetic client routing');
 
     await page.locator('#owner-target').selectOption('erasure');await page.locator('#erasure-kind').selectOption('archive-prefix');

@@ -74,6 +74,7 @@ jobs:
         run: |
           python3 tests/test_ci_diagnostic_report.py
           python3 tests/test_capacity_evidence.py
+          python3 tests/test_modal_append_probe.py
 
       - uses: Swatinem/rust-cache@v2
         with:

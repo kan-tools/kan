@@ -24,7 +24,7 @@ image = (modal.Image.from_registry('rust:1.99.1-bookworm', add_python='3.12')
 def identity(revision, run_id):
     if not re.fullmatch('[0-9a-f]{40}', revision) or not re.fullmatch('[0-9a-f]{32}', run_id):
         raise ValueError('invalid pinned run identity')
-    return f'kan-v2-append-probe-{revision[:12]}-{run_id}'
+    return f'kan-v2-probe-{revision[:12]}-{run_id}'
 
 
 def run(argv, output, cwd=None, env=None, timeout=3600):

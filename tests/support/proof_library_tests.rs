@@ -741,9 +741,19 @@ async fn proof_library_browser_fixture() {
         .with_analysis(serde_json::from_value(json!({"endpoint":endpoint,"token":"synthetic-browser-analysis-credential","model":"synthetic-browser-model","sources":sources,"recipes":[{"id":"assess","revision":"1","purpose":"day-assessment","instructions":"Assess only cited synthetic evidence."}],"max_input_bytes":4096,"max_output_tokens":128,"max_jobs":10})).unwrap()).unwrap()
         .with_owner(owner).with_operations(kan::evidence_dashboard::Embedded::new(collection,OPS.into()).unwrap());
     let ui = Ui::start(readers).await;
-    std::fs::write(&output,serde_json::to_vec(&json!({"url":ui.url.trim_end_matches("/api/library"),"token":TOKEN,"owner_token":OWNER,"operations_token":OPS,"owner_principal":identity(9).did(),"share_recipient":service::hex(&kan::evidence_crypto::public_key(&[85;32]).unwrap()),"expected_hex":service::hex(RAW),"import_plan":import_plan,"stop":stop})).unwrap()).unwrap();
+    std::fs::write(&output,serde_json::to_vec(&json!({"url":ui.url.trim_end_matches("/api/library"),"token":TOKEN,"owner_token":OWNER,"operations_token":OPS,"owner_principal":identity(9).did(),"share_recipient":service::hex(&kan::evidence_crypto::public_key(&[85;32]).unwrap()),"expected_hex":service::hex(RAW),"import_plan":import_plan,"stop":stop,"migration_deliver":workspace.path().join("migration-deliver")})).unwrap()).unwrap();
     let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(600);
     while !stop.exists() && tokio::time::Instant::now() < deadline {
+        let deliver = workspace.path().join("migration-deliver");
+        let delivered = workspace.path().join("migration-deliver.done");
+        if deliver.exists() && !delivered.exists() {
+            browser_deliver_migration(workspace.path());
+            std::fs::write(
+                delivered,
+                b"final snapshot delivered and independently checkpointed",
+            )
+            .unwrap();
+        }
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
     }
     ui.stop().await;
@@ -958,26 +968,9 @@ async fn browser_owner_targets(
     drop(queue);
     drop(destination);
     let backup = output.join("migration.sqlite");
-    attested::Archive::open(&root, f.binding.clone())
-        .unwrap()
-        .backup(&backup)
-        .unwrap();
+    // The independent copy is created only after the browser finalizes and
+    // the fixture's real spool delivery has acknowledged the final snapshot.
     let checkpoint = output.join("migration-checkpoint.json");
-    let statement = kan::evidence_backup::inspect(
-        &backup,
-        &binding(&f),
-        "synthetic-browser-migration-copy",
-        true,
-    )
-    .unwrap();
-    std::fs::write(
-        &checkpoint,
-        serde_json::to_vec(
-            &kan::evidence_backup::Checkpoint::sign(statement, &identity(9)).unwrap(),
-        )
-        .unwrap(),
-    )
-    .unwrap();
     let listener = kan::evidence_http::bind("127.0.0.1:0".parse().unwrap())
         .await
         .unwrap();
@@ -1001,6 +994,59 @@ async fn browser_owner_targets(
     std::fs::write(&candidate,serde_json::to_vec(&json!([{"scope":binding(&f).scope,"archive":binding(&f).archive,"issuer":f.binding.issuer,"profile":"admitted","protocol":"kan-proof-reader/1","endpoint":endpoint,"private_key_file":private}])).unwrap()).unwrap();
     targets.push(json!({"kind":"migration-cutover","id":"migration","config":{"source":source,"selection":"store","source_id":service::hex(&[44;32]),"recipient":service::hex(&recipient),"spool":spool,"state":directory(base,"migration-control"),"client_config":old,"candidate_config":candidate,"client_signing_key":client_signing,"backup_database":backup,"backup_checkpoint":checkpoint,"backup_author":identity(9).did(),"binding":binding(&f),"recipient_key":private,"max_records":100,"batch":100,"writers_quiesced":true,"allow_uninterpreted":false}}));
     targets
+}
+
+// Explicit fixture control, outside the product API. The browser requests this
+// once after finalization; all delivery acknowledgments and backup checks are real.
+fn browser_deliver_migration(base: &Path) {
+    let root = base.join("migration-destination");
+    let archive_binding = attested::Binding {
+        archive: [2; 32],
+        scope: [1; 32],
+        issuer: identity(8).did().to_string(),
+    };
+    let wire_binding = wire::Binding {
+        profile: wire::Profile::Admitted,
+        archive: service::hex(&[2; 32]),
+        scope: service::hex(&[1; 32]),
+        issuer: archive_binding.issuer.clone(),
+    };
+    let mut destination = service::AdmittingService::new(
+        attested::Archive::open(&root, archive_binding.clone()).unwrap(),
+        identity(8),
+        vec![service::Grant {
+            principal: identity(9).did(),
+            append: true,
+            inventory: true,
+        }],
+    )
+    .unwrap();
+    let mut queue = kan::evidence_spool::Spool::open(&base.join("migration-spool.sqlite")).unwrap();
+    let mut delivered = 0;
+    while let Some(bytes) = queue.head().unwrap() {
+        let reply = destination.dispatch(&bytes, 1000).unwrap();
+        assert!(reply.reply.result.is_ok());
+        queue.acknowledge(&reply.bytes().unwrap()).unwrap();
+        delivered += 1;
+    }
+    assert!(delivered > 0, "final snapshot must require real delivery");
+    drop(queue);
+    drop(destination);
+    let output = base.join("owner-backups");
+    let backup = output.join("migration.sqlite");
+    attested::Archive::open(&root, archive_binding)
+        .unwrap()
+        .backup(&backup)
+        .unwrap();
+    let statement =
+        kan::evidence_backup::inspect(&backup, &wire_binding, "synthetic-browser-final-copy", true)
+            .unwrap();
+    let checkpoint = kan::evidence_backup::Checkpoint::sign(statement, &identity(9)).unwrap();
+    std::fs::write(
+        output.join("migration-checkpoint.json"),
+        serde_json::to_vec(&checkpoint).unwrap(),
+    )
+    .unwrap();
 }
 
 #[tokio::test]
@@ -4138,7 +4184,15 @@ async fn repository_import_frames(audience: u8, damage: &str) -> (String, Vec<Ve
         car.extend(bytes);
         cid
     }
-    let mut entries = vec![("dev.kan.claim/original".to_string(), original)];
+    let original_key = if damage == "current" {
+        format!(
+            "dev.kan.claim/{}",
+            kan::cid::content_cid(&claim.claim.content).unwrap()
+        )
+    } else {
+        "dev.kan.claim/original".to_string()
+    };
+    let mut entries = vec![(original_key, original)];
     for (author, status, key) in [
         (6, StatusValue::Blocked, "tools.kan.claim/status-a"),
         (7, StatusValue::Resolved, "tools.kan.claim/status-b"),
@@ -4151,7 +4205,12 @@ async fn repository_import_frames(audience: u8, damage: &str) -> (String, Vec<Ve
         record.claim.sig = identity(author).sign(&id.to_bytes()).unwrap();
         let cid = push(&mut car, atproto_dasl::to_vec(&record).unwrap());
         if key != "orphan" {
-            entries.push((key.into(), cid));
+            let key = if damage == "current" {
+                format!("tools.kan.claim/{id}")
+            } else {
+                key.into()
+            };
+            entries.push((key, cid));
         }
     }
     if damage == "current" {
@@ -4189,7 +4248,7 @@ async fn repository_import_frames(audience: u8, damage: &str) -> (String, Vec<Ve
             let claim = Claim::sign_static(content, &signer).unwrap();
             let bytes = kan::claim::codec::encode_claim(&claim, "3jzfcijpj2z2a").unwrap();
             entries.push((
-                format!("tools.kan.claim/current-{author}"),
+                format!("tools.kan.claim/{}", claim.id().unwrap()),
                 push(&mut car, bytes),
             ));
         }
@@ -4769,7 +4828,7 @@ async fn imported_current_claims_keep_signature_scope_authority_and_selected_tru
                 .install(&scope_event)
                 .unwrap();
             let system =
-                kan::identity::system::SystemIdentityStore::at(&native.path().join("system"));
+                kan::identity::system::SystemIdentityStore::at(native.path().join("system"));
             let resolver = kan::uri::local::LocalResolver::new(native.path(), &system);
             for claim in current["classes"][0]["claims"].as_array().unwrap() {
                 let uri = format!(
