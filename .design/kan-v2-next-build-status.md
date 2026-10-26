@@ -695,3 +695,15 @@ noncanonical identifiers, byte-array rejection, and missing locator bindings.
 CI includes this regression alongside current import projection tests. Rust
 validation remains remote. The one existing 10 GiB probe reached 5,120/10,240
 seed records at the 20:00 UTC observation; no restart or new probe was launched.
+
+### Targeted review ready — 2026-10-26 21:00 UTC
+
+Revision `7d25b0b` passed all 55 collect-all checks, all 19 browser groups,
+PR/push CI, migration and performance qualification. Its raw artifacts and
+independent CI summary are retained. The one authorized 10 GiB remount probe
+completed, with all 40 seed batches and two appends independently inspected.
+Published raw results and phase/syscall summary retain the first-operation
+asymmetry and explicitly do not explain the original 100 GiB outlier. No fixture
+was removed and no benchmark repeated. Only this evidence publication follows
+the qualified code revision. The authorized fresh targeted actual Opus 5.5
+review now judges the material repairs and evidence; acceptance is still pending.

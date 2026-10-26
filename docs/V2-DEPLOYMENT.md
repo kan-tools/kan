@@ -296,8 +296,29 @@ was volume first-write behavior, SQLite synchronization, scheduling, or another
 cause. `scripts/modal_append_probe.py` runs one fresh 10 GiB fixture, remounts it
 in a separate worker and records the first two append boundary times plus
 synchronization/write syscall durations where gVisor permits tracing. It does
-not repeat the 100 GiB measurement. Probe results must be inspected before
-making a causal claim.
+not repeat the 100 GiB measurement. The completed probe at `5968aaf` is retained
+in `.design/measurements/kan-v2-10g-append-probe-{run,summary}.json`.
+All 40 seed batches reached 10,240 records; the remounted appends started at
+10,240 and 10,241 records with the same checked executable SHA-256.
+
+| Traced 10 GiB phase | First operation | Second operation |
+|---|---:|---:|
+| Open indexed archive | 11.188399 s | 0.067921 s |
+| Prepare after open | 0.044611 s | 0.039594 s |
+| Admission only | 4.938974 s | 1.189480 s |
+| Close after admission | 1.002120 s | 0.708331 s |
+| Total through close | 17.174104 s | 2.005326 s |
+
+These clocks are cumulative boundary observations split into intervals; the
+original 100 GiB append measurement timed admission only. Observed `fsync`
+durations sum to 0.071065/0.125845 seconds and `pwrite64` to
+0.108385/0.106331 seconds for the first/second operations. Those traced syscall
+durations do not explain the multi-second wall-clock intervals. The trace omits
+reads and scheduler/volume internals, adds tracing overhead, and does not evict
+cache. This demonstrates a first/second asymmetry in the smaller traced probe,
+not a cause for the original 79.77-second outlier or an untraced performance
+estimate. That outlier remains unexplained. The 10 GiB fixture and its results
+are retained; this probe is not another full-file remount audit.
 
 This is single-worker opaque indexed storage with retained OS cache, not a
 100 GiB encrypted HTTP or concurrent-service benchmark. Modal Volumes do not
