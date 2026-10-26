@@ -263,7 +263,7 @@ enum PolicyAction {
     Apply(Box<crate::evidence_policy::Change>, String),
 }
 pub struct Owner {
-    _lease: std::fs::File,
+    _lease: crate::evidence_workspace::AnalysisLease,
     token: String,
     targets: BTreeMap<String, Target>,
     workspace: Arc<Workspace>,
