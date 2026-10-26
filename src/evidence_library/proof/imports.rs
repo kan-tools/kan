@@ -372,7 +372,26 @@ fn inspect(
                     }
                     head_start += candidate.chunks.len();
                 }
-                view["car"] = car(&bytes, after, &spans, head.as_ref(), view_options, controls)?;
+                // Only the original workspace layout binds unscoped v1 claims.
+                // A caller-selected control from another plan/source cannot do so.
+                let installed_scope = if plan.selection == "workspace"
+                    && matches!(
+                        file.path.as_str(),
+                        ".kan/log/repo.car" | ".kan/overlay/repo.car"
+                    ) {
+                    selected_file_bytes(&plan.files, frames, parts, ".kan/scope/inception.cbor")?
+                } else {
+                    None
+                };
+                view["car"] = car(
+                    &bytes,
+                    after,
+                    &spans,
+                    head.as_ref(),
+                    view_options,
+                    controls,
+                    installed_scope.as_deref(),
+                )?;
             } else {
                 if bounded::<atproto_dasl::Ipld>(&bytes).is_ok() {
                     if let Ok(control) = crate::identity::control::decode_preserving(&bytes) {
@@ -389,6 +408,35 @@ fn inspect(
     }
     Ok(result)
 }
+// Called after all selected frames have passed the plan's chunk/layout checks.
+fn selected_file_bytes(
+    files: &[restore::Source],
+    frames: &BTreeMap<usize, Frame>,
+    mut ordinal: usize,
+    path: &str,
+) -> Result<Option<Vec<u8>>, ContentError> {
+    for file in files {
+        if file.path == path {
+            if file.length > 262144 {
+                return Err(ContentError::Limited);
+            }
+            let mut bytes = Vec::new();
+            for part in 0..file.chunks.len() {
+                let Some(frame) = frames.get(&(ordinal + part)) else {
+                    return Ok(None);
+                };
+                bytes.extend_from_slice(&frame.bytes[frame.offset..]);
+            }
+            if digest(&bytes) != file.sha256 {
+                return Err(invalid());
+            }
+            return Ok(Some(bytes));
+        }
+        ordinal += file.chunks.len();
+    }
+    Ok(None)
+}
+
 fn car(
     bytes: &[u8],
     after: usize,
@@ -396,6 +444,7 @@ fn car(
     head: Option<&(Vec<u8>, Vec<Value>)>,
     view: &View,
     controls: &[current::Control],
+    installed_scope: Option<&[u8]>,
 ) -> Result<Value, ContentError> {
     let mut scan = crate::migration_preflight::CarScan {
         roots: vec![],
@@ -425,6 +474,7 @@ fn car(
         view,
         scan.error.is_none() && scan.unsupported_blocks == 0,
         controls,
+        installed_scope,
     )?;
     // A corrupt tail never silently turns a verified prefix into a valid CAR.
     let mut records = Vec::new();
@@ -535,7 +585,7 @@ pub(crate) fn inspect_restored(root: &std::path::Path) -> Result<Value, ContentE
             .map(|_| std::fs::read(root.join("files").join(&head_path)).map(|b| (b, vec![])))
             .transpose()
             .map_err(|_| invalid())?;
-        let report = match car(&bytes, 0, &[], head.as_ref(), &View::default(), &[]) {
+        let report = match car(&bytes, 0, &[], head.as_ref(), &View::default(), &[], None) {
             Ok(v) => v,
             Err(_) => {
                 verified = false;

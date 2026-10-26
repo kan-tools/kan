@@ -69,6 +69,7 @@ pub(super) fn resolve(
     claims: &[ClaimView],
     scopes: &[Value],
     positions: &BTreeMap<String, Value>,
+    legacy_scope: Option<&crate::identity::scope_inception::ScopeInception>,
 ) -> Result<Value, ContentError> {
     let Some(uri) = &options.uri else {
         return Ok(Value::Null);
@@ -85,14 +86,25 @@ pub(super) fn resolve(
             .map_err(|_| invalid())?,
     };
     let authority = scopes.iter().find(|s| s["scope"] == scope.to_string());
+    let legacy_bound = legacy_scope.is_some_and(|inception| {
+        inception.scope_id().ok() == Some(scope)
+            && authority.is_some_and(|a| a["admission"] == "admitted")
+            && match request.scope() {
+                Some(ScopeSelector::Named(name)) => {
+                    inception.names.iter().any(|n| n == name.as_str())
+                }
+                Some(ScopeSelector::Direct(_)) => true,
+                None => false,
+            }
+    });
     let resource = match request.resource() {
         Resource::Claim(id) => claims.iter().find_map(|c| {
             if c.claim_id()!=id { return None; }
             let content=match c.source() {
                 ClaimSource::Claim(claim) if claim.content().scope()==scope => json!(claim.content()),
-                // Historical claims retain their original unscoped bytes. An
-                // explicit selected inception provides the requested scope context.
-                ClaimSource::V1(claim) if authority.is_some() => json!(claim.content),
+                // Historical bytes carry no scope. Only the verified inception
+                // from this repository's own workspace import can supply it.
+                ClaimSource::V1(claim) if legacy_bound => json!(claim.content),
                 _ => return None,
             };
             Some(json!({"kind":"claim","codec":c.codec(),"id":id.to_string(),"content":content,"judgments":c.judgments(),"source":positions.get(&id.to_string())}))
@@ -126,6 +138,7 @@ mod tests {
             &[],
             &[json!({"scope":scope.to_string(),"authority":{"state":"test"}})],
             &BTreeMap::new(),
+            None,
         )
         .unwrap();
         assert_eq!(result["state"], "resolved");
@@ -141,6 +154,6 @@ mod tests {
         );
         let mut missing = view;
         missing.scope_aliases.clear();
-        assert!(resolve(&missing, &[], &[], &BTreeMap::new()).is_err());
+        assert!(resolve(&missing, &[], &[], &BTreeMap::new(), None).is_err());
     }
 }

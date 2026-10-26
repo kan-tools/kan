@@ -23,6 +23,26 @@ pub(super) struct Control {
     pub preserved: PreservedControlEvent,
     pub sources: Vec<Value>,
 }
+/// Decode the exact inception retained in the repository's own workspace plan.
+/// Its proof variant must also be in the selected authority evaluation; merely
+/// selecting a different inception with the same logical scope is insufficient.
+pub(super) fn installed_scope(bytes: &[u8], controls: &[Control]) -> Option<ScopeInception> {
+    let preserved = identity::control::decode_preserving(bytes).ok()?;
+    if !preserved.is_supported() {
+        return None;
+    }
+    let event = preserved.typed()?;
+    if event.domain != scope_inception::INCEPTION_DOMAIN
+        || event.event_type != scope_inception::INCEPTION_EVENT_TYPE
+        || !controls.iter().any(|c| c.preserved == preserved)
+    {
+        return None;
+    }
+    let inception: ScopeInception = payload(&event)?;
+    inception.validate().ok()?;
+    Some(inception)
+}
+
 fn payload<T: serde::de::DeserializeOwned>(event: &ControlEvent) -> Option<T> {
     bounded(&atproto_dasl::to_vec(&event.payload).ok()?).ok()
 }
@@ -358,9 +378,9 @@ pub(super) fn inspect(
     }
     let scopes = scopes
         .into_iter()
-        .map(|(id, s)| json!({"scope":id,"authority":s.value}))
+        .map(|(id, s)| json!({"scope":id,"authority":s.value,"admission":s.admission}))
         .collect::<Vec<_>>();
-    let uri = super::uri::resolve(options, &claims, &scopes, &positions)?;
+    let uri = super::uri::resolve(options, &claims, &scopes, &positions, None)?;
     let next = options.current_after + classes.len();
     let value = json!({"version":"kan-current-claim-view/1","coverage":"Relative to this imported HEAD and explicitly selected control records. This does not establish global history completeness, trusted wall-clock time or network freshness. Native identity, governance, capability and fold rules apply; unsupported or absent authority remains unresolved. No legacy subject mapping is inferred.","authors":authors,"trust":principals,"verified_claims":claims.len(),"excluded_by_trust":claims.iter().filter(|c|matches!(c.judgments().view_trust,identity::ViewTrust::Excluded)).count(),"unresolved":excluded,"identities":identities,"scopes":scopes,"uri":uri,"controls":controls.iter().map(|c|json!({"id":c.preserved.logical_cid().ok().map(|id|id.to_string()),"supported":c.preserved.is_supported(),"sources":c.sources})).collect::<Vec<_>>(),"classes":classes,"total_classes":total,"next":(next<total).then_some(next)});
     if serde_json::to_vec(&value).map_err(|_| invalid())?.len() > 2 * 1024 * 1024 {

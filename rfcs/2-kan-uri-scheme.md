@@ -1213,6 +1213,16 @@ the response discloses this consumer-selected map and never derives
 identity from a project label or storage token. The original scope inception and
 other control evidence still determine authority and admission.
 
+Legacy claim bytes do not carry a scope. Their URI scope is bound only by the
+complete, hash-verified `.kan/scope/inception.cbor` in the same workspace import
+plan as `.kan/log/repo.car` (or `.kan/overlay/repo.car`). That exact supported
+inception proof must participate in selected control evidence and resolve to
+admitted authority. A foreign inception, raw control citation alone, store-only
+import, missing inception frame or unresolved authority cannot supply a legacy
+claim's scope. Named legacy selectors must also occur in the installed inception's
+signed names; caller aliases cannot invent names or substitute scopes. Original
+legacy claim bytes, IDs and trust judgments remain unchanged.
+
 Resolution operates before presentation pagination. Claim IDs, content and all
 four native judgments are returned independently of whether trust includes that
 claim in a fold. URI principal trust selectors of unit weight override the

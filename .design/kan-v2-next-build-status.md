@@ -20,7 +20,7 @@ and reviews are foundations, not automatic end-to-end completion.
 
 | Work package | Completion means | Current position |
 |---|---|---|
-| Capture, storage and migration | Supported harness/provider traffic reaches the centralized encrypted ledger; spool/retry and visible recording gaps work; v1 imports reconcile against preserved originals; local and remote use the same server architecture | Implemented centralized encrypted capture/import, proxy/gateway forwarding, durable spool and exact retry, visible recording gaps, preserved-source v1 reconciliation, and admitted/copied proof archives. Indexed archive and current-control reads separate ordinary service I/O from explicit full audits. Managed root-path launch, live spool delivery and cold restore extensions are in remote qualification. The 11 MiB / 179-frame indexed workload and real 10 GiB storage measurement pass; 100 GiB measurement and independent remount validation passed; the exact synthetic fixture was removed after validation. The 79.77-second first append remains disclosed and the focused 10 GiB remount probe initially failed before volume creation because its generated name exceeded Modal’s limit. The repaired probe at `5968aaf` has now been explicitly authorized and launched once; results are pending. |
+| Capture, storage and migration | Supported harness/provider traffic reaches the centralized encrypted ledger; spool/retry and visible recording gaps work; v1 imports reconcile against preserved originals; local and remote use the same server architecture | Implemented centralized encrypted capture/import, proxy/gateway forwarding, durable spool and exact retry, visible recording gaps, preserved-source v1 reconciliation, and admitted/copied proof archives. Indexed archive and current-control reads separate ordinary service I/O from explicit full audits. Managed root-path launch, live spool delivery and cold restore extensions are in remote qualification. The 11 MiB / 179-frame indexed workload and real 10 GiB storage measurement pass; 100 GiB measurement and independent remount validation passed; the exact synthetic fixture was removed after validation. The 79.77-second first append remains disclosed and the focused 10 GiB remount probe initially failed before volume creation because its generated name exceeded Modal’s limit. The repaired probe at `5968aaf` completed: the first open/admission was slower than the second, but the original 79.77-second outlier remains unexplained; raw timings and trace limitations are published. |
 | Library and sessions | Authorized cross-project browsing, readable complete supported conversations/tools/attachments/branches/compaction/gaps, exact source/provenance and working downloads; missing/corrupt evidence stays visible | Implemented cross-archive browsing, reconstructed supported conversations, explicit sessions/parents/branches/compaction, streaming gaps, attachments, exact provenance and native downloads. Existing API/browser checks pass. Current indexed managed CLI composition, current loss and live revocation are being requalified; final integrated acceptance remains. |
 | Search and views | Authorized search/facets, stable references, honest index coverage, reproducible saved scope/trust views and relation inspection | Implemented encrypted persistent raw/reconstructed search, filters/facets, current source authorization, pinned saved views and portable references. View lists page beyond 200 records, survive restart and withhold revoked evidence. Source, annotation and import-trust filters have passing runtime coverage; final integrated acceptance remains. |
 | Knowledge and annotations | Imported v1 claims and raw/derived evidence remain distinguishable; human/agent tags, annotations, relations and corrections use shared attributed append-only records with citations/history | Implemented signed attributed annotations/tags/relations, corrections/withdrawals, exact citations, publication/restoration and imported v1 identity/trust/fold views. Annotation pages cross 1,000 records with off-page history and current access checks. Shared API/CLI/MCP/UI knowledge-graph pagination is implemented; 119 Library UI checks pass and extended graph runtime qualification is pending. |
@@ -34,6 +34,20 @@ contracts, not an unbounded claim to parse every provider. Day process features
 remain required. Live installation, production keys, migration/cutover and main
 merge retain their separate authorization boundaries; implementation and synthetic
 qualification can finish without those operations.
+
+### Targeted review repair — imported legacy scope binding
+
+The actual Opus 5.5 targeted review of `8f659c5` completed BLOCK on B1:
+caller-selected foreign inception evidence could rebind an imported legacy claim.
+Migration recovery, owner workflows, capability labels and published capacity
+limits passed that review. The repair binds legacy URIs to the complete verified
+inception file in the repository's own workspace import, requires its exact proof
+in admitted selected authority, and checks signed names for named legacy targets.
+The native/imported integration regression now includes foreign direct and named
+scopes, invented names, absent installed evidence and invalid selected proof.
+Qualification and a narrow independent re-review are pending; no acceptance,
+merge, release or production action is implied. Storage/admission code and the
+retained capacity measurements are unchanged.
 
 ### Build loop
 

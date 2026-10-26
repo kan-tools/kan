@@ -4295,13 +4295,29 @@ async fn repository_import_frames(audience: u8, damage: &str) -> (String, Vec<Ve
         car.extend([0; 32]);
         car.push(0);
     }
-    let inputs = [("repo.car", car), ("HEAD", head)];
+    let inputs = if damage == "current" {
+        vec![
+            (".kan/log/repo.car", car),
+            (".kan/log/HEAD", head),
+            (
+                ".kan/scope/inception.cbor",
+                current_import_scope().1.canonical_bytes().unwrap(),
+            ),
+        ]
+    } else {
+        vec![("repo.car", car), ("HEAD", head)]
+    };
+    let selection = if damage == "current" {
+        "workspace"
+    } else {
+        "store"
+    };
     let files: Vec<_>=inputs.iter().map(|(path,body)|{let hash=service::hex(&Sha256::digest(body));json!({"path":path,"length":body.len(),"sha256":hash,"chunks":[{"length":body.len(),"sha256":hash}]})}).collect();
     let inventory: Vec<_> = files
         .iter()
         .map(|f| json!({"path":f["path"],"length":f["length"],"sha256":f["sha256"]}))
         .collect();
-    let document=serde_json::to_vec(&json!({"profile":1,"source_id":service::hex(&[44;32]),"selection":"store","recipient":service::hex(&kan::evidence_crypto::public_key(&PRIVATE).unwrap()),"route":{"scope":service::hex(&[1;32]),"writer":identity(6).did().as_str(),"audience":identity(audience).did().as_str()},"inventory":{"selected_inventory_complete":true,"notices":[],"files":inventory},"files":files})).unwrap();
+    let document=serde_json::to_vec(&json!({"profile":1,"source_id":service::hex(&[44;32]),"selection":selection,"recipient":service::hex(&kan::evidence_crypto::public_key(&PRIVATE).unwrap()),"route":{"scope":service::hex(&[1;32]),"writer":identity(6).did().as_str(),"audience":identity(audience).did().as_str()},"inventory":{"selected_inventory_complete":true,"notices":[],"files":inventory},"files":files})).unwrap();
     let mut hash = Sha256::new();
     hash.update(b"tools.kan.import.plan.v1\0");
     hash.update(&document);
@@ -4709,13 +4725,22 @@ fn current_import_scope() -> (
     kan::identity::scope_inception::ScopeInception,
     kan::identity::control::ControlEvent,
 ) {
+    import_test_scope(27, "current")
+}
+fn import_test_scope(
+    nonce: u8,
+    name: &str,
+) -> (
+    kan::identity::scope_inception::ScopeInception,
+    kan::identity::control::ControlEvent,
+) {
     use kan::identity::{
         control::{IdentityVersion, Proof},
         scope_inception::ScopeInception,
     };
     let root = identity(6);
     let inception =
-        ScopeInception::new([27; 32], vec!["current".into()], vec![root.did()], vec![]).unwrap();
+        ScopeInception::new([nonce; 32], vec![name.into()], vec![root.did()], vec![]).unwrap();
     let input = inception.signing_input().unwrap();
     let did = root.did();
     let proof = Proof {
@@ -4739,17 +4764,37 @@ async fn imported_current_claims_keep_signature_scope_authority_and_selected_tru
         if damaged {
             control.proofs[0].sig[0] ^= 1;
         }
-        let previous = Some(
+        let mut previous = Some(
             service::append_manifest(f.requests.last().unwrap())
                 .unwrap()
                 .cid()
                 .to_string(),
         );
-        let control_bytes = encrypted_frame(3, 8, previous, &control.canonical_bytes().unwrap());
+        let (foreign_inception, foreign_control) = import_test_scope(28, "foreign");
         let mut archive = attested::Archive::open(&f.root, f.binding.clone()).unwrap();
-        archive
-            .admit(&control_bytes, &identity(8), &grant(), 200)
-            .unwrap();
+        for (index, bytes) in [
+            frames[3].clone(),
+            control.canonical_bytes().unwrap(),
+            foreign_control.canonical_bytes().unwrap(),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let request = if index == 0 {
+                import_request(3, 8, previous, &plan, &bytes, false)
+            } else {
+                encrypted_frame(3 + index as u8, 8, previous, &bytes)
+            };
+            previous = Some(
+                service::append_manifest(&request)
+                    .unwrap()
+                    .cid()
+                    .to_string(),
+            );
+            archive
+                .admit(&request, &identity(8), &grant(), 200)
+                .unwrap();
+        }
         drop(archive);
         let server = Server::start(&f).await;
         let local = private_workspace_directory();
@@ -4777,10 +4822,11 @@ async fn imported_current_claims_keep_signature_scope_authority_and_selected_tru
         let rows = page["records"].as_array().unwrap();
         let selections = rows
             .iter()
-            .filter(|r| r["sequence"] != "4")
+            .filter(|r| r["sequence"].as_str().unwrap().parse::<usize>().unwrap() <= 4)
             .map(|r| r["selection"].clone())
             .collect::<Vec<_>>();
-        let control = rows.iter().find(|r| r["sequence"] == "4").unwrap();
+        let control = rows.iter().find(|r| r["sequence"] == "5").unwrap();
+        let foreign = rows.iter().find(|r| r["sequence"] == "6").unwrap();
         let mut query = json!({"action":"proof-import","source":entry["id"],"pin":entry["pin"],"selections":selections,"plan":plan,"file":0,"view":{"principals":[identity(6).did(),identity(7).did()]}});
         let absent = ui.call(query.clone(), 200).await;
         let current = &absent["file"]["car"]["repository"]["current"];
@@ -4792,14 +4838,39 @@ async fn imported_current_claims_keep_signature_scope_authority_and_selected_tru
             .iter()
             .all(|c| c["judgments"]["cryptographicValidity"] == "valid"
                 && c["judgments"]["scopeAdmission"] == "unknown"));
-        query["view"]["controls"] = json!([{"parts":[{"source":entry["id"],"pin":entry["pin"],"selection":control["selection"]}]}]);
+        query["view"]["controls"] = json!([
+            {"parts":[{"source":entry["id"],"pin":entry["pin"],"selection":control["selection"]}]},
+            {"parts":[{"source":entry["id"],"pin":entry["pin"],"selection":foreign["selection"]}]}
+        ]);
         let resolved = ui.call(query.clone(), 200).await;
         let current = &resolved["file"]["car"]["repository"]["current"];
         assert_eq!(
             current["controls"][0]["sources"][0]["record"]["sequence"],
-            "4"
+            "5"
         );
         if damaged {
+            let mut invalid_proof = query.clone();
+            invalid_proof["view"]["trust"] =
+                resolved["file"]["car"]["repository"]["authors"].clone();
+            let trusted = ui.call(invalid_proof.clone(), 200).await;
+            let legacy_id = trusted["file"]["car"]["repository"]["fold"]["classes"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .flat_map(|group| group["claims"].as_array().unwrap())
+                .next()
+                .unwrap()["id"]
+                .as_str()
+                .unwrap();
+            invalid_proof["view"]["uri"] = json!(format!(
+                "kan://local/@id:{}/claim/{legacy_id}",
+                current_import_scope().0.scope_id().unwrap()
+            ));
+            let invalid_proof = ui.call(invalid_proof, 200).await;
+            assert_eq!(
+                invalid_proof["file"]["car"]["repository"]["current"]["uri"]["state"],
+                "not-found-at-selected-evidence"
+            );
             assert_eq!(current["classes"][0]["status"]["kind"], "unclassified");
         } else {
             assert_eq!(current["classes"][0]["status"]["value"], "blocked");
@@ -4897,6 +4968,44 @@ async fn imported_current_claims_keep_signature_scope_authority_and_selected_tru
                     assert_eq!(
                         after["resource"]["judgments"],
                         serde_json::to_value(before.judgments()).unwrap()
+                    );
+                    // B1: unrelated selected inception evidence must not rebind
+                    // the same legacy CID to another workspace's namespace.
+                    for wrong_uri in [
+                        format!(
+                            "kan://local/@id:{}/claim/{}",
+                            foreign_inception.scope_id().unwrap(),
+                            before.claim_id()
+                        ),
+                        format!("kan://local/foreign/claim/{}", before.claim_id()),
+                        format!("kan://local/not-signed/claim/{}", before.claim_id()),
+                    ] {
+                        assert!(resolver.resolve_uri(&wrong_uri).await.is_err());
+                        let mut wrong = legacy_query.clone();
+                        wrong["view"]["uri"] = json!(wrong_uri);
+                        wrong["view"]["scope_aliases"] = json!({
+                            "foreign":foreign_inception.scope_id().unwrap().to_string(),
+                            "not-signed":inception.scope_id().unwrap().to_string()
+                        });
+                        let result = ui.call(wrong, 200).await;
+                        assert_eq!(
+                            result["file"]["car"]["repository"]["current"]["uri"]["state"],
+                            "not-found-at-selected-evidence",
+                            "{wrong_uri}"
+                        );
+                    }
+                    // Even an authentic raw inception in controls is not an
+                    // installed scope without the same-plan original file.
+                    let mut missing = legacy_query.clone();
+                    missing["selections"] = json!(rows
+                        .iter()
+                        .filter(|r| r["sequence"].as_str().unwrap().parse::<usize>().unwrap() <= 3)
+                        .map(|r| r["selection"].clone())
+                        .collect::<Vec<_>>());
+                    let missing = ui.call(missing, 200).await;
+                    assert_eq!(
+                        missing["file"]["car"]["repository"]["current"]["uri"]["state"],
+                        "not-found-at-selected-evidence"
                     );
                 }
             }

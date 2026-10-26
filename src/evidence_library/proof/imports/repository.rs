@@ -106,6 +106,7 @@ pub(super) fn inspect(
     view: &View,
     car_complete: bool,
     controls: &[super::current::Control],
+    installed_scope: Option<&[u8]>,
 ) -> Result<Repository, ContentError> {
     if !car_complete {
         return Ok(unavailable(
@@ -255,7 +256,15 @@ pub(super) fn inspect(
         )
         .map_err(|_| invalid())?;
         let scopes = current["scopes"].as_array().ok_or_else(invalid)?;
-        let resolved = super::uri::resolve(view, &legacy_views, scopes, &positions)?;
+        let legacy_scope =
+            installed_scope.and_then(|bytes| super::current::installed_scope(bytes, controls));
+        let resolved = super::uri::resolve(
+            view,
+            &legacy_views,
+            scopes,
+            &positions,
+            legacy_scope.as_ref(),
+        )?;
         if resolved["state"] == "resolved" {
             if crate::uri::ResolutionRequest::parse(view.uri.as_deref().ok_or_else(invalid)?)
                 .map_err(|_| invalid())?
