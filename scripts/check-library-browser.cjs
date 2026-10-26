@@ -287,12 +287,13 @@ async function main() {
     assert.match(await page.locator('#erasure-status').textContent(),/3 records selected/);
     await page.locator('#erasure-inspect').click();await page.waitForFunction(()=>document.querySelector('#erasure-coordinates').textContent.includes('targets'));
     let erased=await ownerAction(page.locator('#erasure-apply'),'apply-erasure',true);
-    assert.notEqual(erased.state,'succeeded','one-record batch must require explicit resume');await refreshOwner();
+    assert.equal(erased.state,'cleanup-pending','one-record batch must require explicit resume');assert.equal(erased.result.report.root_erasure.remaining,2);await refreshOwner();
     for(let batch=0;batch<2;batch++){
       const row=page.locator('#owner-jobs article').filter({has:page.locator('p.content-identity',{hasText:erased.job.id})});
       erased=await ownerAction(row.getByRole('button',{name:'Resume erasure cleanup',exact:true}),'resume-erasure',true);await refreshOwner();
     }
-    assert.equal(erased.state,'succeeded',JSON.stringify(erased));
+    assert.equal(erased.state,'configured-cleanup-complete',JSON.stringify(erased));
+    assert.equal(erased.result.report.root_erasure.remaining,0);assert.equal(erased.result.report.configured_cleanup,'reconciled');assert.equal(erased.result.report.backup_purge,'not-performed');
     checked.push('browser exact erasure preview/coordinate inspection, apply and bounded cleanup resumes');
 
     const backupRow=page.locator('#owner-jobs article').filter({hasText:backup.job.id});

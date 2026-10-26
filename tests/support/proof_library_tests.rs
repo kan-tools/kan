@@ -4205,8 +4205,10 @@ async fn repository_import_frames(audience: u8, damage: &str) -> (String, Vec<Ve
         record.claim.sig = identity(author).sign(&id.to_bytes()).unwrap();
         let cid = push(&mut car, atproto_dasl::to_vec(&record).unwrap());
         if key != "orphan" {
+            // StoredClaim is the legacy wire format, so retain its legacy
+            // collection as well as its CID key in the native comparison.
             let key = if damage == "current" {
-                format!("tools.kan.claim/{id}")
+                format!("dev.kan.claim/{id}")
             } else {
                 key.into()
             };
