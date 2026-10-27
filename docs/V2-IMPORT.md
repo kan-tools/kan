@@ -2,6 +2,29 @@
 
 This importer queues encrypted copies of the raw evidence selected by the v1 preflight. It preserves damaged/unsupported records with their warnings. It does not repair source data, confer semantic trust, switch clients, or certify backup/cutover. Keep the original v1 files and existing backups.
 
+## Legacy workspace reminder
+
+The v2 `kan` executable checks the current directory and up to 63 parents for
+legacy `.claims` or `.kan` workspace markers, stopping at the nearest Git boundary.
+It does not follow marker-directory symlinks, open source logs or load credentials.
+A detected workspace produces a stderr reminder for humans and agents; stdout,
+command exit status and source data remain unchanged. From the reported project
+root, `kan preview .` is the read-only inventory step.
+
+The reminder deliberately does not label the project definitely unmigrated:
+successful migration retains original evidence, and `.kan/V2_FENCE` alone is not
+a completion receipt. Follow the [fenced migration and reversible client cutover
+runbook](V2-LIBRARY.md#fenced-migration-and-reversible-client-cutover): configure the
+destination and owner target, quiesce old writers, fence/finalize and deliver,
+independently back up and verify, then explicitly activate and restart clients.
+Raw import alone does not complete that sequence. Agents must surface the notice
+to the owner, not interpret it as authorization to perform migration or deletion.
+
+For a project whose migration is already verified, pass `--no-migration-notice`.
+This suppresses only the current invocation and writes no acknowledgement or
+migration state. The advisory is not an exhaustive data-discovery or status audit;
+use explicit source plans for standalone stores and identity roots.
+
 Build `kan` with `--features v2-crypto`. First initialize a destination queue as described in [encrypted delivery](V2-DELIVERY.md). Use a separately backed-up recipient key and a dedicated writer whose frontier begins with that queue. The importer never discovers credentials. Selection follows the preflight evidence-name allowlist; it cannot recognize a credential deliberately placed or hardlinked under an allowed evidence name. Inspect the selected inventory before admission. No proof of possession of the recipient private key is built in; test decryption separately before bulk import.
 
 Select an explicit source directory and a stable 32-byte lowercase-hex lineage token. A token identifies your selected source lineage; a same-named repository is not automatically the same source. The default selection is `workspace` (the existing `.kan`/`.claims` allowlist). `store` selects a raw log directory; `identity` selects public `identity/ledger/events` beneath an explicitly supplied config root. Run separate plans for separate roots, using the same aggregate destination as appropriate.

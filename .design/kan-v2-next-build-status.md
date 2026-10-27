@@ -29,6 +29,14 @@ this source change. CI must exercise default installation, both binaries and a
 legacy-only installation, their help/version identities, and old-workspace
 migration through `kan-v1`. Existing qualified storage evidence remains valid.
 
+The owner also requested an upgrade reminder for v1 projects. `kan` performs
+bounded read-only workspace-marker detection and reports migration instructions
+on stderr, including help/version/errors. It never treats retained originals or a
+fence as proof of incomplete/completed cutover. Explicit per-invocation
+`--no-migration-notice` suppression records no migration authority. Qualification
+must check JSON channel integrity, ancestor/repository boundaries, symlinks,
+preserved source bytes, suppression and unchanged command results.
+
 ### Completion checklist
 
 Mark a row complete only when its backend, shared API/CLI where applicable, human

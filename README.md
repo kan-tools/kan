@@ -44,6 +44,15 @@ before launching services. The Library uses `kan library`; one-shot JSON request
 use `--request`, and its MCP mode uses `--mcp`. Owner maintenance remains explicitly
 authorized through `kan owner`. Neither installation nor import performs cutover.
 
+When `kan` finds v1 workspace markers in the current project, it prints a
+migration reminder to stderr, including on help/version and invalid commands.
+Start with `kan preview .` from the detected project root and follow the
+[fenced migration runbook](docs/V2-LIBRARY.md#fenced-migration-and-reversible-client-cutover).
+Detection is read-only; it does not migrate data. Retained originals and writer
+fences cannot prove whether cutover completed. For a known migrated project,
+`--no-migration-notice` suppresses the reminder for one invocation without recording
+migration approval. JSON and MCP stdout remain unchanged.
+
 The remaining sections describe the optional legacy repository CLI.
 
 ## Legacy quickstart

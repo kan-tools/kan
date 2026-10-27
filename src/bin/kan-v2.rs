@@ -1,5 +1,7 @@
 //! Public kan CLI: encrypted archives, capture, Library and explicit maintenance.
 use clap::{Parser, Subcommand};
+#[path = "kan-v2/legacy_notice.rs"]
+mod legacy_notice;
 #[cfg(feature = "v2-crypto")]
 #[path = "kan-v2/managed.rs"]
 mod managed;
@@ -16,6 +18,10 @@ use std::path::PathBuf;
     about = "Encrypted evidence capture, Library and archive operations"
 )]
 struct Cli {
+    /// Suppress the read-only legacy workspace reminder for this invocation.
+    /// This does not mark a project migrated or change migration safeguards.
+    #[arg(long, global = true)]
+    no_migration_notice: bool,
     /// Independent host-local inventory; enroll registered services, senders and Library workspaces.
     #[cfg(feature = "v2-crypto")]
     #[arg(long, global = true)]
@@ -690,9 +696,7 @@ fn open_spool(
 fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
-fn run() -> Result<(), Box<dyn std::error::Error>> {
-    #[allow(unused_mut)]
-    let mut cli = Cli::parse();
+fn run(#[allow(unused_mut)] mut cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
     #[cfg(feature = "v2-crypto")]
     let deployment = cli
         .deployment
@@ -2147,7 +2151,31 @@ async fn shutdown() {
     let _ = tokio::signal::ctrl_c().await;
 }
 fn main() -> std::process::ExitCode {
-    match run() {
+    let args: Vec<_> = std::env::args_os().collect();
+    let parsed = Cli::try_parse_from(&args);
+    // Clap exits parsing early for help/version. Honor an explicit suppression
+    // flag there too, but never interpret a positional after `--` as a flag.
+    let suppressed = parsed.as_ref().map_or_else(
+        |_| {
+            args.iter()
+                .skip(1)
+                .take_while(|arg| arg.as_os_str() != std::ffi::OsStr::new("--"))
+                .any(|arg| arg.as_os_str() == std::ffi::OsStr::new("--no-migration-notice"))
+        },
+        |cli| cli.no_migration_notice,
+    );
+    if !suppressed {
+        legacy_notice::emit();
+    }
+    let cli = match parsed {
+        Ok(cli) => cli,
+        Err(error) => {
+            let code = error.exit_code();
+            let _ = error.print();
+            return std::process::ExitCode::from(code as u8);
+        }
+    };
+    match run(cli) {
         Ok(()) => std::process::ExitCode::SUCCESS,
         Err(e) => {
             eprintln!("error: {e}");

@@ -198,6 +198,8 @@ async fn library_cli_browses_authenticated_retained_source_without_storage_autho
     assert!(html.contains("Source inspector"));
     // The real stdio entry point uses these same Reader keys and remote grants,
     // without creating an HTTP listener or requiring a browser token.
+    // A legacy-project reminder must not introduce any non-JSON MCP stdout.
+    std::fs::create_dir(dir.path().join(".claims")).unwrap();
     for writes in [false, true] {
         use tokio::io::{AsyncWriteExt, BufReader as TokioBufReader};
         let mut command = tokio::process::Command::new(env!("CARGO_BIN_EXE_kan"));
@@ -213,6 +215,7 @@ async fn library_cli_browses_authenticated_retained_source_without_storage_autho
             command.arg("--mcp-writes");
         }
         let mut process = command
+            .current_dir(dir.path())
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
