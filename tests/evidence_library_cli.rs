@@ -101,8 +101,12 @@ async fn library_cli_browses_authenticated_retained_source_without_storage_autho
             std::fs::set_permissions(file, std::fs::Permissions::from_mode(0o600)).unwrap();
         }
     }
+    std::fs::create_dir(dir.path().join(".claims")).unwrap();
     let mut child = ChildGuard(
         Process::new(env!("CARGO_BIN_EXE_kan"))
+            // This HTTP launcher parses the first stderr line as its address.
+            .arg("--no-migration-notice")
+            .current_dir(dir.path())
             .args([
                 "library",
                 "--config",
@@ -199,7 +203,6 @@ async fn library_cli_browses_authenticated_retained_source_without_storage_autho
     // The real stdio entry point uses these same Reader keys and remote grants,
     // without creating an HTTP listener or requiring a browser token.
     // A legacy-project reminder must not introduce any non-JSON MCP stdout.
-    std::fs::create_dir(dir.path().join(".claims")).unwrap();
     for writes in [false, true] {
         use tokio::io::{AsyncWriteExt, BufReader as TokioBufReader};
         let mut command = tokio::process::Command::new(env!("CARGO_BIN_EXE_kan"));

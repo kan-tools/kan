@@ -204,6 +204,8 @@ fn start_cli(args: &[&str], prefix: &str) -> (ProcessGuard, String) {
     use std::io::BufRead;
     let mut child = ProcessGuard(
         std::process::Command::new(env!("CARGO_BIN_EXE_kan"))
+            // Preserve the machine-readable startup announcement contract.
+            .arg("--no-migration-notice")
             .args(args)
             .stdin(std::process::Stdio::null())
             .stdout(std::process::Stdio::null())

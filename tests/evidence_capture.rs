@@ -578,6 +578,9 @@ async fn route_and_request_limits_refuse_before_provider() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn cli_missing_spool_reports_gap_separately_from_binary_stdout() {
     let dir = tempfile::tempdir().unwrap();
+    // This caller consumes every stderr line as health JSON. Exercise explicit
+    // advisory suppression in a legacy-marked project, keeping strict parsing.
+    std::fs::create_dir(dir.path().join(".claims")).unwrap();
     let signer = Identity::generate();
     let key = dir.path().join("key");
     signer.save(&key).unwrap();
@@ -590,6 +593,8 @@ async fn cli_missing_spool_reports_gap_separately_from_binary_stdout() {
     )
     .await;
     let result = tokio::process::Command::new(env!("CARGO_BIN_EXE_kan"))
+        .current_dir(dir.path())
+        .arg("--no-migration-notice")
         .args([
             "capture-post",
             "--endpoint",

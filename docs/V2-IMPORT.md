@@ -25,6 +25,13 @@ This suppresses only the current invocation and writes no acknowledgement or
 migration state. The advisory is not an exhaustive data-discovery or status audit;
 use explicit source plans for standalone stores and identity roots.
 
+Machine callers that parse stderr as capture health JSON or a service startup
+address must explicitly pass `--no-migration-notice`, for example
+`kan --no-migration-notice capture-post ...`. Without it, the advisory can precede
+those records. This is independent of JSON responses and MCP on stdout, which
+remain clean with the default reminder enabled. Suppression is not a declaration
+that the source has migrated and never bypasses a writer fence or cutover check.
+
 Build `kan` with `--features v2-crypto`. First initialize a destination queue as described in [encrypted delivery](V2-DELIVERY.md). Use a separately backed-up recipient key and a dedicated writer whose frontier begins with that queue. The importer never discovers credentials. Selection follows the preflight evidence-name allowlist; it cannot recognize a credential deliberately placed or hardlinked under an allowed evidence name. Inspect the selected inventory before admission. No proof of possession of the recipient private key is built in; test decryption separately before bulk import.
 
 Select an explicit source directory and a stable 32-byte lowercase-hex lineage token. A token identifies your selected source lineage; a same-named repository is not automatically the same source. The default selection is `workspace` (the existing `.kan`/`.claims` allowlist). `store` selects a raw log directory; `identity` selects public `identity/ledger/events` beneath an explicitly supplied config root. Run separate plans for separate roots, using the same aggregate destination as appropriate.

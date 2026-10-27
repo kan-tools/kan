@@ -52,6 +52,9 @@ Detection is read-only; it does not migrate data. Retained originals and writer
 fences cannot prove whether cutover completed. For a known migrated project,
 `--no-migration-notice` suppresses the reminder for one invocation without recording
 migration approval. JSON and MCP stdout remain unchanged.
+Callers that parse **stderr** health JSON or startup announcements must also pass
+`--no-migration-notice`; default stderr can contain the human/agent advisory before
+those records. Suppression does not bypass migration safeguards.
 
 The remaining sections describe the optional legacy repository CLI.
 
