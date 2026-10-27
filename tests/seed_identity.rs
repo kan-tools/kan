@@ -19,7 +19,7 @@ struct Run {
 }
 
 fn kan_env(dir: &std::path::Path, key: Option<&std::path::Path>, args: &[&str]) -> Run {
-    let mut cmd = Command::new(env!("CARGO_BIN_EXE_kan"));
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_kan-v1"));
     // These tests deliberately exercise the path where KAN_IDENTITY_FILE is
     // NOT set, which is the only way to reach fresh-workspace seed creation
     // -- and that path consults the OS keychain. On macOS a rebuilt test

@@ -40,7 +40,7 @@ struct Run {
 }
 
 fn kan_as(dir: &std::path::Path, key: Option<&std::path::Path>, args: &[&str]) -> Run {
-    let mut cmd = Command::new(env!("CARGO_BIN_EXE_kan"));
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_kan-v1"));
     cmd.args(args).current_dir(dir);
     match key {
         Some(k) => {
@@ -91,7 +91,7 @@ fn git_repo() -> tempfile::TempDir {
 /// the tree it is handed.
 ///
 /// Note the published tree holds **two** records per subject, not one:
-/// `kan publish` records a `Publication` claim alongside the narrative,
+/// `kan-v1 publish` records a `Publication` claim alongside the narrative,
 /// because publishing is a decision about a subject and therefore a claim
 /// (ADR-43). Assertions below name the claim they mean rather than counting.
 fn publisher_then_clone(subject: &str, text: &str) -> (tempfile::TempDir, String) {
@@ -661,7 +661,7 @@ fn a_crafted_record_in_claims_does_not_brick_the_workspace() {
     let status = kan_as(clone.path(), None, &["status"]);
     assert!(
         status.ok,
-        "a crafted .claims/ record bricked `kan status`: {}",
+        "a crafted .claims/ record bricked `kan-v1 status`: {}",
         status.stderr
     );
     let read = kan_as(
@@ -671,7 +671,7 @@ fn a_crafted_record_in_claims_does_not_brick_the_workspace() {
     );
     assert!(
         read.ok,
-        "a crafted .claims/ record bricked `kan show`: {}",
+        "a crafted .claims/ record bricked `kan-v1 show`: {}",
         read.stderr
     );
     let value: serde_json::Value = serde_json::from_str(&read.stdout).unwrap();

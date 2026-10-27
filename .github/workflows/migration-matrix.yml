@@ -244,7 +244,7 @@ jobs:
 
       - name: Build this build (the reader)
         if: steps.cached.outputs.cache-hit != 'true'
-        run: cargo build --release --quiet
+        run: cargo build --release --quiet --no-default-features --features kan-v1 --bin kan-v1
 
       - name: Build the historical writer
         if: steps.cached.outputs.cache-hit != 'true'
@@ -271,7 +271,7 @@ jobs:
           fi
           scripts/run-migration-cell.sh \
             /tmp/writer/target/release/kan \
-            "$PWD/target/release/kan" \
+            "$PWD/target/release/kan-v1" \
             "${{ matrix.cell.mode }}" > migration-outcome.txt
           cat migration-outcome.txt
 

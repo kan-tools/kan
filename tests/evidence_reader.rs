@@ -310,7 +310,7 @@ fn reader_cli_refuses_public_configuration_and_relative_private_key_paths() {
     let dir = tempfile::tempdir().unwrap();
     let config = dir.path().join("reader.json");
     let command = || {
-        let mut cmd = std::process::Command::new(env!("CARGO_BIN_EXE_kan-v2"));
+        let mut cmd = std::process::Command::new(env!("CARGO_BIN_EXE_kan"));
         cmd.args([
             "library",
             "--config",

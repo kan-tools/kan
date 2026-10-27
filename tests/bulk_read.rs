@@ -4,7 +4,7 @@
 //! The ask was explicitly to reduce the invocation *count*, not to make reads
 //! faster, and the measurement in #123 is why: `day status` spent 1.99s of
 //! 2.76s inside 41 `kan` invocations, and that cost is `Workspace::open` —
-//! an empty log costs ~30ms per call, and `kan identity did`, which reads no
+//! an empty log costs ~30ms per call, and `kan-v1 identity did`, which reads no
 //! log at all, costs the same. No optimisation *inside* a read touches it.
 //!
 //! So the property under test is agreement, not speed: one invocation must
@@ -14,7 +14,7 @@
 use std::process::Command;
 
 fn kan(dir: &std::path::Path, key: &std::path::Path, args: &[&str]) -> (String, bool) {
-    let output = Command::new(env!("CARGO_BIN_EXE_kan"))
+    let output = Command::new(env!("CARGO_BIN_EXE_kan-v1"))
         .args(args)
         .current_dir(dir)
         .env("KAN_IDENTITY_FILE", key)
@@ -621,7 +621,7 @@ fn selected_bulk_has_one_whole_read_and_no_per_subject_read_loop() {
         .split("pub fn show_selected_json")
         .nth(1)
         .unwrap()
-        .split("/// `kan status")
+        .split("/// `kan-v1 status")
         .next()
         .unwrap();
     assert_eq!(selected.matches("all_stored_claims()?").count(), 1);

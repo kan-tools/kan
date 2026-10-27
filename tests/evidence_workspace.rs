@@ -168,7 +168,7 @@ fn workspace_recovery_cli_preserves_history_and_rejects_corrupt_entries_and_jour
     let mut key = tempfile::NamedTempFile::new_in(dir.path()).unwrap();
     key.write_all(&[8; 32]).unwrap();
     let output = dir.path().join("cli.sqlite");
-    let run = std::process::Command::new(env!("CARGO_BIN_EXE_kan-v2"))
+    let run = std::process::Command::new(env!("CARGO_BIN_EXE_kan"))
         .arg("recover-workspace")
         .arg(&path)
         .arg(&output)

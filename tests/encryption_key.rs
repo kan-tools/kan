@@ -9,7 +9,7 @@
 use std::process::Command;
 
 fn kan(dir: &std::path::Path, key: &std::path::Path, args: &[&str]) -> (String, bool) {
-    let output = Command::new(env!("CARGO_BIN_EXE_kan"))
+    let output = Command::new(env!("CARGO_BIN_EXE_kan-v1"))
         .args(args)
         .current_dir(dir)
         .env("KAN_IDENTITY_FILE", key)

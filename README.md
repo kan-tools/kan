@@ -1,60 +1,74 @@
 # kan
 
-**Local reasoning, global coherence — memory for AI agents.**
+**Encrypted evidence capture, a human Library, and provenance-preserving knowledge.**
 
-Where `git` versions your code, `kan` remembers your reasoning. Each agent keeps
-its own signed, append-only record of what it observed, planned, decided, and
-resolved — and `kan` folds those local records into one coherent view on demand,
-without a central authority deciding what's true.
+`kan` runs the v2 capture, service, Library and administration workflows. The
+repository-based v1 CLI remains available as the optional `kan-v1` executable.
+The crate and Rust library are still named `kan`.
 
-Nothing is overwritten. Nothing is flattened. Nothing is lost.
+## Install the current source candidate
 
-## Kan v2 development build
-
-The v2 branch adds a centralized encrypted evidence service and a human Library
-with conversations, search, annotations, background analysis, Operations and
-owner administration. Local hosting runs the same services as remote hosting.
-The integrated build is still being qualified; it is not a production release.
-The Quickstart below describes the existing repository-based `kan` interface.
-
-From the v2 source checkout, install the separate service/reader executable with:
+The binary naming change is not published yet. From this checkout:
 
 ```sh
-cargo install --path . --locked --features v2-crypto --bin kan-v2
-kan-v2 --help
+# Default: installs kan with the full v2 feature set.
+cargo install --path . --locked
+kan --help
+kan --version
+
+# Optional: install both kan and the legacy kan-v1 executable.
+cargo install --path . --locked --features kan-v1
+
+# Or install only the legacy CLI.
+cargo install --path . --locked --no-default-features --features kan-v1 --bin kan-v1
+kan-v1 --help
 ```
+
+After publication, use `cargo install kan --version VERSION --locked` with the
+chosen release version; the same feature and binary options apply. No `kan-v2`
+executable is built by this candidate. Cargo does not remove unrelated binaries
+from prior installs: update existing supervisor and hook paths to `kan` explicitly.
+
+An upgrade changes what the name `kan` invokes. Before upgrading a machine that
+uses v1 commands, configure those callers to run `kan-v1`. This includes existing
+day integrations and saved MCP registrations. A shell alias is not sufficient for
+programs that spawn executables directly. The bundled Claude plugin retains its server name `kan` but now launches
+`kan-v1`; install the optional feature before using it. The legacy CLI does not forward to v2,
+and installing either executable does not migrate data or activate services.
 
 Start with [managed deployment and restore activation](docs/V2-DEPLOYMENT.md),
 then configure [capture and the harness gateway](docs/V2-GATEWAY.md),
 [v1 import](docs/V2-IMPORT.md), the [Library](docs/V2-LIBRARY.md) and
-[Operations](docs/V2-OPERATIONS.md). The Library runbook covers independent
-backup/key recovery, current access, and owner-triggered erasure. Provision
-credentials and independent custody before launching services; importing or
-restoring a copy does not activate it automatically.
+[Operations](docs/V2-OPERATIONS.md). Provision credentials and independent custody
+before launching services. The Library uses `kan library`; one-shot JSON requests
+use `--request`, and its MCP mode uses `--mcp`. Owner maintenance remains explicitly
+authorized through `kan owner`. Neither installation nor import performs cutover.
 
-## Quickstart
+The remaining sections describe the optional legacy repository CLI.
+
+## Legacy quickstart
 
 ```sh
-cargo install kan                 # or: cargo install --path . from a clone
+cargo install --path . --locked --no-default-features --features kan-v1 --bin kan-v1
 
 cd your-project                   # kan runs inside a git repo and anchors
 git init && git commit --allow-empty -m init   # ...to its history, so it needs at least one commit
 
-kan observe login-bug "panics on empty input"  # record a finding
-kan decide login-bug "guard the empty case before parsing"
-kan block  login-bug "waiting on the parser refactor"
-kan resolve login-bug "fixed in a1b2c3d"        # resolve closes it out
+kan-v1 observe login-bug "panics on empty input"  # record a finding
+kan-v1 decide login-bug "guard the empty case before parsing"
+kan-v1 block  login-bug "waiting on the parser refactor"
+kan-v1 resolve login-bug "fixed in a1b2c3d"        # resolve closes it out
 
-kan status                        # one line per subject: its settled state
-kan show login-bug                # that subject's full claim history
-kan issues                        # everything not yet resolved
-kan context --budget 800          # the highest-value claims within a token budget
+kan-v1 status                        # one line per subject: its settled state
+kan-v1 show login-bug                # that subject's full claim history
+kan-v1 issues                        # everything not yet resolved
+kan-v1 context --budget 800          # the highest-value claims within a token budget
 ```
 
 The first write mints this repo's signing identity (see
 [Identity](#identity)); nothing is written to a repo until you record a
 claim, and reading a repo that has none leaves it untouched. To let an agent
-use kan over MCP instead of the CLI, run `kan mcp install`.
+use kan over MCP instead of the CLI, run `kan-v1 mcp install`.
 
 ## Machine-readable orientation
 
@@ -62,11 +76,11 @@ Programs usually do not need every claim body merely to learn what a workspace
 contains. Use a manifest-then-hydrate read:
 
 ```sh
-kan status --json                              # compact subject manifest
-kan show --json --subject login-bug            # hydrate exact subjects
-kan show --json --subject one --subject two
-kan show --json --prefix telos/                 # hydrate visible prefixes
-kan show --all --json                           # complete live claim graph
+kan-v1 status --json                              # compact subject manifest
+kan-v1 show --json --subject login-bug            # hydrate exact subjects
+kan-v1 show --json --subject one --subject two
+kan-v1 show --json --prefix telos/                 # hydrate visible prefixes
+kan-v1 show --all --json                           # complete live claim graph
 ```
 
 `status --json` includes body-free claim counts, kind counts, the deterministic
@@ -111,7 +125,7 @@ from many local logs into a coherent view, parameterized by whom you trust.
 1.0 beta (`v1.0.0-beta.1`; stable 1.0 is not yet declared). The local-only
 spine — one human, one-or-more agents, one repo — is built and hardening.
 
-Sharing works in both directions as of v0.8. `kan publish <subject>` writes
+Sharing works in both directions as of v0.8. `kan-v1 publish <subject>` writes
 a subject's signed claims into a tracked `.claims/` directory, so they
 travel with the repo: visible in `git diff`, reviewable in a PR, and
 readable by someone without kan installed. Each record carries a complete
@@ -127,9 +141,9 @@ not resolve a signing identity. Any read that leaves claims out says so — on
 both the human output and `--json` — so a partial view cannot pass for a
 complete one (ADR-57, ADR-83).
 
-Durability arrived in v0.9. `kan status` says, per subject, whether it would
+Durability arrived in v0.9. `kan-v1 status` says, per subject, whether it would
 survive losing `.kan/` — `unpublished`, `published`, or `stale` — and
-`kan restore` rebuilds a log from the published tree, refusing if nothing in
+`kan-v1 restore` rebuilds a log from the published tree, refusing if nothing in
 it was signed by this identity, because that is what a lost key looks like
 from the inside (ADR-63, ADR-64).
 
@@ -174,8 +188,8 @@ first v1 write tells you exactly where the key lives and how to back it up:
 
 ```
 kan: this repo's identity is rooted in .kan/seed, a 0600 file readable by anything running as you.
-`kan identity phrase` prints its 24-word recovery phrase -- that is the backup, and it is the only copy not on this disk.
-`kan identity protect` moves the secret into the OS keychain if you want it there.
+`kan-v1 identity phrase` prints its 24-word recovery phrase -- that is the backup, and it is the only copy not on this disk.
+`kan-v1 identity protect` moves the secret into the OS keychain if you want it there.
 ```
 
 Take the recovery phrase before you need it, at a real terminal — it is the
@@ -194,8 +208,8 @@ If you do want the secret encrypted at rest, move it into the keychain — and
 back out again — at any time:
 
 ```sh
-kan identity protect      # move the seed into the OS keychain
-kan identity unprotect    # move it back to a 0600 file
+kan-v1 identity protect      # move the seed into the OS keychain
+kan-v1 identity unprotect    # move it back to a 0600 file
 ```
 
 **Escape hatches, for CI and specific key files:**
@@ -219,13 +233,13 @@ so an unnoticed new key makes an entire log vanish from every read at exit 0.
 Declare a role, then write as it:
 
 ```sh
-kan identity role add director            # mints .kan/roles.d/director, registers it
-KAN_IDENTITY_FILE=.kan/roles.d/director kan observe finding "the verdict"
+kan-v1 identity role add director            # mints .kan/roles.d/director, registers it
+KAN_IDENTITY_FILE=.kan/roles.d/director kan-v1 observe finding "the verdict"
 ```
 
 Declaring your first role also records the identity that was already signing
 here, as `primary` — so `--trust roles` covers claims written before the roles
-existed, not only after. `kan identity role list` shows the whole set.
+existed, not only after. `kan-v1 identity role list` shows the whole set.
 
 **Reading needs no identity at all.** The default view is `local` — every
 author with a claim in this workspace's log — so every role reads back every
@@ -233,10 +247,10 @@ role's claims, and a read resolves, derives and persists no signing key.
 Narrow it when you want a specific frame:
 
 ```sh
-kan show finding --trust me               # this installation's kan author alone
-kan show finding --trust roles            # only the identities declared in .kan/roles
-kan show finding --trust role:prover      # one declared role, by name
-kan show finding --trust did:key:zA --trust did:key:zB   # two explicit authors
+kan-v1 show finding --trust me               # this installation's kan author alone
+kan-v1 show finding --trust roles            # only the identities declared in .kan/roles
+kan-v1 show finding --trust role:prover      # one declared role, by name
+kan-v1 show finding --trust did:key:zA --trust did:key:zB   # two explicit authors
 ```
 
 In a current scope, `me` resolves the selected system profile and its public
@@ -251,7 +265,7 @@ one). Weighted composition is a planned enrichment, not a shipped one.
 
 Any read that leaves claims out says so, on both the human output and `--json`
 (`excluded_by_trust`), so a partial view cannot pass for a complete one. And
-`kan identity authors` lists every author in the log, marking which were
+`kan-v1 identity authors` lists every author in the log, marking which were
 declared — `local` minus `roles`, which is how an identity you did not expect
 shows up as data rather than as an absence.
 

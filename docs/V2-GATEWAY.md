@@ -17,19 +17,19 @@ health with gaps and does not stop inference. An exchange ID joins observations;
 it does not certify shared clocks, remote admission or exactly-once inference.
 A harness retry creates another exchange and may invoke the provider again.
 
-Build with `cargo build --features v2-crypto --bin kan-v2`. All certificate, key
+Build with `cargo build --features v2-crypto --bin kan`. All certificate, key
 and token files supplied to these commands must be owner-only regular files
 (maximum 64 KiB); parent directories must be trusted. Client identity is PEM
 containing its certificate chain and private key. The archive signer is the
 existing kan signing key, separate from TLS credentials.
 
 ```sh
-kan-v2 gateway --listen 0.0.0.0:8443 \
+kan gateway --listen 0.0.0.0:8443 \
   --certificate server.pem --tls-key server.key --client-ca clients-ca.pem \
   --provider https://provider.example/fixed \
   --spool gateway.spool --key gateway-signing.key --recipient ARCHIVE_PUBLIC_HEX
 
-kan-v2 collector --listen 127.0.0.1:8181 \
+kan collector --listen 127.0.0.1:8181 \
   --gateway https://gateway.example:8443/v1/forward \
   --server-ca server-ca.pem --identity collector-identity.pem --token-file local.token \
   --spool collector.spool --key collector-signing.key --recipient ARCHIVE_PUBLIC_HEX

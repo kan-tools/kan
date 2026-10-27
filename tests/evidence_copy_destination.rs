@@ -569,7 +569,7 @@ fn interrupted_initialization_requires_explicit_resume_with_retained_recipe() {
     }
 }
 fn cli(args: &[&str]) -> std::process::Output {
-    std::process::Command::new(env!("CARGO_BIN_EXE_kan-v2"))
+    std::process::Command::new(env!("CARGO_BIN_EXE_kan"))
         .args(args)
         .output()
         .unwrap()

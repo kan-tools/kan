@@ -131,7 +131,7 @@ fn pending(path: &std::path::Path) -> Vec<Vec<u8>> {
     rows
 }
 fn cli(args: &[&str]) -> tokio::process::Command {
-    let mut c = tokio::process::Command::new(env!("CARGO_BIN_EXE_kan-v2"));
+    let mut c = tokio::process::Command::new(env!("CARGO_BIN_EXE_kan"));
     c.arg("capture-post").args(args).kill_on_drop(true);
     c
 }

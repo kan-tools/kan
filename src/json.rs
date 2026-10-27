@@ -396,10 +396,10 @@ pub struct ContextJson {
 ///
 /// **Why this exists, and why it is a bulk *read* rather than a faster one.**
 /// `day` answers a single witness by reading the whole claim graph, which
-/// meant one `kan show` per subject: on day's own 40-subject log, `day status`
+/// meant one `kan-v1 show` per subject: on day's own 40-subject log, `day status`
 /// spent 1.99s of its 2.76s inside 41 kan invocations (#123). That cost is
 /// almost entirely `Workspace::open` — an empty log costs ~30ms per call and
-/// `kan identity did`, which reads no log at all, costs the same. So no
+/// `kan-v1 identity did`, which reads no log at all, costs the same. So no
 /// optimisation *inside* a read helps: only collapsing 41 process startups
 /// into one does.
 ///

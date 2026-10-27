@@ -1,20 +1,20 @@
 # Experimental encrypted delivery
 
-Build with `cargo build --features v2-crypto --bin kan-v2`. This runbook covers manual encrypted delivery of bounded raw chunks. Use [the gateway](V2-GATEWAY.md) for harness traffic, [the importer](V2-IMPORT.md) for v1 repositories, and [managed deployment](V2-DEPLOYMENT.md) for enrolled service launches. Credentials and directories must already exist. Preserve original source data when rehearsing migration.
+Build with `cargo build --features v2-crypto --bin kan`. This runbook covers manual encrypted delivery of bounded raw chunks. Use [the gateway](V2-GATEWAY.md) for harness traffic, [the importer](V2-IMPORT.md) for v1 repositories, and [managed deployment](V2-DEPLOYMENT.md) for enrolled service launches. Credentials and directories must already exist. Preserve original source data when rehearsing migration.
 
 The writer uses the existing kan P-256 signing-key file format. The archive recipient is a separate X25519 key: the sender only needs its canonical 32-byte public key as lowercase hex. Offline recovery requires the matching raw 32-byte private key in an owner-only regular file. These commands never mint, install or discover keys. Backing up and testing recovery of that private key remains an operator responsibility.
 
 The examples use explicitly supplied shell variables for the queue path, scope token, writer DID, service DID, recipient public key, signing-key file and service URL. Scope is 32 bytes encoded as lowercase hex; operation IDs are 16 bytes encoded as lowercase hex. Select a dedicated writer for a new empty queue. An existing remote writer frontier cannot be adopted by initializing a new empty queue.
 
 ```sh
-kan-v2 spool-init "$QUEUE" --scope "$SCOPE" --writer "$WRITER" \
+kan spool-init "$QUEUE" --scope "$SCOPE" --writer "$WRITER" \
   --audience "$SERVICE" --budget 67108864
 
-kan-v2 queue-input "$QUEUE" --key "$SIGNING_KEY" \
+kan queue-input "$QUEUE" --key "$SIGNING_KEY" \
   --recipient "$RECIPIENT_PUBLIC_HEX" --operation "$OPERATION_HEX" < event.bin
 
-kan-v2 spool-status "$QUEUE" --operation "$OPERATION_HEX"
-kan-v2 spool-drain "$QUEUE" --endpoint "$ENDPOINT" --limit 128
+kan spool-status "$QUEUE" --operation "$OPERATION_HEX"
+kan spool-drain "$QUEUE" --endpoint "$ENDPOINT" --limit 128
 ```
 
 `queue-input` performs no network I/O. Its success means the encrypted signed request is durable in the local spool; it does not mean the server has acknowledged it. Input is limited to 1,048,481 bytes, including binary and empty input. Oversized input fails instead of silently truncating or splitting it. Larger event segmentation and a durable source plan will be supplied by the migration/capture drivers.
@@ -28,8 +28,8 @@ The budget limits pending signed-request bytes, not total filesystem allocation.
 For offline inspection of a still-pending request:
 
 ```sh
-kan-v2 spool-head "$QUEUE" > retained-request.json
-kan-v2 decrypt-request retained-request.json --recipient-key "$RECIPIENT_PRIVATE_FILE" \
+kan spool-head "$QUEUE" > retained-request.json
+kan decrypt-request retained-request.json --recipient-key "$RECIPIENT_PRIVATE_FILE" \
   --scope "$SCOPE" --writer "$WRITER" > recovered-event.bin
 ```
 
@@ -44,11 +44,11 @@ configuration for its admitted archive. Keep this configuration outside spool
 backups. The same owner history must govern ingest and read services. For example:
 
 ```sh
-kan-v2 spool-drain "$QUEUE" --endpoint "$ENDPOINT" \
+kan spool-drain "$QUEUE" --endpoint "$ENDPOINT" \
   --erasure-history "$ERASURE_CONFIG" --limit 128
-kan-v2 spool-watch "$QUEUE" --journal "$JOURNAL" --endpoint "$ENDPOINT" \
+kan spool-watch "$QUEUE" --journal "$JOURNAL" --endpoint "$ENDPOINT" \
   --erasure-history "$ERASURE_CONFIG"
-kan-v2 spool-status "$QUEUE" --operation "$OPERATION_HEX" \
+kan spool-status "$QUEUE" --operation "$OPERATION_HEX" \
   --erasure-history "$ERASURE_CONFIG"
 ```
 
@@ -68,7 +68,7 @@ in flight. Unaffected requests ahead of selected requests remain deliverable.
 To reconcile a stopped sender explicitly:
 
 ```sh
-kan-v2 reconcile-spool-erasure "$QUEUE" --erasure-history "$ERASURE_CONFIG"
+kan reconcile-spool-erasure "$QUEUE" --erasure-history "$ERASURE_CONFIG"
 ```
 
 This removes ciphertext retained in selected admitted pending requests and the
@@ -96,7 +96,7 @@ pinned erasure Access objects covering every source citation and known ancestor.
 Keep this configuration independent of workspace and queue backups.
 
 ```sh
-kan-v2 spool-drain "$QUEUE" --endpoint "$ENDPOINT" \
+kan spool-drain "$QUEUE" --endpoint "$ENDPOINT" \
   --erasure-history "$DESTINATION_CUSTODY" \
   --publication-guard "$SOURCE_GUARD" --limit 128
 ```

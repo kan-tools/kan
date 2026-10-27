@@ -16,7 +16,7 @@ with tempfile.TemporaryDirectory(prefix="kan-migration-controls-") as directory:
     if script.count(old) != 1:
         raise SystemExit("fixture mutation no longer matches exactly once")
     mutant.write_text(script.replace(old, 'if false \\\n', 1))
-    binary = str(ROOT / "target/debug/kan")
+    binary = str(ROOT / "target/debug/kan-v1")
     output = subprocess.run(["bash", str(mutant), binary, binary, "seed"],
                             env=ENV, capture_output=True, text=True, check=True)
     if output.stdout.strip() != "unwritable":

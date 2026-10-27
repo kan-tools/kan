@@ -2,7 +2,7 @@
 //! surfaces the change-ledger golden structurally cannot reach.
 //!
 //! **Why these are not in `tests/golden_trust_and_identity.rs`.** AC-11 named
-//! that fixture as the witness for `kan identity role list`'s output changing
+//! that fixture as the witness for `kan-v1 identity role list`'s output changing
 //! shape. It cannot be: its workspace is driven entirely by
 //! `KAN_IDENTITY_FILE` and has no identity of its own, so under REQ-7 it can
 //! never hold a declared role, and the golden can only ever freeze the *empty*
@@ -20,7 +20,7 @@ struct Run {
 }
 
 fn kan_as(dir: &std::path::Path, key: Option<&std::path::Path>, args: &[&str]) -> Run {
-    let mut cmd = Command::new(env!("CARGO_BIN_EXE_kan"));
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_kan-v1"));
     cmd.args(args).current_dir(dir);
     match key {
         Some(k) => {
@@ -148,7 +148,7 @@ fn three_empty_roles_frames_read_differently() {
     // Built by REPLACING the workspace's rooting artifact by hand -- delete
     // the seed, drop a different key at `.kan/identity` -- because that is how
     // this state actually arises: someone restores the wrong key file. It is
-    // deliberately NOT built with `kan identity adopt`, which since REQ-9
+    // deliberately NOT built with `kan-v1 identity adopt`, which since REQ-9
     // REPAIRS this state by carrying the registry across, so an adopt-built
     // (c) would silently become case (a) and this test would assert nothing.
     let foreign = workspace_with_own_identity();
@@ -202,7 +202,7 @@ fn declared_dids(dir: &std::path::Path) -> BTreeSet<String> {
         .collect()
 }
 
-/// REQ-9 + AC-10c: `kan identity adopt` leaves `--trust roles` naming the
+/// REQ-9 + AC-10c: `kan-v1 identity adopt` leaves `--trust roles` naming the
 /// **same author set** it named before.
 #[test]
 fn adopt_carries_the_role_registry_across() {
@@ -523,7 +523,7 @@ fn import_refuses_to_rebind_a_live_name() {
 /// operator would ask on.
 ///
 /// Without it, upgrading `sheaf-games` -- the one real workspace with this
-/// file -- makes `--trust roles` go empty and `kan identity authors` report
+/// file -- makes `--trust roles` go empty and `kan-v1 identity authors` report
 /// four UNDECLARED authors, with nothing anywhere pointing at the file sitting
 /// in `.kan/`. Decided with Maxine when the one-shot import was chosen; the
 /// cost of every non-automatic option was exactly this, and this closes it
@@ -544,7 +544,7 @@ fn a_legacy_roles_file_is_noticed_and_named() {
         let run = kan_as(dir.path(), None, args);
         assert!(run.ok, "{args:?} failed: {}", run.stderr);
         assert!(
-            run.stdout.contains("kan identity role import"),
+            run.stdout.contains("kan-v1 identity role import"),
             "{args:?} did not name the command that brings the file across: {}",
             run.stdout
         );
@@ -556,7 +556,7 @@ fn a_legacy_roles_file_is_noticed_and_named() {
     assert!(add.ok, "role add failed: {}", add.stderr);
     let listed = kan_as(dir.path(), None, &["identity", "role", "list"]);
     assert!(
-        !listed.stdout.contains("kan identity role import"),
+        !listed.stdout.contains("kan-v1 identity role import"),
         "the notice outlived the state it describes: {}",
         listed.stdout
     );
@@ -602,7 +602,7 @@ fn an_empty_roles_alias_still_composes() {
     );
 }
 
-/// REQ-4 + AC-11: `kan identity role list` reports **name and DID, and no key
+/// REQ-4 + AC-11: `kan-v1 identity role list` reports **name and DID, and no key
 /// path**, in both renderings.
 #[test]
 fn role_list_reports_two_columns_and_no_key_path() {

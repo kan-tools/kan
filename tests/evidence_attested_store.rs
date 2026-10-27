@@ -1330,7 +1330,7 @@ fn erasure_custody_cli_initializes_pinned_genesis_and_reconciles_without_activat
     config
         .write_all(&serde_json::to_vec(&history).unwrap())
         .unwrap();
-    let initialized = Command::new(env!("CARGO_BIN_EXE_kan-v2"))
+    let initialized = Command::new(env!("CARGO_BIN_EXE_kan"))
         .arg("init-erasure-history")
         .arg(config.path())
         .arg("--signing-key")
@@ -1352,7 +1352,7 @@ fn erasure_custody_cli_initializes_pinned_genesis_and_reconciles_without_activat
         .unwrap()
         .records
         .is_empty());
-    let retry = Command::new(env!("CARGO_BIN_EXE_kan-v2"))
+    let retry = Command::new(env!("CARGO_BIN_EXE_kan"))
         .arg("init-erasure-history")
         .arg(config.path())
         .arg("--signing-key")
@@ -1369,7 +1369,7 @@ fn erasure_custody_cli_initializes_pinned_genesis_and_reconciles_without_activat
     std::fs::write(config.path(), serde_json::to_vec(&pinned).unwrap()).unwrap();
     let root = tempfile::tempdir().unwrap();
     let archive = Archive::create(root.path(), binding()).unwrap();
-    let result = Command::new(env!("CARGO_BIN_EXE_kan-v2"))
+    let result = Command::new(env!("CARGO_BIN_EXE_kan"))
         .arg("reconcile-erasure")
         .arg(root.path())
         .arg("--erasure-history")
@@ -2016,7 +2016,7 @@ fn owner_cli_explicitly_initializes_the_index_without_changing_archive_evidence(
     .unwrap();
     let mut signer = tempfile::NamedTempFile::new().unwrap();
     signer.write_all(&[7; 32]).unwrap();
-    let result = Command::new(env!("CARGO_BIN_EXE_kan-v2"))
+    let result = Command::new(env!("CARGO_BIN_EXE_kan"))
         .arg("rebuild-serving-index")
         .arg(temp.path())
         .arg("--binding")

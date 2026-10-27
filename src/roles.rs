@@ -100,7 +100,7 @@ pub fn declaring_authors(claims: &[(Cid, StoredClaim)]) -> Vec<(Did, Vec<Declare
 /// A notice for a workspace holding a **legacy `.kan/roles`** that has not
 /// been imported — or the empty string when there is nothing to say.
 ///
-/// **The discoverability half of the migration decision.** `kan identity role
+/// **The discoverability half of the migration decision.** `kan-v1 identity role
 /// import` is one-shot and explicit, and the cost of any non-automatic option
 /// was named when it was chosen: an upgraded workspace gets an empty answer
 /// with nothing pointing at the explanation sitting right there on disk. This
@@ -119,7 +119,7 @@ pub fn legacy_file_notice(kan_dir: &std::path::Path, declared: &Declared) -> Str
     }
     format!(
         "\nnote: this workspace has a `.kan/{}` file from a kan older than v0.12, and \
-         nothing in it has been imported. Roles live in the log now; run `kan identity \
+         nothing in it has been imported. Roles live in the log now; run `kan-v1 identity \
          role import` to bring those declarations across.\n",
         crate::sign::ROLES_FILE
     )

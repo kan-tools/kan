@@ -2,7 +2,7 @@
 
 Use one independently retained, owner-only deployment manifest for each host's
 archive services, sender processes and Library workspace. Add `--deployment FILE`
-to their normal `kan-v2` command. The manifest supplies mandatory erasure custody
+to their normal `kan` command. The manifest supplies mandatory erasure custody
 and annotation source guards; individual command-line arguments cannot replace
 them with a different file. An unregistered data path refuses startup.
 
@@ -61,15 +61,15 @@ Keep the usual binding, issuer signing key, access policy and listen options.
 Enrollment supplies `--erasure-history` to both service roles:
 
 ```sh
-kan-v2 --deployment /etc/kan/deployment.json serve-admitted /srv/kan/archive --indexed \
+kan --deployment /etc/kan/deployment.json serve-admitted /srv/kan/archive --indexed \
   --binding /etc/kan/capture-binding.json --signing-key /etc/kan/issuer.key \
   --access-policy /etc/kan/capture-policy.json
 
-kan-v2 --deployment /etc/kan/deployment.json serve-proof /srv/kan/archive --indexed \
+kan --deployment /etc/kan/deployment.json serve-proof /srv/kan/archive --indexed \
   --binding /etc/kan/capture-binding.json --signing-key /etc/kan/issuer.key \
   --access-policy /etc/kan/capture-policy.json
 
-kan-v2 --deployment /etc/kan/deployment.json spool-watch /srv/kan/annotation-queue.sqlite \
+kan --deployment /etc/kan/deployment.json spool-watch /srv/kan/annotation-queue.sqlite \
   --journal /srv/kan/annotation-health.sqlite --endpoint http://127.0.0.1:7282/v1/rpc
 ```
 
@@ -94,7 +94,7 @@ in that set. A configured annotation outbox must be a registered annotation queu
 with the same workspace guard; its destination custody is supplied automatically.
 
 ```sh
-kan-v2 --deployment /etc/kan/deployment.json library \
+kan --deployment /etc/kan/deployment.json library \
   --config /etc/kan/reader.json --signing-key /etc/kan/reader.key \
   --workspace /srv/kan/reader.sqlite --workspace-key /etc/kan/reader-workspace.key \
   --token-file /etc/kan/library.token --annotation-outbox /etc/kan/outbox.json \
@@ -143,7 +143,7 @@ archives also support indexed startup and append. Initialize once with an explic
 full audit using the corresponding profile binding:
 
 ```sh
-kan-v2 rebuild-serving-index /srv/kan/archive \
+kan rebuild-serving-index /srv/kan/archive \
   --binding /etc/kan/archive-binding.json --signing-key /etc/kan/issuer.key
 ```
 
@@ -184,8 +184,8 @@ After creating the first policy or erasure genesis, initialize its serving index
 using the owner signing key (not the archive issuer key):
 
 ```sh
-kan-v2 rebuild-control-index /etc/kan/access-policy.json --signing-key /etc/kan/owner.key
-kan-v2 rebuild-control-index /etc/kan/erasure-history.json --erasure --signing-key /etc/kan/owner.key
+kan rebuild-control-index /etc/kan/access-policy.json --signing-key /etc/kan/owner.key
+kan rebuild-control-index /etc/kan/erasure-history.json --erasure --signing-key /etc/kan/owner.key
 ```
 
 The Library owner panel also exposes “Initialize or repair control reads” for

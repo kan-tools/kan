@@ -145,7 +145,7 @@ only on literal loopback. The browser-facing listener requires literal loopback;
 remote use goes through an authenticated tunnel.
 
 ```sh
-kan-v2 library --config /absolute/path/reader.json \
+kan library --config /absolute/path/reader.json \
   --signing-key /absolute/path/reader.identity \
   --token-file /absolute/path/reader.token \
   --listen 127.0.0.1:7284
@@ -197,7 +197,7 @@ interpret this runbook as proof that uncompleted acceptance criteria passed.
 
 ## Harness snapshots and decoded attachments
 
-`kan-v2 harness-capture --spool /absolute/queue --key /absolute/writer-key
+`kan harness-capture --spool /absolute/queue --key /absolute/writer-key
 --recipient <archive-public-key-hex> --session <session-id> --input /absolute/transcript.jsonl`
 streams a transcript's observed prefix into encrypted 64 KiB capture frames. Omit
 `--input` to capture stdin. It does not send inference. Repeated snapshots retain
@@ -283,7 +283,7 @@ saved-view declarations outside code repositories. Provision a **dedicated**
 (mode 0700) for the database. Supply both options when starting the Library:
 
 ```sh
-kan-v2 library --config /absolute/path/reader.json \
+kan library --config /absolute/path/reader.json \
   --signing-key /absolute/path/reader.identity \
   --token-file /absolute/path/reader.token \
   --workspace /absolute/path/private/reader-workspace.sqlite \
@@ -310,7 +310,7 @@ CLI callers can execute the same JSON API request from a private file, without
 starting an HTTP server or supplying a UI token:
 
 ```sh
-kan-v2 library --config /absolute/path/reader.json \
+kan library --config /absolute/path/reader.json \
   --signing-key /absolute/path/reader.identity \
   --workspace /absolute/path/private/reader-workspace.sqlite \
   --workspace-key /absolute/path/private/workspace.key \
@@ -389,7 +389,7 @@ requests used by the durable spool. Select it explicitly with the same admitted
 binding file used by the proof reader:
 
 ```sh
-kan-v2 serve-admitted /absolute/path/archive \
+kan serve-admitted /absolute/path/archive \
   --binding /absolute/path/admitted-binding.json \
   --signing-key /absolute/path/archive-owner.identity \
   --grants /absolute/path/ingest-grants.json \
@@ -412,7 +412,7 @@ remote access. Grant changes currently require owner restart/reconfiguration.
 To mount the existing operations console under `/operations/`, add
 `--operations-journal /absolute/path/operations.sqlite` (or a preserved-generation
 collection directory) and `--operations-token-file /absolute/path/operations.token`
-to `kan-v2 library`. The Library navigation then exposes **Operations**. Its
+to `kan library`. The Library navigation then exposes **Operations**. Its
 separate credential is required on operations APIs; a Library token does not gain
 operations access, and the operations token does not gain evidence access.
 History/overview refresh and cancellation use the existing operations manager.
@@ -647,7 +647,7 @@ write. **Preview new attempt** links a new job and new destination while retaini
 the prior outcome. One owner job runs at a time. These are local verified copies;
 `independent_backup: false` remains explicit until a separate-host drill proves it.
 
-The same typed API is available through `kan-v2 owner --config PRIVATE_JSON
+The same typed API is available through `kan owner --config PRIVATE_JSON
 --request PRIVATE_REQUEST_JSON`. Actions are `catalog`, `preview`, `submit` and
 `job`. For one-shot execution, submit with `wait: true`. Browser requests select
 configured IDs and operations; they cannot supply filesystem paths or commands.
@@ -704,7 +704,7 @@ outputs, and writes the complete per-operation provenance to `report.json`.
 The encrypted job receipt links this report and records success or interruption.
 No output is activated and no independent-backup claim is made.
 
-Offline `kan-v2 restore-import` now accepts the same `--proof-archive`,
+Offline `kan restore-import` now accepts the same `--proof-archive`,
 `--proof-scope`, `--proof-issuer`, and optional `--copy-profile` pins as other owner
 commands. Without them it continues to require the legacy archive profile. A
 proof restore audits the issuer-bound metadata chain and reads source bytes from
@@ -741,7 +741,7 @@ rechecks the current source inventory, and reports queue acknowledgment progress
 It never trusts `report.json` as evidence of success and never modifies originals
 or the recovery copy. Changed files, mismatched plans and unsafe paths refuse.
 
-The standalone CLI is `kan-v2 reconcile-import SOURCE --spool ... --source-id ...
+The standalone CLI is `kan reconcile-import SOURCE --spool ... --source-id ...
 --recipient ... --selection store --recovered RECOVERY_DIRECTORY`. Reconciliation
 reports writer fencing, native semantic/identity validation, independent backup
 and key recovery, and explicit activation as separate outstanding conditions.
@@ -759,7 +759,7 @@ Stop all processes using the workspace, including older versions. Keep its datab
 rollback there and authenticates every retained encrypted record:
 
 ```sh
-kan-v2 recover-workspace /private/kan/reader.sqlite /private/kan/recovered.sqlite \
+kan recover-workspace /private/kan/reader.sqlite /private/kan/recovered.sqlite \
   --signing-key /private/keys/reader.signing \
   --recipient-key /private/keys/reader.recipient
 ```
@@ -833,7 +833,7 @@ shown rather than converted into an empty authoritative result.
 For live owner-controlled access, provision an empty private policy directory and
 an access config containing `directory`, the exact proof `binding`, `owner` DID,
 and optional `minimum` signed policy digest. Run
-`kan-v2 init-access-policy /absolute/access.json`. Add an owner target shaped as
+`kan init-access-policy /absolute/access.json`. Add an owner target shaped as
 `{"kind":"access-policy","id":"archive-access","policy":{…},"signing_key":"/absolute/owner.key"}`.
 The signing key must match the configured policy owner; proof services need only
 the public owner DID and read access to the policy journal, never that signing key.
@@ -846,7 +846,7 @@ the first policy is applied. Start `serve-admitted` and `serve-proof` with
 the current signed policy. Failed reads or corrupt policy do not fall back to old
 grants. Static `--grants` mode remains available with its restart-only semantics.
 
-The shared `kan-v2 owner --config … --request …` commands are `access` (target,
+The shared `kan owner --config … --request …` commands are `access` (target,
 optional history offset `after`), `preview-access` (target and full `grants`), and
 `apply-access` (target, exact preview `change`, and digest as `preview`). Stale
 previews conflict. Exact applied requests remain idempotent after later changes.
@@ -881,7 +881,7 @@ access configuration:
 }
 ```
 
-Initialize it with `kan-v2 init-key-history /absolute/keys.json`. Add an owner
+Initialize it with `kan init-key-history /absolute/keys.json`. Add an owner
 target containing `kind: "key-history"`, `id`, `history` (the object above),
 `signing_key` and `recovery_key` (absolute existing private files). In Owner
 maintenance, inspect the history, preview a new epoch, then activate that exact
@@ -954,7 +954,7 @@ Inspect the configured key-history target first (`keys`) to obtain `epoch_ids`.
 `epochs` (exact ordered IDs) and `purpose` (`replace-recovery` or `share-epochs`).
 The preview contains no wrapped keys. `apply-key-transfer` takes its exact `plan`
 and `digest` as `preview`, then returns a signed `kan-key-recovery/1` package.
-These requests use the existing `kan-v2 owner --config … --request …` command,
+These requests use the existing `kan owner --config … --request …` command,
 owner API and **Encryption epochs & recovery** controls in the application.
 
 Replacement requires every current epoch; sharing may select a subset. An
@@ -1109,7 +1109,7 @@ client connections or startup limits requires an explicit service restart.
 Use the same explicit Reader configuration and signing key as the CLI/Library:
 
 ```sh
-kan-v2 library --config /absolute/path/reader.json \
+kan library --config /absolute/path/reader.json \
   --signing-key /absolute/path/reader.identity --mcp
 ```
 
@@ -1152,7 +1152,7 @@ evidence, not an authorized erasure.
 
 ### Independent erasure custody (experimental storage integration)
 
-`kan-v2 init-erasure-history CONFIG --signing-key OWNER_KEY` initializes an empty,
+`kan init-erasure-history CONFIG --signing-key OWNER_KEY` initializes an empty,
 pre-provisioned private directory and publishes an owner-signed empty genesis. The
 input config contains `directory` (absolute path), the archive's `binding`, `owner`
 (DID of the owner key) and `minimum: null`. The output's `config` contains the pinned
@@ -1162,7 +1162,7 @@ Use a directory outside the archive backup tree and retain its complete signed
 history independently. The owner key may differ from the storage issuer key.
 
 Before starting services on a restored archive, run
-`kan-v2 reconcile-erasure ARCHIVE --erasure-history CONFIG` using independently
+`kan reconcile-erasure ARCHIVE --erasure-history CONFIG` using independently
 current custody. This reconciles storage history and reports other cleanup and
 activation as not performed; it does not claim whole-instance erasure completion.
 
@@ -1286,7 +1286,7 @@ for the admission fence; registering a path here does not enroll another process
 
 
 Enroll a reader workspace with repeated `--workspace-erasure-history HISTORY.json`
-arguments to `kan-v2 library` (alongside `--workspace` / `--workspace-key`). Keep
+arguments to `kan library` (alongside `--workspace` / `--workspace-key`). Keep
 those history configurations independent of workspace backups. The reader checks
 current custody on every workspace operation; a custody advance fences reads and
 writes until dependencies are removed. An old restored workspace fails activation

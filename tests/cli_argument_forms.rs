@@ -11,18 +11,6 @@
 
 use std::process::Command;
 
-fn kan() -> Option<std::path::PathBuf> {
-    let exe = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("target")
-        .join(if cfg!(debug_assertions) {
-            "debug"
-        } else {
-            "release"
-        })
-        .join("kan");
-    exe.exists().then_some(exe)
-}
-
 struct Repo {
     dir: tempfile::TempDir,
 }
@@ -52,7 +40,7 @@ impl Repo {
     }
 
     fn run(&self, args: &[&str]) -> std::process::Output {
-        Command::new(kan().expect("binary"))
+        Command::new(env!("CARGO_BIN_EXE_kan-v1"))
             .args(args)
             .current_dir(self.dir.path())
             // Never touch the developer's real keychain or identity.
@@ -65,9 +53,6 @@ impl Repo {
 /// Every claim-writing verb accepts the subject positionally *and* as a flag.
 #[test]
 fn both_subject_forms_work_on_every_write_verb() {
-    if kan().is_none() {
-        return; // binary not built; nothing to conform to
-    }
     let repo = Repo::new();
 
     let cases: Vec<(&str, Vec<&str>)> = vec![
@@ -108,9 +93,6 @@ fn both_subject_forms_work_on_every_write_verb() {
 /// accepting an argument shape is worthless if it files the claim elsewhere.
 #[test]
 fn both_forms_file_the_claim_under_the_same_subject() {
-    if kan().is_none() {
-        return;
-    }
     let repo = Repo::new();
     repo.run(&["observe", "target", "via positional"]);
     repo.run(&["observe", "via flag", "--subject", "target"]);
@@ -124,9 +106,6 @@ fn both_forms_file_the_claim_under_the_same_subject() {
 /// Giving the subject twice is refused rather than silently resolved one way.
 #[test]
 fn giving_the_subject_both_ways_is_refused() {
-    if kan().is_none() {
-        return;
-    }
     let repo = Repo::new();
     let out = repo.run(&["observe", "s", "text", "--subject", "other"]);
     assert!(!out.status.success());
@@ -142,9 +121,6 @@ fn giving_the_subject_both_ways_is_refused() {
 /// another and `--json`.
 #[test]
 fn selected_show_argument_forms_are_unambiguous() {
-    if kan().is_none() {
-        return;
-    }
     let repo = Repo::new();
     assert!(repo.run(&["observe", "alpha", "one"]).status.success());
 
@@ -191,9 +167,6 @@ fn selected_show_argument_forms_are_unambiguous() {
 /// because the error named neither.
 #[test]
 fn a_missing_subject_names_both_accepted_forms() {
-    if kan().is_none() {
-        return;
-    }
     let repo = Repo::new();
     let out = repo.run(&["result", "an outcome worth keeping"]);
     assert!(!out.status.success());
@@ -213,9 +186,6 @@ fn a_missing_subject_names_both_accepted_forms() {
 /// not the binary producing it, which left ADR-50's contract half-built.
 #[test]
 fn the_binary_reports_its_version() {
-    if kan().is_none() {
-        return;
-    }
     let repo = Repo::new();
     let out = repo.run(&["--version"]);
     assert!(out.status.success());
@@ -229,9 +199,6 @@ fn the_binary_reports_its_version() {
 /// The recovery phrase must never be accepted on the command line (#104).
 #[test]
 fn the_recovery_phrase_is_refused_as_an_argument() {
-    if kan().is_none() {
-        return;
-    }
     let repo = Repo::new();
     repo.run(&["observe", "s", "seed"]);
     let out = repo.run(&["identity", "restore", "abandon", "abandon", "art"]);
@@ -253,9 +220,6 @@ fn the_recovery_phrase_is_refused_as_an_argument() {
 /// `--subject general`.
 #[test]
 fn a_single_positional_naming_a_subject_is_refused() {
-    if kan().is_none() {
-        return;
-    }
     let repo = Repo::new();
     // Make "login-bug" a real subject.
     assert!(repo
@@ -263,7 +227,7 @@ fn a_single_positional_naming_a_subject_is_refused() {
         .status
         .success());
 
-    // Now the forgotten-text form: `kan observe login-bug`.
+    // Now the forgotten-text form: `kan-v1 observe login-bug`.
     let out = repo.run(&["observe", "login-bug"]);
     assert!(
         !out.status.success(),

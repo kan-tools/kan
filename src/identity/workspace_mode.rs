@@ -62,7 +62,7 @@ pub async fn classify(
 /// credential. Public scope and claim evidence are sufficient to choose the
 /// renderer; a private key is needed only when a caller later prepares a
 /// writer. In particular, this path must not cross a macOS keychain ACL and
-/// turn `kan show` into an authorization prompt from another binary.
+/// turn `kan-v1 show` into an authorization prompt from another binary.
 pub async fn classify_for_read(
     root: &Path,
     log: &mut Log,

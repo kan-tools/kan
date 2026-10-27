@@ -2019,7 +2019,7 @@ fn seed_released_workspace(path: &std::path::Path) {
 }
 
 fn run_kan(path: &std::path::Path, args: &[&str]) -> std::process::Output {
-    std::process::Command::new(env!("CARGO_BIN_EXE_kan"))
+    std::process::Command::new(env!("CARGO_BIN_EXE_kan-v1"))
         .args(args)
         .current_dir(path)
         .env("KAN_NO_KEYCHAIN", "1")

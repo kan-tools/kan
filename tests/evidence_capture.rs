@@ -589,7 +589,7 @@ async fn cli_missing_spool_reports_gap_separately_from_binary_stdout() {
         Duration::ZERO,
     )
     .await;
-    let result = tokio::process::Command::new(env!("CARGO_BIN_EXE_kan-v2"))
+    let result = tokio::process::Command::new(env!("CARGO_BIN_EXE_kan"))
         .args([
             "capture-post",
             "--endpoint",
@@ -699,7 +699,7 @@ async fn killed_cli_retains_intent_without_fabricating_terminal_completion() {
         Duration::from_secs(10),
     )
     .await;
-    let mut child = tokio::process::Command::new(env!("CARGO_BIN_EXE_kan-v2"))
+    let mut child = tokio::process::Command::new(env!("CARGO_BIN_EXE_kan"))
         .args([
             "capture-post",
             "--endpoint",
@@ -765,7 +765,7 @@ async fn cli_deadline_exits_even_when_stdout_pipe_is_not_consumed() {
         Duration::ZERO,
     )
     .await;
-    let mut child = tokio::process::Command::new(env!("CARGO_BIN_EXE_kan-v2"))
+    let mut child = tokio::process::Command::new(env!("CARGO_BIN_EXE_kan"))
         .args([
             "capture-post",
             "--endpoint",

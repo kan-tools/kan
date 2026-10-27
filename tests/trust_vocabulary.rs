@@ -23,7 +23,7 @@ struct Run {
 }
 
 fn kan(dir: &std::path::Path, key: Option<&std::path::Path>, args: &[&str]) -> Run {
-    let mut cmd = Command::new(env!("CARGO_BIN_EXE_kan"));
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_kan-v1"));
     cmd.args(args).current_dir(dir).env("KAN_NO_KEYCHAIN", "1");
     match key {
         Some(k) => {
@@ -69,7 +69,7 @@ fn git_repo() -> tempfile::TempDir {
 /// A workspace with a primary identity and one declared role, both having
 /// written to the same subject.
 ///
-/// Note that `kan identity role add` registers the **primary too**, under the
+/// Note that `kan-v1 identity role add` registers the **primary too**, under the
 /// name `primary` — so in this workspace `roles` and `local` coincide. That
 /// is correct and worth knowing: the narrowing REQ-5 describes is only
 /// observable where an author wrote *without* being declared, which is what
@@ -321,7 +321,11 @@ fn local_minus_roles_is_the_undeclared_authors_and_the_cli_says_so() {
     let (did_a, did_b) = (did_of(&a), did_of(&b));
 
     let listed = kan(dir.path(), Some(&a), &["identity", "authors"]);
-    assert!(listed.ok, "kan identity authors failed: {}", listed.stderr);
+    assert!(
+        listed.ok,
+        "kan-v1 identity authors failed: {}",
+        listed.stderr
+    );
     assert!(
         listed.stdout.contains(&did_a) && listed.stdout.contains(&did_b),
         "not every log author was listed: {}",
@@ -506,7 +510,7 @@ fn a_named_role_composes_with_weights() {
     assert_eq!(weight_of(&ws.did(&ws.primary)), 1.0);
 }
 
-/// `review/full-pass-v0.12` F9: `kan show` and `kan status` must mark a
+/// `review/full-pass-v0.12` F9: `kan-v1 show` and `kan-v1 status` must mark a
 /// status superseded under the SAME edge set. A status dominated only by a
 /// GitAncestry edge — two authors disagreeing, ordered by commit ancestry
 /// with no attested `cites` — was settled-away under `status` (computed

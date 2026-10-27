@@ -35,7 +35,7 @@ fn fixture(root: &Path) -> (Vec<u8>, Vec<u8>) {
     (m, r)
 }
 fn run(root: &Path, args: &[&str]) -> Output {
-    Command::new(env!("CARGO_BIN_EXE_kan-v2"))
+    Command::new(env!("CARGO_BIN_EXE_kan"))
         .args(args)
         .current_dir(root)
         .env("PATH", "/no-legacy-kan-here")
@@ -222,7 +222,7 @@ fn cli_recovery_rejects_non_utf8_output_before_creating_it() {
     let destination = temp.path().join(std::ffi::OsString::from_vec(
         b"invalid-\xff.sqlite".to_vec(),
     ));
-    let output = Command::new(env!("CARGO_BIN_EXE_kan-v2"))
+    let output = Command::new(env!("CARGO_BIN_EXE_kan"))
         .arg("recover")
         .arg(temp.path().join("source/archive.sqlite"))
         .arg(&destination)
@@ -287,7 +287,7 @@ fn cli_init_and_backup_reject_non_utf8_output_before_mutation() {
     let invalid = temp
         .path()
         .join(std::ffi::OsString::from_vec(b"invalid-\xff".to_vec()));
-    let init = Command::new(env!("CARGO_BIN_EXE_kan-v2"))
+    let init = Command::new(env!("CARGO_BIN_EXE_kan"))
         .arg("init")
         .arg(&invalid)
         .output()
@@ -297,7 +297,7 @@ fn cli_init_and_backup_reject_non_utf8_output_before_mutation() {
     assert!(!invalid.exists());
     let source = temp.path().join("source");
     fixture(&source);
-    let backup = Command::new(env!("CARGO_BIN_EXE_kan-v2"))
+    let backup = Command::new(env!("CARGO_BIN_EXE_kan"))
         .arg("backup")
         .arg(&source)
         .arg(&invalid)

@@ -19,7 +19,7 @@ fn legacy_test_identity(dir: &std::path::Path) -> std::path::PathBuf {
 }
 
 fn kan(dir: &std::path::Path, args: &[&str]) -> (String, String, bool) {
-    let output = Command::new(env!("CARGO_BIN_EXE_kan"))
+    let output = Command::new(env!("CARGO_BIN_EXE_kan-v1"))
         .args(args)
         .current_dir(dir)
         // This suite exercises the released CLI behavior rather than first-run
@@ -221,7 +221,7 @@ fn verbose_flag_changes_stdout_default_stays_bare_cid() {
     );
 }
 
-/// AC-4: `kan mcp install` prints both registration paths without mutating
+/// AC-4: `kan-v1 mcp install` prints both registration paths without mutating
 /// any config.
 #[test]
 fn mcp_install_prints_both_registration_paths() {
@@ -229,7 +229,7 @@ fn mcp_install_prints_both_registration_paths() {
     let (out, _, ok) = kan(dir.path(), &["mcp", "install"]);
     assert!(ok);
     assert!(out.contains("claude mcp add"));
-    assert!(out.contains(env!("CARGO_BIN_EXE_kan")));
+    assert!(out.contains(env!("CARGO_BIN_EXE_kan-v1")));
     assert!(out.contains("/plugin install"));
 }
 
@@ -269,7 +269,7 @@ fn same_merges_two_subjects_into_one_view() {
     assert!(show_out.contains("reported by a user"));
 }
 
-/// AC-11: `kan show` on a merged subject names at least one witness
+/// AC-11: `kan-v1 show` on a merged subject names at least one witness
 /// (author + direction), not just the flat merged subject list.
 #[test]
 fn show_on_a_merged_subject_names_a_witness() {
@@ -286,7 +286,7 @@ fn show_on_a_merged_subject_names_a_witness() {
     assert!(show_out.contains("issue-7"));
 }
 
-/// AC-12: `kan show` on a subject sharing a file-anchor with another
+/// AC-12: `kan-v1 show` on a subject sharing a file-anchor with another
 /// subject lists it as related.
 #[test]
 fn show_lists_a_subject_sharing_a_file_anchor_as_related() {
@@ -320,8 +320,8 @@ fn show_lists_a_subject_sharing_a_file_anchor_as_related() {
     assert!(show_out.contains("issue-7"));
 }
 
-/// AC-1: `kan resolve` produces two claims (a `Resolution` and a
-/// `Status{Resolved}` citing it) and `kan status` reflects the settled
+/// AC-1: `kan-v1 resolve` produces two claims (a `Resolution` and a
+/// `Status{Resolved}` citing it) and `kan-v1 status` reflects the settled
 /// resolved state.
 #[test]
 fn resolve_pair_writes_resolution_and_status() {
@@ -344,7 +344,7 @@ fn resolve_pair_writes_resolution_and_status() {
     assert!(status_out.contains("Resolved"));
 }
 
-/// AC-2: `kan block` produces a `Blocker` + `Status{Blocked}` pair, same
+/// AC-2: `kan-v1 block` produces a `Blocker` + `Status{Blocked}` pair, same
 /// shape as AC-1.
 #[test]
 fn block_pair_writes_blocker_and_status() {
@@ -367,7 +367,7 @@ fn block_pair_writes_blocker_and_status() {
     assert!(status_out.contains("Blocked"));
 }
 
-/// AC-3 (first half): `kan retract` on the caller's own claim excludes it
+/// AC-3 (first half): `kan-v1 retract` on the caller's own claim excludes it
 /// from the live set on the next fold. The second half — rejecting another
 /// author's claim at write time — needs a genuinely different signing
 /// identity, which the CLI's single-identity-per-repo model can't produce;
@@ -398,7 +398,7 @@ fn retract_excludes_own_claim_from_the_live_set() {
     assert!(err.contains("no such claim"));
 }
 
-/// AC-4: `kan mark` writes a bare `Status{InProgress}` claim.
+/// AC-4: `kan-v1 mark` writes a bare `Status{InProgress}` claim.
 #[test]
 fn mark_writes_a_bare_status_claim() {
     let dir = git_repo();
@@ -413,7 +413,7 @@ fn mark_writes_a_bare_status_claim() {
     assert!(status_out.contains("InProgress"));
 }
 
-/// AC-5: `kan resolve --cites` round-trips a citation the same way
+/// AC-5: `kan-v1 resolve --cites` round-trips a citation the same way
 /// `observe --cites` already does.
 #[test]
 fn resolve_cites_round_trips() {
@@ -432,7 +432,7 @@ fn resolve_cites_round_trips() {
     assert!(show_out.contains(&prior_cid));
 }
 
-/// `kan same --cites` round-trips too (the other half of AC-5).
+/// `kan-v1 same --cites` round-trips too (the other half of AC-5).
 #[test]
 fn same_cites_round_trips() {
     let dir = git_repo();
@@ -451,7 +451,7 @@ fn same_cites_round_trips() {
     assert!(show_out.contains(&prior_cid));
 }
 
-/// AC-1: `kan relate` writes a live `Relation{kind, target}` claim for each
+/// AC-1: `kan-v1 relate` writes a live `Relation{kind, target}` claim for each
 /// of the 5 non-identity `RelationKind`s.
 #[test]
 fn relate_writes_a_relation_claim_for_each_non_identity_kind() {
@@ -461,7 +461,7 @@ fn relate_writes_a_relation_claim_for_each_non_identity_kind() {
 
     for kind in ["blocks", "about", "manifests-at", "depends-on", "accepts"] {
         let (_, err, ok) = kan(dir.path(), &["relate", "bug-42", kind, "issue-7"]);
-        assert!(ok, "kan relate {kind} failed: {err}");
+        assert!(ok, "kan-v1 relate {kind} failed: {err}");
     }
 
     let (show_out, _, ok) = kan(dir.path(), &["show", "bug-42"]);
@@ -474,7 +474,7 @@ fn relate_writes_a_relation_claim_for_each_non_identity_kind() {
 }
 
 /// AC-1: `same-as` is not a valid `kind` value for `relate` — rejected at
-/// argument parsing, confirming `SameAs` stays `kan same`'s alone (REQ-2).
+/// argument parsing, confirming `SameAs` stays `kan-v1 same`'s alone (REQ-2).
 #[test]
 fn relate_rejects_same_as_at_argument_parsing() {
     let dir = git_repo();
@@ -483,8 +483,8 @@ fn relate_rejects_same_as_at_argument_parsing() {
     assert!(err.contains("same-as") || err.to_lowercase().contains("invalid value"));
 }
 
-/// AC-3 (first half): `kan reject` on the caller's own claim errors,
-/// mentioning `kan retract`. (The success half — rejecting another author's
+/// AC-3 (first half): `kan-v1 reject` on the caller's own claim errors,
+/// mentioning `kan-v1 retract`. (The success half — rejecting another author's
 /// claim — needs a genuinely different signing identity, so it's covered at
 /// the library level in `tests/write_surface.rs`, same split `retract`'s own
 /// cross-author half already uses.)
@@ -496,12 +496,12 @@ fn reject_refuses_the_callers_own_claim() {
 
     let (_, err, ok) = kan(dir.path(), &["reject", &cid]);
     assert!(!ok);
-    assert!(err.contains("kan retract"));
+    assert!(err.contains("kan-v1 retract"));
 }
 
-/// AC-6: `kan observe bug-42 "fixed" --status resolved` produces two
+/// AC-6: `kan-v1 observe bug-42 "fixed" --status resolved` produces two
 /// claims (`Observation` + `Status{Resolved}` citing it) — the same pairing
-/// shape `kan resolve` produces, via a different narrative kind.
+/// shape `kan-v1 resolve` produces, via a different narrative kind.
 #[test]
 fn observe_status_pairs_a_status_claim_citing_the_narrative() {
     let dir = git_repo();
@@ -617,7 +617,7 @@ fn observe_kind_without_title_errors() {
     assert!(err.contains("--title") && err.contains("--kind"));
 }
 
-/// AC-8: `kan issues` excludes a subject with zero `Status` claims and no
+/// AC-8: `kan-v1 issues` excludes a subject with zero `Status` claims and no
 /// declared `SubjectKind::Issue` -- the regression case shaped exactly like
 /// `spine` (only narrative claims, never `Status`), the real shipped bug
 /// this fixes.
@@ -637,7 +637,7 @@ fn issues_excludes_a_subject_with_no_status_and_no_declared_issue_kind() {
     assert!(issues_out.contains("no open issues"));
 }
 
-/// AC-9: `kan issues` *does* list a subject with a declared
+/// AC-9: `kan-v1 issues` *does* list a subject with a declared
 /// `SubjectKind::Issue` `Subject` claim, even before any `Status` claim
 /// exists for it.
 #[test]
@@ -663,7 +663,7 @@ fn issues_lists_a_subject_declared_as_issue_kind_before_any_status_claim() {
     assert!(issues_out.contains("bug-42"));
 }
 
-/// AC-1: `kan result` writes a live `Result{text}` claim, with no paired
+/// AC-1: `kan-v1 result` writes a live `Result{text}` claim, with no paired
 /// `Status` claim (unlike `resolve`).
 #[test]
 fn result_writes_a_result_claim_with_no_status_pairing() {
@@ -681,7 +681,7 @@ fn result_writes_a_result_claim_with_no_status_pairing() {
     assert!(!show_out.contains("Status"));
 }
 
-/// `kan result` also supports `--status`, matching `observe`/`plan`/
+/// `kan-v1 result` also supports `--status`, matching `observe`/`plan`/
 /// `decide`'s generalized (opt-in, not automatic) pairing.
 #[test]
 fn result_status_pairs_a_status_claim() {
@@ -787,7 +787,7 @@ fn naming_nudge_fires_on_structuring_verbs() {
     );
 }
 
-/// `kan result` (REQ-1, PR1) is also a subject-taking write verb -- the
+/// `kan-v1 result` (REQ-1, PR1) is also a subject-taking write verb -- the
 /// nudge covers it too, not just the verbs named in the original v0.4
 /// design doc text (a design-doc undercount caught and fixed at
 /// implementation time, ADR-38).
@@ -836,7 +836,7 @@ fn a_weighted_trust_selector_warns_weights_are_inert() {
     // A claim from a second identity so there is something to trust.
     let key = dir.path().join("other-key");
     kan::sign::Identity::generate().save(&key).unwrap();
-    let other = std::process::Command::new(env!("CARGO_BIN_EXE_kan"))
+    let other = std::process::Command::new(env!("CARGO_BIN_EXE_kan-v1"))
         .args(["observe", "finding", "from the other author"])
         .current_dir(dir.path())
         .env("KAN_NO_KEYCHAIN", "1")
@@ -845,7 +845,7 @@ fn a_weighted_trust_selector_warns_weights_are_inert() {
         .unwrap();
     assert!(other.status.success());
     let did = String::from_utf8_lossy(
-        &std::process::Command::new(env!("CARGO_BIN_EXE_kan"))
+        &std::process::Command::new(env!("CARGO_BIN_EXE_kan-v1"))
             .args(["identity", "did"])
             .current_dir(dir.path())
             .env("KAN_NO_KEYCHAIN", "1")
@@ -857,7 +857,7 @@ fn a_weighted_trust_selector_warns_weights_are_inert() {
     .trim()
     .to_string();
 
-    let weighted = std::process::Command::new(env!("CARGO_BIN_EXE_kan"))
+    let weighted = std::process::Command::new(env!("CARGO_BIN_EXE_kan-v1"))
         .args([
             "show",
             "finding",
@@ -876,7 +876,7 @@ fn a_weighted_trust_selector_warns_weights_are_inert() {
     );
 
     // And the weighted view equals the plain-membership view.
-    let plain = std::process::Command::new(env!("CARGO_BIN_EXE_kan"))
+    let plain = std::process::Command::new(env!("CARGO_BIN_EXE_kan-v1"))
         .args(["show", "finding", "--trust", &did, "--json"])
         .current_dir(dir.path())
         .env("KAN_NO_KEYCHAIN", "1")
@@ -890,7 +890,7 @@ fn a_weighted_trust_selector_warns_weights_are_inert() {
     );
 }
 
-/// `review/full-pass-v0.12` F8 (REQ-6): `kan publish <typo>` on a subject
+/// `review/full-pass-v0.12` F8 (REQ-6): `kan-v1 publish <typo>` on a subject
 /// with no claims used to mint a Publication claim for the nonexistent
 /// subject and report success, polluting the log and the tracked tree.
 #[test]

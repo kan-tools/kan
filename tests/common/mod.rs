@@ -29,7 +29,7 @@ use std::process::Command;
 /// inherit one from the ambient environment and silently capture a different
 /// identity's view.
 pub fn kan_as(dir: &Path, key: Option<&Path>, args: &[&str]) -> (String, String, bool) {
-    let mut cmd = Command::new(env!("CARGO_BIN_EXE_kan"));
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_kan-v1"));
     cmd.args(args).current_dir(dir).env("KAN_NO_KEYCHAIN", "1");
     match key {
         Some(k) => {
@@ -86,7 +86,7 @@ pub fn git_repo() -> tempfile::TempDir {
 /// wrong half.
 pub fn capture(dir: &Path, key: Option<&Path>, args: &[&str], doc: &mut String) {
     let (stdout, stderr, ok) = kan_as(dir, key, args);
-    doc.push_str(&format!("$ kan {}\n", args.join(" ")));
+    doc.push_str(&format!("$ kan-v1 {}\n", args.join(" ")));
     doc.push_str(&format!("exit: {}\n", if ok { "ok" } else { "FAILED" }));
     doc.push_str("--- stdout ---\n");
     doc.push_str(&stdout);

@@ -10,7 +10,7 @@
 use std::process::Command;
 
 fn kan_no_selection(dir: &std::path::Path, args: &[&str]) -> (String, String, bool) {
-    let out = std::process::Command::new(env!("CARGO_BIN_EXE_kan"))
+    let out = std::process::Command::new(env!("CARGO_BIN_EXE_kan-v1"))
         .args(args)
         .current_dir(dir)
         .env("KAN_NO_KEYCHAIN", "1")
@@ -25,7 +25,7 @@ fn kan_no_selection(dir: &std::path::Path, args: &[&str]) -> (String, String, bo
 }
 
 fn kan(dir: &std::path::Path, key: &std::path::Path, args: &[&str]) -> (String, String, bool) {
-    let out = Command::new(env!("CARGO_BIN_EXE_kan"))
+    let out = Command::new(env!("CARGO_BIN_EXE_kan-v1"))
         .args(args)
         .current_dir(dir)
         .env("KAN_IDENTITY_FILE", key)
@@ -231,7 +231,7 @@ fn a_read_creates_no_workspace() {
 /// newly-persisted key, no `seed-id`, no `identity-id` — and no `.kan/`.
 ///
 /// #144's check lived inside `append`, which runs *after* `Workspace::open`.
-/// So `kan observe x --subject $'bad\nname'` in a fresh repo minted a signing
+/// So `kan-v1 observe x --subject $'bad\nname'` in a fresh repo minted a signing
 /// key and created a workspace on its way to refusing, for a command that
 /// wrote nothing. Same ordering defect ADR-82 names — validate before acting
 /// — reached by a third route after #141 and #146.
@@ -296,7 +296,7 @@ fn a_write_refused_for_its_subject_name_mints_nothing() {
 /// **Persist before the append, not after**, deliberately departing from
 /// REQ-3's wording ("only after the write ... has succeeded"). Failing
 /// between persist and append leaves an identity with an empty log — exactly
-/// what `kan identity did` produces. Failing the other way round leaves a
+/// what `kan-v1 identity did` produces. Failing the other way round leaves a
 /// claim signed by a key nothing on disk holds, which the ADR-77 guard then
 /// refuses to open: log unreadable, key unrecoverable.
 #[test]

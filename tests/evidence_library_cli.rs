@@ -102,7 +102,7 @@ async fn library_cli_browses_authenticated_retained_source_without_storage_autho
         }
     }
     let mut child = ChildGuard(
-        Process::new(env!("CARGO_BIN_EXE_kan-v2"))
+        Process::new(env!("CARGO_BIN_EXE_kan"))
             .args([
                 "library",
                 "--config",
@@ -200,7 +200,7 @@ async fn library_cli_browses_authenticated_retained_source_without_storage_autho
     // without creating an HTTP listener or requiring a browser token.
     for writes in [false, true] {
         use tokio::io::{AsyncWriteExt, BufReader as TokioBufReader};
-        let mut command = tokio::process::Command::new(env!("CARGO_BIN_EXE_kan-v2"));
+        let mut command = tokio::process::Command::new(env!("CARGO_BIN_EXE_kan"));
         command.args([
             "library",
             "--config",
@@ -336,7 +336,7 @@ fn owner_cli_initializes_and_applies_the_same_previewed_access_policy() {
         path
     };
     let policy_config = write("policy.json", serde_json::to_vec(&policy).unwrap());
-    let initialized = Process::new(env!("CARGO_BIN_EXE_kan-v2"))
+    let initialized = Process::new(env!("CARGO_BIN_EXE_kan"))
         .args(["init-access-policy", policy_config.to_str().unwrap()])
         .output()
         .unwrap();
@@ -349,7 +349,7 @@ fn owner_cli_initializes_and_applies_the_same_previewed_access_policy() {
     let config=write("owner.json",serde_json::to_vec(&json!({"journal":dir.path().join("owner.sqlite"),"signing_key":key,"recipient_key":recipient,"authority":{"token":"synthetic-cli-policy-owner-token-1234","max_jobs":10,"targets":[{"kind":"access-policy","id":"access","policy":policy,"signing_key":key}]}})).unwrap());
     let call = |request: Value| -> Value {
         let path = write("request.json", serde_json::to_vec(&request).unwrap());
-        let out = Process::new(env!("CARGO_BIN_EXE_kan-v2"))
+        let out = Process::new(env!("CARGO_BIN_EXE_kan"))
             .args([
                 "owner",
                 "--config",
@@ -380,7 +380,7 @@ fn owner_cli_initializes_and_applies_the_same_previewed_access_policy() {
     tokio::runtime::Runtime::new().unwrap().block_on(async {
         use tokio::io::{AsyncWriteExt,BufReader as TokioBufReader};
         for enabled in [false,true] {
-            let mut command=tokio::process::Command::new(env!("CARGO_BIN_EXE_kan-v2"));
+            let mut command=tokio::process::Command::new(env!("CARGO_BIN_EXE_kan"));
             command.args(["library","--config",reader_config.to_str().unwrap(),"--signing-key",key.to_str().unwrap(),"--owner-config",config.to_str().unwrap(),"--mcp"]);
             if enabled {command.arg("--mcp-owner");}
             let mut child=command.stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::null()).kill_on_drop(true).spawn().unwrap();
@@ -429,7 +429,7 @@ fn owner_cli_initializes_rotates_and_exports_wrapped_epoch_history() {
         path
     };
     let policy_config = write("policy.json", serde_json::to_vec(&policy).unwrap());
-    let initialized = Process::new(env!("CARGO_BIN_EXE_kan-v2"))
+    let initialized = Process::new(env!("CARGO_BIN_EXE_kan"))
         .args(["init-key-history", policy_config.to_str().unwrap()])
         .output()
         .unwrap();
@@ -442,7 +442,7 @@ fn owner_cli_initializes_rotates_and_exports_wrapped_epoch_history() {
     let config=write("owner.json",serde_json::to_vec(&json!({"journal":dir.path().join("owner.sqlite"),"signing_key":key,"recipient_key":recipient,"authority":{"token":"synthetic-cli-policy-owner-token-1234","max_jobs":10,"targets":[{"kind":"key-history","id":"keys","history":policy,"signing_key":key,"recovery_key":recipient}]}})).unwrap());
     let call = |request: Value| -> Value {
         let path = write("request.json", serde_json::to_vec(&request).unwrap());
-        let out = Process::new(env!("CARGO_BIN_EXE_kan-v2"))
+        let out = Process::new(env!("CARGO_BIN_EXE_kan"))
             .args([
                 "owner",
                 "--config",
@@ -565,7 +565,7 @@ fn managed_owner_launch_requires_the_registered_cleanup_inventory() {
     let request = write("request.json", br#"{"action":"catalog"}"#);
     let run = |config: &serde_json::Value| {
         let file = write("owner.json", &serde_json::to_vec(config).unwrap());
-        Process::new(env!("CARGO_BIN_EXE_kan-v2"))
+        Process::new(env!("CARGO_BIN_EXE_kan"))
             .arg("--deployment")
             .arg(&deployment)
             .arg("owner")
@@ -610,7 +610,7 @@ fn managed_owner_launch_requires_the_registered_cleanup_inventory() {
     let owner_config = dir.path().join("owner.json");
     tokio::runtime::Runtime::new().unwrap().block_on(async {
         use tokio::io::{AsyncWriteExt, BufReader as TokioBufReader};
-        let mut command = tokio::process::Command::new(env!("CARGO_BIN_EXE_kan-v2"));
+        let mut command = tokio::process::Command::new(env!("CARGO_BIN_EXE_kan"));
         command.arg("--deployment").arg(&deployment).arg("library")
             .arg("--config").arg(&reader_config).arg("--signing-key").arg(&reader_key)
             .arg("--workspace").arg(&database).arg("--workspace-key").arg(&private)
@@ -627,7 +627,7 @@ fn managed_owner_launch_requires_the_registered_cleanup_inventory() {
     });
     reader_sources[0]["archive"] = json!(svc::hex(&[33; 32]));
     write("reader.json", &serde_json::to_vec(&reader_sources).unwrap());
-    let omitted_source = Process::new(env!("CARGO_BIN_EXE_kan-v2"))
+    let omitted_source = Process::new(env!("CARGO_BIN_EXE_kan"))
         .arg("--deployment")
         .arg(&deployment)
         .arg("library")

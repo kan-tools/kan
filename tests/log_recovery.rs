@@ -186,7 +186,7 @@ async fn an_undamaged_log_is_left_exactly_as_it_was() {
 
 /// D3: a read must never modify the log, even when it recovers.
 ///
-/// The recovery path runs on every open, including `kan show`. Rewriting
+/// The recovery path runs on every open, including `kan-v1 show`. Rewriting
 /// `HEAD` from there — off the write lock and non-atomically — turned a
 /// transient torn read (CAR loaded before `HEAD`, an append landing between)
 /// into a permanent rollback that stranded every claim written since.

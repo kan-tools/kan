@@ -203,7 +203,7 @@ impl Drop for ProcessGuard {
 fn start_cli(args: &[&str], prefix: &str) -> (ProcessGuard, String) {
     use std::io::BufRead;
     let mut child = ProcessGuard(
-        std::process::Command::new(env!("CARGO_BIN_EXE_kan-v2"))
+        std::process::Command::new(env!("CARGO_BIN_EXE_kan"))
             .args(args)
             .stdin(std::process::Stdio::null())
             .stdout(std::process::Stdio::null())
@@ -325,7 +325,7 @@ async fn actual_proof_service_and_library_cli_restart_with_missing_payload() {
             f.db()
         };
         let unregistered = f.root.join("unregistered.sqlite");
-        let refused = std::process::Command::new(env!("CARGO_BIN_EXE_kan-v2"))
+        let refused = std::process::Command::new(env!("CARGO_BIN_EXE_kan"))
             .args([
                 "--deployment",
                 deployment.to_str().unwrap(),
@@ -2346,7 +2346,7 @@ async fn annotation_publication_is_explicit_destination_bound_and_exactly_retrie
             std::fs::set_permissions(file, std::fs::Permissions::from_mode(0o600)).unwrap();
         }
     }
-    let managed_head = std::process::Command::new(env!("CARGO_BIN_EXE_kan-v2"))
+    let managed_head = std::process::Command::new(env!("CARGO_BIN_EXE_kan"))
         .arg("--deployment")
         .arg(&deployment)
         .arg("spool-head")
@@ -2363,7 +2363,7 @@ async fn annotation_publication_is_explicit_destination_bound_and_exactly_retrie
         "managed launch supplies destination and source guards"
     );
     for wrong_queue in [&spool, &local.path().join("unregistered.sqlite")] {
-        let denied = std::process::Command::new(env!("CARGO_BIN_EXE_kan-v2"))
+        let denied = std::process::Command::new(env!("CARGO_BIN_EXE_kan"))
             .arg("--deployment")
             .arg(&deployment)
             .arg("spool-head")
@@ -2373,7 +2373,7 @@ async fn annotation_publication_is_explicit_destination_bound_and_exactly_retrie
         assert!(!denied.status.success());
         assert!(denied.stdout.is_empty());
     }
-    let override_guard = std::process::Command::new(env!("CARGO_BIN_EXE_kan-v2"))
+    let override_guard = std::process::Command::new(env!("CARGO_BIN_EXE_kan"))
         .arg("--deployment")
         .arg(&deployment)
         .arg("spool-head")
@@ -2416,7 +2416,7 @@ async fn annotation_publication_is_explicit_destination_bound_and_exactly_retrie
             ("--publication-guard", &config),
             ("--deployment", &deployment),
         ] {
-            let mut command = std::process::Command::new(env!("CARGO_BIN_EXE_kan-v2"));
+            let mut command = std::process::Command::new(env!("CARGO_BIN_EXE_kan"));
             command.arg(action).arg(&old_queue).arg(flag).arg(file);
             if action == "spool-drain" {
                 command.arg("--endpoint").arg(&endpoint);
@@ -3570,7 +3570,7 @@ async fn proof_import_restoration_and_owner_job_verify_selected_bytes_without_cu
             std::fs::set_permissions(&key, std::fs::Permissions::from_mode(0o600)).unwrap();
         }
         let cli_output = output.path().join("cli");
-        let mut command = std::process::Command::new(env!("CARGO_BIN_EXE_kan-v2"));
+        let mut command = std::process::Command::new(env!("CARGO_BIN_EXE_kan"));
         command
             .arg("restore-import")
             .arg(f.db())
@@ -5344,7 +5344,7 @@ async fn cold_host_restores_source_search_annotations_and_references_from_indepe
         &serde_json::to_vec(&json!({"action":"resolve-reference","reference":reference})).unwrap(),
     );
     let managed = || {
-        let mut command = tokio::process::Command::new(env!("CARGO_BIN_EXE_kan-v2"));
+        let mut command = tokio::process::Command::new(env!("CARGO_BIN_EXE_kan"));
         command
             .arg("--deployment")
             .arg(&deployment)

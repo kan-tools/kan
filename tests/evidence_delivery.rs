@@ -15,7 +15,7 @@ const SCOPE: [u8; 32] = [42; 32];
 const PRIVATE: [u8; 32] = [29; 32];
 const CANARY: &[u8] = b"raw-private-delivery-canary\0\xff\n{not-json}";
 fn cli(args: &[&str], input: &[u8]) -> Output {
-    let mut child = Command::new(env!("CARGO_BIN_EXE_kan-v2"))
+    let mut child = Command::new(env!("CARGO_BIN_EXE_kan"))
         .args(args)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -46,7 +46,7 @@ fn server(root: &Path, signer: &Identity, grants: &[Grant]) -> (Server, String) 
     signer.save(&key).unwrap();
     let config = root.join("grants.json");
     std::fs::write(&config, serde_json::to_vec(grants).unwrap()).unwrap();
-    let mut child = Command::new(env!("CARGO_BIN_EXE_kan-v2"))
+    let mut child = Command::new(env!("CARGO_BIN_EXE_kan"))
         .args([
             "serve",
             archive.to_str().unwrap(),

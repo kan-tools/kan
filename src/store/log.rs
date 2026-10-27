@@ -169,7 +169,7 @@ pub enum Error {
     #[error(
         "the log header at {path} is unreadable (empty or corrupt at the start of the \
          file). kan will not modify it. Move the file aside and restore from the \
-         published .claims/ tree (`kan restore`) or a backup; any claims after the \
+         published .claims/ tree (`kan-v1 restore`) or a backup; any claims after the \
          damaged header are still in the file"
     )]
     UnreadableCar { path: String },
@@ -591,7 +591,7 @@ impl Log {
     /// identity** — the read path (`.design/identity-surface.md` REQ-2).
     ///
     /// A directory that does not exist yields an empty log rather than an
-    /// error, and creates no directory. That is AC-3: `kan status` in a git
+    /// error, and creates no directory. That is AC-3: `kan-v1 status` in a git
     /// repo with no `.kan/` reports no subjects and leaves the repo exactly
     /// as it found it. A read that vivifies a workspace is the defect (#149);
     /// "read it if it is there" is the whole behaviour.
@@ -789,7 +789,7 @@ impl Log {
             // (`.design/v0.7-milestone.md` REQ-4).
             //
             // **Nothing is written here.** This runs on every open, including
-            // `kan show`, and a read command must not modify the log — the
+            // `kan-v1 show`, and a read command must not modify the log — the
             // previous version rewrote `HEAD` with a plain `fs::write`, off
             // the lock and non-atomically, which turned a transient torn read
             // into a permanent rollback. The recovered root is held in memory
@@ -1154,7 +1154,7 @@ impl Log {
         //
         // Without this, each process opened the CAR into an in-memory MST,
         // appended to *its* copy, and last-writer-wins overwrote HEAD: five
-        // concurrent `kan observe` calls returned five distinct CIDs and five
+        // concurrent `kan-v1 observe` calls returned five distinct CIDs and five
         // exit-0 successes while two claims survived, the losers' blocks
         // reaching the CAR but unreachable from the winning root. ADR-15's
         // "reopens from disk every call ... avoids any question of

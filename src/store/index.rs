@@ -142,8 +142,8 @@ fn decode_message(e: &atproto_dasl::DecodeError) -> String {
             "this kan is older than the log it is reading.\n\n{raw}\n\n\
              The log is not damaged: a claim in it uses a field or claim kind this build \
              does not know about, and kan reports that rather than silently dropping it \
-             (docs/SPEC.md 7.1). Upgrade kan -- `cargo install kan` for a release, or \
-             `cargo install --path .` from a checkout -- and read it again."
+             (docs/SPEC.md 7.1). Upgrade the legacy CLI -- `cargo install kan --no-default-features --features kan-v1 --bin kan-v1` for a release, or \
+             `cargo install --path . --no-default-features --features kan-v1 --bin kan-v1` from a checkout -- and read it again."
         )
     } else {
         format!("DAG-CBOR decode error: {raw}")
@@ -159,7 +159,7 @@ impl Index {
     /// A projection with nowhere to live — for reading a repo that has no
     /// `.kan/` at all.
     ///
-    /// AC-3: `kan status` in a git repo with no workspace reports no subjects
+    /// AC-3: `kan-v1 status` in a git repo with no workspace reports no subjects
     /// and **creates nothing**. Opening a file-backed index would create the
     /// file and the directory holding it, which is the vivification #149 is
     /// about, arriving through the back door.

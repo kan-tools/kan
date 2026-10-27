@@ -29,7 +29,7 @@ struct Run {
 }
 
 fn kan_as(dir: &std::path::Path, key: Option<&std::path::Path>, args: &[&str]) -> Run {
-    let mut cmd = Command::new(env!("CARGO_BIN_EXE_kan"));
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_kan-v1"));
     cmd.args(args).current_dir(dir);
     match key {
         Some(k) => {
@@ -77,7 +77,7 @@ fn copy_claims(from: &std::path::Path, to: &std::path::Path) {
     copy_tree(&from.join(".claims"), &dst);
 }
 
-/// AC-1: with `.kan/` deleted, `kan restore` rebuilds the log from
+/// AC-1: with `.kan/` deleted, `kan-v1 restore` rebuilds the log from
 /// `.claims/`, and every restored claim reads back with its original CID and
 /// author.
 ///
@@ -270,7 +270,7 @@ fn restore_refuses_when_nothing_in_the_tree_is_mine() {
         refused.stdout
     );
     assert!(
-        refused.stderr.contains("kan identity restore"),
+        refused.stderr.contains("kan-v1 identity restore"),
         "the refusal must name the recovery path: {}",
         refused.stderr
     );

@@ -27,7 +27,7 @@ struct Run {
 /// Both identity variables are an explicit axis here, never an ambient
 /// default — that ambience is what hid #146.
 fn kan(dir: &Path, key: Option<&Path>, no_keychain: bool, args: &[&str]) -> Run {
-    let mut cmd = Command::new(env!("CARGO_BIN_EXE_kan"));
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_kan-v1"));
     cmd.args(args).current_dir(dir);
     if no_keychain {
         cmd.env("KAN_NO_KEYCHAIN", "1");
@@ -100,7 +100,7 @@ fn workspace_with_claims() -> (tempfile::TempDir, std::path::PathBuf) {
 
 /// The probe is a **write**, and that changed in v0.11.
 ///
-/// These tests used `kan status`, because until v0.11 every read resolved a
+/// These tests used `kan-v1 status`, because until v0.11 every read resolved a
 /// signing identity and so tripped every minting path. A read now resolves
 /// none (`.design/identity-surface.md` REQ-2), which is the fix for #149 --
 /// so a read is no longer capable of minting and no longer the way to catch a
@@ -237,7 +237,11 @@ fn an_empty_log_requires_initialization_or_an_explicit_v1_selection() {
         &["observe", "first claim", "--subject", "s"],
     );
     assert!(!run.ok, "an unselected first write unexpectedly succeeded");
-    assert!(run.stderr.contains("kan identity init"), "{}", run.stderr);
+    assert!(
+        run.stderr.contains("kan-v1 identity init"),
+        "{}",
+        run.stderr
+    );
     assert!(
         !unselected.path().join(".kan").exists(),
         "a refused first write created workspace state"
@@ -259,7 +263,7 @@ fn an_empty_log_requires_initialization_or_an_explicit_v1_selection() {
     );
 }
 
-/// `kan identity role add` is the deliberate opt-in and must still work
+/// `kan-v1 identity role add` is the deliberate opt-in and must still work
 /// against a non-empty log — that is the whole distinction the guard draws,
 /// so a fix that refused here would have broken the feature rather than the
 /// defect.
@@ -321,7 +325,7 @@ fn declaring_a_role_is_still_the_deliberate_way_past_the_guard() {
 ///
 /// `adopt_identity` takes a `&Workspace`, so `Workspace::open` — and with it
 /// identity resolution — has to succeed before adopt can change anything.
-/// The refusal therefore cannot simply say "run `kan identity adopt`": in the
+/// The refusal therefore cannot simply say "run `kan-v1 identity adopt`": in the
 /// state that produces the refusal, adopt trips the very same guard. The
 /// message names the form that works, and this test is what keeps it working.
 #[test]
@@ -337,7 +341,7 @@ fn the_remedy_the_refusal_names_actually_runs() {
     let refused = kan(dir.path(), None, true, &probe_write());
     assert!(!refused.ok, "precondition: the guard should have fired");
     assert!(
-        refused.stderr.contains("kan identity adopt --key"),
+        refused.stderr.contains("kan-v1 identity adopt --key"),
         "the refusal should name a recovery command: {}",
         refused.stderr
     );

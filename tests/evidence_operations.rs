@@ -291,7 +291,7 @@ async fn dashboard_auth_host_origin_routes_and_shared_cli_snapshot() {
         .unwrap()
         .contains("frame-ancestors 'none'"));
     let mut http: serde_json::Value = r.json().await.unwrap();
-    let output = std::process::Command::new(env!("CARGO_BIN_EXE_kan-v2"))
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_kan"))
         .args(["ops-status", f.journal.to_str().unwrap()])
         .output()
         .unwrap();

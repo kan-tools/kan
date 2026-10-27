@@ -1,5 +1,11 @@
 # Current roadmap
 
+Current release candidate naming: `kan` is the v2 capture/service/Library CLI.
+The repository-based commands discussed in historical milestones below are now
+`kan-v1`, installed with the optional `kan-v1` feature. See the
+[installation and compatibility instructions](../README.md#install-the-current-source-candidate).
+
+
 This file is the short, current map of kan's shipped baseline and active
 cross-repository work. It does not replace the authority of `docs/SPEC.md` or
 an accepted RFC. Historical milestone designs and reconstructed ADRs explain

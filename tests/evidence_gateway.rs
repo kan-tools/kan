@@ -828,7 +828,7 @@ struct CliProcess {
 }
 async fn proxy_cli(args: &[String]) -> (String, CliProcess) {
     use tokio::io::AsyncBufReadExt;
-    let mut child = tokio::process::Command::new(env!("CARGO_BIN_EXE_kan-v2"))
+    let mut child = tokio::process::Command::new(env!("CARGO_BIN_EXE_kan"))
         .args(args)
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())

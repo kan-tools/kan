@@ -327,7 +327,7 @@ struct Run {
 }
 
 fn kan(dir: &std::path::Path, key: Option<&std::path::Path>, args: &[&str]) -> Run {
-    let mut cmd = Command::new(env!("CARGO_BIN_EXE_kan"));
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_kan-v1"));
     cmd.args(args).current_dir(dir).env("KAN_NO_KEYCHAIN", "1");
     match key {
         Some(k) => {
@@ -378,7 +378,7 @@ fn repo() -> tempfile::TempDir {
 /// does not have — a restored clone, or a workspace whose log was rebuilt.
 ///
 /// Built by publishing, committing, then deleting `.kan/` while keeping the
-/// key, which is the state a `kan restore` exists to resolve.
+/// key, which is the state a `kan-v1 restore` exists to resolve.
 fn own_claims_not_in_log() -> (tempfile::TempDir, std::path::PathBuf) {
     let dir = repo();
     let key = dir.path().join("key");
@@ -417,7 +417,7 @@ fn own_claims_not_in_log() -> (tempfile::TempDir, std::path::PathBuf) {
 /// The read path decided own-vs-foreign by log membership and the write path
 /// by `author.did == mine`, so they projected different row sets — and both
 /// recorded the same index fingerprint, so neither could invalidate the
-/// other's work. `kan show` returned 1 live claim or 0 depending on whether a
+/// other's work. `kan-v1 show` returned 1 live claim or 0 depending on whether a
 /// read or a write had last rebuilt the index, and deleting
 /// `.kan/index.sqlite` — a file the code calls disposable derived data —
 /// changed the answer.
@@ -454,7 +454,7 @@ fn a_read_and_a_write_project_the_same_claims() {
     assert_eq!(
         (after_read, after_write),
         (after_write, after_discard),
-        "`kan show bug-1` returned {after_read}, then {after_write}, then \
+        "`kan-v1 show bug-1` returned {after_read}, then {after_write}, then \
          {after_discard} live claims over identical on-disk bytes -- the read and write \
          paths project different row sets while recording the same freshness key, so \
          neither can invalidate the other"
@@ -517,7 +517,7 @@ fn a_refused_restore_brings_no_workspace_into_existence() {
 /// The generic no-identity message is written for `--trust me` — it talks
 /// about naming an author with `--trust`, about what `me` means, and about
 /// reading never creating an identity, none of which apply to a write verb
-/// with no `--trust` flag. And `kan identity adopt`, the remedy it named, was
+/// with no `--trust` flag. And `kan-v1 identity adopt`, the remedy it named, was
 /// a **no-op** here: `existing_identity` checked `KAN_IDENTITY_FILE` first and
 /// exclusively, so it never looked at the `.kan/identity` adopt had just
 /// written, and `restore` refused identically forever.
@@ -899,7 +899,7 @@ fn a_seed_rooted_workspace_is_not_re_minted_when_its_log_is_cleared() {
 /// `load_or_create_for_workspace` (writes) checked the seed first. Both were
 /// deleted by v0.12 REQ-3.5 (#183) once `workspace_identity` replaced them
 /// with a single order; this test is what pins that they cannot re-diverge. Wherever both existed the two disagreed, and the symptom
-/// was the one this milestone exists to end: `kan identity did` naming one
+/// was the one this milestone exists to end: `kan-v1 identity did` naming one
 /// identity while `--trust me` folded under another and reported "no claims"
 /// against a full log.
 ///
@@ -952,7 +952,7 @@ fn reads_and_writes_resolve_the_same_identity() {
     assert!(shown.ok, "`--trust me` failed: {}", shown.stderr);
     assert!(
         shown.stdout.contains("seed rooted note"),
-        "the read side resolved a different identity than the write side: `kan identity \
+        "the read side resolved a different identity than the write side: `kan-v1 identity \
          did` says {writing}, and `--trust me` cannot see that identity's own claim.\n{}",
         shown.stdout
     );

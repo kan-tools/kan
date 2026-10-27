@@ -1,11 +1,11 @@
-//! AC-8 (`.design/kan-spine.md`): `kan mcp` serves over stdio; a client can
+//! AC-8 (`.design/kan-spine.md`): `kan-v1 mcp` serves over stdio; a client can
 //! list tools and successfully call the claim-append tool. Also covers
 //! `.design/agent-ax-and-tool-boundary.md`'s AC-1 (session tools removed),
 //! AC-7 (write tools return rich confirmation text), and AC-8 (factual,
 //! non-prescriptive `get_info()` instructions) — same file, unrelated
 //! design docs' AC numbering happens to collide. Speaks raw line-delimited
 //! JSON-RPC to the real `kan` binary (not a library call) since this is
-//! proving the actual `kan mcp` subprocess wiring, matching `tests/cli.rs`'s
+//! proving the actual `kan-v1 mcp` subprocess wiring, matching `tests/cli.rs`'s
 //! "real subprocess, not library calls" spirit.
 
 use std::process::Stdio;
@@ -88,7 +88,7 @@ fn scoped_repo() -> (tempfile::TempDir, std::path::PathBuf, String) {
             config.display().to_string(),
         ],
     ] {
-        let output = std::process::Command::new(env!("CARGO_BIN_EXE_kan"))
+        let output = std::process::Command::new(env!("CARGO_BIN_EXE_kan-v1"))
             .args(args)
             .output()
             .unwrap();
@@ -108,7 +108,7 @@ fn scoped_repo() -> (tempfile::TempDir, std::path::PathBuf, String) {
 async fn ac8_lists_tools_and_calls_the_observe_tool() {
     let dir = git_repo();
 
-    let mut child = Command::new(env!("CARGO_BIN_EXE_kan"))
+    let mut child = Command::new(env!("CARGO_BIN_EXE_kan-v1"))
         .arg("mcp")
         .current_dir(dir.path())
         .stdin(Stdio::piped())
@@ -116,7 +116,7 @@ async fn ac8_lists_tools_and_calls_the_observe_tool() {
         .stderr(Stdio::piped())
         .kill_on_drop(true)
         .spawn()
-        .expect("failed to spawn kan mcp");
+        .expect("failed to spawn kan-v1 mcp");
 
     let mut stdin = child.stdin.take().unwrap();
     let mut stdout = BufReader::new(child.stdout.take().unwrap());
@@ -131,8 +131,8 @@ async fn ac8_lists_tools_and_calls_the_observe_tool() {
                 stdout.read_line(&mut recv_line),
             )
             .await
-            .expect("timed out waiting for kan mcp response")
-            .expect("failed to read from kan mcp stdout");
+            .expect("timed out waiting for kan-v1 mcp response")
+            .expect("failed to read from kan-v1 mcp stdout");
             serde_json::from_str::<Value>(&recv_line).expect("response was not valid JSON")
         }};
     }
@@ -245,7 +245,7 @@ async fn ac8_lists_tools_and_calls_the_observe_tool() {
 async fn ac12_mcp_tool_surface_mirrors_the_cli() {
     let dir = git_repo();
 
-    let mut child = Command::new(env!("CARGO_BIN_EXE_kan"))
+    let mut child = Command::new(env!("CARGO_BIN_EXE_kan-v1"))
         .arg("mcp")
         .current_dir(dir.path())
         .stdin(Stdio::piped())
@@ -253,7 +253,7 @@ async fn ac12_mcp_tool_surface_mirrors_the_cli() {
         .stderr(Stdio::piped())
         .kill_on_drop(true)
         .spawn()
-        .expect("failed to spawn kan mcp");
+        .expect("failed to spawn kan-v1 mcp");
 
     let mut stdin = child.stdin.take().unwrap();
     let mut stdout = BufReader::new(child.stdout.take().unwrap());
@@ -268,8 +268,8 @@ async fn ac12_mcp_tool_surface_mirrors_the_cli() {
                 stdout.read_line(&mut recv_line),
             )
             .await
-            .expect("timed out waiting for kan mcp response")
-            .expect("failed to read from kan mcp stdout");
+            .expect("timed out waiting for kan-v1 mcp response")
+            .expect("failed to read from kan-v1 mcp stdout");
             serde_json::from_str::<Value>(&recv_line).expect("response was not valid JSON")
         }};
     }
@@ -364,7 +364,7 @@ async fn ac12_mcp_tool_surface_mirrors_the_cli() {
 async fn ac10_resource_template_lists_and_reads_a_subjects_claims() {
     let dir = git_repo();
 
-    let mut child = Command::new(env!("CARGO_BIN_EXE_kan"))
+    let mut child = Command::new(env!("CARGO_BIN_EXE_kan-v1"))
         .arg("mcp")
         .current_dir(dir.path())
         .stdin(Stdio::piped())
@@ -372,7 +372,7 @@ async fn ac10_resource_template_lists_and_reads_a_subjects_claims() {
         .stderr(Stdio::piped())
         .kill_on_drop(true)
         .spawn()
-        .expect("failed to spawn kan mcp");
+        .expect("failed to spawn kan-v1 mcp");
 
     let mut stdin = child.stdin.take().unwrap();
     let mut stdout = BufReader::new(child.stdout.take().unwrap());
@@ -387,8 +387,8 @@ async fn ac10_resource_template_lists_and_reads_a_subjects_claims() {
                 stdout.read_line(&mut recv_line),
             )
             .await
-            .expect("timed out waiting for kan mcp response")
-            .expect("failed to read from kan mcp stdout");
+            .expect("timed out waiting for kan-v1 mcp response")
+            .expect("failed to read from kan-v1 mcp stdout");
             serde_json::from_str::<Value>(&recv_line).expect("response was not valid JSON")
         }};
     }
@@ -480,7 +480,7 @@ async fn ac10_resource_template_lists_and_reads_a_subjects_claims() {
 async fn scoped_mcp_tools_and_resources_use_one_rfc2_request_boundary() {
     let (dir, config, principal) = scoped_repo();
     let repo = dir.path().join("project");
-    let mut child = Command::new(env!("CARGO_BIN_EXE_kan"))
+    let mut child = Command::new(env!("CARGO_BIN_EXE_kan-v1"))
         .arg("mcp")
         .env("KAN_CONFIG_DIR", &config)
         .current_dir(&repo)
@@ -597,7 +597,7 @@ async fn scoped_mcp_tools_and_resources_use_one_rfc2_request_boundary() {
 async fn naming_nudge_appends_a_warning_to_the_confirmation_text() {
     let dir = git_repo();
 
-    let mut child = Command::new(env!("CARGO_BIN_EXE_kan"))
+    let mut child = Command::new(env!("CARGO_BIN_EXE_kan-v1"))
         .arg("mcp")
         .current_dir(dir.path())
         .stdin(Stdio::piped())
@@ -605,7 +605,7 @@ async fn naming_nudge_appends_a_warning_to_the_confirmation_text() {
         .stderr(Stdio::piped())
         .kill_on_drop(true)
         .spawn()
-        .expect("failed to spawn kan mcp");
+        .expect("failed to spawn kan-v1 mcp");
 
     let mut stdin = child.stdin.take().unwrap();
     let mut stdout = BufReader::new(child.stdout.take().unwrap());
@@ -620,8 +620,8 @@ async fn naming_nudge_appends_a_warning_to_the_confirmation_text() {
                 stdout.read_line(&mut recv_line),
             )
             .await
-            .expect("timed out waiting for kan mcp response")
-            .expect("failed to read from kan mcp stdout");
+            .expect("timed out waiting for kan-v1 mcp response")
+            .expect("failed to read from kan-v1 mcp stdout");
             serde_json::from_str::<Value>(&recv_line).expect("response was not valid JSON")
         }};
     }
@@ -717,7 +717,7 @@ async fn an_mcp_write_refused_for_its_subject_name_mints_nothing() {
     let dir = git_repo();
     std::fs::remove_dir_all(dir.path().join(".kan")).unwrap();
 
-    let mut child = Command::new(env!("CARGO_BIN_EXE_kan"))
+    let mut child = Command::new(env!("CARGO_BIN_EXE_kan-v1"))
         .arg("mcp")
         .current_dir(dir.path())
         .env("KAN_NO_KEYCHAIN", "1")
@@ -727,7 +727,7 @@ async fn an_mcp_write_refused_for_its_subject_name_mints_nothing() {
         .stderr(Stdio::piped())
         .kill_on_drop(true)
         .spawn()
-        .expect("failed to spawn kan mcp");
+        .expect("failed to spawn kan-v1 mcp");
 
     let mut stdin = child.stdin.take().unwrap();
     let mut stdout = BufReader::new(child.stdout.take().unwrap());
@@ -741,8 +741,8 @@ async fn an_mcp_write_refused_for_its_subject_name_mints_nothing() {
                 stdout.read_line(&mut recv_line),
             )
             .await
-            .expect("timed out waiting for kan mcp response")
-            .expect("failed to read from kan mcp stdout");
+            .expect("timed out waiting for kan-v1 mcp response")
+            .expect("failed to read from kan-v1 mcp stdout");
             serde_json::from_str::<Value>(&recv_line).expect("response was not valid JSON")
         }};
     }
@@ -808,7 +808,7 @@ async fn mcp_session(
     tokio::process::ChildStdin,
     BufReader<tokio::process::ChildStdout>,
 ) {
-    let mut child = Command::new(env!("CARGO_BIN_EXE_kan"))
+    let mut child = Command::new(env!("CARGO_BIN_EXE_kan-v1"))
         .arg("mcp")
         .current_dir(dir)
         .stdin(Stdio::piped())
@@ -816,7 +816,7 @@ async fn mcp_session(
         .stderr(Stdio::piped())
         .kill_on_drop(true)
         .spawn()
-        .expect("failed to spawn kan mcp");
+        .expect("failed to spawn kan-v1 mcp");
     let mut stdin = child.stdin.take().unwrap();
     let mut stdout = BufReader::new(child.stdout.take().unwrap());
     let send = |v: Value| serde_json::to_string(&v).unwrap() + "\n";

@@ -53,7 +53,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     for name in ("spool", "key", "recipient", "transcript-root"):
         parser.add_argument("--" + name, required=True)
-    parser.add_argument("--kan", default="kan-v2")
+    parser.add_argument("--kan", default="kan")
     parser.add_argument("--timeout", type=float, default=60)
     args = parser.parse_args()
     try:

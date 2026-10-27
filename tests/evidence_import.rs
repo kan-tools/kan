@@ -19,7 +19,7 @@ const SCOPE: [u8; 32] = [6; 32];
 const PRIVATE: [u8; 32] = [7; 32];
 const SOURCE: [u8; 32] = [8; 32];
 fn cli(args: &[&str]) -> Output {
-    Command::new(env!("CARGO_BIN_EXE_kan-v2"))
+    Command::new(env!("CARGO_BIN_EXE_kan"))
         .args(args)
         .output()
         .unwrap()

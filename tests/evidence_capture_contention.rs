@@ -102,7 +102,7 @@ async fn p1_cli_open_does_not_wait_on_exclusive_lock() {
     println!("P1 reader blocked by exclusive holder: {blocked}");
     let (url, task) = drip(2, 4, Duration::from_millis(1)).await;
     let started = Instant::now();
-    let out = tokio::process::Command::new(env!("CARGO_BIN_EXE_kan-v2"))
+    let out = tokio::process::Command::new(env!("CARGO_BIN_EXE_kan"))
         .arg("capture-post")
         .args([
             "--endpoint",

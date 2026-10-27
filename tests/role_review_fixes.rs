@@ -21,7 +21,7 @@ struct Run {
 }
 
 fn kan_as(dir: &std::path::Path, key: Option<&std::path::Path>, args: &[&str]) -> Run {
-    let mut cmd = Command::new(env!("CARGO_BIN_EXE_kan"));
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_kan-v1"));
     cmd.args(args).current_dir(dir);
     match key {
         Some(k) => {
@@ -98,8 +98,8 @@ fn did_of(dir: &std::path::Path, key: Option<&std::path::Path>) -> String {
     run.stdout
 }
 
-/// **Round 2 BLOCKING-1 and round 3 BLOCKING-2.** Both `kan identity role
-/// import` and a subsequent `kan identity role add` must leave the workspace's
+/// **Round 2 BLOCKING-1 and round 3 BLOCKING-2.** Both `kan-v1 identity role
+/// import` and a subsequent `kan-v1 identity role add` must leave the workspace's
 /// own identity declared.
 ///
 /// The defect: the auto-declaration was gated on the registry being **empty**,
@@ -172,7 +172,7 @@ fn role_add_after_import_still_declares_the_workspace_identity() {
     );
 }
 
-/// **BLOCKING-2.** `kan identity role add primary` must not shadow the
+/// **BLOCKING-2.** `kan-v1 identity role add primary` must not shadow the
 /// workspace's own identity out of `--trust roles`.
 ///
 /// The defect: `declare_role` auto-declares the workspace identity as
@@ -227,7 +227,7 @@ fn declaring_a_role_named_primary_does_not_shadow_the_workspace_identity() {
     );
 }
 
-/// **BLOCKING-1.** `kan identity adopt` must not report carrying a role
+/// **BLOCKING-1.** `kan-v1 identity adopt` must not report carrying a role
 /// registry it authored under the wrong identity.
 ///
 /// The defect: the carry opened a writable workspace, which resolves a
@@ -364,7 +364,7 @@ fn the_auto_declared_primary_never_takes_a_live_name() {
 /// **Round 3, N8.** The auto-declaration must be **said out loud**, on both
 /// paths that perform it.
 ///
-/// `kan identity role add auditor` appends a `RoleDeclaration` for the
+/// `kan-v1 identity role add auditor` appends a `RoleDeclaration` for the
 /// workspace's own identity that the operator never asked for, and printed
 /// only `auditor`. REQ-9 earns its own write side effect by being "visible,
 /// deliberate, reversible" — this one was two of the three.
@@ -430,7 +430,7 @@ fn the_auto_declaration_is_reported_on_both_paths() {
     );
 }
 
-/// **Round 4, BLOCKING-1.** `kan identity adopt` must leave the **adopted**
+/// **Round 4, BLOCKING-1.** `kan-v1 identity adopt` must leave the **adopted**
 /// identity declared, not only the registry it carried across.
 ///
 /// Adopt is the third writer of role declarations, and the one caller that

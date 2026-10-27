@@ -514,7 +514,7 @@ async fn production_writer_preserves_released_transport_and_appends_current_clai
     let issues = kan::mixed_render::issues(&reader, &projection, &trust, None);
     assert!(issues.contains("identity/production-writer: Settled(Open)"));
 
-    let cli = std::process::Command::new(env!("CARGO_BIN_EXE_kan"))
+    let cli = std::process::Command::new(env!("CARGO_BIN_EXE_kan-v1"))
         .args(["show", "identity/production-writer", "--json"])
         .env("KAN_CONFIG_DIR", &config)
         .current_dir(&root)
@@ -534,7 +534,7 @@ async fn production_writer_preserves_released_transport_and_appends_current_clai
     let daily_credential = config.join("credentials/daily.key");
     let parked_credential = config.join("credentials/daily.key.parked");
     std::fs::rename(&daily_credential, &parked_credential).unwrap();
-    let trust_me = std::process::Command::new(env!("CARGO_BIN_EXE_kan"))
+    let trust_me = std::process::Command::new(env!("CARGO_BIN_EXE_kan-v1"))
         .args([
             "show",
             "identity/production-writer",
@@ -558,7 +558,7 @@ async fn production_writer_preserves_released_transport_and_appends_current_clai
     assert_eq!(trust_me["trust"]["authors"][0]["did"], actor.principal());
     assert_ne!(trust_me["trust"]["authors"][0]["did"], released_owner.did());
 
-    let context = std::process::Command::new(env!("CARGO_BIN_EXE_kan"))
+    let context = std::process::Command::new(env!("CARGO_BIN_EXE_kan-v1"))
         .args(["context", "--budget", "10000", "--json"])
         .env("KAN_CONFIG_DIR", &config)
         .current_dir(&root)
@@ -580,7 +580,7 @@ async fn production_writer_preserves_released_transport_and_appends_current_clai
     assert_eq!(current[0]["kind"], "Status");
     assert!(context["tokens"].as_u64().unwrap() <= 10_000);
 
-    let empty_context = std::process::Command::new(env!("CARGO_BIN_EXE_kan"))
+    let empty_context = std::process::Command::new(env!("CARGO_BIN_EXE_kan-v1"))
         .args(["context", "--budget", "0", "--json"])
         .env("KAN_CONFIG_DIR", &config)
         .current_dir(&root)
@@ -591,25 +591,25 @@ async fn production_writer_preserves_released_transport_and_appends_current_clai
     assert!(empty_context["claims"].as_array().unwrap().is_empty());
     assert_eq!(empty_context["omitted_claims"], 3);
 
-    let reject_own = std::process::Command::new(env!("CARGO_BIN_EXE_kan"))
+    let reject_own = std::process::Command::new(env!("CARGO_BIN_EXE_kan-v1"))
         .args(["reject", &cid.to_string()])
         .env("KAN_CONFIG_DIR", &config)
         .current_dir(&root)
         .output()
         .unwrap();
     assert!(!reject_own.status.success());
-    assert!(String::from_utf8_lossy(&reject_own.stderr).contains("kan retract"));
+    assert!(String::from_utf8_lossy(&reject_own.stderr).contains("kan-v1 retract"));
 
-    let retract_foreign = std::process::Command::new(env!("CARGO_BIN_EXE_kan"))
+    let retract_foreign = std::process::Command::new(env!("CARGO_BIN_EXE_kan-v1"))
         .args(["retract", &legacy_cid.to_string()])
         .env("KAN_CONFIG_DIR", &config)
         .current_dir(&root)
         .output()
         .unwrap();
     assert!(!retract_foreign.status.success());
-    assert!(String::from_utf8_lossy(&retract_foreign.stderr).contains("kan reject"));
+    assert!(String::from_utf8_lossy(&retract_foreign.stderr).contains("kan-v1 reject"));
 
-    let retract = std::process::Command::new(env!("CARGO_BIN_EXE_kan"))
+    let retract = std::process::Command::new(env!("CARGO_BIN_EXE_kan-v1"))
         .args(["retract", &cid.to_string()])
         .env("KAN_CONFIG_DIR", &config)
         .current_dir(&root)
@@ -621,7 +621,7 @@ async fn production_writer_preserves_released_transport_and_appends_current_clai
         String::from_utf8_lossy(&retract.stderr)
     );
 
-    let reject = std::process::Command::new(env!("CARGO_BIN_EXE_kan"))
+    let reject = std::process::Command::new(env!("CARGO_BIN_EXE_kan-v1"))
         .args(["reject", &legacy_cid.to_string()])
         .env("KAN_CONFIG_DIR", &config)
         .current_dir(&root)
@@ -633,7 +633,7 @@ async fn production_writer_preserves_released_transport_and_appends_current_clai
         String::from_utf8_lossy(&reject.stderr)
     );
 
-    let corrected = std::process::Command::new(env!("CARGO_BIN_EXE_kan"))
+    let corrected = std::process::Command::new(env!("CARGO_BIN_EXE_kan-v1"))
         .args(["show", "identity/production-writer", "--json"])
         .env("KAN_CONFIG_DIR", &config)
         .current_dir(&root)

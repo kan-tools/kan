@@ -1,4 +1,4 @@
-//! #181: `kan show` computed `GitAncestry` edges and then discarded every one
+//! #181: `kan-v1 show` computed `GitAncestry` edges and then discarded every one
 //! of them.
 //!
 //! `related_subjects_by_file` exists to surface REQ-20's same-file relations.
@@ -87,7 +87,7 @@ fn show_makes_no_ancestry_calls_because_it_uses_no_ancestry_edges() {
     commit(dir.path(), "one");
 
     let kan = |args: &[&str], path: Option<&str>| {
-        let mut cmd = Command::new(env!("CARGO_BIN_EXE_kan"));
+        let mut cmd = Command::new(env!("CARGO_BIN_EXE_kan-v1"));
         cmd.args(args)
             .current_dir(dir.path())
             .env("KAN_NO_KEYCHAIN", "1")
@@ -129,7 +129,7 @@ fn show_makes_no_ancestry_calls_because_it_uses_no_ancestry_edges() {
         .collect();
     assert!(
         ancestry.is_empty(),
-        "`kan show` made {} ancestry call(s) whose edges it then discards (#181):\n  {}",
+        "`kan-v1 show` made {} ancestry call(s) whose edges it then discards (#181):\n  {}",
         ancestry.len(),
         ancestry.join("\n  ")
     );

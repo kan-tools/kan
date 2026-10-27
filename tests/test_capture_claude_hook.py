@@ -15,7 +15,7 @@ class CaptureHook(unittest.TestCase):
         with tempfile.TemporaryDirectory() as root:
             transcript = Path(root) / 'subagent.jsonl'
             transcript.write_bytes(b'{"type":"assistant"}\n')
-            args = SimpleNamespace(kan='kan-v2', spool='spool', key='key', recipient='recipient', transcript_root=root, timeout=60)
+            args = SimpleNamespace(kan='kan', spool='spool', key='key', recipient='recipient', transcript_root=root, timeout=60)
             raw = json.dumps({'session_id':'id', 'hook_event_name':'SubagentStop', 'agent_transcript_path':str(transcript)}).encode() + b'\n'
             ok = SimpleNamespace(returncode=0, stdout=b'{"health":{"recording_gap":false}}')
             with patch.object(hook.subprocess, 'run', return_value=ok) as run:

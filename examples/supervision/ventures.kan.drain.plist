@@ -3,7 +3,7 @@
 <plist version="1.0"><dict>
 <key>Label</key><string>ventures.kan.drain</string>
 <key>ProgramArguments</key><array>
-<string>/usr/local/bin/kan-v2</string><string>spool-watch</string>
+<string>/usr/local/bin/kan</string><string>spool-watch</string>
 <string>/Users/you/Library/Application Support/kan/collector.spool</string>
 <string>--journal</string><string>/Users/you/Library/Application Support/kan/collector.health</string>
 <string>--endpoint</string><string>http://127.0.0.1:7282/v1/rpc</string>

@@ -6,7 +6,7 @@
 //! can discover is unreadable by every clone that has not upgraded.
 //!
 //! Why the layout changes at all, measured rather than argued: with one file per
-//! subject, a second author's `kan publish` silently removed the first author's
+//! subject, a second author's `kan-v1 publish` silently removed the first author's
 //! records from the tracked tree, and re-publishing ping-ponged them back
 //! (kan#131). The existing kan#111 guard cannot object, because the file really
 //! is that subject's — the subject is the same, only the author differs. Under

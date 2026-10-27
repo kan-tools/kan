@@ -8,7 +8,7 @@
 //! `KAN_NO_KEYCHAIN` is an OPT-OUT, and opt-outs fail open: each call site had
 //! to independently remember `keychain_disabled()`, and the cost of forgetting
 //! is landing in a developer's real login keychain. Four sites existed; the two
-//! newest both forgot, and `kan identity protect --yes` with the flag set wrote
+//! newest both forgot, and `kan-v1 identity protect --yes` with the flag set wrote
 //! a real entry to the author's keychain.
 //!
 //! Auditing call sites is the curated fix and it has already failed once. This

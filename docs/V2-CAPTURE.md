@@ -1,6 +1,6 @@
 # Experimental capture forwarding
 
-`kan-v2 capture-post` forwards one opaque POST to an explicitly configured URL.
+`kan capture-post` forwards one opaque POST to an explicitly configured URL.
 It records gateway observations as encrypted, signed local-spool entries. This
 is the first P6 transport witness, not a complete harness proxy or a production
 provider adapter. No real provider or credential profile has been selected.
@@ -10,7 +10,7 @@ Build with `--features v2-crypto`. Initialize a spool as in
 archive recipient's public key. Then, against your own fixture endpoint:
 
 ```sh
-kan-v2 capture-post --endpoint http://127.0.0.1:9000/fixed \
+kan capture-post --endpoint http://127.0.0.1:9000/fixed \
   --spool /private/archive/capture-spool --key /private/keys/writer.json \
   --recipient "$ARCHIVE_RECIPIENT_HEX" --deadline-seconds 300 \
   < request.bin > response.bin 2> capture-health.jsonl

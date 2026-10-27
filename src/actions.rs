@@ -49,10 +49,10 @@ pub enum Error {
     #[error("no such claim: {0}")]
     UnknownClaim(Cid),
     #[error(
-        "you can't retract another author's claim ({0}, authored by someone else) -- use `kan reject` instead"
+        "you can't retract another author's claim ({0}, authored by someone else) -- use `kan-v1 reject` instead"
     )]
     NotYourClaim(Cid),
-    #[error("you can't reject your own claim ({0}) -- use `kan retract` instead")]
+    #[error("you can't reject your own claim ({0}) -- use `kan-v1 retract` instead")]
     CantRejectOwnClaim(Cid),
     #[error("claim {0} uses unsupported codec `{1}` and cannot be a correction target")]
     UnsupportedCorrectionTarget(Cid, Box<str>),
@@ -90,7 +90,7 @@ impl AppendResult {
     }
 }
 
-/// Two claims from one agent action (`kan resolve`/`kan block`): a narrative
+/// Two claims from one agent action (`kan-v1 resolve`/`kan-v1 block`): a narrative
 /// claim (`Resolution`/`Blocker`) plus the `Status` claim it's paired with,
 /// `cites`-linked to it. An agent never has to think about "narrative vs.
 /// structural" — resolving/blocking something *is* asserting its status.
@@ -251,7 +251,7 @@ fn parse_file_artifact(raw: &str, head_sha: &crate::claim::v1::Sha) -> ArtifactR
 /// Reject a subject name that cannot have been meant (#144).
 ///
 /// A control character in an rkey is never deliberate. It arrives one way —
-/// an unquoted or over-eager shell expansion, `--subject "$(kan status ...)"`
+/// an unquoted or over-eager shell expansion, `--subject "$(kan-v1 status ...)"`
 /// — and once written it is permanent, because non-destruction means the
 /// claim cannot be removed. So the check belongs at the write, which is the
 /// only moment it is still cheap.
@@ -302,7 +302,7 @@ async fn append(
     // #144: one choke point, because every write verb reaches this and a
     // check that lives on some of them is a check that lives on none.
     //
-    // The reported symptom was `kan status --json` emitting a phantom subject
+    // The reported symptom was `kan-v1 status --json` emitting a phantom subject
     // whose name was every other subject name newline-joined. It is not a JSON
     // bug and there is no phantom: it is a real claim, written by a shell
     // command substitution that expanded to a whole listing --
@@ -517,7 +517,7 @@ pub async fn same(
 
 /// A domain-semantic edge between two subjects (`docs/SPEC.md` §6):
 /// `ClaimBody::Relation { kind, target: b }` for any of REQ-1's 5
-/// non-identity `RelationKind`s. `SameAs` stays `kan same`'s alone (REQ-2) —
+/// non-identity `RelationKind`s. `SameAs` stays `kan-v1 same`'s alone (REQ-2) —
 /// the CLI/MCP layers are what actually keep it out of reach here (this
 /// function itself doesn't re-check `kind`, since every caller already
 /// narrows to the 5 non-identity kinds at the argument-parsing boundary).
@@ -631,7 +631,7 @@ pub async fn block(
 /// Writes a bare `ClaimBody::Status { value }` claim with no paired
 /// narrative — the entry point for `Open`/`InProgress`/`Closed`, which have
 /// no natural narrative-kind pairing.
-/// `kan publish <subject>` — declares the subject published to the git tree
+/// `kan-v1 publish <subject>` — declares the subject published to the git tree
 /// and writes its live claims there.
 ///
 /// Two acts, deliberately in this order: the `Publication` claim is appended
@@ -645,7 +645,7 @@ pub async fn publish(ws: &mut Workspace, subject: &str) -> Result<String, Error>
     use crate::claim::v1::Layer;
 
     // Refuse a subject with nothing to publish. The Publication claim below
-    // would otherwise mint the subject into being, so `kan publish <typo>`
+    // would otherwise mint the subject into being, so `kan-v1 publish <typo>`
     // reported success and permanently polluted the log and the tracked
     // tree with a Publication for a subject that never existed
     // (review/full-pass-v0.12 F8). Checked before the append that would
@@ -653,7 +653,7 @@ pub async fn publish(ws: &mut Workspace, subject: &str) -> Result<String, Error>
     if !subject_exists(ws, subject)? {
         return Err(Error::Usage(format!(
             "no subject named \"{subject}\" has any claims to publish. Check the name with \
-             `kan status`; nothing was written."
+             `kan-v1 status`; nothing was written."
         )));
     }
 
@@ -709,7 +709,7 @@ pub async fn publish(ws: &mut Workspace, subject: &str) -> Result<String, Error>
     ))
 }
 
-/// `kan publish --all` — bring every already-published subject's file up to
+/// `kan-v1 publish --all` — bring every already-published subject's file up to
 /// date (`.design/git-tree-transport.md` REQ-9, `.design/v0.7-milestone.md`
 /// REQ-15; specified in the original design and never implemented).
 ///
@@ -804,8 +804,8 @@ pub fn durability_of(ws: &Workspace, class: &SubjectView) -> Durability {
 /// is no blanket two-hop `From`. Named once rather than spelled out at every
 /// call site.
 ///
-/// *This helper carried a long docstring documenting `kan identity adopt` and
-/// `kan identity role add`, left behind when those functions were inserted
+/// *This helper carried a long docstring documenting `kan-v1 identity adopt` and
+/// `kan-v1 identity role add`, left behind when those functions were inserted
 /// mid-docstring. Removed after a cold review.*
 ///
 /// *Four successive review rounds then corrected the number of call sites it
@@ -819,7 +819,7 @@ fn sign_error(e: crate::sign::Error) -> Error {
     Error::Workspace(crate::workspace::Error::Sign(e))
 }
 
-/// `kan identity adopt`, plus REQ-9: carry the role registry across.
+/// `kan-v1 identity adopt`, plus REQ-9: carry the role registry across.
 ///
 /// Adopt changes which DID this workspace resolves to, and a declaration is
 /// honoured only when its author *is* that DID — so without this, adopting
@@ -862,7 +862,7 @@ pub async fn adopt_identity_carrying_roles(
             out.push_str(&format!(
                 "\nNOTE: {} different identities have declared roles in this log, so none \
                  were carried across -- kan will not guess which registry was this \
-                 workspace's. Re-declare the ones you want with `kan identity role add`.\n",
+                 workspace's. Re-declare the ones you want with `kan-v1 identity role add`.\n",
                 declaring.len()
             ));
             return Ok(out);
@@ -896,7 +896,7 @@ pub async fn adopt_identity_carrying_roles(
              KAN_IDENTITY_FILE selects {signer}, so the declarations would have been \
              authored by that identity -- and only the identity a workspace RESOLVES to \
              ({adopted}) can declare a role, so they would have granted nothing.\n\n\
-             Re-run `kan identity adopt --key <path>` with KAN_IDENTITY_FILE unset to \
+             Re-run `kan-v1 identity adopt --key <path>` with KAN_IDENTITY_FILE unset to \
              carry them across. Nothing has been lost: the previous declarations are \
              still in the log.\n"
         ));
@@ -960,7 +960,7 @@ pub async fn adopt_identity_carrying_roles(
     Ok(out)
 }
 
-/// What `kan identity role import` did, so the CLI reports facts rather than
+/// What `kan-v1 identity role import` did, so the CLI reports facts rather than
 /// re-deriving them.
 pub struct ImportSummary {
     pub imported: Vec<(String, String)>,
@@ -974,7 +974,7 @@ pub struct ImportSummary {
     pub auto_declared: Option<crate::roles::DeclaredRole>,
 }
 
-/// `kan identity role import` — REQ-5's one-shot migration off `.kan/roles`.
+/// `kan-v1 identity role import` — REQ-5's one-shot migration off `.kan/roles`.
 ///
 /// Reads the file, appends one `RoleDeclaration` per row, and **never rewrites
 /// or deletes it**. Idempotent by (name, DID): a row already declared is
@@ -1119,7 +1119,7 @@ async fn ensure_workspace_declared(
     // Returned rather than swallowed so the caller can SAY it happened.
     //
     // This append is a claim the operator did not ask for, and it was
-    // invisible: `kan identity role add auditor` printed only `auditor`. That
+    // invisible: `kan-v1 identity role add auditor` printed only `auditor`. That
     // silence is what made two of the five blocking findings in this feature
     // silent -- in both, the auto-declaration wrote or failed to write the
     // wrong thing and nothing on screen would have shown it. REQ-9 earns its
@@ -1131,7 +1131,7 @@ async fn ensure_workspace_declared(
     }))
 }
 
-/// `kan identity role add <name>` — mint a role key and **declare it as a
+/// `kan-v1 identity role add <name>` — mint a role key and **declare it as a
 /// claim** (`.design/role-declarations.md` REQ-3/REQ-6/REQ-7).
 ///
 /// **Refuse, then mint, then append**, and the order is deliberate: a refusal
@@ -1141,7 +1141,7 @@ async fn ensure_workspace_declared(
 /// noticed it was also wrong.)
 ///
 /// **The subject is `role/<name>`**, so each declaration has a readable history
-/// of its own: `kan show role/prover` is when it was declared, retracted and
+/// of its own: `kan-v1 show role/prover` is when it was declared, retracted and
 /// re-declared, which is how a retraction is aimed without hunting a CID out of
 /// a shared registry.
 ///
@@ -1219,7 +1219,7 @@ pub async fn declare_role(
     Ok((role, auto))
 }
 
-/// `kan identity adopt --key <path>` — point this workspace at a signing key
+/// `kan-v1 identity adopt --key <path>` — point this workspace at a signing key
 /// it already has claims from (v0.9 REQ-8, issue #90).
 ///
 /// **The supported way back from a lost identity.** #90's shape is a
@@ -1268,7 +1268,7 @@ pub fn adopt_identity(ws: &Workspace, key_path: &Path) -> Result<String, Error> 
              Adopting a key that never wrote here would leave every claim invisible under it, \
              which is the state you are presumably trying to get *out* of.\n\nIf one of the \
              DIDs above is the key you meant, point --key at the file holding it. If you hold \
-             a recovery phrase instead, `kan identity restore` will tell you which DID it \
+             a recovery phrase instead, `kan-v1 identity restore` will tell you which DID it \
              belongs to.",
             claims.len()
         )));
@@ -1300,7 +1300,7 @@ pub fn adopt_identity(ws: &Workspace, key_path: &Path) -> Result<String, Error> 
     };
     Ok(format!(
         "adopted {candidate_did}\n{scope}.\n{retired}\nThis workspace now signs and reads as that \
-         identity. Its claims should be visible again -- check with `kan status`.\n"
+         identity. Its claims should be visible again -- check with `kan-v1 status`.\n"
     ))
 }
 
@@ -1372,7 +1372,7 @@ fn retire_seed(kan_dir: &Path) -> Result<String, Error> {
     Ok(notes)
 }
 
-/// `kan restore` — rebuild this identity's log from the tracked `.claims/`
+/// `kan-v1 restore` — rebuild this identity's log from the tracked `.claims/`
 /// tree (`.design/durability-log-recovery.md` REQ-2/REQ-3, v0.9 REQ-1/REQ-2).
 ///
 /// **The inverse of `publish`, using v0.8's primitive pointed the other way.**
@@ -1394,7 +1394,7 @@ pub async fn restore(ws: &mut Workspace) -> Result<String, Error> {
     if !claims_dir.exists() {
         return Err(Error::Usage(format!(
             "no {} directory here, so there is nothing to restore from.\n\n\
-             `kan restore` rebuilds this repo's log from claims that were published into the \
+             `kan-v1 restore` rebuilds this repo's log from claims that were published into the \
              tracked tree. If you expected published claims, check you are in the right repo \
              and that the tree was committed.",
             crate::transport::git_tree::CLAIMS_DIR
@@ -1454,7 +1454,7 @@ pub async fn restore(ws: &mut Workspace) -> Result<String, Error> {
             if unreadable > 0 {
                 listed.push_str(&format!(
                     "  ...and {unreadable} record(s) that could not be verified. Run \
-                     `kan restore` again once an identity is reachable for the details.\n"
+                     `kan-v1 restore` again once an identity is reachable for the details.\n"
                 ));
             }
             return Err(Error::Usage(format!(
@@ -1462,8 +1462,8 @@ pub async fn restore(ws: &mut Workspace) -> Result<String, Error> {
                  are yours to restore.\n\n\
                  Claims found in {}, by author:\n{listed}\n\
                  If one of those is you, point this workspace at that key -- \
-                 `kan identity adopt --key <path>` if you have the file, or `kan identity \
-                 restore` to recover it from your phrase -- then run `kan restore` again.\n\n\
+                 `kan-v1 identity adopt --key <path>` if you have the file, or `kan-v1 identity \
+                 restore` to recover it from your phrase -- then run `kan-v1 restore` again.\n\n\
                  If KAN_IDENTITY_FILE is set, check it names a file that exists.",
                 crate::transport::git_tree::CLAIMS_DIR
             )));
@@ -1561,7 +1561,7 @@ pub async fn restore(ws: &mut Workspace) -> Result<String, Error> {
         out.push_str(&format!(
             "\n{} other author(s) have claims in this tree. They are not restored into your \
              log -- they are read from the overlay instead, so `log/repo.car` stays claims \
-             you authored. Read them with `kan show <subject> --trust <did>`.\n",
+             you authored. Read them with `kan-v1 show <subject> --trust <did>`.\n",
             foreign_authors.len()
         ));
     }
@@ -1604,12 +1604,12 @@ fn restore_refusal(
         out.push_str(
             "\nNothing has been written. If one of those is *you* on another machine or \
              under a key this checkout has lost, restore the identity first and then restore \
-             the log:\n\n    kan identity restore\n\nThe recovery phrase reproduces the \
+             the log:\n\n    kan-v1 identity restore\n\nThe recovery phrase reproduces the \
              signing key, and the key is what makes those claims yours. Restoring the log \
              under a different identity would leave every claim in it unreadable to you, \
              which is the failure this refusal exists to prevent.\n\nIf those claims are \
-             genuinely another actor's, you do not need `kan restore` at all -- they are \
-             already read from the overlay. Try `kan show <subject> --trust <did>`.\n",
+             genuinely another actor's, you do not need `kan-v1 restore` at all -- they are \
+             already read from the overlay. Try `kan-v1 show <subject> --trust <did>`.\n",
         );
     }
     if !unreadable.is_empty() {
@@ -1624,7 +1624,7 @@ fn restore_refusal(
     out
 }
 
-/// `kan publish --all` — refresh every already-published subject's file.
+/// `kan-v1 publish --all` — refresh every already-published subject's file.
 /// Republishes subjects that already carry a `Publication` claim; `kan
 /// publish <subject>` remains the act of deciding to share.
 pub async fn publish_all(ws: &mut Workspace) -> Result<String, Error> {
@@ -1643,7 +1643,7 @@ pub async fn publish_all(ws: &mut Workspace) -> Result<String, Error> {
     let subjects = crate::transport::git_tree::published_subjects(&all_live);
 
     if subjects.is_empty() {
-        return Ok("no published subjects yet — `kan publish <subject>` first".to_string());
+        return Ok("no published subjects yet — `kan-v1 publish <subject>` first".to_string());
     }
 
     let mut written = Vec::new();
@@ -1716,7 +1716,7 @@ pub async fn retract(
 /// writing — `retract`'s check in reverse: no single call should have two
 /// possible fold-time meanings depending on facts the caller may not track
 /// (REQ-5), so `reject`ing your own claim is a clear write-time error
-/// pointing at `kan retract`, not a silent dispatch to it.
+/// pointing at `kan-v1 retract`, not a silent dispatch to it.
 pub async fn reject(
     ws: &mut Workspace,
     cid: &str,
@@ -1905,8 +1905,8 @@ fn superseded_status_cids(
 ) -> std::collections::HashSet<Cid> {
     // Classify under the SAME computed edges `status`/`issues` use, not the
     // empty set this passed before. A status settled only by a computable
-    // edge (e.g. `GitAncestry`) was superseded under `kan status` yet shown
-    // as live under `kan show`/`context` — the two read surfaces disagreeing
+    // edge (e.g. `GitAncestry`) was superseded under `kan-v1 status` yet shown
+    // as live under `kan-v1 show`/`context` — the two read surfaces disagreeing
     // about the same subject (review/full-pass-v0.12 F9). SPEC §9 step 2b
     // makes the poset attested ⊔ computable; both halves belong here.
     let live = match crate::fold::state::classify_with(claims, |positions| {
@@ -1942,7 +1942,7 @@ fn show_claim_by_cid(ws: &Workspace, view: &FoldedView, wanted: &Cid) -> Result<
     //
     // Searching only the fold's live set made this useless for the case it
     // was built for: a `Retraction` names its target by CID, and the target
-    // is by definition *not* live, so `kan show <cid>` of it said "no such
+    // is by definition *not* live, so `kan-v1 show <cid>` of it said "no such
     // claim". `docs/SPEC.md` §8's "a view CAN show 'X retracted Y'" stayed
     // half-built — you saw *that*, never *what* — which is the whole reason
     // REQ-18 exists. The requirement was reinterpreted into "accepts CID
@@ -1974,7 +1974,7 @@ pub fn show(
     let subject_ref = SubjectRef::Local(Rkey::from(subject));
 
     // REQ-18: a `Retraction` names its target by CID, and no read verb
-    // accepted one -- `kan show <cid>` treated it as a subject name and said
+    // accepted one -- `kan-v1 show <cid>` treated it as a subject name and said
     // "no claims", leaving `docs/SPEC.md` §8's "a view CAN show 'X retracted
     // Y'" half-built: you could see *that*, never *what*.
     if subject.starts_with("bafy") {
@@ -1994,7 +1994,7 @@ pub fn show(
             ));
             // An edge asserted *at* a subject is part of its story even when
             // the subject has nothing of its own. `inbound_edges` used to sit
-            // inside the `Some(..)` arm, so `kan relate a blocks b` then `kan
+            // inside the `Some(..)` arm, so `kan-v1 relate a blocks b` then `kan
             // show b` printed "no claims" -- the literal scenario REQ-21
             // states, failing because `b` has no merge class until it has a
             // claim. Relations are exactly the thing that can arrive before a
@@ -2058,7 +2058,7 @@ pub fn show(
                 out.push_str(&claim_detail_lines(claim, "      "));
             }
             // REQ-21: an edge asserted *at* this subject is part of its
-            // story too. `kan relate a blocks b` then `kan show b` showed
+            // story too. `kan-v1 relate a blocks b` then `kan-v1 show b` showed
             // nothing, so half of every relation was invisible -- and
             // `fold::relations` (SPEC 4.5.1's symmetric projection, shipped
             // in v0.6) had no caller anywhere outside its own tests.
@@ -2188,7 +2188,7 @@ pub fn status(
                     out.push_str(&format!("{subject}: no claims{}\n", subject_hint(&view)));
                     // An edge asserted *at* a subject is part of its story even when
                     // the subject has nothing of its own. `inbound_edges` used to sit
-                    // inside the `Some(..)` arm, so `kan relate a blocks b` then `kan
+                    // inside the `Some(..)` arm, so `kan-v1 relate a blocks b` then `kan
                     // show b` printed "no claims" -- the literal scenario REQ-21
                     // states, failing because `b` has no merge class until it has a
                     // claim. Relations are exactly the thing that can arrive before a
@@ -2267,7 +2267,7 @@ fn classify_subject(ws: &Workspace, subject_view: &SubjectView) -> StateView {
     })
 }
 
-/// A merge-class's subject label, in a form `kan show` accepts verbatim.
+/// A merge-class's subject label, in a form `kan-v1 show` accepts verbatim.
 ///
 /// `issues` and `status` printed `[Local("task-3")]` -- the `Debug` of a
 /// `Vec<SubjectRef>` -- while `show` accepts only the bare rkey, so their
@@ -2379,7 +2379,7 @@ fn inbound_edges_json(
 
 /// One status line, with the durability marker appended inline.
 ///
-/// Inline rather than a second line per subject: `kan status` with no
+/// Inline rather than a second line per subject: `kan-v1 status` with no
 /// argument lists every subject, and doubling that output would make the
 /// column something people stop reading. It is shown for **all three**
 /// states, including the healthy one — a column that only appears when
@@ -2449,17 +2449,17 @@ fn write_state_line(out: &mut String, label: &str, subject_view: &SubjectView, s
 ///
 /// "Done" (for an eligible class) means either the state fold settled on
 /// `Resolved`/`Closed` (structural `Status` claims), or the class has a
-/// live `ClaimBody::Resolution` — the narrative signal `kan resolve`
+/// live `ClaimBody::Resolution` — the narrative signal `kan-v1 resolve`
 /// writes, and in practice the only one most subjects will ever have,
 /// since v1's CLI has no verb for authoring bare `Status` claims besides
-/// `kan mark`. No subject is special-cased here (there's no more built-in
+/// `kan-v1 mark`. No subject is special-cased here (there's no more built-in
 /// "session" bookkeeping subject, `docs/DECISIONS.md`'s boundary-rule ADR) —
 /// every subject is judged purely on eligibility + doneness, the same way.
 /// Whether a merge class counts as an open issue.
 ///
 /// Factored out of `issues` so the rendered and structured surfaces cannot
 /// drift on *what an issue is* — only on how it is presented. That drift is
-/// the class of bug that made `day` see an empty log while `kan show`
+/// the class of bug that made `day` see an empty log while `kan-v1 show`
 /// displayed it perfectly (ADR-50).
 fn is_open_issue(ws: &Workspace, subject_view: &SubjectView) -> bool {
     let state = classify_subject(ws, subject_view);
@@ -2577,7 +2577,7 @@ fn excluded_note(count: usize, trust: &TrustBase, empty_reason: Option<&str>) ->
 // rendering functions rather than in `json.rs` so the two cannot drift on
 // what a view *contains* — only on how it is presented.
 
-/// `kan show <subject> --json`.
+/// `kan-v1 show <subject> --json`.
 pub fn show_json(
     ws: &Workspace,
     subject: &str,
@@ -2683,7 +2683,7 @@ fn bulk_show_entry(
     }
 }
 
-/// `kan show --all --json` — every subject's live claims, from one open
+/// `kan-v1 show --all --json` — every subject's live claims, from one open
 /// (#123, `.design/kan-read-contract.md` REQ-5).
 ///
 /// One fold serves the whole response, which is the entire point: the cost
@@ -2770,7 +2770,7 @@ pub fn show_selected_json(
     })
 }
 
-/// `kan status [subject] --json`.
+/// `kan-v1 status [subject] --json`.
 pub fn status_json(
     ws: &Workspace,
     subject: Option<&str>,
@@ -2817,7 +2817,7 @@ pub fn status_json(
     })
 }
 
-/// `kan issues --json`.
+/// `kan-v1 issues --json`.
 pub fn issues_json(
     ws: &Workspace,
     trust: &TrustBase,
@@ -2850,7 +2850,7 @@ pub fn issues_json(
     })
 }
 
-/// `kan context --budget N --json`.
+/// `kan-v1 context --budget N --json`.
 pub fn context_json(
     ws: &Workspace,
     budget: usize,
@@ -2897,7 +2897,7 @@ pub fn context_json(
     })
 }
 
-/// `kan identity role list --json`.
+/// `kan-v1 identity role list --json`.
 pub fn roles_json(ws: &Workspace, roles: &[crate::roles::DeclaredRole]) -> Result<String, Error> {
     to_json(&crate::json::RolesJson {
         v: crate::json::SCHEMA_VERSION,
@@ -2990,7 +2990,7 @@ pub fn context(
     Ok(out)
 }
 
-/// `kan identity authors` — every author with a claim in `.kan/log`, marked
+/// `kan-v1 identity authors` — every author with a claim in `.kan/log`, marked
 /// declared or not (`.design/identity-surface.md` REQ-9).
 ///
 /// **`local` minus `roles`, made reachable.** Both halves became stateable
@@ -3069,14 +3069,14 @@ pub fn authors(ws: &Workspace, json: bool) -> Result<String, Error> {
         out.push_str(&format!(
             "\n{undeclared_count} author(s) have written here without being declared as \
              roles. That is not an error -- a third party who wrote directly to this log is \
-             legitimately this workspace's -- but if you did not expect it, `kan identity \
-             did` and `kan identity role list` are the two things to compare.\n"
+             legitimately this workspace's -- but if you did not expect it, `kan-v1 identity \
+             did` and `kan-v1 identity role list` are the two things to compare.\n"
         ));
     }
     Ok(out)
 }
 
-/// `kan identity protect` — move this workspace's secret into the OS keychain.
+/// `kan-v1 identity protect` — move this workspace's secret into the OS keychain.
 ///
 /// Never routes through `commit_identity`: it moves a secret, it does not
 /// create one, and minting an identity in order to protect it would be a
@@ -3092,7 +3092,7 @@ pub fn protect_identity(ws: &Workspace, yes: bool) -> Result<String, Error> {
     use std::io::IsTerminal;
     if !yes && (!std::io::stdout().is_terminal() || !std::io::stdin().is_terminal()) {
         return Err(Error::Usage(
-            "refusing: `kan identity protect` deletes the plaintext copy of your secret \
+            "refusing: `kan-v1 identity protect` deletes the plaintext copy of your secret \
              once the keychain holds it, and this is not an interactive terminal.\n\n\
              Run it in a terminal you can answer, or pass --yes if you mean it \
              unattended."
@@ -3170,7 +3170,7 @@ pub fn protect_identity(ws: &Workspace, yes: bool) -> Result<String, Error> {
                 )
                 .map_err(|e| Error::Usage(format!("could not delete the plaintext copy: {e}")))?;
                 out.push_str(
-                    "\nThe plaintext copy is deleted. `kan identity phrase` still reproduces \
+                    "\nThe plaintext copy is deleted. `kan-v1 identity phrase` still reproduces \
                      this secret -- that is your backup, and it is not on this disk.\n",
                 );
             } else {
@@ -3219,7 +3219,7 @@ pub fn protect_identity(ws: &Workspace, yes: bool) -> Result<String, Error> {
     }
 }
 
-/// `kan identity unprotect` — move this workspace's secret out of the OS
+/// `kan-v1 identity unprotect` — move this workspace's secret out of the OS
 /// keychain into a `0600` file.
 pub fn unprotect_identity(ws: &Workspace, yes: bool) -> Result<String, Error> {
     use crate::sign::{plan_unprotect, unprotect_to, AtRest, Plan};

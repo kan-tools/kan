@@ -29,7 +29,7 @@
 //! # Why the keychain is in the chain
 //!
 //! Because the alternative is reads and writes disagreeing. Consulting it
-//! only on the write side was #170: `kan identity did` resolved and
+//! only on the write side was #170: `kan-v1 identity did` resolved and
 //! `--trust me` reported no identity, in the same workspace. A read with no
 //! `--trust me` resolves nothing and never reaches here, so ADR-83 is intact.
 //!
@@ -57,8 +57,8 @@
 //! - **plaintext→keychain migration**, and the deletion of the redundant
 //!   plaintext copy (ADR-25/ADR-53). Retired as a *feature*, not merely moved
 //!   off the resolution path: a capability that only ever fired as a side
-//!   effect of `kan show` was never one an operator could ask for, see, or
-//!   undo. [`super::sign`]'s replacement is `kan identity protect`, which is
+//!   effect of `kan-v1 show` was never one an operator could ask for, see, or
+//!   undo. [`super::sign`]'s replacement is `kan-v1 identity protect`, which is
 //!   explicit, covers all four at-rest states, and has an inverse.
 //! - **repairing a `0644` key file to `0600` on load** — a *read* changing a
 //!   file's permissions, which is one of the three violations
@@ -131,7 +131,7 @@ pub enum Error {
          {remedy}\n\n\
          If you meant to add a second *role* to this workspace -- a director and a prover \
          signing separately, say -- that is a supported thing and this is not the way to ask \
-         for it: run `kan identity role add <name> --key <path>`, which mints the role key \
+         for it: run `kan-v1 identity role add <name> --key <path>`, which mints the role key \
          deliberately and registers it, then read with `--trust roles` so both roles' claims \
          are visible."
     )]
@@ -160,7 +160,7 @@ pub enum Error {
          To restore from a recovery phrase, write the key to that path first.{declared}\n\n\
          If you meant to add a second *role* to this workspace -- a director and a prover \
          signing separately, say -- that is supported and this is not the way to ask for \
-         it: run `kan identity role add <name>`, which mints the role key at \
+         it: run `kan-v1 identity role add <name>`, which mints the role key at \
          .kan/roles.d/<name> and declares it, then read with `--trust roles` so both \
          roles' claims are visible."
     )]
@@ -191,7 +191,7 @@ pub enum Error {
         "only this workspace's own identity can declare a role, and right now kan is \
          signing as {signer}.\n\n\
          This workspace's identity is {workspace}. A declaration written by anyone else \
-         is a valid claim that grants NOTHING -- it would appear in `kan show` and never \
+         is a valid claim that grants NOTHING -- it would appear in `kan-v1 show` and never \
          in `--trust roles` -- so kan refuses rather than writing one that silently does \
          nothing.\n\n\
          Unset KAN_IDENTITY_FILE to declare as this workspace. A role that needs to \
@@ -204,9 +204,9 @@ pub enum Error {
          be honoured.\n\n\
          Only the identity a workspace RESOLVES TO may declare a role, and this one \
          resolves to none -- kan is signing as {signer}, selected with KAN_IDENTITY_FILE. \
-         Writing the declaration would succeed and grant nothing: it would appear in `kan \
+         Writing the declaration would succeed and grant nothing: it would appear in `kan-v1 \
          show` and never in `--trust roles`.\n\n\
-         Give the workspace an identity of its own first (`kan identity adopt --key \
+         Give the workspace an identity of its own first (`kan-v1 identity adopt --key \
          <path>` names a key it already has claims from), then declare the role."
     )]
     NoWorkspaceIdentityToDeclare { signer: Did },
@@ -386,7 +386,7 @@ fn log_has_claims(kan_dir: &Path) -> bool {
 /// The file recording this workspace's declared role identities, one per
 /// line as `<did>\t<name>\t<key path>`.
 ///
-/// **Read-only since v0.12, and kept only as `kan identity role import`'s
+/// **Read-only since v0.12, and kept only as `kan-v1 identity role import`'s
 /// input.** Nothing writes it any more; the registry is
 /// `ClaimBody::RoleDeclaration` claims (`.design/role-declarations.md`).
 ///
@@ -425,7 +425,7 @@ pub struct Role {
 /// and it is deliberately a **separate, explicit act** rather than a flag on
 /// the write verbs: a `--as` flag is something a script passes blanket and
 /// forgets, whereas minting a role is a thing you do once, on purpose, and
-/// can later read back with `kan identity role list`.
+/// can later read back with `kan-v1 identity role list`.
 ///
 /// The guard is therefore not weakened — an *undeclared* second identity
 /// against a non-empty log is refused exactly as before, which is
@@ -652,7 +652,7 @@ pub enum Plan {
     NoIdentity,
 }
 
-/// [`Plan`] for `kan identity protect`.
+/// [`Plan`] for `kan-v1 identity protect`.
 pub fn plan_protect(kan_dir: &Path) -> Plan {
     match at_rest(kan_dir) {
         AtRest::None_ => Plan::NoIdentity,
@@ -680,7 +680,7 @@ pub fn plan_protect(kan_dir: &Path) -> Plan {
     }
 }
 
-/// [`Plan`] for `kan identity unprotect`.
+/// [`Plan`] for `kan-v1 identity unprotect`.
 pub fn plan_unprotect(kan_dir: &Path) -> Plan {
     match at_rest(kan_dir) {
         AtRest::None_ => Plan::NoIdentity,
@@ -981,7 +981,7 @@ fn keychain_identity(kan_dir: &Path) -> Result<Option<Identity>, Error> {
 
 /// Which identity a caller asked to sign as.
 ///
-/// **A selection, not a redefinition.** `kan identity role add`'s own help
+/// **A selection, not a redefinition.** `kan-v1 identity role add`'s own help
 /// says "run kan with `KAN_IDENTITY_FILE` set to the role's key *to write as
 /// that role*" — that is a selection, and implementing it as an override of
 /// question 1 is what let a missing target invite creating one, shadow an
@@ -1025,7 +1025,7 @@ pub fn signing_identity(kan_dir: &Path, selection: &Selection) -> Result<Option<
                 //
                 // 1. CLAUDE.md's "affordance, not enforcement" -- an operator
                 //    who explicitly names a key file has said what they mean.
-                //    Undeclared authorship is made LEGIBLE (`kan identity
+                //    Undeclared authorship is made LEGIBLE (`kan-v1 identity
                 //    authors` reports it, `--trust roles` narrows past it)
                 //    rather than blocked.
                 // 2. It breaks the configuration the variable exists for. In
@@ -1119,7 +1119,7 @@ pub fn create_workspace_identity(kan_dir: &Path) -> Result<Identity, Error> {
         return Err(Error::WouldMintSecondIdentity {
             attempt: "creating a new identity".to_string(),
             remedy: "This workspace had an identity and no longer resolves one. Restore the \
-                     key, or adopt it with `kan identity adopt --key <path>`. If the key is \
+                     key, or adopt it with `kan-v1 identity adopt --key <path>`. If the key is \
                      in the OS keychain and the keychain is unreachable, fix that first -- \
                      minting here would take every existing claim out of every read."
                 .to_string(),
@@ -1131,7 +1131,7 @@ pub fn create_workspace_identity(kan_dir: &Path) -> Result<Identity, Error> {
             attempt: "creating a new one".to_string(),
             remedy: "This workspace already has an identity, even if kan cannot resolve it \
                      right now -- an unreachable or disabled keychain is the usual reason. \
-                     Fix that, or adopt the key with `kan identity adopt --key <path>`. \
+                     Fix that, or adopt the key with `kan-v1 identity adopt --key <path>`. \
                      Minting here would take every existing claim out of every read."
                 .to_string(),
             evidence: evidence.to_string(),
@@ -1476,7 +1476,7 @@ impl SecretStore for OsKeychain {
 /// forgetting is "touch the developer's real login keychain". There were four
 /// such sites, and the two newest -- `protect_from` and `unprotect_to`, written
 /// against the design doc rather than against this module's conventions --
-/// both forgot. Running `kan identity protect --yes` with the flag set wrote a
+/// both forgot. Running `kan-v1 identity protect --yes` with the flag set wrote a
 /// real entry to the author's keychain.
 ///
 /// That is four implementations of one decision, which is the same shape as
@@ -1618,7 +1618,7 @@ impl Seed {
     /// The argument is not dismissed, it is outweighed and paid for by a
     /// command: on macOS the at-rest protection ADR-63 bought is delivered by
     /// the trusted-application ACL, which is the same mechanism as #96 -- it
-    /// cannot be kept without keeping the hang. `kan identity protect` restores
+    /// cannot be kept without keeping the hang. `kan-v1 identity protect` restores
     /// #6's property deliberately. Full accounting in
     /// `.design/identity-at-rest.md`.
     pub fn create(kan_dir: &Path) -> Result<Self, Error> {
@@ -1636,9 +1636,9 @@ impl Seed {
             "kan: this repo's identity is rooted in {}, a 0600 file readable by \
              anything running as you.\n\
              \n\
-             `kan identity phrase` prints its 24-word recovery phrase -- that is the \
+             `kan-v1 identity phrase` prints its 24-word recovery phrase -- that is the \
              backup, and it is the only copy not on this disk.\n\
-             `kan identity protect` moves the secret into the OS keychain if you want \
+             `kan-v1 identity protect` moves the secret into the OS keychain if you want \
              it there.",
             kan_dir.join(SEED_FILE).display()
         );

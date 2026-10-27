@@ -181,7 +181,7 @@ fn cli(f: &Fixture, database: &Path, destination: &Path) -> std::process::Output
         use std::os::unix::fs::PermissionsExt;
         fs::set_permissions(&key, fs::Permissions::from_mode(0o600)).unwrap();
     }
-    Command::new(env!("CARGO_BIN_EXE_kan-v2"))
+    Command::new(env!("CARGO_BIN_EXE_kan"))
         .arg("restore-import")
         .arg(database)
         .arg(destination)
@@ -515,7 +515,7 @@ fn reconciliation_checks_recovered_bytes_and_current_source_without_promoting_or
     assert_eq!(report["recovered_selected_bytes_match"], true);
     assert_eq!(report["ready_for_cutover"], false);
     assert_eq!(report["source_writers_fenced"], false);
-    let args = std::process::Command::new(env!("CARGO_BIN_EXE_kan-v2"))
+    let args = std::process::Command::new(env!("CARGO_BIN_EXE_kan"))
         .arg("reconcile-import")
         .arg(f.root.path().join("source"))
         .arg("--spool")

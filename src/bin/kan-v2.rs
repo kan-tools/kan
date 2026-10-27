@@ -1,4 +1,4 @@
-//! Experimental archive, durable delivery and raw snapshot tools; no live cutover.
+//! Public kan CLI: encrypted archives, capture, Library and explicit maintenance.
 use clap::{Parser, Subcommand};
 #[cfg(feature = "v2-crypto")]
 #[path = "kan-v2/managed.rs"]
@@ -10,7 +10,11 @@ use kan::{
 use std::path::PathBuf;
 
 #[derive(Parser)]
-#[command(about = "Experimental kan v2 archive and durable delivery tools")]
+#[command(
+    name = "kan",
+    version,
+    about = "Encrypted evidence capture, Library and archive operations"
+)]
 struct Cli {
     /// Independent host-local inventory; enroll registered services, senders and Library workspaces.
     #[cfg(feature = "v2-crypto")]

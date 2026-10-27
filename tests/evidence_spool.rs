@@ -829,7 +829,7 @@ fn spool_erasure_makes_prefix_progress_without_skipping_unaffected_requests() {
     {
         let config = local.path().join("custody.json");
         std::fs::write(&config, serde_json::to_vec(&access).unwrap()).unwrap();
-        let output = std::process::Command::new(env!("CARGO_BIN_EXE_kan-v2"))
+        let output = std::process::Command::new(env!("CARGO_BIN_EXE_kan"))
             .args(["reconcile-spool-erasure"])
             .arg(&path)
             .arg("--erasure-history")
@@ -941,7 +941,7 @@ fn managed_spool_fences_current_erasure_across_live_handles_and_old_restore() {
     {
         let config = local.path().join("custody.json");
         std::fs::write(&config, serde_json::to_vec(&access).unwrap()).unwrap();
-        let out = std::process::Command::new(env!("CARGO_BIN_EXE_kan-v2"))
+        let out = std::process::Command::new(env!("CARGO_BIN_EXE_kan"))
             .arg("spool-head")
             .arg(&path)
             .arg("--erasure-history")

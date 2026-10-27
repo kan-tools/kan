@@ -12,7 +12,7 @@
 use std::process::Command;
 
 fn kan_as(dir: &std::path::Path, key: Option<&std::path::Path>, args: &[&str]) -> Run {
-    let mut cmd = Command::new(env!("CARGO_BIN_EXE_kan"));
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_kan-v1"));
     cmd.args(args).current_dir(dir);
     match key {
         Some(k) => {
@@ -157,12 +157,12 @@ fn an_undeclared_second_identity_is_still_refused() {
     // NOTE: an undeclared identity whose key file EXISTS may now write, and
     // that is deliberate (see `signing_identity`). ADR-77 protects against an
     // identity being CREATED without asking; naming an existing key is asking.
-    // Undeclared authorship is surfaced by `kan identity authors` and narrowed
+    // Undeclared authorship is surfaced by `kan-v1 identity authors` and narrowed
     // past by `--trust roles`, which is this project's "affordance, not
     // enforcement" posture rather than a gap.
     // The refusal points at the supported path rather than only saying no.
     assert!(
-        run.stderr.contains("kan identity role add"),
+        run.stderr.contains("kan-v1 identity role add"),
         "refusal did not point at the opt-in: {}",
         run.stderr
     );
@@ -296,7 +296,7 @@ fn the_default_read_shows_every_role_where_trust_me_shows_one() {
 ///
 /// The property still holds, and this test's old comment said it held for a
 /// reason that was never true: it claimed the primary "is not itself a
-/// declared role". It is — `kan identity role add` registers the primary
+/// declared role". It is — `kan-v1 identity role add` registers the primary
 /// alongside the new role, so the registry is complete rather than
 /// describing only the non-primary identities. That auto-declaration is what
 /// carries ADR-61's concern now, and it is the thing this pins.

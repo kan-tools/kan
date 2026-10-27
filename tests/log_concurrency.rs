@@ -39,7 +39,7 @@ fn content(identity: &Identity, text: &str) -> ClaimContent {
 /// AC-4. N separate processes append to one log at once; every claim must be
 /// reachable from the final root.
 ///
-/// Before the write lock: five concurrent `kan observe` calls returned five
+/// Before the write lock: five concurrent `kan-v1 observe` calls returned five
 /// distinct CIDs and five exit-0 successes, and two claims survived. The
 /// losers' blocks reached the CAR but were unreachable from the winning
 /// root, so no kan command could ever see them again.

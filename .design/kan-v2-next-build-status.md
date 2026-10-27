@@ -12,6 +12,23 @@ The product target remains `.design/kan-v2-server-first.md`,
 `.design/kan-v2-buildout.md` and `.design/kan-v2-human-frontend.md`.
 A minimal demo is useful verification, but does not replace feature completeness.
 
+### CLI naming — owner decision, 2026-10-26
+
+The public `kan` executable is the v2 service/capture/Library CLI. Default Cargo
+features include `v2-crypto`. The legacy repository CLI is installed only as
+`kan-v1`, behind the optional `kan-v1` feature. `autobins = false` prevents an
+accidental third entry point. Existing internal source paths and evidence IDs
+remain stable; this changes executable packaging, not archive formats or storage.
+
+A default install provides `kan`; enabling `kan-v1` adds the legacy executable.
+A legacy-only install uses `--no-default-features --features kan-v1 --bin kan-v1`.
+The two commands never dispatch to each other. Existing v1 callers, including
+external day installations, must explicitly select `kan-v1` before upgrading.
+No installed binaries, service configurations or live integrations are changed by
+this source change. CI must exercise default installation, both binaries and a
+legacy-only installation, their help/version identities, and old-workspace
+migration through `kan-v1`. Existing qualified storage evidence remains valid.
+
 ### Completion checklist
 
 Mark a row complete only when its backend, shared API/CLI where applicable, human
