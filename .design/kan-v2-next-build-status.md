@@ -37,6 +37,16 @@ fence as proof of incomplete/completed cutover. Explicit per-invocation
 must check JSON channel integrity, ancestor/repository boundaries, symlinks,
 preserved source bytes, suppression and unchanged command results.
 
+The focused CLI review at `40535f7` approved with five nonblocking follow-ups.
+The next integration addresses all five: tag each advisory line and document
+stderr suppression at the capture/gateway/Library contracts; escape remaining
+control and bidi formatting characters in displayed paths; select the explicit
+legacy binary for historical migration writers with the new manifest layout;
+compile packaged legacy-only sources as well as the default package; and assert
+the notice actually appears during the real MCP purity test. These changes await
+current qualification. The `2.0.0-beta.1` version preparation follows this work;
+the existing source version is unchanged and no merge/tag/publication is implied.
+
 ### Completion checklist
 
 Mark a row complete only when its backend, shared API/CLI where applicable, human

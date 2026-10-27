@@ -50,6 +50,8 @@ on:
       - "Cargo.toml"
       - "Cargo.lock"
       - "scripts/run-migration-cell.sh"
+      - "scripts/migration_writer.py"
+      - "tests/test_migration_writer.py"
       - "tests/fixtures/migration-expectations.tsv"
       - ".github/workflows/migration-matrix.yml"
   workflow_dispatch:
@@ -126,9 +128,10 @@ jobs:
           # table self-refilling: strengthen the harness, the hash moves once,
           # every cell re-measures under the new definition, and the next tag
           # is cheap again.
-          harness=$(printf '%s-%s-%s' \
+          harness=$(printf '%s-%s-%s-%s' \
                       "$(git rev-parse HEAD:scripts/run-migration-cell.sh)" \
                       "$(git rev-parse HEAD:scripts/select-migration-writers.sh)" \
+                      "$(git rev-parse HEAD:scripts/migration_writer.py)" \
                       "$(git rev-parse HEAD:.github/workflows/migration-matrix.yml)" \
                     | sha256sum | cut -d' ' -f1)
 
@@ -250,12 +253,11 @@ jobs:
         if: steps.cached.outputs.cache-hit != 'true'
         run: |
           git worktree add --detach /tmp/writer "${{ matrix.tag }}"
-          cd /tmp/writer
           # An old tag may not compile under a current toolchain. That is a
           # real outcome rather than a CI failure: a version nobody can build
           # is a version nobody is running, and saying so is more useful than
           # a red X.
-          if cargo build --release --quiet 2>/tmp/build.log; then
+          if python3 scripts/migration_writer.py /tmp/writer --binary-path-file /tmp/writer-binary 2>/tmp/build.log; then
             echo built > /tmp/writer-status
           else
             echo unbuildable > /tmp/writer-status
@@ -270,7 +272,7 @@ jobs:
             exit 0
           fi
           scripts/run-migration-cell.sh \
-            /tmp/writer/target/release/kan \
+            "$(cat /tmp/writer-binary)" \
             "$PWD/target/release/kan-v1" \
             "${{ matrix.cell.mode }}" > migration-outcome.txt
           cat migration-outcome.txt

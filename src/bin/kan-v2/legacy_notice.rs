@@ -21,6 +21,24 @@ fn workspace(path: &Path) -> bool {
                     .any(|name| exists(&path.join(".kan").join(name)))))
 }
 
+fn display_path(path: &Path) -> String {
+    // JSON handles C0 controls, quotes and backslashes. Escape the remaining
+    // controls and Unicode bidi formatting characters before terminal output.
+    let json = serde_json::to_string(&path.to_string_lossy()).unwrap_or_default();
+    let mut safe = String::with_capacity(json.len());
+    for ch in json.chars() {
+        if ch.is_control()
+            || matches!(ch, '\u{061c}' | '\u{200e}' | '\u{200f}' | '\u{202a}'..='\u{202e}' | '\u{2066}'..='\u{2069}')
+        {
+            use std::fmt::Write;
+            let _ = write!(safe, "\\u{:04x}", ch as u32);
+        } else {
+            safe.push(ch);
+        }
+    }
+    safe
+}
+
 pub(super) fn emit() {
     let Ok(cwd) = std::env::current_dir() else {
         return;
@@ -30,16 +48,15 @@ pub(super) fn emit() {
     for root in cwd.ancestors().take(64) {
         if workspace(root) {
             let fenced = directory(&root.join(".kan")) && exists(&root.join(".kan/V2_FENCE"));
-            // JSON escaping prevents project names from injecting terminal controls
-            // or extra diagnostic lines. Never interpolate them into shell commands.
-            let root = serde_json::to_string(&root.to_string_lossy()).unwrap_or_default();
+            // Never interpolate project paths into shell commands.
+            let root = display_path(root);
             let state = if fenced {
                 "A v1 writer-fence marker is present; it does not prove import, verification or activation completed. Do not remove it to bypass migration."
             } else {
                 "Migration is not confirmed by this notice. Retained v1 files can also belong to an already migrated project."
             };
             let message = format!(
-                "[kan:legacy-workspace] Legacy v1 workspace detected at {root}.\n\
+                "Legacy v1 workspace detected at {root}.\n\
                  `kan` now runs v2; repository claim commands belong to optional `kan-v1`.\n\
                  {state}\n\
                  If not migrated: (1) from that project root, run `kan preview .` to inspect source evidence read-only; preserve originals and backups.\n\
@@ -49,6 +66,10 @@ pub(super) fn emit() {
                  Agents: report this notice to the owner; do not migrate, activate or delete data without authorization.\n\
                  For known migrated projects, `--no-migration-notice` suppresses this reminder for one invocation; it does not certify migration.\n"
             );
+            let message: String = message
+                .lines()
+                .map(|line| format!("[kan:legacy-workspace] {line}\n"))
+                .collect();
             // Stderr only: JSON, exact-byte downloads and MCP stdout are untouched.
             // A closed diagnostic pipe must not change the requested command.
             let _ = std::io::stderr().lock().write_all(message.as_bytes());

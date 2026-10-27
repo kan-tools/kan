@@ -204,7 +204,7 @@ async fn library_cli_browses_authenticated_retained_source_without_storage_autho
     // without creating an HTTP listener or requiring a browser token.
     // A legacy-project reminder must not introduce any non-JSON MCP stdout.
     for writes in [false, true] {
-        use tokio::io::{AsyncWriteExt, BufReader as TokioBufReader};
+        use tokio::io::{AsyncReadExt, AsyncWriteExt, BufReader as TokioBufReader};
         let mut command = tokio::process::Command::new(env!("CARGO_BIN_EXE_kan"));
         command.args([
             "library",
@@ -221,10 +221,16 @@ async fn library_cli_browses_authenticated_retained_source_without_storage_autho
             .current_dir(dir.path())
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .stderr(Stdio::null())
+            .stderr(Stdio::piped())
             .kill_on_drop(true)
             .spawn()
             .unwrap();
+        let mut diagnostics = process.stderr.take().unwrap();
+        let diagnostic_task = tokio::spawn(async move {
+            let mut text = String::new();
+            diagnostics.read_to_string(&mut text).await.unwrap();
+            text
+        });
         let mut input = process.stdin.take().unwrap();
         let mut output = TokioBufReader::new(process.stdout.take().unwrap());
         let init=mcp_request(&mut input,&mut output,1,"initialize",serde_json::json!({"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"v2-test","version":"1"}})).await;
@@ -280,6 +286,17 @@ async fn library_cli_browses_authenticated_retained_source_without_storage_autho
             .unwrap()
             .unwrap()
             .success());
+        let diagnostics = tokio::time::timeout(Duration::from_secs(5), diagnostic_task)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            diagnostics
+                .matches("[kan:legacy-workspace] Legacy v1 workspace detected at")
+                .count(),
+            1
+        );
+        assert!(diagnostics.contains("[kan:legacy-workspace] Agents:"));
     }
 }
 async fn mcp_request(

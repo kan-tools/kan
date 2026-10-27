@@ -151,7 +151,11 @@ kan library --config /absolute/path/reader.json \
   --listen 127.0.0.1:7284
 ```
 
-Only the address is printed. Open that address and enter the reader access token.
+The startup address is printed to stderr. In a legacy-marked project, a migration
+advisory precedes it, with every line prefixed `[kan:legacy-workspace]`. Launchers
+parsing the address must pass `--no-migration-notice`; this does not certify
+migration or bypass safeguards. MCP JSON on stdout remains clean with the notice
+enabled. Open the announced address and enter the reader access token.
 The client stores tokens, pins and displayed content in tab memory only. System,
 Light and Dark use the shared appearance controller; only that enumerated
 preference is persisted. Lock or page exit clears the client state. This is not

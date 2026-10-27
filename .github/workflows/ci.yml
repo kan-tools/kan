@@ -217,13 +217,17 @@ jobs:
       # and embedded frontends must survive Cargo's package file selection.
       - id: check_52_cargo_package_locked_features_v2_crypto
         continue-on-error: ${{ github.event_name == 'workflow_dispatch' && inputs.collect_all }}
-        run: cargo package --locked --features v2-crypto
+        run: |
+          cargo package --locked --features v2-crypto
+          cargo package --locked --no-default-features --features kan-v1
         env:
           CARGO_BUILD_JOBS: 4
       - name: Verify default, optional legacy and legacy-only installs
         id: check_55_cli_install_contract
         continue-on-error: ${{ github.event_name == 'workflow_dispatch' && inputs.collect_all }}
-        run: python3 scripts/check_cli_install.py
+        run: |
+          python3 -m unittest discover -s tests -p test_migration_writer.py
+          python3 scripts/check_cli_install.py
       - name: HTTP encrypted capture qualification at 64 KiB and four writers
         id: check_53_http_encrypted_capture_qualification_at_64_kib_and_four_writ
         if: github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && inputs.collect_all)

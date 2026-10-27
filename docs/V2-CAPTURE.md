@@ -10,7 +10,7 @@ Build with `--features v2-crypto`. Initialize a spool as in
 archive recipient's public key. Then, against your own fixture endpoint:
 
 ```sh
-kan capture-post --endpoint http://127.0.0.1:9000/fixed \
+kan --no-migration-notice capture-post --endpoint http://127.0.0.1:9000/fixed \
   --spool /private/archive/capture-spool --key /private/keys/writer.json \
   --recipient "$ARCHIVE_RECIPIENT_HEX" --deadline-seconds 300 \
   < request.bin > response.bin 2> capture-health.jsonl
@@ -27,7 +27,11 @@ One invocation means one attempt. **Re-running this command is a new inference
 attempt**, even when the previous outcome was unknown. To retry only storage,
 use `spool-drain`; it sends existing archive events, never provider requests.
 
-Stdout contains only the response body, including non-2xx bodies. Stderr emits
+Stdout contains only the response body, including non-2xx bodies. In a legacy
+project, the default stderr stream first includes a migration advisory, with
+every line prefixed `[kan:legacy-workspace]`. Callers parsing stderr as JSON must
+pass `--no-migration-notice`, as above; this suppresses only the advisory and does
+not declare migration complete or bypass safeguards. Stderr then emits
 JSON health after each observation: attempt identity, observer, counts of
 observed/locally queued/unconfirmed events, recording-gap state, response status
 and terminal outcome. It contains no prompt, response bytes, URL or underlying

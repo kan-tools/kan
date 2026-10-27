@@ -49,5 +49,6 @@ jobs:
       # Verify the actual packaged source, including embedded Library/Operations
       # assets and the optional v2 binary, before the registry write.
       - run: cargo package --locked --features v2-crypto
+      - run: cargo package --locked --no-default-features --features kan-v1
       - run: python3 scripts/check_cli_install.py
       - run: cargo publish --token "${{ secrets.CARGO_REGISTRY_TOKEN }}"

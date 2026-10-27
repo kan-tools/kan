@@ -34,7 +34,10 @@ fn help_version_and_errors_keep_their_contract_with_a_legacy_notice() {
         let output = kan(root.path(), args);
         assert!(output.status.success());
         let notice = stderr(&output);
-        assert_eq!(notice.matches("[kan:legacy-workspace]").count(), 1);
+        assert_eq!(notice.matches("Legacy v1 workspace detected at").count(), 1);
+        assert!(notice
+            .lines()
+            .all(|line| line.starts_with("[kan:legacy-workspace] ")));
         for text in [
             "kan preview .",
             "fence-migration",
@@ -116,10 +119,19 @@ fn marker_symlinks_are_not_followed_and_project_names_are_escaped() {
     symlink(target.path(), root.path().join(".kan")).unwrap();
     symlink(target.path(), root.path().join(".claims")).unwrap();
     assert!(kan(root.path(), &["--version"]).stderr.is_empty());
-    let odd = root.path().join("project\n\u{1b}[31m");
+    let odd = root
+        .path()
+        .join("project\n\u{1b}[31m\u{7f}\u{85}\u{9b}\u{202e}\u{2066}\u{200f}\u{061c}");
     fs::create_dir_all(odd.join(".claims")).unwrap();
     let output = kan(&odd, &["--version"]);
     let notice = stderr(&output);
     assert!(notice.contains("project\\n\\u001b[31m"), "{notice}");
     assert!(!notice.contains('\u{1b}'));
+    for code in ["007f", "0085", "009b", "202e", "2066", "200f", "061c"] {
+        assert!(notice.contains(&format!("\\u{code}")), "{notice}");
+    }
+    assert!(!notice.chars().any(|ch| ch.is_control() && ch != '\n'));
+    assert!(!notice
+        .chars()
+        .any(|ch| matches!(ch, '\u{202e}' | '\u{2066}' | '\u{200f}' | '\u{061c}')));
 }

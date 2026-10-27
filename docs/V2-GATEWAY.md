@@ -53,7 +53,11 @@ private/source-restricted ingress until deployment-specific capacity is qualifie
 TLS/header reception is limited to
 15 seconds, request bodies to 30 seconds, connections to 24 hours. The ordinary
 I/O budget is cumulative awaited send/read/write/flush time. Synchronous audit,
-crypto, fsync and health callbacks are not hard-latency bounded. Without `--health-journal`, CLI stderr
+crypto, fsync and health callbacks are not hard-latency bounded. In a legacy-marked
+project, stderr can first contain a migration advisory; every advisory line is
+prefixed `[kan:legacy-workspace]`. Launchers parsing startup or health JSON on
+stderr must pass `--no-migration-notice`. This does not suppress health records or
+authorize migration. Without `--health-journal`, CLI stderr
 reporting can block; supervise it with a continuously consumed private log pipe.
 The optional durable reporter and operator dashboard are described in
 [V2-OPERATIONS.md](V2-OPERATIONS.md).
