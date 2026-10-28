@@ -122,6 +122,7 @@ measure() {
   # which is why it is set here, next to the mktemp, and nowhere else.
   export KAN_NO_KEYCHAIN=1
   export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null
+  export KAN_PERF_EVIDENCE_HELPER="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/perf_failure_evidence.py"
 
   echo -e "op\tclaims\tsubjects\tms"
   [ -n "${PERF_SMOKE:-}" ] && echo -e "#smoke\t0\t0\t0"
@@ -155,7 +156,7 @@ measure() {
       # -- the exact unactionable "unwritable with no captured reason" the
       # migration cell's writer.log exists to prevent.
       "$PYTHON" - "$KAN_BIN" "$n_claims" "$n_subjects" "$COMMIT_EVERY" "$APPEND_SAMPLE_FLOOR" <<'PYGEN'
-import subprocess, sys, time
+import os, subprocess, sys, time
 kan, n, s, every, floor = sys.argv[1], int(sys.argv[2]), int(sys.argv[3]), int(sys.argv[4]), int(sys.argv[5])
 sample = max(floor, n // 8)
 times = []
@@ -170,6 +171,15 @@ for i in range(n):
     if r.returncode != 0:
         print(f"generation failed: observe exited {r.returncode} at claim {i}. "
               f"Its stderr:\n{r.stderr.strip()[-2000:]}", file=sys.stderr)
+        # Only the synthetic CAR and its HEAD are eligible evidence. Never
+        # export the disposable signing identity or the whole workspace.
+        destination = os.environ.get("KAN_PERF_FAILURE_DIR")
+        if destination:
+            diagnostic = subprocess.run([sys.executable, os.environ["KAN_PERF_EVIDENCE_HELPER"],
+                                         os.getcwd(), destination, str(n), str(s), str(i)],
+                                        stdout=sys.stderr, stderr=sys.stderr)
+            if diagnostic.returncode:
+                print("failure evidence collection failed; generation remains failed", file=sys.stderr)
         sys.exit(1)
     times.append(time.perf_counter() - t0)
 mean_ms = sum(times[-sample:]) / len(times[-sample:]) * 1000.0

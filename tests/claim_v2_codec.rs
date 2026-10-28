@@ -453,3 +453,58 @@ fn every_structured_reference_arm_round_trips_with_typed_binary_ids() {
         );
     }
 }
+
+fn boundary_envelope(codec_name: &str, content: Ipld, cid: &atproto_dasl::Cid) -> Vec<u8> {
+    // Construct the hostile byte fixture directly, without first decoding it
+    // through the generic visitor whose type guessing is under test.
+    atproto_dasl::to_vec(&Ipld::Map(BTreeMap::from([
+        ("$type".into(), Ipld::String("tools.kan.claim".into())),
+        ("claimCid".into(), Ipld::String(cid.to_string())),
+        ("codec".into(), Ipld::String(codec_name.into())),
+        ("content".into(), content),
+        ("rev".into(), Ipld::String(REV.into())),
+        ("signature".into(), Ipld::Bytes(cid.to_dag_cbor_bytes())),
+    ])))
+    .unwrap()
+}
+
+#[test]
+fn future_envelope_preserves_cid_shaped_untagged_bytes() {
+    let cid = atproto_dasl::Cid::from(atproto_dasl::compute_raw_cid(b"synthetic future bytes"));
+    let content = Ipld::Map(BTreeMap::from([
+        (
+            "$type".into(),
+            Ipld::String("tools.kan.defs#claimContentV99".into()),
+        ),
+        ("futureBytes".into(), Ipld::Bytes(cid.to_dag_cbor_bytes())),
+        ("futureLink".into(), Ipld::Link(cid.clone())),
+    ]));
+    let bytes = boundary_envelope("kan-claim-v99", content, &cid);
+    let result = codec::decode_record(&bytes, VerificationContext::StaticDidKey).unwrap();
+    assert!(matches!(result.claim, DecodedClaim::Unsupported(_)));
+    assert_eq!(codec::encode_decoded(&result).unwrap(), bytes);
+}
+
+#[test]
+fn cid_shaped_signature_is_not_confused_with_a_canonicality_failure_or_accepted() {
+    let key = tempfile::NamedTempFile::new().unwrap();
+    let mut scalar = [0; 32];
+    scalar[31] = 1; // Public test identity, unrelated to any user key.
+    std::fs::write(key.path(), scalar).unwrap();
+    let claim = signed_claim(&Identity::load_existing(key.path()).unwrap());
+    let content_bytes = atproto_dasl::to_vec(claim.content()).unwrap();
+    // This fixed content has no opaque random signature to misclassify.
+    let Ipld::Map(mut fields) = atproto_dasl::from_reader(&content_bytes[..]).unwrap() else {
+        panic!("map")
+    };
+    fields.insert("$type".into(), Ipld::String(codec::V2_CONTENT_TYPE.into()));
+    let bytes = boundary_envelope(
+        codec::V2_CODEC,
+        Ipld::Map(fields),
+        claim.id().unwrap().cid(),
+    );
+    assert!(matches!(
+        codec::decode(&bytes, VerificationContext::StaticDidKey),
+        Err(codec::DecodeError::Claim(_))
+    ));
+}
