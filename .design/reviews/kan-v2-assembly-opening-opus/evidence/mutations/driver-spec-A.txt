@@ -1,0 +1,8 @@
+A-C1-null-guard-without-len: SURVIVED | restored_exact=True | expect: SURVIVE: typeof=blob & len>0 never projects NULL; truncation guard backstops (redundant/unreachable)
+A-C2-null-guard-any-class: SURVIVED | restored_exact=True | expect: SURVIVE: text columns have min>=56 and typeof gate (unreachable)
+A-C3-candidate-min-zero: KILLED by test zz_review_scope_a_empty_original_probes ... FAILED | restored_exact=True | expect: DIAG: replay layer refuses empty candidate (label change in PH2 only)
+A-C4-progress-never-interrupts: KILLED by test sqlite_schema_loading_obeys_deadline_and_in_flight_cancellation ... FAILED | restored_exact=True | expect: KILL by timing assertion
+A-C5-progress-deadline-only: KILLED by test sqlite_schema_loading_obeys_deadline_and_in_flight_cancellation ... FAILED | restored_exact=True | expect: KILL by cancellation half
+A-C6-canonical-case-insensitive: KILLED by test parser_accepted_noncanonical_spellings_refuse_in_every_key_table ... FAILED | restored_exact=True | expect: KILL (all three tables)
+A-C7-writer-pass-omit-candidate-bytes: KILLED by test reviewer_budget_monotonicity_and_bounds ... FAILED | restored_exact=True | expect: KILL by pinned scan-charge
+A-C8-length-limit-raised: KILLED by test oversized_and_malformed_physical_media_retain_sqlite_refusal_codes ... FAILED | restored_exact=True | expect: LABEL-ONLY expected: still refused via integer bounds; TooBig assertion changes

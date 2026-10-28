@@ -1,0 +1,1 @@
+Author custody verification: 3631 exact tracked paths, SHA256 hashes and pinned Git blobs match eb4f471248939f7684d710501e458f9cf3375fd7. Only initial extra north-star.json; reviewer output excluded from tracked path set.

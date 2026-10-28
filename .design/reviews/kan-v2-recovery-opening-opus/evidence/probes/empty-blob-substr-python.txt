@@ -1,0 +1,6 @@
+3.51.0
+x'' ('blob', 0, 'null', 'NULL')
+x'00' ('blob', 1, 'blob', "X'00'")
+CAST('' AS BLOB) ('blob', 0, 'null', 'NULL')
+zeroblob(0) ('blob', 0, 'null', 'NULL')
+stored ('blob', 0, 'null')

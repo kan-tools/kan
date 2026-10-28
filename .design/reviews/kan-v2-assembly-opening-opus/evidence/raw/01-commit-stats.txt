@@ -1,0 +1,172 @@
+=== db1bb06 docs(v2): retain independent recovery-reader block and replay review
+
+
+ .../author-custody.txt                             |    1 +
+ .../evidence/REPORT.txt                            |  376 +++
+ .../evidence/logs/01-clean.txt                     |    1 +
+ .../evidence/logs/02-baseline-tests.txt            |   73 +
+ .../evidence/logs/03-snapshot-units.txt            |   11 +
+ .../evidence/logs/04-clippy-v2.txt                 |    3 +
+ .../evidence/logs/05-fmt.txt                       |    1 +
+ .../logs/06a-python-failed-method-homebrew.txt     |   34 +
+ .../evidence/logs/06b-python.txt                   |    8 +
+ .../logs/30-promoted-vs-original-probe.diff        |  220 ++
+ .../evidence/logs/40-budget-unmutated.txt          |   13 +
+ .../evidence/logs/41-scan-charge-independent.txt   |    4 +
+ .../evidence/logs/50-removed-own-pycache.txt       |    4 +
+ .../evidence/logs/60-final-restored-tests.txt      |   83 +
+ .../evidence/logs/61-final-fmt.txt                 |    1 +
+ .../evidence/logs/90-parent-git-after.txt          |    9 +
+ .../evidence/logs/91-identity-after.txt            |    8 +
+ .../evidence/logs/92-identity-final.txt            |    8 +
+ .../evidence/logs/identity-before.txt              |    8 +
+ .../evidence/mutations/A-M01-schema.txt            |   47 +
+ .../evidence/mutations/A-M02-identity.txt          |   26 +
+ .../evidence/mutations/A-M03-canonical-key.txt     |   88 +
+ .../mutations/A-M04-observation-coordinate.txt     |   26 +
+ .../evidence/mutations/A-M05-pinned-snapshot.txt   |   26 +
+ .../mutations/A-M06-external-checkpoint.txt        |   35 +
+ .../evidence/mutations/A-M07-wrong-capability.txt  |   44 +
+ .../mutations/A-M08-no-progress-handler.txt        |  138 +
+ .../evidence/mutations/A-M09-alias-check.txt       |   36 +
+ .../evidence/mutations/A-M10-source-bytes.txt      |   27 +
+ .../evidence/mutations/A-M11-read-write-open.txt   |   35 +
+ .../evidence/mutations/A-M12-truncation-guard.txt  |   98 +
+ .../evidence/mutations/A-M13-no-query-only.txt     |   25 +
+ .../evidence/mutations/A-M14-typeof-guard.txt      |   88 +
+ .../evidence/mutations/B-M01-candidate-writer.txt  |  123 +
+ .../evidence/mutations/B-M02-candidate-hash.txt    |   50 +
+ .../evidence/mutations/B-M03-candidate-length.txt  |   50 +
+ .../mutations/B-M04-record-length-alone.txt        |   50 +
+ .../mutations/B-M05-record-length-and-writer.txt   |   50 +
+ .../mutations/B-M06-writer-pass-uncharged.txt      |   42 +
+ .../mutations/B-whole-reversion-restored.txt       |   25 +
+ .../mutations/B-whole-reversion-reverted.txt       |   49 +
+ .../evidence/mutations/driver-scopeA.txt           |   15 +
+ .../evidence/mutations/driver-scopeB-reversion.txt |    2 +
+ .../evidence/mutations/driver-scopeB.txt           |    7 +
+ .../evidence/mutations/replay-7a04798.rs.blob      |  672 ++++
+ .../evidence/probes/empty-blob-substr-python.txt   |    6 +
+ .../evidence/probes/gen-empty.log                  |    3 +
+ .../evidence/probes/gen-scopeB.log                 |    4 +
+ .../evidence/probes/gen_physical_probes.py         |   43 +
+ .../evidence/probes/gen_scopeB_probes.py           |   36 +
+ .../E1-empty-original-initial-loss.sqlite          |  Bin 0 -> 32768 bytes
+ .../out-empty/E2-empty-original-restored.sqlite    |  Bin 0 -> 32768 bytes
+ ...nempty-corrupt-original-restored-control.sqlite |  Bin 0 -> 32768 bytes
+ .../evidence/probes/out-empty/cases.json           |  154 +
+ ...t-writer-resigned-new-ciphertext-control.sqlite |  Bin 0 -> 32768 bytes
+ .../B2-foreign-principal-valid-signature.sqlite    |  Bin 0 -> 32768 bytes
+ ...B3-wrong-audience-valid-writer-signature.sqlite |  Bin 0 -> 32768 bytes
+ ...4-writer-principal-signed-by-foreign-key.sqlite |  Bin 0 -> 32768 bytes
+ .../evidence/probes/out-scopeB/cases.json          |  220 ++
+ .../evidence/probes/rss-oversized.log              |   10 +
+ .../evidence/probes/run1-physical-probes.log       |   81 +
+ .../evidence/probes/run2-physical-probes.log       |   69 +
+ .../evidence/probes/run3-scopeB-probes.log         |   21 +
+ .../evidence/probes/zz_review_bundle_probes.rs     |  375 +++
+ .../evidence/scripts/mutate.py                     |   79 +
+ .../evidence/scripts/revert_scopeB.py              |   29 +
+ .../evidence/scripts/verify_identity.py            |   55 +
+ .../kan-v2-recovery-opening-opus/north-star.json   |   92 +
+ .../recovery-opening-identity.json                 | 3501 ++++++++++++++++++++
+ .../recovery-opening-prompt.txt                    |   13 +
+ .../recovery-opening.exit                          |    1 +
+ .../recovery-opening.jsonl                         | 1199 +++++++
+ .../recovery-opening.stderr                        |    0
+ 73 files changed, 8731 insertions(+)
+=== b6a4f3f fix(v2): retain empty original payloads during bundle inspection
+Promote physical reader and replay review regressions; preserve all failed qualification and semantic-control evidence.
+
+Demonstrated-by: revert=HEAD tests=evidence_recovery_bundle::empty_originals_remain_exact_evidence_before_and_after_restoration outcome=DEMONSTRATED
+
+
+ .design/fixtures/recovery-bundle-review-v1.json    | 308 ++++++++++++++++++++
+ .design/kan-v2-next-build-status.md                |   7 +-
+ .design/kan-v2-recovery-bundle-opening.md          |  37 +++
+ .design/kan-v2-recovery-mutations.md               |  61 ++++
+ .../README.md                                      |  26 ++
+ .../attempt-1/01-clean.txt                         |   4 +
+ .../attempt-1/02-tests.txt                         |  52 ++++
+ .../attempt-2/01-clean.txt                         |   4 +
+ .../attempt-2/02-tests.txt                         |  78 +++++
+ .../attempt-2/03-units.txt                         |  14 +
+ .../attempt-2/04-clippy.txt                        |   5 +
+ .../attempt-2/05-format.txt                        |   3 +
+ .../controls-1/canonical-spelling.txt              |  21 ++
+ .../controls-1/restored.txt                        |  36 +++
+ .../controls-1/vm-progress.txt                     |  30 ++
+ .../controls-1/writer-pass-accounting.txt          |  23 ++
+ .../design-validation.txt                          |   5 +
+ .../qualify.py                                     |  10 +
+ .../reversion-raw/01-evidence_recovery_bundle.txt  |   9 +
+ .../reversion-raw/02-evidence_recovery_bundle.txt  |  22 ++
+ .../reversion-raw/03-evidence_recovery_bundle.txt  |   9 +
+ .../reversion-raw/production.patch                 | 314 +++++++++++++++++++++
+ .../reversion/01-clean.txt                         |   4 +
+ .../reversion/02-reversion.txt                     |  18 ++
+ .../reversion/03-clean-return.txt                  |   4 +
+ .../run-controls.py                                |  23 ++
+ .../run-reversion.py                               |  11 +
+ .design/tools/recovery_bundle_files.py             |   4 +-
+ .design/tools/recovery_bundle_review_vectors.py    |  50 ++++
+ .github/workflows/ci.yml                           |   1 +
+ src/evidence_store/bundle.rs                       |  49 ++++
+ tests/evidence_recovery_bundle.rs                  | 173 +++++++++++-
+ .../evidence_recovery_replay_review_regressions.rs |  17 ++
+ 33 files changed, 1425 insertions(+), 7 deletions(-)
+=== 1ac0ead feat(v2): draft bounded occurrence assembly with retained source lineage
+
+
+ .design/kan-v2-session-reconstruction.md           |  36 ++
+ .../01-format-initial.txt                          |  14 +
+ .../kan-v2-session-assembly-author/README.md       |  12 +
+ .../design-validation.txt                          |   5 +
+ .github/workflows/ci.yml                           |   3 +-
+ scripts/assembly_negative_controls.py              |  36 ++
+ src/evidence_assembly.rs                           | 527 +++++++++++++++++++++
+ src/lib.rs                                         |   2 +
+ tests/evidence_assembly.rs                         | 324 +++++++++++++
+ 9 files changed, 958 insertions(+), 1 deletion(-)
+=== 568d6c1 test(v2): qualify session assembly isolation and lineage
+
+
+ .design/kan-v2-session-reconstruction.md           | 10 ++++
+ .../kan-v2-session-assembly-author/README.md       | 36 ++++++++++-----
+ .../attempt-1/02-clean.txt                         |  4 ++
+ .../attempt-1/03-tests.txt                         | 53 ++++++++++++++++++++++
+ .../attempt-1/03b-cancellation.txt                 | 12 +++++
+ .../attempt-1/04-clippy.txt                        |  5 ++
+ .../attempt-1/05-format.txt                        |  3 ++
+ .../ci-initial-perf-failure.txt                    | 34 ++++++++++++++
+ .../controls-1/assembled-budget.txt                | 21 +++++++++
+ .../controls-1/attempt-key.txt                     | 23 ++++++++++
+ .../controls-1/duplicate-conflict.txt              | 21 +++++++++
+ .../controls-1/gap-rendering.txt                   | 21 +++++++++
+ .../controls-1/observer-key.txt                    | 32 +++++++++++++
+ .../controls-1/scope-key.txt                       | 23 ++++++++++
+ .../controls-1/writer-key.txt                      | 23 ++++++++++
+ .../controls-2/assembled-budget.txt                | 21 +++++++++
+ .../controls-2/attempt-key.txt                     | 23 ++++++++++
+ .../controls-2/duplicate-conflict.txt              | 21 +++++++++
+ .../controls-2/gap-rendering.txt                   | 21 +++++++++
+ .../controls-2/observer-key.txt                    | 32 +++++++++++++
+ .../controls-2/restored.txt                        | 23 ++++++++++
+ .../controls-2/scope-key.txt                       | 23 ++++++++++
+ .../controls-2/source-lineage.txt                  | 23 ++++++++++
+ .../controls-2/writer-key.txt                      | 23 ++++++++++
+ .../kan-v2-session-assembly-author/qualify.py      | 10 ++++
+ scripts/assembly_negative_controls.py              |  5 +-
+ 26 files changed, 532 insertions(+), 14 deletions(-)
+=== eb4f471 test(v2): qualify combined reader correction and session assembly
+
+
+ .design/kan-v2-next-build-status.md                |   3 +-
+ .../02-clean.txt                                   |   4 +
+ .../03-tests.txt                                   | 126 +++++++++++++++++++++
+ .../03b-cancellation.txt                           |  12 ++
+ .../03c-snapshot.txt                               |  13 +++
+ .../04-clippy.txt                                  |   5 +
+ .../05-format.txt                                  |   3 +
+ .../README.md                                      |   6 +
+ 8 files changed, 171 insertions(+), 1 deletion(-)

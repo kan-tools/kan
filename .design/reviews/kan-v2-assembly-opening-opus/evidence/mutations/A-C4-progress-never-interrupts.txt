@@ -1,0 +1,34 @@
+# A-C4-progress-never-interrupts: src/evidence_store/bundle.rs
+# expect: KILL by timing assertion
+# old occurrences=1
+--- old
+Some(move || cancel.load(Ordering::Relaxed) || Instant::now() >= deadline),
++++ new
+Some(move || false && (cancel.load(Ordering::Relaxed) || Instant::now() >= deadline)),
+
+$ cargo test --features v2-crypto --test evidence_recovery_bundle sqlite_schema_loading_obeys_deadline_and_in_flight_cancellation -- --nocapture  env=None
+
+running 1 test
+test sqlite_schema_loading_obeys_deadline_and_in_flight_cancellation ... FAILED
+
+failures:
+
+failures:
+    sqlite_schema_loading_obeys_deadline_and_in_flight_cancellation
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 13 filtered out; finished in 18.26s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-session-assembly/.local-state/reviews/assembly-opening)
+    Finished `test` profile [unoptimized] target(s) in 7.56s
+     Running tests/evidence_recovery_bundle.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_recovery_bundle-bae884b5e26db009)
+
+thread 'sqlite_schema_loading_obeys_deadline_and_in_flight_cancellation' (10329553) panicked at tests/evidence_recovery_bundle.rs:424:5:
+deadline did not interrupt SQLite schema loading
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+error: test failed, to rerun pass `--test evidence_recovery_bundle`
+
+exit=101
+
+
+VERDICT KILLED by test sqlite_schema_loading_obeys_deadline_and_in_flight_cancellation ... FAILED
+restored_exact=True

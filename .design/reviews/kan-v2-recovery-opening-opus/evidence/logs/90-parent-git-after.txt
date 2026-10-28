@@ -1,0 +1,9 @@
+01bc49bd96c9995f7a4c439a8640293d90c63ee0
+ M .design/tools/recovery_bundle_files.py
+ M .github/workflows/ci.yml
+ M src/evidence_store/bundle.rs
+ M tests/evidence_recovery_bundle.rs
+?? .design/fixtures/recovery-bundle-review-v1.json
+?? .design/kan-v2-recovery-mutations.md
+?? .design/tools/recovery_bundle_review_vectors.py
+       3

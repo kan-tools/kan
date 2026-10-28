@@ -1,0 +1,37 @@
+# B-C21b-no-offset-sort-vs-BP16: src/evidence_assembly.rs
+# expect: KILL if sort is load-bearing for out-of-order offsets
+# old occurrences=1
+--- old
+    out.segments.sort_by_key(|s| (s.offset, s.sources[0].input));
++++ new
+    // reviewer: sort removed
+
+$ cargo test --features v2-crypto --test zz_review_B2_probes -- --nocapture  env=None
+
+running 1 test
+BP16 contiguous=None issues=[Gap(0..2), Overlap { input: 1 }] order=[2, 0]
+test bp16_out_of_ordinal_order_offsets_still_assemble_by_offset ... FAILED
+
+failures:
+
+failures:
+    bp16_out_of_ordinal_order_offsets_still_assemble_by_offset
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-session-assembly/.local-state/reviews/assembly-opening)
+    Finished `test` profile [unoptimized] target(s) in 7.59s
+     Running tests/zz_review_B2_probes.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/zz_review_B2_probes-5e446f52bf94369b)
+
+thread 'bp16_out_of_ordinal_order_offsets_still_assemble_by_offset' (10342735) panicked at tests/zz_review_B2_probes.rs:34:5:
+assertion `left == right` failed
+  left: None
+ right: Some([97, 98, 99, 100])
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+error: test failed, to rerun pass `--test zz_review_B2_probes`
+
+exit=101
+
+
+VERDICT KILLED by test bp16_out_of_ordinal_order_offsets_still_assemble_by_offset ... FAILED
+restored_exact=True

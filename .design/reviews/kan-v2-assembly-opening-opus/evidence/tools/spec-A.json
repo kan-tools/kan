@@ -1,0 +1,135 @@
+[
+ {
+  "id": "A-C1-null-guard-without-len",
+  "file": "src/evidence_store/bundle.rs",
+  "old": "(false, ValueRef::Null) if len == 0 => &[],",
+  "new": "(false, ValueRef::Null) => &[],",
+  "runs": [
+   [
+    "evidence_recovery_bundle",
+    null,
+    null
+   ],
+   [
+    "zz_review_A_probes",
+    null,
+    {
+     "REVIEW_A_DIR": "/Users/m/code/kan-tools/kan/.worktrees/kan-v2-session-assembly/.local-state/reviews/assembly-opening/review-evidence/probes/out-A"
+    }
+   ]
+  ],
+  "expect": "SURVIVE: typeof=blob & len>0 never projects NULL; truncation guard backstops (redundant/unreachable)"
+ },
+ {
+  "id": "A-C2-null-guard-any-class",
+  "file": "src/evidence_store/bundle.rs",
+  "old": "(false, ValueRef::Null) if len == 0 => &[],",
+  "new": "(_, ValueRef::Null) if len == 0 => &[],",
+  "runs": [
+   [
+    "evidence_recovery_bundle",
+    null,
+    null
+   ],
+   [
+    "zz_review_A_probes",
+    null,
+    {
+     "REVIEW_A_DIR": "/Users/m/code/kan-tools/kan/.worktrees/kan-v2-session-assembly/.local-state/reviews/assembly-opening/review-evidence/probes/out-A"
+    }
+   ]
+  ],
+  "expect": "SURVIVE: text columns have min>=56 and typeof gate (unreachable)"
+ },
+ {
+  "id": "A-C3-candidate-min-zero",
+  "file": "src/evidence_store/bundle.rs",
+  "old": "objects(&conn, \"restored_objects\", 1, &mut work)?",
+  "new": "objects(&conn, \"restored_objects\", 0, &mut work)?",
+  "runs": [
+   [
+    "evidence_recovery_bundle",
+    null,
+    null
+   ],
+   [
+    "zz_review_A_probes",
+    null,
+    {
+     "REVIEW_A_DIR": "/Users/m/code/kan-tools/kan/.worktrees/kan-v2-session-assembly/.local-state/reviews/assembly-opening/review-evidence/probes/out-A"
+    }
+   ]
+  ],
+  "expect": "DIAG: replay layer refuses empty candidate (label change in PH2 only)"
+ },
+ {
+  "id": "A-C4-progress-never-interrupts",
+  "file": "src/evidence_store/bundle.rs",
+  "old": "Some(move || cancel.load(Ordering::Relaxed) || Instant::now() >= deadline),",
+  "new": "Some(move || false && (cancel.load(Ordering::Relaxed) || Instant::now() >= deadline)),",
+  "runs": [
+   [
+    "evidence_recovery_bundle",
+    "sqlite_schema_loading_obeys_deadline_and_in_flight_cancellation",
+    null
+   ]
+  ],
+  "expect": "KILL by timing assertion"
+ },
+ {
+  "id": "A-C5-progress-deadline-only",
+  "file": "src/evidence_store/bundle.rs",
+  "old": "Some(move || cancel.load(Ordering::Relaxed) || Instant::now() >= deadline),",
+  "new": "Some(move || (false && cancel.load(Ordering::Relaxed)) || Instant::now() >= deadline),",
+  "runs": [
+   [
+    "evidence_recovery_bundle",
+    "sqlite_schema_loading_obeys_deadline_and_in_flight_cancellation",
+    null
+   ]
+  ],
+  "expect": "KILL by cancellation half"
+ },
+ {
+  "id": "A-C6-canonical-case-insensitive",
+  "file": "src/evidence_store/bundle.rs",
+  "old": "require(value.to_string() == text, \"canonical CID spelling\")?;",
+  "new": "require(value.to_string().eq_ignore_ascii_case(text), \"canonical CID spelling\")?;",
+  "runs": [
+   [
+    "evidence_recovery_bundle",
+    "parser_accepted_noncanonical_spellings_refuse_in_every_key_table",
+    null
+   ]
+  ],
+  "expect": "KILL (all three tables)"
+ },
+ {
+  "id": "A-C7-writer-pass-omit-candidate-bytes",
+  "file": "src/evidence_recovery_replay.rs",
+  "old": "(row.manifest.len() + row.receipt.len() + c.bytes.len()) as u64,",
+  "new": "(row.manifest.len() + row.receipt.len()) as u64,",
+  "runs": [
+   [
+    "evidence_recovery_replay_review_regressions",
+    "reviewer_budget_monotonicity_and_bounds",
+    null
+   ]
+  ],
+  "expect": "KILL by pinned scan-charge"
+ },
+ {
+  "id": "A-C8-length-limit-raised",
+  "file": "src/evidence_store/bundle.rs",
+  "old": "        5 * 1024 * 1024,\n    )?;",
+  "new": "        64 * 1024 * 1024,\n    )?;",
+  "runs": [
+   [
+    "evidence_recovery_bundle",
+    "oversized_and_malformed_physical_media_retain_sqlite_refusal_codes",
+    null
+   ]
+  ],
+  "expect": "LABEL-ONLY expected: still refused via integer bounds; TooBig assertion changes"
+ }
+]

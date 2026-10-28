@@ -1,0 +1,220 @@
+2,4c2,3
+< //! REVIEWER PROBE (temporary copy in tests/, removed after runs). Reads the
+< //! reviewer-generated corpus at $REVIEW_PROBES and the frozen author fixture.
+< //! Prints one classified trace line per case; panics at the end on mismatch.
+---
+> //! Promoted cold-review cases from b52aa48, with A-F1's stricter writer-validity
+> //! decision and three author extensions. Original reports/probes remain unedited.
+42d40
+<     value: Value,
+76c74,79
+<                 .map(|a| (a[0].as_str().unwrap().parse().unwrap(), a[1].as_u64().unwrap()))
+---
+>                 .map(|a| {
+>                     (
+>                         a[0].as_str().unwrap().parse().unwrap(),
+>                         a[1].as_u64().unwrap(),
+>                     )
+>                 })
+86c89,94
+<             observations: value["observations"].as_array().unwrap().iter().map(raw).collect(),
+---
+>             observations: value["observations"]
+>                 .as_array()
+>                 .unwrap()
+>                 .iter()
+>                 .map(raw)
+>                 .collect(),
+88d95
+<             value,
+95c102,105
+<             .map(|(cid, length)| Membership { cid, length: *length })
+---
+>             .map(|(cid, length)| Membership {
+>                 cid,
+>                 length: *length,
+>             })
+107c117,121
+<         let objects: Vec<_> = self.objects.iter().map(|(cid, bytes)| Object { cid, bytes }).collect();
+---
+>         let objects: Vec<_> = self
+>             .objects
+>             .iter()
+>             .map(|(cid, bytes)| Object { cid, bytes })
+>             .collect();
+140c154,158
+<         Error::Member(m) => format!("member:{}", m.to_string().trim_start_matches("invalid recovery member: ")),
+---
+>         Error::Member(m) => format!(
+>             "member:{}",
+>             m.to_string()
+>                 .trim_start_matches("invalid recovery member: ")
+>         ),
+177,178c195,199
+<     let path = std::env::var("REVIEW_PROBES").expect("REVIEW_PROBES");
+<     let f: Value = serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
+---
+>     let f: Value = serde_json::from_str(include_str!(
+>         "../.design/fixtures/recovery-replay-review-v1.json"
+>     ))
+>     .unwrap();
+>     assert_eq!(f["cases"].as_array().unwrap().len(), 23);
+205c226,234
+<     Case::parse(f["cases"].as_array().unwrap().iter().find(|c| c["name"] == name).unwrap().clone())
+---
+>     Case::parse(
+>         f["cases"]
+>             .as_array()
+>             .unwrap()
+>             .iter()
+>             .find(|c| c["name"] == name)
+>             .unwrap()
+>             .clone(),
+>     )
+219c248,252
+<             Ok(r) => format!("ACCEPT latest={} external={:?}", r.latest().sequence, r.external().map(|e| e.sequence)),
+---
+>             Ok(r) => format!(
+>                 "ACCEPT latest={} external={:?}",
+>                 r.latest().sequence,
+>                 r.external().map(|e| e.sequence)
+>             ),
+226,227c259,264
+<     run("observer-differs", &|p| p.context.observer = p.context.issuer.clone());
+<     run("issuer-differs", &|p| p.context.issuer = p.context.observer.clone());
+---
+>     run("observer-differs", &|p| {
+>         p.context.observer = p.context.issuer.clone()
+>     });
+>     run("issuer-differs", &|p| {
+>         p.context.issuer = p.context.observer.clone()
+>     });
+232c269,271
+<     run("sequence-max-safe-plus-one", &|p| p.sequence = MAX_SAFE_INTEGER as u64 + 1);
+---
+>     run("sequence-max-safe-plus-one", &|p| {
+>         p.sequence = MAX_SAFE_INTEGER as u64 + 1
+>     });
+235,243d273
+<     let created = {
+<         let mut c = base.clone();
+<         c.observations.truncate(1);
+<         c.candidates.clear();
+<         // 2 initial losses -> truncated history is invalid; use the CID from a
+<         // separate valid prefix instead (sequence 3 = last unavailable/first restored).
+<         c
+<     };
+<     drop(created);
+252c282,285
+<         ("sequence-max-safe-plus-one", "REFUSE external checkpoint context"),
+---
+>         (
+>             "sequence-max-safe-plus-one",
+>             "REFUSE external checkpoint context",
+>         ),
+254c287,290
+<         ("sequence-one-with-tip-cid", "REFUSE external checkpoint statement"),
+---
+>         (
+>             "sequence-one-with-tip-cid",
+>             "REFUSE external checkpoint statement",
+>         ),
+255a292
+>     assert_eq!(out.len(), expect.len());
+277c314,318
+<             if c.verify(l).is_ok() { hi = mid } else { lo = mid + 1 }
+---
+>             if c.verify(l).is_ok() {
+>                 hi = mid
+>             } else {
+>                 lo = mid + 1
+>             }
+289c330,334
+<             if c.verify(l).is_ok() { hi = mid } else { lo = mid + 1 }
+---
+>             if c.verify(l).is_ok() {
+>                 hi = mid
+>             } else {
+>                 lo = mid + 1
+>             }
+299c344,348
+<         let input: u64 = c.records.iter().map(|r| (r.1.len() + r.2.len() + r.3.len()) as u64).sum::<u64>()
+---
+>         let input: u64 = c
+>             .records
+>             .iter()
+>             .map(|r| (r.1.len() + r.2.len() + r.3.len()) as u64)
+>             .sum::<u64>()
+313,339d361
+<     // Duration and cancellation bounds.
+<     let c = author("profile2-initial-loss");
+<     for (label, d) in [("zero", Duration::ZERO), ("3601s", Duration::from_secs(3601)), ("3600s", Duration::from_secs(3600))] {
+<         let mut l = limits();
+<         l.duration = d;
+<         println!("DURATION {label}: {:?}", c.verify(l).map(|r| r.latest().sequence));
+<     }
+<     // Candidate bounds and shapes.
+<     let base = author("profile2-restored-failure-observed");
+<     let mut c = base.clone();
+<     c.candidates[0].1.clear();
+<     println!("CANDIDATE empty: {:?}", c.verify(limits()).err());
+<     let mut c = base.clone();
+<     c.candidates[0].1 = vec![0; 4 * 1024 * 1024 + 1];
+<     println!("CANDIDATE >4MiB: {:?}", c.verify(limits()).err());
+<     let mut c = base.clone();
+<     c.candidates[0].0 = c.observations.len().to_string().parse::<Cid>().unwrap_or_else(|_| {
+<         // A DAG-CBOR statement CID: valid CID, wrong codec for an object.
+<         "bafyreiaezpl7wcys53cfymonkwizs6qb6tb65ckupjkhcrsyi4gfwqbeyy".parse().unwrap()
+<     });
+<     println!("CANDIDATE dag-cbor CID: {:?}", c.verify(limits()).err());
+<     let mut c = base.clone();
+<     c.observations.push(vec![]);
+<     println!("OBSERVATION empty slice appended: {:?}", c.verify(limits()).err());
+<     let mut c = base.clone();
+<     c.observations.swap(3, 4);
+<     println!("OBSERVATION reordered restored rows: {:?}", c.verify(limits()).err());
+340a363,406
+> 
+> fn reviewer_case(name: &str) -> Case {
+>     let f: Value = serde_json::from_str(include_str!(
+>         "../.design/fixtures/recovery-replay-review-v1.json"
+>     ))
+>     .unwrap();
+>     Case::parse(
+>         f["cases"]
+>             .as_array()
+>             .unwrap()
+>             .iter()
+>             .find(|v| v["name"] == name)
+>             .unwrap()
+>             .clone(),
+>     )
+> }
+> #[test]
+> fn writer_invalid_candidate_refuses_without_publication_intent() {
+>     let c = reviewer_case("P01-writer-invalid-restoration-without-intent");
+>     assert_eq!(
+>         c.verify(limits()).err(),
+>         Some(Error::Invalid("candidate writer request"))
+>     );
+> }
+> #[test]
+> fn valid_writer_signature_with_wrong_manifest_binding_refuses() {
+>     let c = reviewer_case("P21-valid-writer-signature-wrong-manifest-binding");
+>     assert_eq!(
+>         c.verify(limits()).err(),
+>         Some(Error::Invalid("candidate writer request"))
+>     );
+> }
+> #[test]
+> fn unavailable_partition_has_a_pinned_conservative_envelope_bound() {
+>     let f: Value = serde_json::from_str(include_str!(
+>         "../.design/fixtures/recovery-replay-review-v1.json"
+>     ))
+>     .unwrap();
+>     let bound = f["envelopeArithmetic"]["conservative80ByteDidEnvelopeBound"]
+>         .as_u64()
+>         .unwrap();
+>     assert_eq!(bound, 3816);
+>     assert!(bound < kan::evidence_recovery_observation::MAX_ENVELOPE as u64);
+> }

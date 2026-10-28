@@ -1,0 +1,52 @@
+$ cargo test --features v2-crypto --test evidence_recovery_bundle --test evidence_recovery_replay --test evidence_recovery_replay_review_regressions --test surface_conformance
+
+running 14 tests
+test empty_originals_remain_exact_evidence_before_and_after_restoration ... ok
+test existing_sqlite_sidecar_symlink_or_hardlink_refuses_before_open ... ok
+test acquisition_budgets_have_exact_edges_and_replay_has_separate_limits ... ok
+test hot_rollback_journal_refuses_without_recovering_source_media ... ok
+test oversized_and_malformed_physical_media_retain_sqlite_refusal_codes ... FAILED
+test foreign_external_pins_and_checkpoint_refuse ... ok
+test public_mode_and_symlink_source_refuse_before_sqlite_open ... ok
+test parser_accepted_noncanonical_spellings_refuse_in_every_key_table ... FAILED
+test restored_bundle_is_still_refused_by_all_standalone_readers ... ok
+test busy_source_refuses_with_bounded_wait_and_no_recovery_write ... ok
+test utf16_refuses_despite_identical_logical_columns ... ok
+test sqlite_schema_loading_obeys_deadline_and_in_flight_cancellation ... ok
+test schema_marker_history_identity_and_physical_cell_damage_refuse ... FAILED
+test python_sqlite_histories_match_independent_state_results_and_preserve_source ... ok
+
+failures:
+
+---- oversized_and_malformed_physical_media_retain_sqlite_refusal_codes stdout ----
+
+thread 'oversized_and_malformed_physical_media_retain_sqlite_refusal_codes' (10271333) panicked at tests/evidence_recovery_bundle.rs:480:9:
+assertion failed: matches!(bundle::inspect(&path,pins(&v),None,budget()),
+    Err(Error::Sql(rusqlite::Error::SqliteFailure(code,_))) if
+    code.code==expected)
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- parser_accepted_noncanonical_spellings_refuse_in_every_key_table stdout ----
+
+thread 'parser_accepted_noncanonical_spellings_refuse_in_every_key_table' (10271338) panicked at tests/evidence_recovery_bundle.rs:457:9:
+accepted mutation: parser-accepted noncanonical member_objects key
+
+---- schema_marker_history_identity_and_physical_cell_damage_refuse stdout ----
+
+thread 'schema_marker_history_identity_and_physical_cell_damage_refuse' (10271349) panicked at tests/evidence_recovery_bundle.rs:157:9:
+accepted mutation: UPDATE member_objects SET cid='b'||upper(substr(cid,2));
+
+
+failures:
+    oversized_and_malformed_physical_media_retain_sqlite_refusal_codes
+    parser_accepted_noncanonical_spellings_refuse_in_every_key_table
+    schema_marker_history_identity_and_physical_cell_damage_refuse
+
+test result: FAILED. 11 passed; 3 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.62s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-recovery-opening)
+    Finished `test` profile [unoptimized] target(s) in 7.43s
+     Running tests/evidence_recovery_bundle.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_recovery_bundle-bae884b5e26db009)
+error: test failed, to rerun pass `--test evidence_recovery_bundle`
+
+exit=101

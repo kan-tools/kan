@@ -1,0 +1,8 @@
+commit 01bc49bd96c9995f7a4c439a8640293d90c63ee0 repo HEAD 01bc49bd96c9995f7a4c439a8640293d90c63ee0
+manifest files 3496 export files 3497 git tree 3496
+extra ['north-star.json']
+missing []
+sha256 mismatch []
+manifest-vs-git path diff []
+git blob mismatch []
+IDENTITY OK

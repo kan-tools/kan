@@ -1,0 +1,138 @@
+MUTATION A-M08-no-progress-handler
+[["src/evidence_store/bundle.rs", "Some(move || cancel.load(Ordering::Relaxed) || Instant::now() >= deadline),", "None::<fn() -> bool>,"]]
+$ cargo test --features v2-crypto --test evidence_recovery_bundle -- --nocapture --test-threads=1
+
+running 10 tests
+test acquisition_budgets_have_exact_edges_and_replay_has_separate_limits ... ok
+test busy_source_refuses_with_bounded_wait_and_no_recovery_write ... ok
+test existing_sqlite_sidecar_symlink_or_hardlink_refuses_before_open ... ok
+test foreign_external_pins_and_checkpoint_refuse ... ok
+test hot_rollback_journal_refuses_without_recovering_source_media ... ok
+test public_mode_and_symlink_source_refuse_before_sqlite_open ... ok
+test python_sqlite_histories_match_independent_state_results_and_preserve_source ... ok
+test restored_bundle_is_still_refused_by_all_standalone_readers ... ok
+test schema_marker_history_identity_and_physical_cell_damage_refuse ... ok
+test utf16_refuses_despite_identical_logical_columns ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.24s
+
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-recovery-opening/.local-state/reviews/recovery-opening)
+warning: unused variable: `cancel`
+   --> src/evidence_store/bundle.rs:333:9
+    |
+333 |     let cancel = work.budget.cancelled.clone();
+    |         ^^^^^^ help: if this is intentional, prefix it with an underscore: `_cancel`
+    |
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: `kan` (lib) generated 1 warning (run `cargo fix --lib -p kan` to apply 1 suggestion)
+    Finished `test` profile [unoptimized] target(s) in 7.43s
+     Running tests/evidence_recovery_bundle.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_recovery_bundle-bae884b5e26db009)
+
+exit=0
+$ cargo test --features v2-crypto --lib evidence_store::bundle::snapshot_tests -- --nocapture --test-threads=1
+
+running 2 tests
+test evidence_store::bundle::snapshot_tests::cancellation_after_identity_stops_before_replay ... ok
+test evidence_store::bundle::snapshot_tests::later_wal_changes_cannot_mix_into_the_pinned_snapshot ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 81 filtered out; finished in 0.19s
+
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-recovery-opening/.local-state/reviews/recovery-opening)
+warning: unused variable: `cancel`
+   --> src/evidence_store/bundle.rs:333:9
+    |
+333 |     let cancel = work.budget.cancelled.clone();
+    |         ^^^^^^ help: if this is intentional, prefix it with an underscore: `_cancel`
+    |
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: `kan` (lib test) generated 1 warning (run `cargo fix --lib -p kan --tests` to apply 1 suggestion)
+    Finished `test` profile [unoptimized] target(s) in 6.71s
+     Running unittests src/lib.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/kan-480f4f845bac8ec9)
+
+exit=0
+$ cargo test --features v2-crypto --test zz_review_bundle_probes physical_probes -- --exact --nocapture --test-threads=1
+
+running 1 test
+test physical_probes ... PROBE A00-baseline-p2 => ACCEPT latest=7 restored=2 items=12 bytes=9605 elapsed_ms=42
+PROBE A01a-mixed-case-restored-cid => REFUSE Invalid("canonical CID spelling") elapsed_ms=0
+PROBE A01b-mixed-case-original-cid => REFUSE Invalid("canonical CID spelling") elapsed_ms=0
+PROBE A01c-mixed-case-membership-cid => REFUSE Invalid("canonical CID spelling") elapsed_ms=0
+PROBE A01d-author-spelling-upper-all => REFUSE Invalid("CID") elapsed_ms=0
+PROBE A02a-duplicate-restored-key => REFUSE Replay(Invalid("candidate order or duplicate")) elapsed_ms=8
+PROBE A02b-duplicate-membership-key => REFUSE Replay(Member(Invalid("CID order or duplicate"))) elapsed_ms=1
+PROBE A02c-duplicate-original-key => REFUSE Replay(Member(Invalid("CID order or duplicate"))) elapsed_ms=6
+PROBE A03a-descending-restored-btree => REFUSE Replay(Invalid("candidate order or duplicate")) elapsed_ms=8
+PROBE A03b-descending-membership-btree => REFUSE Replay(Member(Invalid("CID order or duplicate"))) elapsed_ms=1
+PROBE A03c-ascending-twin-control => ACCEPT latest=7 restored=2 items=12 bytes=9605 elapsed_ms=40
+PROBE A04a-oversized-original-blob => REFUSE Sql(SqliteFailure(Error { code: TooBig, extended_code: 18 }, Some("string or blob too big"))) elapsed_ms=0
+PROBE A04b-oversized-restored-text-key => REFUSE Sql(SqliteFailure(Error { code: TooBig, extended_code: 18 }, Some("string or blob too big"))) elapsed_ms=0
+PROBE A04c-oversized-observation => REFUSE Sql(SqliteFailure(Error { code: TooBig, extended_code: 18 }, Some("string or blob too big"))) elapsed_ms=0
+PROBE A04d-oversized-identity-text => REFUSE Sql(SqliteFailure(Error { code: TooBig, extended_code: 18 }, Some("string or blob too big"))) elapsed_ms=0
+PROBE A04e-oversized-manifest => REFUSE Sql(SqliteFailure(Error { code: TooBig, extended_code: 18 }, Some("string or blob too big"))) elapsed_ms=0
+PROBE A04f-oversized-membership-key => REFUSE Sql(SqliteFailure(Error { code: TooBig, extended_code: 18 }, Some("string or blob too big"))) elapsed_ms=0
+PROBE A04g-between-4MiB-and-5MiB-original => REFUSE Invalid("integer storage class or bounds") elapsed_ms=1
+PROBE A05a-nul-in-59-byte-cid => REFUSE Invalid("cell truncated") elapsed_ms=0
+PROBE A05b-unicode-in-59-byte-cid => REFUSE Invalid("ASCII text") elapsed_ms=0
+PROBE A05c-unicode-issuer-same-bytes => REFUSE Invalid("ASCII text") elapsed_ms=0
+PROBE A05d-blob-key => REFUSE Invalid("cell storage class") elapsed_ms=0
+PROBE A05e-invalid-utf8-text-cid => REFUSE Invalid("ASCII text") elapsed_ms=0
+PROBE A06a-real-membership-length => REFUSE Invalid("integer storage class or bounds") elapsed_ms=0
+PROBE A06b-text-profile => REFUSE Invalid("integer storage class or bounds") elapsed_ms=0
+PROBE A06c-blob-membership-length => REFUSE Invalid("integer storage class or bounds") elapsed_ms=0
+PROBE A07a-second-identity-row => REFUSE Invalid("identity cardinality") elapsed_ms=0
+PROBE A07b-second-plan-row => REFUSE Invalid("integer storage class or bounds") elapsed_ms=0
+PROBE A07c-plan-on-profile2 => REFUSE Replay(Member(Invalid("profile plan"))) elapsed_ms=0
+PROBE A07d-record-sequence-gap => REFUSE Replay(Member(Invalid("record position"))) elapsed_ms=84
+PROBE A07e-observation-zero => REFUSE Invalid("integer storage class or bounds") elapsed_ms=0
+PROBE A08a-analyze-stat1 => REFUSE Invalid("bundle schema") elapsed_ms=0
+PROBE A08b-schema-text-whitespace => REFUSE Invalid("bundle schema") elapsed_ms=0
+PROBE A08c-check-dropped-via-writable-schema => REFUSE Invalid("bundle schema") elapsed_ms=0
+PROBE A08d-utf16-schema-text-blob => REFUSE Invalid("bundle schema") elapsed_ms=0
+PROBE A08e-malformed-extra-schema-row => REFUSE Sql(SqliteFailure(Error { code: DatabaseCorrupt, extended_code: 11 }, Some("malformed database schema (zz) - incomplete input"))) elapsed_ms=0
+PROBE A08f-temp-trigger-noop => ACCEPT latest=7 restored=2 items=12 bytes=9605 elapsed_ms=40
+PROBE A09-wal-child exit=Some(72)
+PROBE A09-wal-present wal_bytes=12392 shm_exists=true
+PROBE A09a-wal-frames-read => ACCEPT latest=6 restored=2 items=11 bytes=8847 elapsed_ms=37
+PROBE A09a-main-unchanged=true wal-unchanged=true
+PROBE A09b-main-file-alone => ACCEPT latest=7 restored=2 items=12 bytes=9605 elapsed_ms=40
+PROBE A09c-wal-frames-shm-removed => ACCEPT latest=6 restored=2 items=11 bytes=8847 elapsed_ms=37
+PROBE A09c-main-unchanged=true wal-unchanged=true shm_recreated=true shm_mode=600
+PROBE A09d-source-budget-counts-sidecars => REFUSE Budget("source bytes") elapsed_ms=0
+PROBE A10-hot-child exit=Some(71)
+PROBE A10a-hot-journal => REFUSE Sql(SqliteFailure(Error { code: ReadOnly, extended_code: 776 }, Some("attempt to write a readonly database"))) elapsed_ms=0
+PROBE A10b-empty-nonhot-journal => ACCEPT latest=7 restored=2 items=12 bytes=9605 elapsed_ms=40
+PROBE A10b-journal-still-exists=true
+PROBE A11a-shm-directory => REFUSE Store(Invalid("expected regular database file")) elapsed_ms=0
+PROBE A11b-mkfifo status=ExitStatus(unix_wait_status(0))
+PROBE A11b-wal-fifo => REFUSE Store(Invalid("expected regular database file")) elapsed_ms=0
+PROBE A11c-symlinked-parent-directory => ACCEPT latest=7 restored=2 items=12 bytes=9605 elapsed_ms=40
+PROBE A11d-main-has-second-hard-link => ACCEPT latest=7 restored=2 items=12 bytes=9605 elapsed_ms=40
+PROBE A12-unbounded-schema-load rows=400007 elapsed_ms=17460 file_bytes=28569600
+PROBE A12a-deadline-during-schema-load => REFUSE Budget("duration") elapsed_ms=17539
+PROBE A12b-cancel-during-schema-load => REFUSE Cancelled elapsed_ms=17471
+PROBE A13a-duration-3601s => REFUSE Invalid("duration") elapsed_ms=0
+PROBE A13b-duration-3600s => ACCEPT latest=7 restored=2 items=12 bytes=9605 elapsed_ms=39
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 3 filtered out; finished in 55.16s
+
+
+warning: unused variable: `cancel`
+   --> src/evidence_store/bundle.rs:333:9
+    |
+333 |     let cancel = work.budget.cancelled.clone();
+    |         ^^^^^^ help: if this is intentional, prefix it with an underscore: `_cancel`
+    |
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: `kan` (lib) generated 1 warning (run `cargo fix --lib -p kan` to apply 1 suggestion)
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-recovery-opening/.local-state/reviews/recovery-opening)
+    Finished `test` profile [unoptimized] target(s) in 0.43s
+     Running tests/zz_review_bundle_probes.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/zz_review_bundle_probes-d8368fbcda019254)
+
+exit=0
+RESTORED exact=True {'src/evidence_store/bundle.rs': '47d9bbb0a03d75c965990da6a7f22351596e4f4b8ebc5b76a56157b896afae07'}

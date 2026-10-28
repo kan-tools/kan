@@ -1,0 +1,4 @@
+B1-correct-writer-resigned-new-ciphertext-control designExpect=accept pythonOracle=accept
+B2-foreign-principal-valid-signature designExpect=refuse:candidate writer request pythonOracle=refuse:candidate writer request
+B3-wrong-audience-valid-writer-signature designExpect=refuse:candidate writer request pythonOracle=refuse:candidate writer request
+B4-writer-principal-signed-by-foreign-key designExpect=refuse:candidate writer request pythonOracle=refuse:candidate writer request

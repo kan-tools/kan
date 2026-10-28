@@ -1,0 +1,18 @@
+$ /opt/homebrew/bin/python3 scripts/revert_v2.py --helper /Users/m/.codex/plugins/cache/kan-tools/day/0.12.0-beta.3/scripts/revert-demo.py --production src/evidence_store/bundle.rs --tests evidence_recovery_bundle::empty_originals_remain_exact_evidence_before_and_after_restoration
+Source export and logs: /Users/m/code/kan-tools/kan/.worktrees/kan-v2-recovery-opening/.local-state/reversion/9eb2cc4d28e64818b175211259f80971
+note: untracked and therefore NOT reverted: ['.design/fixtures/recovery-bundle-review-v1.json', '.design/kan-v2-recovery-mutations.md', '.design/tools/recovery_bundle_review_vectors.py']
+What would be reverted (worktree):
+  skipped .design/kan-v2-recovery-bundle-opening.md (not in --include)
+  skipped .design/tools/recovery_bundle_files.py (not in --include)
+  skipped .github/workflows/ci.yml (not in --include)
+  reverting src/evidence_store/bundle.rs: 2/3 hunk(s) (1 test-side hunk(s) kept in place)
+  skipped tests/evidence_recovery_bundle.rs (not in --include)
+  skipped tests/evidence_recovery_replay_review_regressions.rs (not in --include)
+
+DEMONSTRATED — failed under revert: evidence_recovery_bundle::empty_originals_remain_exact_evidence_before_and_after_restoration
+
+Paste into the commit message:
+
+    Demonstrated-by: revert=HEAD tests=evidence_recovery_bundle::empty_originals_remain_exact_evidence_before_and_after_restoration outcome=DEMONSTRATED
+
+exit=0

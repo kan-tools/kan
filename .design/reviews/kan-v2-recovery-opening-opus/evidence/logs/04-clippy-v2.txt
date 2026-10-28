@@ -1,0 +1,3 @@
+    Checking kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-recovery-opening/.local-state/reviews/recovery-opening)
+    Finished `dev` profile [unoptimized] target(s) in 8.43s
+exit=0

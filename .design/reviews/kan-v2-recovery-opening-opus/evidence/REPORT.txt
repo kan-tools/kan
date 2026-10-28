@@ -1,0 +1,376 @@
+INDEPENDENT ADVERSARIAL REVIEW — physical KNB1 inspector (scope A) + c0a7431 replay follow-through (scope B)
+Reviewer: Claude Code, Opus 5.5 (claude-opus-5-5), fresh cold session, no subagents, 2026-10-19.
+Frozen commit: 01bc49bd96c9995f7a4c439a8640293d90c63ee0 (branch feat/kan-v2-recovery-opening).
+Explicit source repository: /Users/m/code/kan-tools/kan/.worktrees/kan-v2-recovery-opening
+Export reviewed: <repo>/.local-state/reviews/recovery-opening (all commands ran here).
+
+VERDICTS
+  Scope A (physical read-only KNB1 inspector) ........ BLOCK
+  Scope B (c0a7431 A-F1/A-F2/A-F3 follow-through) .... APPROVE WITH FOLLOW-UPS
+  Overall checkpoint (01bc49b) ........................ BLOCK
+The BLOCK is a fail-closed correctness defect against an explicit opener requirement: the reader refuses
+every bundle that retains an EMPTY original BLOB (A-F1). No incorrect hostile acceptance, no source-record
+rewrite and no standalone escape was found in scope A. No parent recovery/frontend AC closes. No physical
+writer, durability, job, RPC or frontend completion is claimed by this checkpoint, and none is credited here.
+
+=====================================================================================================
+0. INDEPENDENCE, RECORDING, IDENTITY
+- I did not write any code under review. This is a cold session; no subagents; no fork.
+- Git-first recording (day#168/kan#197): this REPORT.txt plus review-evidence/ is the record. I made no
+  kan/day writes and no live-log reads. I do not claim current live-log access. The north star below
+  comes only from the supplied frozen north-star.json.
+- Identity BEFORE (logs/identity-before.txt) and AFTER (logs/91-identity-after.txt), using
+  scripts/verify_identity.py: the export's 3,496 tracked files match the manifest SHA-256 exactly, AND
+  every file's Git blob id equals `git ls-tree -r 01bc49b` in the explicit repo. Repo HEAD = 01bc49b.
+  The only extra file is north-star.json (review-evidence/ is excluded as this review's own output).
+  Result: IDENTITY OK both times.
+- Environment: shared CARGO_TARGET_DIR=<kan-v2-library-resilience>/.local-state/target, CARGO_BUILD_JOBS=4,
+  `cargo clean -p kan` first (logs/01-clean.txt: removed 939 files), one heavy job at a time. No own target,
+  no installs, no .lake, no network, no live archives/keys/traffic, no parent edits, no Git writes, no
+  stash operations (parent stash count read at end: 3, untouched), and no revert_v2.py.
+- Observed concurrent activity in the PARENT worktree. It is NOT this reviewer's: the files are mode 0644
+  (my umask gives 0600), they contain none of my mutation markers, and my drivers resolve every path to
+  the export. At 10:03:12 an untracked .design/kan-v2-recovery-mutations.md appeared (a creator/restorer
+  plan). From 10:19 to 10:26, uncommitted edits appeared to src/evidence_store/bundle.rs, tests/
+  evidence_recovery_bundle.rs, .design/tools/recovery_bundle_files.py and ci.yml, plus untracked
+  recovery_bundle_review_vectors.py and fixtures/recovery-bundle-review-v1.json
+  (logs/90-parent-git-after.txt). The bundle.rs edit adds `(false, ValueRef::Null) if len == 0 => &[]`,
+  which appears to address A-F1 below. This concurrent work is UNREVIEWED here and does not change the
+  verdict on the frozen commit. Under ADR-52 it needs its own review round.
+- Own housekeeping, disclosed: my first Python attempt (failed method, logs/06a) used /opt/homebrew
+  python3.14, and importing .design/tools wrote 3 __pycache__ .pyc files into the export. I removed them
+  (logs/50). I also killed only my own backgrounded schema-timing python process (pkill -f on my private
+  /tmp/kanrev-vm path). No other process was touched.
+
+1. NORTH STAR (from supplied frozen north-star.json only)
+telos/raw-data-and-projections (Decision bafyreied3rklhs57...): "Raw attested data is retained in full and
+never collapsed in the store. Every simplification ... is a determined projection computed on demand over
+that raw data". It is in recorded tension with telos/performance-at-scale (InTensionWith, inbound and
+outbound). The file reports excluded_by_trust=2 at top level. I cannot see those subjects and did not
+reconstruct them. This work serves the telos as a read-only projection (Inspection/Replay) over retained
+raw bundle bytes, which must never invent or drop retained evidence. Tension in play: acquisition budgets
+and the non-streaming slice (performance/bounded memory) versus retaining every raw cell exactly. The
+design keeps that tension explicit (no universal cap; streaming is the declared next step). A-F1 is the
+place where it breaks: a legitimately retained raw state (an empty original) cannot be projected at all.
+
+2. BASELINE (raw logs in logs/)
+- v2-crypto: evidence_recovery_bundle 10/10, evidence_recovery_replay 10/10,
+  evidence_recovery_replay_review_regressions 6/6, surface_conformance 19/19 (02-baseline-tests.txt).
+- --lib evidence_store::bundle::snapshot_tests 2/2 (03).
+- cargo clippy --features v2-crypto --all-targets -- -D warnings: exit 0 (04). cargo fmt --check: exit 0 (05).
+- Python. FAILED METHOD (06a): under /opt/homebrew python3, the replay generators die with "No module
+  named 'cryptography'". Rerun with KAN_CRYPTO_ORACLE_PYTHON (06b): recovery_bundle_schema.py 7/7 OK
+  (it includes test_runtime_schema_matches_proposed_fixture); recovery_replay_vectors.py --check gives
+  "45 independent state cases; 13 positive"; recovery_replay_review_vectors.py --check gives "23 design-
+  derived review cases; conservative envelope bound 3816 bytes".
+- Runtime SQL equals the previously proposed fixture. `cmp` reports them identical, and they are the same
+  Git blob b714c19f at both 01bc49b and b52aa48. The fixture was last changed in a78fa61, before this
+  branch.
+- Retained lifecycle checks I read rather than reran (.design/reviews/kan-v2-recovery-opening-author/
+  02-tests.txt): attested_lifecycle 11, copy_destination 33, bundle 10, replay 10, store 34, which all pass.
+  Surface was 17/2 failed there, and its corrected rerun (07) gives 19/19. Applicability: after 21c6e8e
+  the only production source change is src/evidence_recovery_replay.rs. Its only non-test consumer is
+  src/evidence_store/bundle.rs (grep), so those lifecycle results still apply.
+- Final post-restoration rerun: same 45 integration plus 2 unit functions pass, fmt exit 0 (logs/60, 61).
+
+=====================================================================================================
+SCOPE A — PHYSICAL READ-ONLY KNB1 INSPECTOR (src/evidence_store/bundle.rs, bundle.sql)
+
+3. REQUIREMENT COVERAGE (.design/kan-v2-recovery-bundle-opening.md; evidence = code read + commands)
+A-R1 Owner-only read-only API: path + independent Context + optional external Checkpoint + budgets; returns
+     verified Replay and bounded source identity; no Connection, unverified rows, writer activation,
+     standalone fallback or completion flag.
+     MET. bundle.rs:270-277 `pub fn inspect(path, context, checkpoint: Option<&Checkpoint>, budget)`.
+     Inspection (60-80) exposes only source(), replay(), acquired_bytes(), items(). inspect_snapshot is
+     private. Error-only on failure: Inspection is constructed only at 446-451, after replay and check.
+A-R2 Exact profile: application_id KNB1, user_version 1, UTF-8.
+     MET. 171-175. Author test utf16 asserts Invalid("bundle encoding"). A-M01 schema gate removed: killed
+     ("accepted mutation: PRAGMA application_id=...").
+A-R3 Exact schema; extra/missing tables/indexes/views/triggers refuse.
+     MET. 176-194 compares type/name/tbl_name/sql (bounded substr + full byte length) against an in-memory
+     DB built from the same SCHEMA. Probes: ANALYZE stat1, whitespace-only schema edit, CHECK removed via
+     writable_schema, schema sql stored as BLOB all give Invalid("bundle schema"). A malformed extra schema
+     row gives Sql(DatabaseCorrupt) (A08a-e). rootpage is not compared. I tested that hole with b-tree
+     substitution (A02/A03 below): it reduces to ordinary content attacks, which the pure layer refuses.
+A-R4 Identity cardinality and every field against caller pins before bulk contents.
+     MET. 196-237, called at 341 before any bulk query. A07a second identity row gives "identity
+     cardinality". A-M02 killed.
+A-R5 Text by byte length, ASCII, NUL exclusion; physical CID spelling equals canonical parse.
+     MET IN CODE, UNDER-TESTED (A-F2). 149-151, 155-165. Probes A05a-e: NUL inside a 59-byte cid gives
+     "cell truncated"; Unicode / invalid UTF-8 gives "ASCII text"; BLOB key gives "cell storage class".
+     Canonical spelling: A01a-c gives "canonical CID spelling" for a 'b'+UPPERCASE body, which the typed
+     parser accepts.
+A-R6 Every column storage class and protocol length checked independently of DDL CHECKs.
+     MET for nonempty cells. 123-154. A06a-c (REAL/TEXT/BLOB integers) give "integer storage class or
+     bounds". The author's physical test covers TEXT-for-BLOB and limit+1. PARTIAL overall because of A-F1
+     (empty BLOB).
+A-R7 Main + existing sidecars: private regular file, symlink refusal, mutual inode aliasing before open;
+     source-byte budget is a pre-open observation.
+     MET as declared. 299-322. A-M09 alias check removed: killed. A-M10 source budget removed: killed.
+     A09d: the budget counts -wal/-shm. A11a/b: a directory -shm or FIFO -wal gives "expected regular
+     database file". Declared scope, not defects: a symlinked PARENT directory is accepted (A11c), and a
+     second hard link of the main file elsewhere is accepted (A11d). Only the final component and mutual
+     aliasing are fenced, as the design says.
+A-R8 Explicit SQLite coordination capability; read-only open may create WAL/SHM; no filesystem-purity claim.
+     MET. persistence.rs:202-210 (READ_ONLY flags), SurfaceWrite::EvidenceBundleSource (+2 surfaces), one
+     call site bundle.rs:323-327, TSV rows, RULE_EVIDENCE, PERSISTENCE_MUTATION_SITES, updated facade digest.
+     A-M07 wrong capability fails the INDEPENDENT inventory semantically (surface_conformance.rs:1393:
+     "labels evidence-bundle-source:database-wal with capability EvidenceRecoverySource, whose allowed
+     artifacts are [evidence-recovery-source:...]"). A09c: with -shm removed, the reader recreates -shm
+     (mode 600), and main and -wal bytes are unchanged.
+A-R9 Hot rollback journal refuses; preserve source media.
+     MET. A10a: Sql(ReadOnly, extended 776 = SQLITE_READONLY_ROLLBACK). The author test also checks that
+     main and journal bytes are unchanged. A-M11 (READ_WRITE open) is killed: the test asserts refusal,
+     and the mutant ACCEPTS after silently rolling the journal back into the source. A10b: an empty,
+     non-hot journal is accepted and retained.
+A-R10 query-only, SQL length limits, bounded cache, busy timeout, deadline/cancellation before first schema/
+     data read; one pinned transaction; no immutable=1.
+     MET IN CODE. 328-339: LIMIT_LENGTH 5 MiB, busy_timeout ≤250 ms, progress handler, then query_only /
+     trusted_schema=OFF / cache_size / mmap 0 / BEGIN. No immutable. SQLITE_LIMIT_SQL_LENGTH is not set,
+     but schema text is already bounded by LIMIT_LENGTH at column fetch (info). A-M05 (no BEGIN): killed
+     semantically ("Replay(Invalid(\"observation authentication\"))", the later WAL row mixed in). A09a
+     reads committed-but-uncheckpointed WAL frames consistently (latest=6, versus 7 from the main file
+     alone), with main and wal unchanged. A-M13 (no query_only) SURVIVES: redundant with READ_ONLY flags.
+A-R11 Busy wait and SQLite VM cancellation behavior must be tested.
+     PARTIAL (A-F3). Busy is tested (author, <3 s). VM-level deadline/cancellation is NOT tested: A-M08
+     (progress handler removed) passes the entire author bundle suite and both units. My probe A12 (a
+     400,007-row schema; plain load 17.5-18.7 s) shows the real code stops in 162 ms (deadline 150 ms) and
+     125 ms (cancel at 100 ms). Under A-M08 both take ~17.5 s.
+A-R12 Budget acquisition before materializing; rows and encoded field bytes separate from replay scan bytes;
+     charge before copy; overflow rejected; report which limit failed; no universal cap.
+     MET. 81-115, 152 (charge before to_vec), checked_add. Author test edges: items and bytes exact±1,
+     source, replay separate, cancel, duration 0. A13: 3601 s gives Invalid("duration") and 3600 s accepts.
+     Info: the final `work.check()?` (455) relabels an independent error, or discards a completed result,
+     as duration/cancel if the deadline passes between completion and return. Conservative, a race only.
+A-R13 Bounded substring probes; avoid WITHOUT ROWID key seeks; canonical PK order scan, no arbitrary sort;
+     non-BLOB / malformed key / oversized cell is a forensic-format refusal, not a missing row.
+     MET (labels: A-F4). NOT INDEXED ORDER BY pk scans. A04a-f: >5 MiB cells in BLOB value, TEXT key
+     (WITHOUT ROWID), observation, identity text, manifest and membership key all give
+     Sql(TooBig "string or blob too big"), never a missing row. Peak RSS with a 56 MiB corrupt original is
+     13.1 MB, versus 14.7 MB for a normal fixture (probes/rss-oversized.log), so it is not materialized.
+     A04g (4 MiB+1) gives Invalid("integer storage class or bounds"). B-tree tampering behind canonical
+     schema text: duplicate keys (A02a-c) and descending storage order (A03a-b) reach the pure layer and
+     refuse ("candidate order or duplicate" / "CID order or duplicate"); the ascending-twin control
+     (A03c) accepts.
+A-R14 Preserve empty or hash-invalid original BLOB bytes within the 4-MiB cell limit; candidates nonempty
+     and hash-valid.
+     UNMET for empty originals: A-F1. Hash-invalid nonempty originals: MET (corpus case
+     original-object-basis-survives-restoration; my E3 control accepts).
+A-R15 Validation: Python fixtures from signed corpus; profile 2, complete and partial profile 3,
+     CORRUPT/EMPTY originals, restored candidates, multiple attempts, external checkpoint extensions; the
+     refusal list; standalone escape refusal.
+     PARTIAL. 13 accepted / 32 refused physical reproductions with main-byte preservation hold
+     (python_sqlite_histories...). But NO corpus case contains an empty original (I enumerated all 45
+     cases), and the one constructed by me is refused (A-F1). The refusal list is covered except as noted
+     in A-F2/A-F4. Standalone: 6 file readers refuse (author test). Root-based Ledger/Archive::open and
+     inventory/copy-upgrade entries share RecoveryReader profile checks but are not exercised directly
+     (low, A-F6).
+A-R16 Python fixtures are not a second semantic-schema oracle; runtime SQL equals the previous fixture.
+     MET, and labelled honestly (recovery_bundle_files.py docstring; opening.md).
+A-R17 No creator/restorer/publisher/signing/job/RPC/UI; no parent AC closes.
+     MET. bundle.rs has no write path. Every AC-1..AC-6 checkbox in kan-v2-recovery-bundles.md is still
+     "[ ]".
+
+4. SCOPE A FINDINGS
+A-F1 [BLOCKING — correctness; fail-closed false refusal of a design-mandated state]
+  Code: bundle.rs:144-147
+      let bytes = match (text, row.get_ref(col + 2)?) {
+          (true, ValueRef::Text(b)) | (false, ValueRef::Blob(b)) => b,
+          _ => return Err(Error::Invalid("projected cell storage class")),
+  The projection is substr(bytes,1,4194304) (167-169, 253). SQLite substr() returns NULL for a zero-length
+  BLOB. Bundled sqlite3.c (3.53.2) substrFunc: `z = sqlite3_value_blob(argv[0]); if( z==0 ) return;`, and
+  sqlite3_value_blob returns `p->n ? p->z : 0`. Confirmed independently: probes/empty-blob-substr-python.txt
+  gives typeof(substr(x'',1,N)) = 'null'.
+  Requirement violated: opening.md "Preserve empty or hash-invalid original BLOB bytes within the 4-MiB
+  cell limit". The DDL allows `length(bytes) BETWEEN 0 AND 4194304`. Validation requires "corrupt/empty
+  originals". The author REPORT claims "Original corrupt/empty BLOBs remain exact retained evidence."
+  Demonstration (independent signed histories, probes/gen_physical_probes.py, run1 log):
+    E1 empty original, initial loss: pure replay ACCEPT latest=2 | Python oracle accept | PHYSICAL REFUSE
+       Invalid("projected cell storage class")
+    E2 empty original + valid restoration: pure ACCEPT latest=3 restored=1 | oracle accept | PHYSICAL REFUSE
+    E3 identical shape, 1-byte corrupt original: pure ACCEPT | PHYSICAL ACCEPT (control)
+  Impact: retained empty-original evidence (a truncated-to-zero object, exactly the corruption bundles
+  exist to retain) makes the whole bundle uninspectable. Nothing is accepted wrongly and nothing is
+  rewritten. Source unchanged (E1-E3 source-unchanged=true).
+  Required: accept a NULL projection only when typeof='blob' and length=0 (the parent edit observed in
+  §0 has this shape but is unreviewed). Add signed empty-original physical vectors (profile 2, and a
+  partial profile 3 if reachable) for both initial-loss and restored histories. Keep candidates
+  nonempty. Re-run the controls, and give this a fresh review.
+A-F2 [MEDIUM-LOW — test gap; author survivor classification is wrong in general]
+  The author recorded the canonical-key control as a redundant-defense survivor because "the typed CID
+  parser already rejects the tested uppercase representation". That holds only for the tested spelling
+  upper(cid), whose 'B' prefix the DASL parser rejects. The multibase base32lower decoder translates
+  uppercase body characters (multibase-0.9.3 encoding.rs:24-28 translate_from "A..Z"), so 'b'+UPPERCASE
+  parses to the same CID. Under A-M03 the author test passes (SURVIVES, reproduced), while my probes show
+  hostile acceptance of non-canonical physical keys in all three key tables:
+    A01a restored_objects ACCEPT latest=7, A01b member_objects ACCEPT latest=6, A01c member_membership
+    ACCEPT latest=7 (mutations/A-M03-canonical-key.txt). Unmutated: all three give "canonical CID spelling".
+  The guard is load-bearing, not redundant. Required: add a parser-accepted non-canonical spelling to the
+  physical refusal test, and reclassify the control as demonstrated.
+A-F3 [LOW-MEDIUM — required test absent]
+  The design requires that SQLite VM cancellation be tested. A-M08 (progress handler removed) survives the
+  entire author suite. My A12 probe kills it by timing (deadline 150 ms: 162 ms real versus 17,539 ms
+  mutant; cancel 100 ms: 125 ms versus 17,471 ms). Required: promote a bounded long-VM-step test (e.g. a
+  large schema load) that asserts elapsed time well below the unbounded load time.
+A-F4 [LOW — error taxonomy]
+  Oversized (>5 MiB) cells, hot journals and malformed schema surface as raw Error::Sql (TooBig /
+  READONLY_ROLLBACK 776 / DatabaseCorrupt), not a typed forensic-format refusal. Refusal is correct and is
+  never a missing-row conversion. But the author suite asserts only is_err() and tests only limit+1, never
+  >5 MiB. Follow-up: map these to a typed refusal (or document Sql as that channel) and assert the kind.
+A-F5 [INFO — defense classification]
+  NUL exclusion in TEXT is actually enforced by the truncation guard (148). SQLite text substr stops at
+  NUL, so A05a gives "cell truncated", and `!bytes.contains(&0)` (150) is unreachable for TEXT. A-M12
+  (truncation guard removed) is killed by the author test ("accepted mutation: ...issuer||char(0)").
+  A-M14 (typeof guard) SURVIVES: redundant with the projected-class check (A05d label changes only,
+  diagnostic-only). A-M13 query_only SURVIVES: redundant with READ_ONLY. Plan cardinality (353) is implied
+  by singleton bounds (A07b fires at integer bounds). None of these is counted as a kill.
+A-F6 [LOW] Standalone refusal covers 6 file-level readers. Root-based opens (Ledger::open(root) opens
+  READ_WRITE before its schema check) and inventory::open/source/copy_upgrade::open are not exercised
+  against a KNB1 file. They share RecoveryReader::open_profile_configured profile checks. This is an
+  out-of-slice note for the future creator/restorer custody work.
+A-F7 [INFO] Pre-open custody fences only the final component and mutual aliases. A symlinked parent
+  directory and an extra hard link of main are accepted (A11c/d). This matches the declared scope; the
+  future writer must not inherit it as a guarantee.
+
+5. SCOPE A CONTROLS (my driver scripts/mutate.py; one at a time; exact SHA-256 restore logged per file)
+  Author controls reproduced:
+   A-M01 schema gate ................. KILLED (accepted mutation: application_id)
+   A-M02 identity bundle pin ......... KILLED (accepted mutation: bundle=zeroblob(32))
+   A-M03 canonical-key ............... author test SURVIVES (reproduced); my probe KILLS (A01a-c ACCEPT) -> A-F2
+   A-M04 observation coordinate ...... KILLED (accepted mutation: sequence=100)
+   A-M05 pinned snapshot (no BEGIN) .. KILLED (unwrap Err: observation authentication)
+   A-M06 external checkpoint ignored . KILLED (tests:249 assertion)
+   A-M07 wrong capability ............ KILLED by the independent inventory (surface_conformance.rs:1393)
+  Reviewer controls:
+   A-M08 no progress handler ......... author suite SURVIVES; KILLED by reviewer probe A12 timing -> A-F3
+   A-M09 sidecar alias check ......... KILLED (tests:287)
+   A-M10 source-byte budget .......... KILLED (tests:196)
+   A-M11 READ_WRITE open ............. KILLED (tests:322; mutant accepts after rolling back hot journal)
+   A-M12 truncation guard ............ KILLED (accepted mutation: issuer||char(0))
+   A-M13 no query_only ............... SURVIVES (redundant with READ_ONLY flag)
+   A-M14 typeof guard ................ SURVIVES; probe A05d diagnostic-only (label change), not a kill
+  No compile failures. The two acquisition-bytes/items author controls were not rerun (author logs read).
+
+=====================================================================================================
+SCOPE B — c0a7431 FOLLOW-THROUGH TO .design/reviews/kan-v2-recovery-replay-opus/evidence/REPORT.txt
+
+6. DECISIONS AND CLASSIFICATIONS CHECKED
+B-R1 A-F1(a): verify issuer-referenced candidate writer signature + exact manifest/receipt binding
+     immediately; no invented writer identity for unreferenced keys.
+     MET. replay.rs:296-357 adds Key.request, set only by issuer records (and_modify/or_insert at
+     338-349). Membership-only and original-only keys stay None. 540-565 calls
+     evidence_service::verify_retained_request (service.rs:336-349: request signature decode,
+     receipt-binds-manifest, receipt issuer == audience author, manifest rebuilt from request == retained
+     manifest) and maps failure to Invalid("candidate writer request"). One request per CID is guaranteed
+     upstream (member.rs "reused service request CID"), so the and_modify overwrite cannot select the
+     wrong record. My independent probes (probes/gen_scopeB_probes.py, run3):
+       B1 correct writer re-signed request (new ciphertext) .......... ACCEPT (no false refusal) pure+physical
+       B2 foreign principal, valid signature ........................ REFUSE candidate writer request
+       B3 wrong audience, valid writer signature .................... REFUSE candidate writer request
+       B4 writer principal, signed by a foreign key ................. REFUSE candidate writer request
+     The Python oracle agrees on all four. Under B-M01 (writer check -> .ok()), B2/B3/B4 are ACCEPTED,
+     so my probes independently kill it.
+B-R2 Scan bytes charge the extra pass.
+     MET IN CODE, NOT PINNED BY TESTS. Minimal accepting scan bytes, unmutated versus B-M06 (charge -> 0):
+     p2-restored 31919/28904, later-candidate 43865/42309, greedy 135343/135343, p3-restored 34344/31329.
+     The deltas 3015/1556/0/3015 equal my independent sum of manifest+receipt+candidate bytes over
+     request-referenced candidates (logs/41: 4/4 MATCH). B-M06 SURVIVES the whole suite (B-F1).
+B-R3 20 promoted cases retain raw original evidence separately; P01 expectation intentionally changes.
+     MET. `git diff 7a04798 01bc49b -- .design/reviews/kan-v2-recovery-replay-opus/` is empty. The
+     generator note marks P01 "original P01 expected acceptance; strict draft now refuses". Promoted-
+     versus-original diff (logs/30): only formatting, fixture path, the case-count assertion, the added
+     single-fault tests, and the removal of log-only println blocks (no asserts). No assertion was
+     weakened.
+B-R4 P21 valid signature / wrong manifest; P22, P23 isolate hashing/length without writer backstop.
+     MET. P22 is an original-only key and P23 is membership-only staged complete recipe, so both have
+     request=None. B-M02 hash: P22 ACCEPTED_HOSTILE (P05 is DIAG, correctly backstopped by the writer
+     check). B-M03 length: P23 ACCEPTED_HOSTILE (P03/P20 DIAG). P21 is refused only by the binding check
+     (B-M01: P21 ACCEPTED_HOSTILE).
+B-R5 Partial-copy length override: single removal diagnostic-only; combined removal labelled.
+     MET, classification correct. B-M04 alone gives P20 DIAG "got candidate writer request". B-M05
+     (override+writer) gives P20 ACCEPTED_HOSTILE (plus P01/P21). This is a combined control, not counted
+     as a single-guard kill.
+B-R6 A-F3 conservative 3816-byte bound; a maximal valid signed shape is verified.
+     MET WITH NOTE (B-F2). The Python generator asserts upper <= 4096 < 16384 and runs
+     wire.verify(wire.sign(valid...)) over the maximal 32-entry shape, and CI runs --check. The Rust test
+     (regressions:396-406) only reads the fixture constant and compares it with the literal 3816 and
+     MAX_ENVELOPE. It does not encode anything in Rust. The protection against divergence is that Rust
+     verifies the Python-signed corpus. Rust's greedy shrink branch remains unreachable and untested
+     (accepted under A-F3's "assert the bound" option).
+B-R7 Whole-production-file reversion (only src/evidence_recovery_replay.rs := blob f5dec815 at 7a04798,
+     sha256 4d7b5037...; restored to b5cbabc6..., verified):
+     writer_invalid_candidate_refuses_without_publication_intent: compiles, FAILS
+       left: None  right: Some(Invalid("candidate writer request"))
+     valid_writer_signature_with_wrong_manifest_binding_refuses: compiles, FAILS (same, left None)
+     Both fail semantically (hostile history accepted). After the exact restore both pass
+     (mutations/B-whole-reversion-*.txt). Author controls reproduced: candidate-writer, candidate-hash,
+     candidate-length, record-length-alone (diag), record-length-and-writer (combined). Checkpoint-context
+     and original-writer were not rerun (author logs exist).
+
+7. SCOPE B FINDINGS
+B-F1 [LOW] The new scan-byte charge is correct (independently matched) but unpinned: B-M06 survives.
+  Pin the minimal-byte values or the delta in reviewer_budget_monotonicity_and_bounds.
+B-F2 [INFO] A-F3's Rust assertion is a fixture-constant echo. Label it so, or compute the maximal
+  statement with the Rust codec.
+No correctness defect, false refusal or incorrect acceptance was found in scope B.
+
+=====================================================================================================
+8. SCOPE-NARROWING LANGUAGE (diff 7a04798..01bc49b, design docs)
+- "streaming adapter is the next scaling step", "no universal 10-MB cap": named before implementation in
+  opening.md and separable. LEGITIMATE.
+- "Later creator/restorer/publisher entry points must check ... the inspection API does not discharge
+  those future obligations": named, separable. LEGITIMATE.
+- "source-byte budget ... not a hostile namespace-replacement or later-growth fence", "filesystem stalls
+  cannot be preempted": declared limits, consistent with code. LEGITIMATE.
+- "Draft ... Fresh independent review remains required ... no parent acceptance criterion closes": honest.
+- SUSPICIOUS (one): the "canonical-key ... redundant defense, never a semantic kill" classification
+  narrowed a test obligation during qualification on the strength of one spelling (A-F2).
+- Unsupported claim: "Original corrupt/empty BLOBs remain exact retained evidence" (author REPORT) is
+  false for empty BLOBs (A-F1).
+
+9. HOUSE RULES (CLAUDE.md)
+- Fold reads, never mutates / no subject destroyed: inspect has no write path. Main, journal and WAL bytes
+  are preserved in every probe. Only the declared -shm coordination is created (A09c). OK.
+- Persistence change = surface-contract change: TSV, typed capability at the mutation site and
+  surface_conformance all updated together. The wrong-capability control fails the independent inventory.
+  OK.
+- Derived media never become authority: Inspection carries no completion/activation flag. OK.
+- Affordance not enforcement / one surface: no hooks, CLI, MCP or UI added. OK.
+- Provenance: no cites/claims are created. Raw-data telos: violated in effect by A-F1 (an unprojectable
+  retained raw state), fail-closed.
+
+10. REQUIRED FOLLOW-THROUGH
+ Before accepting scope A (blocking):
+  1. Fix A-F1 (empty-BLOB projection). Add signed empty-original physical vectors (initial loss and
+     restored) to the physical corpus, run them through the actual reader, and keep candidates nonempty.
+     A fresh review of that fix round is required (ADR-52). The concurrent parent edit is unreviewed.
+ Follow-ups (non-blocking individually):
+  2. A-F2: add a 'b'+UPPERCASE (parser-accepted) spelling to the physical refusal tests for restored,
+     original and membership keys, and reclassify the canonical-key control as demonstrated.
+  3. A-F3: promote a long-VM-step deadline/cancellation regression that kills the no-progress-handler
+     mutant.
+  4. A-F4: typed or asserted refusal kind for >5 MiB cells, hot journal and malformed schema, plus a
+     >5 MiB case in the author suite.
+  5. A-F6/A-F7: carry root-based/inventory entry refusal and parent-directory/hard-link custody into the
+     creator/restorer design (out of this slice).
+  6. B-F1: pin the writer-pass scan charge. B-F2: label or strengthen the A-F3 Rust echo.
+ Parent ACs (kan-v2-recovery-bundles.md AC-1..AC-6): all remain OPEN. Nothing here closes any AC for
+ missing writer, job, backup, rebuild, publication or frontend workflows.
+
+11. PROBE AND CONTROL INVENTORY (all raw output retained)
+ probes/zz_review_bundle_probes.rs is the temporary test, copied into tests/ only for the runs and
+ removed (cmp-verified identical before rm). Logs: run1 (A02a/A02c invalid, see the failed method below),
+ run2 (corrected A02), run3 (scope B). Generators: gen_physical_probes.py, gen_scopeB_probes.py (outputs
+ out-empty/, out-scopeB/ with cases.json and .sqlite). RSS: rss-oversized.log (first attempt hit the
+ 64 MiB source budget pre-open: Budget("source bytes"), retained; then 56 MiB).
+ Failed methods retained: logs/06a (wrong interpreter). run1 A02a/A02c used blob||blob, which SQLite
+ types as TEXT, so they measured storage class, not duplicates; corrected with CAST in run2. Python
+ schema-timing attempts: CREATE VIEW loop (quadratic, killed my own process) and a writable_schema
+ insert rejected by Python's defensive sqlite3 (no setconfig in 3.9); this was moved to rusqlite (A12).
+ Mutation logs: mutations/A-M01..A-M14, B-M01..B-M06, B-whole-reversion-{reverted,restored},
+ driver-*.txt.
+
+12. HOW TO RECORD (not executed: Git-first, no kan writes in this session)
+ day review record <subject> --verdict BLOCK --rationale "KNB1 reader refuses retained empty original BLOBs
+ (substr NULL), A-F1; scope B c0a7431 APPROVE WITH FOLLOW-UPS" --cites <cid of the opening design claim>
+ (subject and cid to be supplied by the owner; I do not invent them).
