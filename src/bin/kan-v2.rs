@@ -14,6 +14,22 @@ struct Cli {
 }
 #[derive(Subcommand)]
 enum Command {
+    /// Recover an explicitly pinned import into a NEW private plaintext directory.
+    #[cfg(feature = "v2-crypto")]
+    RestoreImport {
+        database: PathBuf,
+        destination: PathBuf,
+        #[arg(long)]
+        expected_plan: String,
+        #[arg(long)]
+        scope: String,
+        #[arg(long)]
+        writer: String,
+        #[arg(long)]
+        recipient_key: PathBuf,
+        #[arg(long, default_value_t = 1_000_000)]
+        max_records: u64,
+    },
     /// Pin an explicit v1 source inventory and destination without importing.
     #[cfg(feature = "v2-crypto")]
     ImportPlan {
@@ -199,6 +215,29 @@ fn hex(bytes: &[u8]) -> String {
 }
 fn run() -> Result<(), Box<dyn std::error::Error>> {
     match Cli::parse().command {
+        #[cfg(feature = "v2-crypto")]
+        Command::RestoreImport {
+            database,
+            destination,
+            expected_plan,
+            scope,
+            writer,
+            recipient_key,
+            max_records,
+        } => {
+            let report = kan::evidence_restore::restore(
+                &database,
+                &destination,
+                &kan::evidence_restore::Pins {
+                    expected_plan: &expected_plan,
+                    scope: fixed_hex::<32>(&scope)?,
+                    writer: &writer,
+                    recipient_private: recipient_private(&recipient_key)?,
+                    max_records,
+                },
+            )?;
+            print_json(&report)?;
+        }
         #[cfg(feature = "v2-crypto")]
         Command::ImportPlan { options } => {
             let (plan, mut spool) = import_plan(options)?;

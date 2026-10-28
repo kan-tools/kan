@@ -36,6 +36,7 @@ pub enum SurfaceWrite {
     EvidenceBackup,
     EvidenceRecovery,
     EvidenceRecoverySource,
+    EvidenceRestore,
     Count,
 }
 
@@ -65,6 +66,7 @@ impl SurfaceWrite {
         Self::EvidenceBackup,
         Self::EvidenceRecovery,
         Self::EvidenceRecoverySource,
+        Self::EvidenceRestore,
     ];
 
     /// Catalog artifacts a capability is permitted to mutate. This match is
@@ -148,6 +150,11 @@ impl SurfaceWrite {
             Self::EvidenceRecoverySource => &[
                 "evidence-recovery-source:database-wal",
                 "evidence-recovery-source:database-shm",
+            ],
+            Self::EvidenceRestore => &[
+                "evidence-restore:files",
+                "evidence-restore:plan.json",
+                "evidence-restore:report.json",
             ],
             Self::Count => &[],
         }
@@ -246,4 +253,26 @@ pub async fn open_append_async(
         .append(true)
         .open(path)
         .await
+}
+
+/// Create a single private directory, refusing any existing entry.
+pub fn create_dir_owner_only(_surface: SurfaceWrite, path: &Path) -> std::io::Result<()> {
+    let mut builder = std::fs::DirBuilder::new();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::DirBuilderExt;
+        builder.mode(0o700);
+    }
+    builder.create(path)
+}
+/// Create a private streaming output without following or replacing an existing entry.
+pub fn open_new_owner_only(_surface: SurfaceWrite, path: &Path) -> std::io::Result<std::fs::File> {
+    let mut options = std::fs::OpenOptions::new();
+    options.create_new(true).write(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    options.open(path)
 }
