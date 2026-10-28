@@ -19,8 +19,15 @@ use std::{
 };
 
 mod create;
+mod mutation;
+mod publish;
 mod restore;
 pub use create::{create, create_observed, Creation, CreationBoundary, CreationError};
+pub use publish::{
+    publish, publish_observed, record_publication_failure, FailedPublication, Publication,
+    PublicationBoundary, PublicationError, PublicationFailure, PublicationFailureError,
+    PublicationFailureReason, PublicationMode, Published,
+};
 pub use restore::{
     restore, restore_observed, Restoration, RestorationBoundary, RestorationError, Restored,
 };

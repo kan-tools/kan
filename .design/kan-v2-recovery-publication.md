@@ -7,7 +7,7 @@ records intent, builds and verifies a separate complete standalone archive, then
 records the durable observation. The bundle and unsuccessful outputs remain
 retained. Completion never switches the service's live writer.
 
-This is an implementation plan, not delivered functionality or a closed parent
+This is an implemented candidate under qualification, not a closed parent
 acceptance criterion. It uses the frozen events, R1/O1 framing and historical
 selection in `kan-v2-recovery-bundle-codec.md`; no new wire schema is proposed.
 
@@ -101,8 +101,8 @@ explicit owner selection of one history writer; no automatic merge is implied.
 
 ## Process and boundaries
 The source references were inspected against the restoration candidate6a09d6e.
-Implementation waits for the current Content/creation review and restoration
-qualification so corrections propagate before another dependent checkpoint.
+The parent foundations passed fresh Opus review at bf3c44e with regression-test
+follow-ups, now carried into this publication checkpoint.
 Git-first documentation continues under day#168/kan#197, without live-log access,
 invented witnesses or reconstructed excluded claims. `day design check` was attempted and refused the worktree without its own
 kan workspace. The diagnostic is retained in `.local-state/publication-design-check.txt`;
@@ -112,3 +112,49 @@ Remote APIs, durable owner jobs, human recovery controls, backup placement and
 writer cutover remain subsequent slices of the approved full frontend roadmap.
 No live archive, keys, migration, installation or activation is authorized by a
 passing development publication test.
+
+
+## Implementation candidate
+
+The permanent `feat/kan-v2-recovery-publication` worktree starts at the frozen
+parent review checkpoint bf3c44e. The parent review ran in a separate immutable export; its frozen evidence
+remains unchanged. Local publication qualification began after it released
+the shared target.
+
+The API uses an explicit New/Resume mode. New requires the latest
+checkpoint and an unused attempt; Resume requires the independently retained
+checkpoint to occur in the complete current history and selects candidates
+strictly before the named intent. Both recompute R1/O1. Paths remain routing
+information: the signed protocol identifies content and attempt, not a pathname.
+An explicitly resumed attempt can create a missing output at the owner-selected
+path; it cannot replace an existing artifact. An already-observed retry still
+reverifies the actual selected output and returns the original observation.
+
+Shared mutation opening preserves restoration's read-only preflight, private
+participant checks, DELETE/4096 mode and bounded writer configuration. Under
+BEGIN IMMEDIATE the caller still reacquires and replays; the preflight is not
+mutation authority. Publication signs intent only after a complete selection
+is verified. The intent commit is synchronized and independently reopened
+before output reservation. A new output's rows, ordinary profile markers and
+verification share one transaction. Original raw metadata/proofs/plan/membership
+are copied exactly; derived columns are rebuilt from authenticated records.
+
+After output synchronization, a fresh DELETE-mode read transaction performs
+bounded raw acquisition, exact O1 comparison and ordinary profile verification.
+That transaction stays open through publication-observed commit/reopen, preventing
+normal SQLite writers from changing the verified snapshot during attribution.
+This is not a fence against hostile filesystem replacement. A separate explicit
+failure API appends only a closed-reason attributed unsuccessful check, which
+never asserts output absence. Failed output files and uncertain checkpoints are
+retained; explicit resume can later observe the same intent after failure.
+
+Tests cover both complete profiles, blocked missing evidence and partial
+copies, history-preserving retries after later restoration/failure, pins/aliases/
+resource refusal, conflicting or altered outputs, the held output snapshot, and
+18 abrupt-death phases. A Python oracle independently authenticates actual
+bundle history and compares the actual standalone output's framing commitment.
+These checks now pass author qualification; see
+`reviews/kan-v2-publication-author/` for results, controls and retained failures.
+Power loss and indefinitely blocked filesystem operations remain unqualified.
+Publication acceptance awaits fresh review; backup/rebuild and full human
+recovery remain open parent work.

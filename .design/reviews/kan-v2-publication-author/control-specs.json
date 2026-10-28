@@ -1,0 +1,230 @@
+{
+  "publication": [
+    [
+      "intent-commit-misclassified",
+      "src/evidence_store/bundle/publish.rs",
+      [
+        [
+          "attempted = Some(intent_pin.clone());\n        tx.commit()?;",
+          "tx.commit()?;\n        attempted = Some(intent_pin.clone());"
+        ]
+      ],
+      "evidence_bundle_creation",
+      "publication_real_commit_errors_report_the_attempted_checkpoint_and_preserve_outputs"
+    ],
+    [
+      "observed-commit-wrong-checkpoint",
+      "src/evidence_store/bundle/publish.rs",
+      [
+        [
+          "attempted = Some(observed_pin.clone());\n        tx.commit()?;",
+          "tx.commit()?;\n        attempted = Some(observed_pin.clone());"
+        ]
+      ],
+      "evidence_bundle_creation",
+      "publication_real_commit_errors_report_the_attempted_checkpoint_and_preserve_outputs"
+    ],
+    [
+      "physical-commitment-unwired",
+      "src/evidence_store/bundle/publish.rs",
+      [
+        [
+          "require(&actual == output, \"physical publication output commitment\")?;",
+          "let _ = (actual,output);"
+        ]
+      ],
+      "evidence_bundle_creation",
+      "publication_verifies_actual_output_on_retry_and_keeps_failed_artifacts"
+    ],
+    [
+      "ordinary-profile-unwired",
+      "src/evidence_store/bundle/publish.rs",
+      [
+        [
+          "    let binding = attested::Binding {\n        archive: context.archive,\n        scope: context.scope,\n        issuer: context.issuer.clone(),\n    };\n    let base = ledger.verify_contents()?;\n    if context.profile == 3 {\n        let plan = copied::stored_plan(&ledger.conn, &binding)?;\n        let verified = copied::full_audit(ledger, &binding, &plan)?;\n        require(verified.copy.source_copy_complete, \"partial published copy\")?;\n    } else {\n        ledger.check_profile(2)?;\n        ledger.check_write_profile(true)?;\n        attested::verify_contents(ledger, &binding, &base)?;\n    }\n",
+          ""
+        ]
+      ],
+      "evidence_bundle_creation",
+      "publication_retry_requires_ordinary_derived_columns_as_well_as_output_commitment"
+    ],
+    [
+      "future-restorations-selected",
+      "src/evidence_recovery_replay.rs",
+      [
+        [
+          "intent = Some(auth);\n            break;",
+          "intent = Some(auth.clone());"
+        ]
+      ],
+      "evidence_bundle_creation",
+      "publication_resume_keeps_historical_selection_after_failure_and_later_restoration"
+    ],
+    [
+      "verified-output-unpinned",
+      "src/evidence_store/bundle/publish.rs",
+      [
+        [
+          "phase = PublicationBoundary::OutputVerified;",
+          "output_reader.conn.execute_batch(\"ROLLBACK;\")?;\n        phase = PublicationBoundary::OutputVerified;"
+        ]
+      ],
+      "evidence_bundle_creation",
+      "publication_holds_verified_output_snapshot_through_observed_commit"
+    ],
+    [
+      "output-page-limit-raised",
+      "src/evidence_store/bundle/publish.rs",
+      [
+        [
+          "Some(request.output_bytes)",
+          "Some(request.output_bytes.max(1024*1024))"
+        ]
+      ],
+      "evidence_bundle_creation",
+      "publication_output_page_budget_retains_intent_and_failed_output_without_observed"
+    ],
+    [
+      "wrong-output-capability",
+      "src/evidence_store/bundle/publish.rs",
+      [
+        [
+          "crate::persistence::SurfaceWrite::EvidencePublication,",
+          "crate::persistence::SurfaceWrite::EvidenceBundle,"
+        ]
+      ],
+      "surface_conformance",
+      "every_persistence_facade_call_is_independently_inventoried"
+    ],
+    [
+      "wrong-output-read-capability",
+      "src/evidence_store/bundle/publish.rs",
+      [
+        [
+          "crate::persistence::SurfaceWrite::EvidencePublicationSource,",
+          "crate::persistence::SurfaceWrite::EvidenceBundleSource,"
+        ]
+      ],
+      "surface_conformance",
+      "every_persistence_facade_call_is_independently_inventoried"
+    ],
+    [
+      "cancelled-worker-admission-released",
+      "src/evidence_operations_collection/overview.rs",
+      [
+        [
+          "if control.handle.as_ref().is_some_and(|h| !h.is_finished()) {\n            return Ok(self.status());",
+          "if control.handle.as_ref().is_some_and(|h| !h.is_finished()) && !control.cancel.load(Ordering::Relaxed) {\n            return Ok(self.status());"
+        ],
+        [
+          "let _ = previous.join();",
+          "drop(previous);"
+        ]
+      ],
+      "evidence_overview_review_regressions",
+      "po8_cancel_then_refresh_does_not_start_concurrent_build"
+    ]
+  ],
+  "promoted_review_regressions": [
+    [
+      "D-F1-real-commit",
+      "src/evidence_store/bundle/restore.rs",
+      "attempted = Some(intended.clone());\n        tx.commit()?;",
+      "tx.commit()?;\n        attempted = Some(intended.clone());",
+      [
+        "cargo",
+        "test",
+        "--offline",
+        "--locked",
+        "--features",
+        "v2-crypto",
+        "--test",
+        "evidence_bundle_creation",
+        "restoration_actual_commit_busy_is_uncertain",
+        "--",
+        "--exact"
+      ]
+    ],
+    [
+      "D-F2-different-retry",
+      "src/evidence_store/bundle/restore.rs",
+      "            require(\n                data.candidates.iter().any(|(cid, bytes)| {\n                    cid == request.candidate.cid && bytes == request.candidate.bytes\n                }),\n                \"retry candidate differs\",\n            )?;\n",
+      "",
+      [
+        "cargo",
+        "test",
+        "--offline",
+        "--locked",
+        "--features",
+        "v2-crypto",
+        "--test",
+        "evidence_bundle_creation",
+        "retry_with_different_bytes_for_restored_cid_refuses",
+        "--",
+        "--exact"
+      ]
+    ],
+    [
+      "C-F1-typed-content",
+      "src/claim/codec.rs",
+      "    let Ipld::Map(mut fields) = super::ipld_decode::value(&bytes)? else {",
+      "    let Ipld::Map(mut fields) = atproto_dasl::from_reader(&bytes[..])? else {",
+      [
+        "cargo",
+        "test",
+        "--offline",
+        "--locked",
+        "--features",
+        "v2-crypto",
+        "--test",
+        "claim_v2_codec",
+        "cid_shaped_git_digest_round_trips_through_typed_claim_codec",
+        "--",
+        "--exact"
+      ]
+    ],
+    [
+      "C-F2-empty-container",
+      "src/claim/ipld_decode.rs",
+      "CborItem::Array(n) => {\n            if depth == maximum {",
+      "CborItem::Array(n) => {\n            if depth > maximum {",
+      [
+        "cargo",
+        "test",
+        "--offline",
+        "--locked",
+        "--features",
+        "v2-crypto",
+        "--lib",
+        "claim::ipld_decode::boundary_regressions"
+      ]
+    ],
+    [
+      "C-F2-allocation",
+      "src/claim/ipld_decode.rs",
+      "        max_alloc: bytes.len(),\n",
+      "",
+      [
+        "cargo",
+        "test",
+        "--offline",
+        "--locked",
+        "--features",
+        "v2-crypto",
+        "--lib",
+        "claim::ipld_decode::boundary_regressions"
+      ]
+    ],
+    [
+      "A-F1-canonical-reference",
+      "web/library/app.js",
+      "if(typeof ref!=='string'||ref.length>20||!/^(0|[1-9][0-9]*)$/.test(ref))",
+      "if(typeof ref!=='string'||ref.length>20)",
+      [
+        "node",
+        "--test",
+        "tests/library_ui.test.cjs"
+      ]
+    ]
+  ]
+}

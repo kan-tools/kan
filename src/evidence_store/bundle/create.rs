@@ -48,7 +48,7 @@ pub(super) fn sql_integer(value: u64) -> Result<i64> {
     i64::try_from(value).map_err(|_| Error::Invalid("SQLite integer range"))
 }
 
-struct MemberBytes {
+pub(super) struct MemberBytes {
     context: Context,
     plan: Option<Vec<u8>>,
     membership: Vec<(Cid, u64)>,
@@ -56,7 +56,7 @@ struct MemberBytes {
     objects: Vec<(Cid, Vec<u8>)>,
 }
 impl MemberBytes {
-    fn with_input<T>(&self, f: impl FnOnce(Input<'_>) -> Result<T>) -> Result<T> {
+    pub(super) fn with_input<T>(&self, f: impl FnOnce(Input<'_>) -> Result<T>) -> Result<T> {
         let membership: Vec<_> = self
             .membership
             .iter()
@@ -148,7 +148,7 @@ fn source_identity(conn: &Connection, context: &Context, work: &mut Work) -> Res
     )?;
     require(rows.next()?.is_none(), "source identity cardinality")
 }
-fn acquire(
+pub(super) fn acquire(
     conn: &Connection,
     context: Context,
     work: &mut Work,
