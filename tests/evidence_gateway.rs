@@ -922,6 +922,12 @@ async fn cli_profile_uses_explicit_files_and_streams_both_hops() {
         ckey.to_str().unwrap().into(),
         "--recipient".into(),
         recipient,
+        "--health-journal".into(),
+        root.path()
+            .join("missing-health-journal")
+            .to_str()
+            .unwrap()
+            .into(),
     ])
     .await;
     let response = reqwest::Client::builder()
@@ -1042,7 +1048,7 @@ async fn probe_tls12_client_rejected() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn idle_unauthenticated_connections_cannot_starve_either_listener() {
+async fn pending_peer_limit_refuses_new_connections_without_eviction() {
     let (p, calls, _p) =
         provider(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok".to_vec())
             .await;
@@ -1058,8 +1064,7 @@ async fn idle_unauthenticated_connections_cannot_starve_either_listener() {
     );
     let (local, _c) = start(ListenerAuth::LoopbackToken(TOKEN.into()), c).await;
     let mut idle = Vec::new();
-    // More than the whole pending queue at each hop: a fresh valid connection
-    // must evict pending work rather than being refused behind idle sockets.
+    // Excess same-peer arrivals are refused; already admitted sockets survive.
     for url in [&remote, &local] {
         let u = reqwest::Url::parse(url).unwrap();
         for _ in 0..40 {
@@ -1071,15 +1076,26 @@ async fn idle_unauthenticated_connections_cannot_starve_either_listener() {
         }
     }
     tokio::time::sleep(Duration::from_millis(100)).await;
-    for index in [0, 40] {
+    for index in [8, 48] {
         let mut byte = [0];
         let closed =
             tokio::time::timeout(Duration::from_secs(1), idle[index].read(&mut byte)).await;
         assert!(
             matches!(closed, Ok(Ok(0)) | Ok(Err(_))),
-            "old pending socket was not evicted"
+            "excess same-peer socket was not refused"
         );
     }
+    for index in [0, 40] {
+        let mut byte = [0];
+        assert!(
+            tokio::time::timeout(Duration::from_millis(100), idle[index].read(&mut byte))
+                .await
+                .is_err(),
+            "admitted socket was evicted"
+        );
+    }
+    drop(idle);
+    tokio::time::sleep(Duration::from_millis(100)).await;
     let r = reqwest::Client::builder()
         .no_proxy()
         .timeout(Duration::from_secs(3))
@@ -1270,7 +1286,7 @@ fn independent_reader_retains_unknown_event_bytes() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn authenticated_stream_survives_pending_connection_eviction() {
+async fn authenticated_stream_survives_pending_connection_churn() {
     let provider = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let p = format!("http://{}/fixed", provider.local_addr().unwrap());
     let (release, wait) = tokio::sync::oneshot::channel();
@@ -1373,5 +1389,127 @@ async fn rp_mtls_authenticated_slots_are_eight() {
         .unwrap();
     println!("PROBE R3 after release: {}", after.status());
     assert_eq!(after.status(), 200);
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn delayed_admitted_tls_handshake_survives_connection_churn() {
+    let (p, calls, _p) =
+        provider(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok".to_vec())
+            .await;
+    let gd = tempfile::tempdir().unwrap();
+    let (g, _, _) = config(Route::new(&p).unwrap(), Observer::Gateway, gd.path(), false);
+    let (url, _g) = start(tls(), g).await;
+    let u = reqwest::Url::parse(&url).unwrap();
+    let addr = format!("{}:{}", u.host_str().unwrap(), u.port().unwrap());
+    let tcp = tokio::net::TcpStream::connect(&addr).await.unwrap();
+    tokio::time::sleep(Duration::from_millis(50)).await;
+    let mut flood = Vec::new();
+    for _ in 0..80 {
+        flood.push(tokio::net::TcpStream::connect(&addr).await.unwrap());
+    }
+    tokio::time::sleep(Duration::from_millis(50)).await;
+    let mut roots = rustls::RootCertStore::empty();
+    for c in rustls::pki_types::CertificateDer::pem_slice_iter(CA) {
+        roots.add(c.unwrap()).unwrap();
+    }
+    use rustls::pki_types::pem::PemObject;
+    let certs: Vec<_> = rustls::pki_types::CertificateDer::pem_slice_iter(ID)
+        .map(|c| c.unwrap())
+        .collect();
+    let key = rustls::pki_types::PrivateKeyDer::from_pem_slice(ID).unwrap();
+    let cfg = rustls::ClientConfig::builder_with_provider(Arc::new(
+        rustls::crypto::ring::default_provider(),
+    ))
+    .with_protocol_versions(&[&rustls::version::TLS13])
+    .unwrap()
+    .with_root_certificates(roots)
+    .with_client_auth_cert(certs, key)
+    .unwrap();
+    let connector = tokio_rustls::TlsConnector::from(Arc::new(cfg));
+
+    let name = rustls::pki_types::ServerName::try_from(u.host_str().unwrap().to_owned()).unwrap();
+    let mut stream = tokio::time::timeout(Duration::from_secs(3), connector.connect(name, tcp))
+        .await
+        .unwrap()
+        .expect("admitted handshake survives churn");
+    stream.write_all(format!("POST /v1/forward HTTP/1.1\r\nHost: localhost\r\nx-kan-exchange: {}\r\nContent-Length: 1\r\nConnection: close\r\n\r\nx",hex(&[7;32])).as_bytes()).await.unwrap();
+    let mut response = Vec::new();
+    let _ = tokio::time::timeout(Duration::from_secs(3), stream.read_to_end(&mut response))
+        .await
+        .unwrap();
+    assert!(response.starts_with(b"HTTP/1.1 200"), "{:?}", response);
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+}
+
+// Linux supports distinct 127/8 source bindings without host reconfiguration.
+// macOS requires interface aliases, which this test must never install.
+#[cfg(target_os = "linux")]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn global_pending_cap_is_32_across_distinct_peers() {
+    let (p, calls, _p) = provider(b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n".to_vec()).await;
+    let gd = tempfile::tempdir().unwrap();
+    let (g, _, _) = config(Route::new(&p).unwrap(), Observer::Gateway, gd.path(), false);
+    let (url, _g) = start(tls(), g).await;
+    let u = reqwest::Url::parse(&url).unwrap();
+    let addr: std::net::SocketAddr = format!("127.0.0.1:{}", u.port().unwrap()).parse().unwrap();
+    let mut held = Vec::new();
+    for peer in 2..=5 {
+        for _ in 0..8 {
+            let socket = tokio::net::TcpSocket::new_v4().unwrap();
+            socket
+                .bind(format!("127.0.0.{peer}:0").parse().unwrap())
+                .unwrap();
+            held.push(socket.connect(addr).await.unwrap());
+        }
+    }
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    let mut excess = tokio::net::TcpStream::connect(addr).await.unwrap();
+    let mut byte = [0];
+    assert!(
+        matches!(
+            tokio::time::timeout(Duration::from_secs(1), excess.read(&mut byte)).await,
+            Ok(Ok(0)) | Ok(Err(_))
+        ),
+        "global pending cap did not refuse connection 33"
+    );
+    held.pop();
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    let mut available = tokio::net::TcpStream::connect(addr).await.unwrap();
+    assert!(
+        tokio::time::timeout(Duration::from_millis(100), available.read(&mut byte))
+            .await
+            .is_err(),
+        "freed pending capacity was not usable by another peer"
+    );
+    assert_eq!(calls.load(Ordering::SeqCst), 0);
+}
+
+#[cfg(target_os = "linux")]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn distinct_peer_can_authenticate_while_other_peer_saturates_pending_slots() {
+    let (p, calls, _p) =
+        provider(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok".to_vec())
+            .await;
+    let gd = tempfile::tempdir().unwrap();
+    let (g, _, _) = config(Route::new(&p).unwrap(), Observer::Gateway, gd.path(), false);
+    let (url, _g) = start(tls(), g).await;
+    let u = reqwest::Url::parse(&url).unwrap();
+    let addr: std::net::SocketAddr = format!("127.0.0.1:{}", u.port().unwrap()).parse().unwrap();
+    let mut held = Vec::new();
+    for _ in 0..80 {
+        let socket = tokio::net::TcpSocket::new_v4().unwrap();
+        socket.bind("127.0.0.2:0".parse().unwrap()).unwrap();
+        held.push(socket.connect(addr).await.unwrap());
+    }
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    let r = client(CA, true)
+        .post(&url)
+        .header("x-kan-exchange", hex(&[7; 32]))
+        .body("x")
+        .send()
+        .await
+        .expect("another peer retains handshake capacity");
+    assert_eq!(r.bytes().await.unwrap(), "ok");
     assert_eq!(calls.load(Ordering::SeqCst), 1);
 }

@@ -66,7 +66,9 @@ separate HostedRelay track.
 - The fold is a pure, deterministic function of (claim set, enrichment). Guard this.
 - Affordance, not enforcement — agents act; the record is made legible; drift
   surfaces in the graph as data. Do NOT port crosslink's blocking hooks.
-- One surface: CLI + MCP. No second/third UI.
+- One surface: CLI + MCP for v1. The owner explicitly authorized a v2 operator
+  front end on 2026-10-18: `.design/kan-v2-operations.md`. It reads the same
+  operations API as the CLI; this exception does not add a workflow authority.
 - Provenance is sacred: never fabricate or drop `cites` edges.
 
 ## Smell test

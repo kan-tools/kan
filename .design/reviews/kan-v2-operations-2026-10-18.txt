@@ -1,0 +1,97 @@
+# Adversarial review: kan v2 operations and front end
+
+**Verdict: BLOCK.** The build breaks an invariant its own design states: "A fixed SQLite page cap and bounded record count fail closed for telemetry persistence, not inference." Once the operations journal fills, the capture proxy can no longer restart with `--health-journal`.
+
+- **Range:** `2bbac8b5f9c4b9e101620ac5b53301030989132b..d55f82128e37b474ce7d22f6c96b04b116711cbb` (24 files, +1323/−45).
+- **Reviewer:** claude-opus-5-5 in a cold in-session pass with no delegation. The session ID isn't available to me. I didn't write this code.
+- **North star:** taken from your brief and `.design/kan-v2-operations.md` (telos/raw-data-and-projections). As instructed, I didn't read live kan/day teloi and didn't record a verdict claim; plain Git keeps the record.
+- **Export:** `/Users/m/code/kan-tools/.reviews/kan-v2-operations-d55f821/`. It is a `git archive` export with its own target, which I've since removed. Probes and logs are kept.
+- **Concurrent edits:** while I was reviewing, the author worktree picked up uncommitted edits by someone else (gateway, operations, tests, `ci.yml`, `app.js`). I didn't touch or review them. My export is byte-identical to d55f821.
+
+## The author's test gates, re-run independently
+
+| Gate | Result |
+|---|---|
+| `evidence_gateway` | 17 passed, 1 ignored |
+| `evidence_operations` | 4 passed |
+| lib `evidence_operations::tests` | 1 passed |
+| `surface_conformance` | 19 passed |
+| Node UI tests | 3 passed |
+| all-target Clippy `-D warnings`, fmt | clean |
+| citations | pass (run read-only in the author tree, because the script needs git) |
+
+All the claimed counts match. I didn't repeat the author's "revert the whole fix (8/8 hunks)" demonstration; I ran targeted mutants instead (below).
+
+## Findings
+
+1. **BLOCKING — a full journal stops proxy restart, which stops inference.**
+   - Probe `probe_full_journal_blocks_reporter_startup`: realistic attempt rows fill the 8192-page cap at about **79,740 attempts**, so the documented 100,000-attempt cap (`docs/V2-OPERATIONS.md:63`) can never be reached.
+   - There's no expiry and no erasure command, and every process start inserts a session row (`src/evidence_operations.rs:271`).
+   - After about **90 more restarts**, `reporter()` fails with "database or disk is full". `src/bin/kan-v2.rs:874-875` turns that into a startup error, so the collector or gateway won't start.
+   - The direction is backwards: a telemetry store's capacity stops inference.
+   - Fix: on any journal failure at startup, start anyway with a degraded reporter that counts everything as lost or falls back to stderr.
+
+2. **BLOCKING (paired with 1) — a brief journal lock stops archive delivery.**
+   - Probe `probe_journal_lock_stops_archive_worker`: holding a lock on the journal for 1.5 s makes `drain` exit with `DatabaseBusy`.
+   - Cause: the journal's busy timeout is only 100 ms (`:122`), and every `save_worker(...)?` at `:317,329,336,349` exits the worker on failure.
+   - The behaviour is documented (`V2-OPERATIONS.md:72`), but the shipped systemd example (`StartLimitBurst=5` within `StartLimitIntervalSec=60`, `RestartSec=5`) puts the unit into a permanently failed state if the lock lasts longer than about 25 s.
+   - That couples derived observations to delivery of raw evidence. Telemetry write failures should be counted and retried; they shouldn't end delivery.
+
+3. **Major — REQ-5's per-peer limit has no runtime coverage.**
+   - Mutant M3 removes the eight-per-peer cap entirely (`src/evidence_gateway.rs:499`), and all 17 gateway tests still pass. So did M1 (no IPv6 /64 grouping), M2 (no IPv4-mapped normalisation) and M4 (global cap raised to 64).
+   - AC-5 asks that a "delayed legitimate handshake from a **different** peer" survives churn. The test uses the same 127.0.0.1 peer for both the legitimate client and the flood (`tests/evidence_gateway.rs:1399-1402`), so it only proves "no eviction", not per-peer isolation.
+
+4. **Major follow-up — the telemetry queue drops the newest state during normal streaming.**
+   - Probe `probe_streaming_rate_drops_with_healthy_journal`, on a healthy, unlocked journal: 1500 updates for one attempt produced **1193 counted as dropped**, and one run persisted `observed=1468` instead of 1500.
+   - So the latest cumulative snapshot itself can be lost, and per-attempt unconfirmed counts (including the "Gaps only" filter) can undercount.
+   - The global loss warning still fires, so this never claims false completeness. But the dashboard can effectively never show "current", which trains operators to ignore the warning.
+   - Suggested fix: keep only the latest snapshot per attempt instead of a FIFO queue.
+
+5. **Other mutant survivors (tests too weak):**
+   - Operations: M5 (retry backoff removed), M6 (nonempty-since reset every iteration), M7 (session reads as clean after a crash), M9 (no page cap on reopen), M16 (unclosed sessions always zero), M18 (owner-only permission check removed), M21 (channel overflow not counted).
+   - Dashboard: M11 (duplicate Authorization headers accepted), M13 (non-loopback check removed from `serve`; the CLI still checks it).
+   - UI: M22 (stale-reporter warning disabled).
+   - M8 (blocking `send`) hung the suite until the 180 s bound. That's a timeout, not a kill.
+   - Killed: M10, M12, M14, M15, M17, M19, M20.
+
+6. **Minor:**
+   - `CLAUDE.md:69` still says "One surface… No second/third UI". The exception is recorded only in `.design`, with no ADR.
+   - AC-6 asks for supervisor arguments to be validated against CLI help, but nothing automates that. I checked by hand: they match, and `plutil -lint` passes. Templates exist only for the drain worker.
+   - The idle worker does a fully-synced write every second.
+   - Eight idle local sockets block the dashboard for about 5 s (a 9th client is closed immediately); the docs treat local users as trusted.
+   - The token comparison isn't constant-time.
+   - The busy flag can delay a reconnect after Lock until the next 5 s poll.
+
+**Verified as working:**
+- **Dashboard boundary** (12 hostile raw-HTTP cases): missing or `localhost` Host, `null` or `https` Origin, duplicate or lowercase or prefix-truncated tokens, OPTIONS and HEAD, path traversal were all refused. An absolute-form request returned 200, which is harmless because Host still has to match.
+- **Missing journal:** the API returns 503 rather than zeros.
+- **Rejected head:** it stays at the head and the worker shows a visible `retrying` state.
+- **Ambiguous commit** (archive committed, local ack lost): the worker resends identical bytes, acks once, and the archive holds exactly one commit.
+- **Full journal:** this doesn't stop the drain worker.
+- **Crash:** a killed reporter leaves its session unclosed.
+
+I couldn't verify the manual browser claims (desktop and 390 px mobile layout) because no browser is available here.
+
+## REQ/AC mapping
+
+| Item | Verdict | Evidence |
+|---|---|---|
+| REQ-1 / AC-1 | partial | Restart, replay, rejection and outage all hold. A journal lock ends delivery (finding 2). |
+| REQ-2 / AC-2 | **unmet** | Callbacks don't block, but a full journal blocks startup (finding 1), and the latest snapshot can be lost (finding 4). |
+| REQ-3 / AC-3 | met | Same snapshot shape from CLI and HTTP (author test); 503 when unavailable; stale state shows in the UI (M14 killed). |
+| REQ-4 / AC-4 | met (browser part unverifiable) | Boundary probes; M12, M17 and M20 killed; M11 and M13 survive. |
+| REQ-5 / AC-5 | partial (by code reading only) | M1–M4 survive; there's no different-peer test (finding 3). |
+| REQ-6 / AC-6 | partial | Arguments checked by hand; only drain templates exist; this review is the requested audit. |
+
+**To clear the BLOCK:** fix findings 1 and 2, add a different-peer admission test that kills M3 (ideally M1 and M2 too), and correct the 100,000-attempt claim. The fix round should get its own independent review.
+
+## Where the probes and logs are
+
+Everything is in `/Users/m/code/kan-tools/.reviews/kan-v2-operations-d55f821/`:
+- `src/tests/review_probes.rs` (8 probes: 5 pass, 3 are the failing findings)
+- `probes/mutate.py`
+- `logs/mutants.log`
+- `logs/probes-final.log`
+- `logs/test-*.log`
+
+No servers I started are still running.

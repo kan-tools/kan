@@ -63,7 +63,7 @@ pub struct Frontier {
     pub next: u64,
     pub previous: Option<String>,
 }
-#[derive(Debug, Clone, serde::Serialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Status {
     pub scope: String,
     pub writer: String,

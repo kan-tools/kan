@@ -18,6 +18,8 @@ impl SurfaceValue {
 
 /// Experimental v2 artifacts; schema columns are also inspected from SQLite in feature tests.
 pub const EVIDENCE_VALUES: &[SurfaceValue] = &[
+    SurfaceValue::new("evidence-operations:database", "*"),
+    SurfaceValue::new("evidence-operations:database-journal", "*"),
     SurfaceValue::new("evidence-restore:files", "*"),
     SurfaceValue::new("evidence-restore:plan.json", "*"),
     SurfaceValue::new("evidence-restore:report.json", "*"),
