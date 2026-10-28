@@ -1,0 +1,72 @@
+$ cargo test --features v2-crypto --lib evidence_library::budget_tests
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/reviews/opus-resilience-correction)
+    Finished `test` profile [unoptimized] target(s) in 5.83s
+     Running unittests src/lib.rs (target/debug/deps/kan-7f955e5e00633d5f)
+
+running 3 tests
+test evidence_library::budget_tests::cancelling_connection_releases_socket_and_execution_permits ... ok
+test evidence_library::budget_tests::whole_connection_deadline_includes_time_spent_queued ... ok
+test evidence_library::budget_tests::connection_admission_execution_and_deadlines_are_bounded ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 71 filtered out; finished in 0.00s
+
+exit=0
+$ cargo test --features v2-crypto --test evidence_reader
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/reviews/opus-resilience-correction)
+    Finished `test` profile [unoptimized] target(s) in 6.80s
+     Running tests/evidence_reader.rs (target/debug/deps/evidence_reader-3bbc78385966c01b)
+
+running 19 tests
+test library_browser_fixture ... ignored, manual browser fixture; requires KAN_LIBRARY_FIXTURE_INFO output path
+test library_refuses_thirteenth_socket_at_the_live_admission_boundary ... ok
+test pin_principal_and_audience_are_checked_even_with_valid_signatures ... ok
+test library_refuses_public_listeners_and_short_tokens_before_serving ... ok
+test reader_configuration_scope_count_and_duplicates_are_bounded ... ok
+test reader_refuses_reusing_the_storage_issuer_signing_key ... ok
+test library_http_authority_is_separate_and_denial_does_not_reveal_scope_existence ... ok
+test reader_identity_scope_and_decryption_key_are_separate_checks ... ok
+test inventory_is_snapshot_pinned_and_source_ranges_are_exact_across_scopes ... ok
+test reader_rejects_signed_page_completeness_and_tip_mismatches ... ok
+test revoked_grants_and_tampered_pins_cannot_read_cached_source ... ok
+test reader_cli_refuses_public_configuration_and_relative_private_key_paths ... ok
+test signed_reply_integrity_page_shape_and_source_membership_are_independent ... ok
+test source_refuses_a_valid_read_from_a_different_snapshot_history ... ok
+test large_source_is_returned_in_exact_bounded_ranges ... ok
+test library_body_read_deadline_returns_an_explicit_timeout ... ok
+test library_queues_a_browser_request_behind_four_idle_connections ... ok
+test catalog_verification_failure_is_not_an_empty_authorized_inventory ... ok
+test catalog_keeps_healthy_scopes_and_recovers_without_disclosing_failed_sources ... ok
+
+test result: ok. 18 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 6.16s
+
+exit=0
+$ cargo test --features v2-crypto --test evidence_capture_contention -- --nocapture
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/reviews/opus-resilience-correction)
+    Finished `test` profile [unoptimized] target(s) in 0.54s
+     Running tests/evidence_capture_contention.rs (target/debug/deps/evidence_capture_contention-cd3d36ed54c693da)
+
+running 6 tests
+P1 reader blocked by exclusive holder: true
+test p5_concurrent_capture_opens ... ok
+P2 ordinary queue after capture: ok=true waited=405.876417ms
+test p2_admission_restores_callers_busy_timeout ... ok
+P1 elapsed=623.282333ms status=exit status: 0 stdout_len=8 last={"attempt":"606e7f6111e649da2a44974014a8cdae1a21dfe4493d090f611d520625ac1fb6","observer":"gateway","observed":7,"locally_queued":0,"unconfirmed":7,"recording_gap":true,"remote_acknowledged":false,"status":200,"outcome":"completed"}
+test p1_cli_open_does_not_wait_on_exclusive_lock ... ok
+Q2 per-observation ms=[113, 106, 102, 100, 100, 100, 101, 100, 100, 96, 0, 0, 0, 0, 0] total=1.023702792s
+Q2 after unlock queued=1 unconfirmed=15
+test q2_per_observation_cap_and_allowance ... ok
+P3 A: observed=26 queued=26 unconfirmed=0 gap=false
+P3 B: observed=26 queued=26 unconfirmed=0 gap=false
+P3 spool pending=52
+test p3_concurrent_captures_share_spool ... ok
+P4 writer windows=2 (5 ms each, ~9% duty): observed=88 queued=88 unconfirmed=0
+test p4_capture_beside_brief_periodic_writer ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.57s
+
+exit=0
+$ node --test tests/library_ui.test.cjs tests/operations_ui.test.cjs tests/theme_ui.test.cjs
+ℹ tests 41
+ℹ pass 41
+ℹ fail 0
+exit=

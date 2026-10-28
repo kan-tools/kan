@@ -208,12 +208,58 @@ impl capture::Sink for FrontierSink<'_> {
         .map_err(|_| capture::Unconfirmed)
     }
 }
+/// Coordinate the first writer window after spool open and at admission entry.
+/// Preserve both production Sink methods, including the actual spent-wait value.
+struct FirstCaptureWindow {
+    request: std::sync::mpsc::SyncSender<Instant>,
+    locked: std::sync::mpsc::Receiver<()>,
+}
+struct CoordinatedSink<'a> {
+    inner: Box<dyn capture::Sink + 'a>,
+    first: Option<FirstCaptureWindow>,
+}
+impl CoordinatedSink<'_> {
+    fn first_window(&mut self) {
+        if let Some(first) = self.first.take() {
+            first.request.send(Instant::now()).unwrap();
+            first
+                .locked
+                .recv_timeout(Duration::from_secs(5))
+                .expect("synthetic writer must establish first contention window");
+        }
+    }
+}
+impl capture::Sink for CoordinatedSink<'_> {
+    fn admit(&mut self, operation: &[u8; 16], frame: &[u8]) -> Result<(), capture::Unconfirmed> {
+        self.first_window();
+        self.inner.admit(operation, frame)
+    }
+    fn admit_with_wait(
+        &mut self,
+        operation: &[u8; 16],
+        frame: &[u8],
+        wait: Duration,
+    ) -> (Result<(), capture::Unconfirmed>, Duration) {
+        self.first_window();
+        self.inner.admit_with_wait(operation, frame, wait)
+    }
+}
+
 /// One capture attempt in its own thread/runtime and connection.
 fn capture_thread(
     path: PathBuf,
     key: PathBuf,
     url: String,
     frontier_only: bool,
+) -> std::thread::JoinHandle<capture::Health> {
+    capture_thread_with_window(path, key, url, frontier_only, None)
+}
+fn capture_thread_with_window(
+    path: PathBuf,
+    key: PathBuf,
+    url: String,
+    frontier_only: bool,
+    first: Option<FirstCaptureWindow>,
 ) -> std::thread::JoinHandle<capture::Health> {
     std::thread::spawn(move || {
         let signer = Identity::load_existing(&key).unwrap();
@@ -222,7 +268,7 @@ fn capture_thread(
         } else {
             Spool::open_for_capture(&path).ok()
         };
-        let mut sink: Box<dyn capture::Sink + '_> = if frontier_only {
+        let inner: Box<dyn capture::Sink + '_> = if frontier_only {
             Box::new(FrontierSink {
                 spool: spool.as_mut().unwrap(),
                 signer: &signer,
@@ -234,6 +280,7 @@ fn capture_thread(
                 recipient: crypto::public_key(&PRIVATE).unwrap(),
             })
         };
+        let mut sink = CoordinatedSink { inner, first };
         let mut last = None;
         let mut notify = |h: &capture::Health| last = Some(h.clone());
         let rt = tokio::runtime::Builder::new_current_thread()
@@ -244,7 +291,7 @@ fn capture_thread(
         let r = rt.block_on(capture::forward(
             &Route::new(&url).unwrap(),
             vec![1; 16],
-            sink.as_mut(),
+            &mut sink,
             &mut notify,
             &mut out,
             Duration::from_secs(30),
@@ -303,32 +350,77 @@ async fn p4_capture_beside_brief_periodic_writer() {
     let path = make_spool(dir.path(), &writer);
     let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
     let (p, s) = (path.clone(), stop.clone());
+    let (request, requested) = std::sync::mpsc::sync_channel(0);
+    let (locked, lock_ready) = std::sync::mpsc::sync_channel(0);
     let drainer = std::thread::spawn(move || {
         let c = rusqlite::Connection::open(&p).unwrap();
-        let mut held = 0;
+        // This synthetic writer must not assume it wins SQLite's lock race.
+        // A missed window creates no contention; retry the next window. Keep
+        // unexpected errors fatal and require real held windows below.
+        c.busy_timeout(Duration::ZERO).unwrap();
+        // No capture writes can race this first acquisition: the first Sink
+        // call waits for our acknowledgement, after its spool has opened.
+        let first_admission = requested
+            .recv_timeout(Duration::from_secs(5))
+            .expect("capture must reach its first admission");
+        c.execute_batch("BEGIN IMMEDIATE").unwrap();
+        let first_start = Instant::now();
+        locked.send(()).unwrap();
+        std::thread::sleep(Duration::from_millis(5));
+        c.execute_batch("ROLLBACK").unwrap();
+        let first_end = Instant::now();
+        let mut held = 1;
         while !s.load(std::sync::atomic::Ordering::SeqCst) {
             std::thread::sleep(Duration::from_millis(50));
-            c.execute_batch("BEGIN IMMEDIATE").unwrap();
+            if s.load(std::sync::atomic::Ordering::SeqCst) {
+                break;
+            }
+            match c.execute_batch("BEGIN IMMEDIATE") {
+                Ok(()) => {}
+                Err(rusqlite::Error::SqliteFailure(error, _))
+                    if error.code == rusqlite::ErrorCode::DatabaseBusy
+                        || error.code == rusqlite::ErrorCode::DatabaseLocked =>
+                {
+                    continue;
+                }
+                Err(error) => panic!("synthetic writer failed: {error}"),
+            }
             std::thread::sleep(Duration::from_millis(5));
             c.execute_batch("ROLLBACK").unwrap();
             held += 1;
         }
-        held
+        (held, first_admission, first_start, first_end)
     });
     let (url, task) = drip(80, 512, Duration::from_millis(5)).await;
-    let h = capture_thread(path.clone(), key, url, false)
-        .join()
-        .unwrap();
+    let capture_started = Instant::now();
+    let capture_result = capture_thread_with_window(
+        path.clone(),
+        key,
+        url,
+        false,
+        Some(FirstCaptureWindow {
+            request,
+            locked: lock_ready,
+        }),
+    )
+    .join();
+    let capture_finished = Instant::now();
     stop.store(true, std::sync::atomic::Ordering::SeqCst);
-    let held = drainer.join().unwrap();
+    let drain_result = drainer.join();
     task.abort();
+    let h = capture_result.unwrap();
+    let (held, first_admission, first_start, first_end) = drain_result.unwrap();
     assert!(held > 0);
+    assert!(capture_started <= first_admission && first_admission <= first_start);
+    assert!(first_start < first_end && first_end <= capture_finished);
+    assert!(first_end.duration_since(first_start) >= Duration::from_millis(5));
     assert_eq!(
         h.locally_queued, h.observed,
         "brief contention must not disable capture"
     );
     println!(
-        "P4 writer windows={held} (5 ms each, ~9% duty): observed={} queued={} unconfirmed={}",
+        "P4 writer windows={held} (first coordinated, then periodic; first {:?} inside capture {:?}): observed={} queued={} unconfirmed={}",
+        first_end.duration_since(first_start), capture_finished.duration_since(capture_started),
         h.observed, h.locally_queued, h.unconfirmed
     );
 }

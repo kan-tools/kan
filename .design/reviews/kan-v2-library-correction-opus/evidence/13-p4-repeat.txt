@@ -1,0 +1,36 @@
+--- run 1
+P4 writer windows=1 (5 ms each, ~9% duty): observed=88 queued=88 unconfirmed=0
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 1.34s
+--- run 2
+thread 'p4_capture_beside_brief_periodic_writer' (8995259) panicked at tests/evidence_capture_contention.rs:341:5:
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 5 filtered out; finished in 1.29s
+--- run 3
+P4 writer windows=1 (5 ms each, ~9% duty): observed=87 queued=87 unconfirmed=0
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 1.26s
+--- run 4
+thread 'p4_capture_beside_brief_periodic_writer' (8995289) panicked at tests/evidence_capture_contention.rs:341:5:
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 5 filtered out; finished in 1.29s
+--- run 5
+P4 writer windows=2 (5 ms each, ~9% duty): observed=88 queued=88 unconfirmed=0
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 1.28s
+--- run 6
+P4 writer windows=1 (5 ms each, ~9% duty): observed=88 queued=88 unconfirmed=0
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 1.30s
+--- run 7
+thread 'p4_capture_beside_brief_periodic_writer' (8995385) panicked at tests/evidence_capture_contention.rs:341:5:
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 5 filtered out; finished in 1.29s
+--- run 8
+P4 writer windows=2 (5 ms each, ~9% duty): observed=88 queued=88 unconfirmed=0
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 1.32s
+--- run 9
+P4 writer windows=1 (5 ms each, ~9% duty): observed=88 queued=88 unconfirmed=0
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 1.33s
+--- run 10
+thread 'p4_capture_beside_brief_periodic_writer' (8995430) panicked at tests/evidence_capture_contention.rs:341:5:
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 5 filtered out; finished in 1.31s
+--- run 11
+thread 'p4_capture_beside_brief_periodic_writer' (8995443) panicked at tests/evidence_capture_contention.rs:341:5:
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 5 filtered out; finished in 1.29s
+--- run 12
+P4 writer windows=2 (5 ms each, ~9% duty): observed=88 queued=88 unconfirmed=0
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 1.31s

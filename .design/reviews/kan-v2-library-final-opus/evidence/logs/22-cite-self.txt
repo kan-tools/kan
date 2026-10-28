@@ -1,0 +1,2 @@
+self-test: 8 bad citations reported AND exit 1; good citations resolved AND exit 0
+exit=0

@@ -1,0 +1,41 @@
+file=web/library/app.js
+--- old
+response.status === 401 || response.status === 403
++++ new
+response.status === 401
+
+$ node --test --test-reporter=tap --test-name-pattern=^both\ authorization\ denial\ statuses\ lock\ an\ already\ open\ Library$ tests/library_ui.test.cjs
+exit=1
+TAP version 13
+# Subtest: both authorization denial statuses lock an already open Library
+not ok 1 - both authorization denial statuses lock an already open Library
+  ---
+  duration_ms: 4.342875
+  type: 'test'
+  location: '/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/reviews/opus-resilience/tests/library_ui.test.cjs:41:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    Expected values to be strictly equal:
+    
+    false !== true
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: true
+  actual: false
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/reviews/opus-resilience/tests/library_ui.test.cjs:41:282)
+    async Test.run (node:internal/test_runner/test:1069:7)
+    async startSubtestAfterBootstrap (node:internal/test_runner/harness:332:3)
+  ...
+1..1
+# tests 1
+# suites 0
+# pass 0
+# fail 1
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 34.657958
+

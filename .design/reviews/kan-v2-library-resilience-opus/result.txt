@@ -1,0 +1,77 @@
+# Adversarial review: Library resilience checkpoint
+
+**Verdict: APPROVE WITH FOLLOW-UPS.** The production code does what the checkpoint promises, including under hostile, timing and cancellation probes. The gaps are in the committed tests, not the behaviour.
+
+**What was reviewed.** HEAD `e71cdf8` against HEAD^ `60f3d36`, using `.design/kan-v2-library-resilience.md` and the parent Library and full-frontend designs. I'm a fresh, independent Opus 5.5 reviewer and did not delegate. I made no kan/day writes, so the step that records the verdict in kan was skipped on purpose. The full report is in `review-evidence/REPORT.md`, with raw logs, probe scripts and mutant logs next to it.
+
+**North star.** `telos/raw-data-and-projections`, taken from the supplied `north-star.json`. It deliberately has no witnesses, and two claims are withheld from that read. `coverage` is computed per request and never stored. No storage, service or surface file changed (`50-storage-surface-unchanged.txt` is empty).
+
+## Independent verification
+All green before the mutations and again after a clean rebuild of kan:
+
+| Check | Result |
+|---|---|
+| Budget unit tests | 2/2 pass |
+| `evidence_reader` | 17 pass, 1 ignored (manual browser fixture) |
+| Real CLI test | 1/1 pass |
+| `surface_conformance` | 19/19 pass |
+| Node library/ops/theme | 41/41 pass |
+| Python adapter | 7/7 OK |
+| Strict v2 all-target Clippy `-D warnings` | exit 0 |
+| `cargo fmt --check` | exit 0 |
+
+**Trailer replay.** `scripts/revert_v2.py --verify HEAD` reports `DEMONSTRATED; all trailer tests reproduced=True`. Under the revert, all three named tests compile and fail an assertion (`tests/evidence_reader.rs:952`, `:1022`, and the Node AssertionError), then pass again after restore. No compiler kill and no runner timeout.
+
+One caveat: under the whole revert, the catalog test fails at its time-budget check before it reaches the coverage assertion. So the replay proves the deadline, not partial-flag handling. I showed partial-flag handling separately with mutants R01, R02 and R06, which were killed.
+
+## Requirement / acceptance table
+
+| Item | Verdict | Evidence |
+|---|---|---|
+| REQ-1: keep healthy scopes, explicit coverage, denial omitted, nothing about failed scopes returned | met in code; test gaps | `src/evidence_library.rs:59-78`. My probe P1: a denial-only catalog is `complete` with exactly the five expected keys. R03, R08 and R12 survive the committed suite; my probes kill all three. |
+| REQ-2: 5s upstream, groups of four, 3s body, 4/12 connections, 6s queue, 35s whole, cancellation | met in code; bound gaps | `evidence_reader.rs:152-157`; `evidence_library.rs:156-163`, `:193-203`, `:248-268`. P2: 16 stalled scopes return 200 partial in 20.06s. P4: once clients drop four in-flight catalogs, the next request is served in 1.1ms. |
+| REQ-3: persistent partial notice, Retry sources clears old authority, lock blocks late replies | met | `web/library/app.js:18`, `:21-35`, `:106-133`; UI mutants U06–U27 killed. U03–U05 survive only because three late-reply guards back each other up; removing all three (U28) is killed. |
+| REQ-4: capability lists, 401/403, Previous, malformed/duplicate capabilities, directional controls | met | `tests/evidence_reader.rs:676-690`; R07, U01, U02, U11, U15–U18 and U19–U22b all killed by compiled assertions. |
+| REQ-5: real-browser range export | **partial, limitation only** | Browser README says the download timed out. **File delivery is not verified** and is not counted. |
+| REQ-6: storage/admission preserved, review, reversion, follow-ups visible | met | Empty storage diff; the ledger keeps the later roadmap steps open. |
+| AC-1 | partial | Behaviour verified. The committed suite doesn't pin "denial alone leaves coverage complete" (R03; `tests/evidence_reader.rs:704-711` only checks the scope count), "no extra count field" (R08), or "a timeout is never a denial" (R12). |
+| AC-2 | partial | Helper and fifth-socket tests kill R20–R23, R25, R30 and R32. Two survivors: the 35s deadline isn't proven to include queue time (R24), and the live `serve()` socket limit isn't exercised (R31: a 4096-socket budget passes everything). |
+| AC-3 | met | Node tests and UI mutants. |
+| AC-4 | met | Every kill is an assertion failure; no compile errors in any mutant log. |
+| AC-5 | met via the accepted limitation | Author's desktop/mobile screenshots of the partial state; retry and lock are described in text only. I could not rerun the browser myself. This fallback doesn't cover the parent design's export delivery, which is still open. |
+| AC-6 | met | As REQ-6. |
+
+## Findings
+- **F1 – Privacy, low:**
+  - Nothing about failed scopes appears in the JSON, but response time does reveal how many groups of four had a stalled check.
+  - P3 measured 5.10s with stalled scope 0, 5.10s with 0 and 1, and 10.02s with 0 and 4.
+  - That gives a lower bound on stalled sources. It doesn't identify them, and fast failures (forged, refused) don't show.
+  - The docs' "without identifying or counting them" is only true of the response body.
+- **F2 – Test gap, medium:** R03, R08 and R12 are correct in code but not pinned by committed tests. My P1 and P2 assertions kill each one.
+- **F3 – Test gap, low-medium:** R24 and R31 survive, and so do the ±1s deadline mutants R11 (6s upstream) and R13 (4s body). `serve()` does call the tested helper (R30 killed), but the live socket limit isn't exercised.
+- **F4 – Evidence:** I did not rerun the browser. Download delivery is unverified.
+- **F5 – Cosmetic:** after a failed retry, the coverage banner keeps its old `partial` styling (`app.js:40`). The client also doesn't validate the shape of scope entries; the server rechecks pins, so this grants no extra access.
+
+## Scope narrowing and house rules
+- All four instances of narrowing language are legitimate: download delivery is still marked unverified, the per-scope error rows were dropped on purpose for privacy, a slow source is shown as partial rather than absent, and the out-of-scope roadmap items stay required.
+- No house-rule violations: no store mutation, no stored computed values, no enforcement hooks, no new write authority. The v2 frontend is authorized by the owner.
+
+## Problems with my own runs
+- My first directional-control mutants matched nothing, because the file writer turned the escapes into literal characters. I re-ran them correctly.
+- My first probe run used tokens one character too short, which `serve` refuses. Those results are kept, labelled INVALID, and the probes were re-run with valid tokens.
+
+## Restoration and cleanup
+- Tracked-file hashes before and after are identical, with no tracked diff.
+- After `cargo clean -p kan` (832 files removed) and a full rebuild, every check above is green again.
+- No probe or test processes and no reviewer listeners remain. All servers were loopback fixtures inside tests.
+- Left for parent cleanup: this export's `target/` and `.local-state/reversion/02057c8236bd4d24a5ff4be6a1f98e37`. The untracked files are `review-evidence/` and the existing `north-star.json`.
+
+## Follow-ups
+1. Add the P1/P2 assertions to the committed tests, especially "a denial-only catalog is `complete`" and "a timeout is never a denial" (R03, R08, R12).
+2. Add a test that the 35s deadline includes queue time (R24), and either a live 13th-socket refusal test or one that binds `serve()`'s socket limit (R31). Tighten the deadline assertions (R11, R13).
+3. Either reword "without counting them" or make catalog response time independent of how many checks stall (F1).
+4. Reset the coverage banner's styling when a retry fails (F5).
+
+Actual browser file delivery, the missing-evidence rows, the collection overview and the rest of the full-frontend roadmap remain open; this approval doesn't close any of them.
+
+**APPROVE WITH FOLLOW-UPS**

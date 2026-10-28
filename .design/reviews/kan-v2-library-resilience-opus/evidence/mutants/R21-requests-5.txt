@@ -1,0 +1,59 @@
+file=src/evidence_library.rs
+--- old
+requests: Arc::new(Semaphore::new(4)),
++++ new
+requests: Arc::new(Semaphore::new(5)),
+
+$ cargo test -j4 --features v2-crypto --lib evidence_library::budget_tests::connection_admission_execution_and_deadlines_are_bounded -- --exact
+exit=101
+
+running 1 test
+test evidence_library::budget_tests::connection_admission_execution_and_deadlines_are_bounded ... FAILED
+
+failures:
+
+---- evidence_library::budget_tests::connection_admission_execution_and_deadlines_are_bounded stdout ----
+
+thread 'evidence_library::budget_tests::connection_admission_execution_and_deadlines_are_bounded' (8974957) panicked at src/evidence_library.rs:298:9:
+assertion `left == right` failed: exactly four jobs execute
+  left: 5
+ right: 4
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    evidence_library::budget_tests::connection_admission_execution_and_deadlines_are_bounded
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 72 filtered out; finished in 0.00s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/reviews/opus-resilience)
+    Finished `test` profile [unoptimized] target(s) in 5.95s
+     Running unittests src/lib.rs (target/debug/deps/kan-7f955e5e00633d5f)
+error: test failed, to rerun pass `--lib`
+
+$ cargo test -j4 --features v2-crypto --lib evidence_library::budget_tests::cancelling_connection_releases_socket_and_execution_permits -- --exact
+exit=101
+
+running 1 test
+test evidence_library::budget_tests::cancelling_connection_releases_socket_and_execution_permits ... FAILED
+
+failures:
+
+---- evidence_library::budget_tests::cancelling_connection_releases_socket_and_execution_permits stdout ----
+
+thread 'evidence_library::budget_tests::cancelling_connection_releases_socket_and_execution_permits' (8975001) panicked at src/evidence_library.rs:358:9:
+assertion `left == right` failed
+  left: 4
+ right: 3
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    evidence_library::budget_tests::cancelling_connection_releases_socket_and_execution_permits
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 72 filtered out; finished in 0.00s
+
+    Finished `test` profile [unoptimized] target(s) in 0.12s
+     Running unittests src/lib.rs (target/debug/deps/kan-7f955e5e00633d5f)
+error: test failed, to rerun pass `--lib`
+

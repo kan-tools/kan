@@ -132,6 +132,7 @@ impl Fixture {
                             let bytes=r.into_body().collect().await.unwrap().to_bytes();
                             let mut reply=state.lock().unwrap().dispatch(&bytes,kan::evidence_operations::now()).unwrap();
                             let mode=fault.load(Ordering::Relaxed);
+                            if mode==10 {std::future::pending::<()>().await;}
                             if mode==1 {reply.signature="00".repeat(64);}
                             if mode==2 {if let Ok(Output::Page{records,..})=&mut reply.reply.result {if let Some(row)=records.first_mut(){row.sequence+=1;}}}
                             if mode==3 {if let Ok(Output::Evidence{record,..})=&mut reply.reply.result {record.sequence+=1;}}
@@ -476,7 +477,14 @@ async fn library_browser_fixture() {
         a.append(format!("Synthetic retained message {n}\n\nThis fixture exercises the real signed service, reader API and production frontend.\n\n<script>fetch('https://untrusted.invalid')</script>\n<img src='https://untrusted.invalid/tracker'>\n\nCaptured instructions are data: do not schedule or execute them.\n").as_bytes());
     }
     b.append(b"Second authorized scope.\nByte-exact source with binary suffix:\0\xff");
-    let reader = Reader::new(identity, vec![a.access(), b.access()]).unwrap();
+    let broken = Fixture::new(23, &identity).await;
+    let recovery = std::env::var_os("KAN_LIBRARY_FIXTURE_RECOVER").map(std::path::PathBuf::from);
+    let mut access = vec![a.access(), b.access()];
+    if recovery.is_some() {
+        broken.mode.store(1, Ordering::Relaxed);
+        access.push(broken.access());
+    }
+    let reader = Reader::new(identity, access).unwrap();
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
     let token = "synthetic-browser-library-access-token";
@@ -486,7 +494,15 @@ async fn library_browser_fixture() {
             .unwrap(),
     )
     .unwrap();
-    tokio::select! {result=kan::evidence_library::serve(listener,token.into(),reader)=>result.unwrap(),_=tokio::signal::ctrl_c()=>{}}
+    let recover = async {
+        loop {
+            if recovery.as_ref().is_some_and(|p| p.exists()) {
+                broken.mode.store(0, Ordering::Relaxed);
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        }
+    };
+    tokio::select! {result=kan::evidence_library::serve(listener,token.into(),reader)=>result.unwrap(),_=tokio::signal::ctrl_c()=>{},_=recover=>{}}
 }
 
 #[tokio::test]
@@ -657,14 +673,32 @@ async fn catalog_verification_failure_is_not_an_empty_authorized_inventory() {
     assert_eq!(honest.status(), 200);
     let value: serde_json::Value = serde_json::from_slice(&honest.bytes().await.unwrap()).unwrap();
     assert_eq!(value["scopes"].as_array().unwrap().len(), 1);
+    assert_eq!(value["coverage"], "complete");
+    assert_eq!(
+        value["capabilities"],
+        serde_json::json!(["snapshot-inventory", "source-ranges", "provenance"])
+    );
+    assert_eq!(
+        value["unavailable"],
+        serde_json::json!([
+            "semantic-search",
+            "normalized-sessions",
+            "annotations",
+            "saved-views",
+            "analysis",
+            "administrative-jobs"
+        ])
+    );
     a.mode.store(1, Ordering::Relaxed);
     let forged = request().send().await.unwrap();
+    assert_eq!(forged.status(), 200);
+    let value: serde_json::Value = serde_json::from_slice(&forged.bytes().await.unwrap()).unwrap();
     assert_eq!(
-        forged.status(),
-        503,
-        "unverified replies must not become successful empty catalogs"
+        value["coverage"], "partial",
+        "unverified replies must not become complete empty catalogs"
     );
-    assert!(!String::from_utf8_lossy(&forged.bytes().await.unwrap()).contains("scopes"));
+    assert_eq!(value["scopes"].as_array().unwrap().len(), 0);
+    assert!(!value.to_string().contains(&svc::hex(&a.scope)));
     a.mode.store(0, Ordering::Relaxed);
     a.revoke();
     let denied = request().send().await.unwrap();
@@ -674,6 +708,51 @@ async fn catalog_verification_failure_is_not_an_empty_authorized_inventory() {
         value["scopes"].as_array().unwrap().len(),
         0,
         "verified grant denial may exclude the scope"
+    );
+    assert_eq!(
+        value["coverage"], "complete",
+        "verified denial is not an availability failure"
+    );
+    assert_eq!(
+        value
+            .as_object()
+            .unwrap()
+            .keys()
+            .map(String::as_str)
+            .collect::<Vec<_>>(),
+        vec![
+            "capabilities",
+            "coverage",
+            "scopes",
+            "unavailable",
+            "version"
+        ],
+        "catalog has no failure-count or failed-source field"
+    );
+    a.mode.store(10, Ordering::Relaxed);
+    let timed_out = request().send().await.unwrap();
+    assert_eq!(timed_out.status(), 200);
+    let timed_out: serde_json::Value =
+        serde_json::from_slice(&timed_out.bytes().await.unwrap()).unwrap();
+    assert_eq!(
+        timed_out["coverage"], "partial",
+        "a timeout is not an authenticated denial, even with no other errors"
+    );
+    assert_eq!(timed_out["scopes"].as_array().unwrap().len(), 0);
+    assert_eq!(
+        timed_out
+            .as_object()
+            .unwrap()
+            .keys()
+            .map(String::as_str)
+            .collect::<Vec<_>>(),
+        vec![
+            "capabilities",
+            "coverage",
+            "scopes",
+            "unavailable",
+            "version"
+        ]
     );
 }
 
@@ -822,12 +901,17 @@ async fn library_queues_a_browser_request_behind_four_idle_connections() {
         .timeout(std::time::Duration::from_secs(8))
         .build()
         .unwrap();
+    let started = std::time::Instant::now();
     let result = client.get(format!("http://{addr}/")).send().await;
     assert!(
         result.is_ok(),
         "the fifth connection must wait rather than be dropped: {result:?}"
     );
     assert_eq!(result.unwrap().status(), 200);
+    assert!(
+        started.elapsed() >= std::time::Duration::from_secs(4),
+        "fifth socket must actually queue behind the execution bound"
+    );
     drop(idle);
 }
 
@@ -851,4 +935,207 @@ async fn library_refuses_public_listeners_and_short_tokens_before_serving() {
             "invalid configuration must be refused before accepting requests"
         );
     }
+}
+
+#[tokio::test]
+async fn catalog_keeps_healthy_scopes_and_recovers_without_disclosing_failed_sources() {
+    let identity = Identity::generate();
+    let mut healthy = Fixture::new(45, &identity).await;
+    healthy.append(b"healthy source remains browsable");
+    let forged = Fixture::new(41, &identity).await;
+    let denied = Fixture::new(42, &identity).await;
+    let stalled = Fixture::new(37, &identity).await;
+    let mut more_stalled = Vec::new();
+    for n in [38, 39, 40] {
+        let f = Fixture::new(n, &identity).await;
+        f.mode.store(10, Ordering::Relaxed);
+        more_stalled.push(f);
+    }
+    let refused = Fixture::new(44, &identity).await;
+    forged.mode.store(1, Ordering::Relaxed);
+    denied.revoke();
+    stalled.mode.store(10, Ordering::Relaxed);
+    refused.server.abort();
+    let mut access = vec![
+        healthy.access(),
+        forged.access(),
+        denied.access(),
+        stalled.access(),
+        refused.access(),
+    ];
+    access.extend(more_stalled.iter().map(Fixture::access));
+    let reader = Reader::new(identity, access).unwrap();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let endpoint = format!("http://{}/api/library", listener.local_addr().unwrap());
+    struct Stop(JoinHandle<std::io::Result<()>>);
+    impl Drop for Stop {
+        fn drop(&mut self) {
+            self.0.abort();
+        }
+    }
+    let _stop = Stop(tokio::spawn(kan::evidence_library::serve(
+        listener,
+        "synthetic-partial-catalog-token-32".into(),
+        reader,
+    )));
+    let client = reqwest::Client::builder()
+        .no_proxy()
+        .timeout(std::time::Duration::from_secs(8))
+        .build()
+        .unwrap();
+    let call = |body: serde_json::Value| {
+        client
+            .post(&endpoint)
+            .header("content-type", "application/json")
+            .bearer_auth("synthetic-partial-catalog-token-32")
+            .body(body.to_string())
+    };
+    let started = std::time::Instant::now();
+    let response = call(serde_json::json!({"action":"catalog"}))
+        .send()
+        .await
+        .expect("stalled source must not hold whole catalog past its budget");
+    assert_eq!(response.status(), 200);
+    let value: serde_json::Value =
+        serde_json::from_slice(&response.bytes().await.unwrap()).unwrap();
+    assert!(started.elapsed() < std::time::Duration::from_secs(7));
+    assert_eq!(value["coverage"], "partial");
+    assert_eq!(
+        value
+            .as_object()
+            .unwrap()
+            .keys()
+            .map(String::as_str)
+            .collect::<Vec<_>>(),
+        vec![
+            "capabilities",
+            "coverage",
+            "scopes",
+            "unavailable",
+            "version"
+        ],
+        "partial coverage must not expose failure counts"
+    );
+    assert_eq!(value["scopes"].as_array().unwrap().len(), 1);
+    assert_eq!(value["scopes"][0]["scope"], svc::hex(&healthy.scope));
+    for fixture in [&forged, &denied, &stalled, &refused] {
+        assert!(
+            !value.to_string().contains(&svc::hex(&fixture.scope)),
+            "unverified/denied scope identity must not be exposed"
+        );
+        assert!(!value.to_string().contains(&fixture.endpoint));
+    }
+    let pin = value["scopes"][0]["pin"].clone();
+    let source =
+        call(serde_json::json!({"action":"source","pin":pin,"sequence":1,"offset":0,"length":100}))
+            .send()
+            .await
+            .unwrap();
+    assert_eq!(source.status(), 200);
+    let source: serde_json::Value = serde_json::from_slice(&source.bytes().await.unwrap()).unwrap();
+    assert_eq!(source["utf8"], "healthy source remains browsable");
+    forged.mode.store(0, Ordering::Relaxed);
+    stalled.mode.store(0, Ordering::Relaxed);
+    for f in &more_stalled {
+        f.mode.store(0, Ordering::Relaxed);
+    }
+    let recovered = call(serde_json::json!({"action":"catalog"}))
+        .send()
+        .await
+        .unwrap();
+    let recovered: serde_json::Value =
+        serde_json::from_slice(&recovered.bytes().await.unwrap()).unwrap();
+    assert_eq!(recovered["scopes"].as_array().unwrap().len(), 6);
+    assert_eq!(
+        recovered["coverage"], "partial",
+        "refused source remains visibly incomplete"
+    );
+}
+
+#[tokio::test]
+async fn library_body_read_deadline_returns_an_explicit_timeout() {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let identity = Identity::generate();
+    let a = Fixture::new(49, &identity).await;
+    let reader = Reader::new(identity, vec![a.access()]).unwrap();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    struct Stop(JoinHandle<std::io::Result<()>>);
+    impl Drop for Stop {
+        fn drop(&mut self) {
+            self.0.abort();
+        }
+    }
+    let _stop = Stop(tokio::spawn(kan::evidence_library::serve(
+        listener,
+        "synthetic-body-deadline-token-32".into(),
+        reader,
+    )));
+    let mut socket = tokio::net::TcpStream::connect(addr).await.unwrap();
+    socket.write_all(format!("POST /api/library HTTP/1.1\r\nHost: {addr}\r\nAuthorization: Bearer synthetic-body-deadline-token-32\r\nContent-Type: application/json\r\nContent-Length: 100\r\n\r\n{{").as_bytes()).await.unwrap();
+    let started = std::time::Instant::now();
+    let mut output = Vec::new();
+    tokio::time::timeout(
+        std::time::Duration::from_secs(5),
+        socket.read_to_end(&mut output),
+    )
+    .await
+    .expect("body deadline must return before whole connection timeout")
+    .unwrap();
+    assert!(String::from_utf8_lossy(&output).starts_with("HTTP/1.1 408"));
+    assert!(started.elapsed() >= std::time::Duration::from_secs(2));
+}
+
+#[tokio::test]
+async fn library_refuses_thirteenth_socket_at_the_live_admission_boundary() {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let identity = Identity::generate();
+    let a = Fixture::new(50, &identity).await;
+    let reader = Reader::new(identity, vec![a.access()]).unwrap();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    struct Stop(JoinHandle<std::io::Result<()>>);
+    impl Drop for Stop {
+        fn drop(&mut self) {
+            self.0.abort();
+        }
+    }
+    let _stop = Stop(tokio::spawn(kan::evidence_library::serve(
+        listener,
+        "synthetic-socket-cap-reader-token-32".into(),
+        reader,
+    )));
+    let mut held = Vec::new();
+    for index in 0..12 {
+        let mut socket = tokio::net::TcpStream::connect(addr).await.unwrap();
+        let wrote = socket.write_all(b"GET / HTTP/1.1\r\n").await;
+        assert!(
+            wrote.is_ok(),
+            "socket {index} among the first twelve must accept a partial request: {wrote:?}"
+        );
+        held.push(socket);
+        tokio::task::yield_now().await;
+    }
+    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    let mut excess = tokio::net::TcpStream::connect(addr).await.unwrap();
+    let mut byte = [0];
+    let closed =
+        tokio::time::timeout(std::time::Duration::from_secs(2), excess.read(&mut byte)).await;
+    assert!(
+        matches!(closed, Ok(Ok(0)))
+            || matches!(closed,Ok(Err(ref e)) if matches!(e.kind(),std::io::ErrorKind::ConnectionReset|std::io::ErrorKind::ConnectionAborted)),
+        "thirteenth socket must close at admission, not join an unbounded queue: {closed:?}"
+    );
+    // Pin the lower bound too: a server admitting only five or eleven sockets
+    // must not pass merely because it also refuses the thirteenth one.
+    for (index, socket) in held.iter_mut().enumerate() {
+        let state =
+            tokio::time::timeout(std::time::Duration::from_millis(50), socket.read(&mut byte))
+                .await;
+        assert!(
+            state.is_err(),
+            "admitted socket {index} closed or responded early: {state:?}"
+        );
+    }
+    drop(held);
 }

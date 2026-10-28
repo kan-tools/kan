@@ -1,0 +1,2 @@
+IDENTICAL:     1170 tracked files byte-identical pre/post
+git diff HEAD: clean

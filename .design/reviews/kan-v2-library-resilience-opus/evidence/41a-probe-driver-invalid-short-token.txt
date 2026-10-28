@@ -1,0 +1,6 @@
+K03-denial-marks-partial-vs-probe: KILLED [probe_p1_denial_only_catalog_is_complete=KILLED]
+K08-leak-failure-count-vs-probe: KILLED [probe_p1_denial_only_catalog_is_complete=KILLED]
+K12-timeout-is-denial-vs-probe: KILLED [probe_p2_sixteen_stalled_scopes_fit_budget_and_keep_order=KILLED]
+K24-whole-excludes-queue-vs-probe: KILLED [evidence_library::budget_tests::probe_whole_deadline_includes_queue_time=KILLED]
+restored ['tests/evidence_reader.rs', 'src/evidence_library.rs']
+exit=0

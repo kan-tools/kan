@@ -1,0 +1,15 @@
+P4 writer windows=2 (5 ms each, ~9% duty): observed=88 queued=88 unconfirmed=0 real 1.84 
+P4 writer windows=3 (5 ms each, ~9% duty): observed=87 queued=87 unconfirmed=0 real 1.31 
+P4 writer windows=3 (5 ms each, ~9% duty): observed=87 queued=87 unconfirmed=0 real 1.32 
+P4 writer windows=1 (5 ms each, ~9% duty): observed=87 queued=87 unconfirmed=0 real 1.35 
+P4 writer windows=2 (5 ms each, ~9% duty): observed=88 queued=88 unconfirmed=0 real 1.39 
+P4 writer windows=4 (5 ms each, ~9% duty): observed=88 queued=88 unconfirmed=0 real 1.36 
+P4 writer windows=1 (5 ms each, ~9% duty): observed=88 queued=88 unconfirmed=0 real 1.50 
+P4 writer windows=6 (5 ms each, ~9% duty): observed=87 queued=87 unconfirmed=0 real 1.36 
+P4 writer windows=1 (5 ms each, ~9% duty): observed=88 queued=88 unconfirmed=0 real 1.35 
+P4 writer windows=1 (5 ms each, ~9% duty): observed=88 queued=88 unconfirmed=0 real 1.35 
+P4 writer windows=6 (5 ms each, ~9% duty): observed=88 queued=88 unconfirmed=0 real 1.37 
+P4 writer windows=4 (5 ms each, ~9% duty): observed=88 queued=88 unconfirmed=0 real 1.36 
+P4 writer windows=5 (5 ms each, ~9% duty): observed=88 queued=88 unconfirmed=0 real 1.38 
+P4 writer windows=5 (5 ms each, ~9% duty): observed=88 queued=88 unconfirmed=0 real 1.38 
+P4 writer windows=3 (5 ms each, ~9% duty): observed=88 queued=88 unconfirmed=0 real 1.48 

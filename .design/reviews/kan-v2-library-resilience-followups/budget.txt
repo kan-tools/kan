@@ -1,0 +1,11 @@
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience)
+    Finished `test` profile [unoptimized] target(s) in 6.44s
+     Running unittests src/lib.rs (.local-state/target/debug/deps/kan-7f955e5e00633d5f)
+
+running 3 tests
+test evidence_library::budget_tests::cancelling_connection_releases_socket_and_execution_permits ... ok
+test evidence_library::budget_tests::whole_connection_deadline_includes_time_spent_queued ... ok
+test evidence_library::budget_tests::connection_admission_execution_and_deadlines_are_bounded ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 71 filtered out; finished in 0.00s
+

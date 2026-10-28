@@ -1,0 +1,28 @@
+   Compiling tokio v1.52.4
+   Compiling tokio-util v0.7.18
+   Compiling tower v0.5.3
+   Compiling tokio-rustls v0.26.4
+   Compiling h2 v0.4.15
+   Compiling hickory-proto v0.25.2
+   Compiling tower-http v0.6.11
+   Compiling atproto-dasl v0.14.5
+   Compiling hyper v1.10.1
+   Compiling hyper-util v0.1.20
+   Compiling hyper-rustls v0.27.9
+   Compiling rmcp v2.2.0
+   Compiling reqwest v0.12.28
+   Compiling tokio-stream v0.1.18
+   Compiling fs4 v1.1.0
+   Compiling hickory-resolver v0.25.2
+   Compiling atproto-identity v0.14.5
+   Compiling atproto-repo v0.14.5
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience)
+    Finished `test` profile [unoptimized] target(s) in 15.35s
+     Running unittests src/lib.rs (.local-state/target/debug/deps/kan-7f955e5e00633d5f)
+
+running 2 tests
+test evidence_library::budget_tests::cancelling_connection_releases_socket_and_execution_permits ... ok
+test evidence_library::budget_tests::connection_admission_execution_and_deadlines_are_bounded ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 71 filtered out; finished in 0.00s
+

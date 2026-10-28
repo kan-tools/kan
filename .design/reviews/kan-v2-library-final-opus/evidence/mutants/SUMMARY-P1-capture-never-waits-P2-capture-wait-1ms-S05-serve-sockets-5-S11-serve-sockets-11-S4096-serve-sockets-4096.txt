@@ -1,0 +1,17 @@
+P1-capture-never-waits [kill] restored=True
+  evidence_capture_contention::p4_capture_beside_brief_periodic_writer: KILLED: tests/evidence_capture_contention.rs:417:5: assertion `left == right` failed: brief contention must not disable capture x10
+  zz_review_parent_contention::p4_capture_beside_brief_periodic_writer: KILLED: tests/zz_review_parent_contention.rs:342:5: assertion `left == right` failed: brief contention must not disable capture x9; KILLED: tests/zz_review_parent_contention.rs:341:5: assertion failed: held > 0 x1
+  evidence_capture_contention::q2_per_observation_cap_and_allowance: KILLED: tests/evidence_capture_contention.rs:506:5: admission did not wait: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0] x10
+P2-capture-wait-1ms [kill] restored=True
+  evidence_capture_contention::p4_capture_beside_brief_periodic_writer: KILLED: tests/evidence_capture_contention.rs:417:5: assertion `left == right` failed: brief contention must not disable capture x10
+  zz_review_parent_contention::p4_capture_beside_brief_periodic_writer: KILLED: tests/zz_review_parent_contention.rs:342:5: assertion `left == right` failed: brief contention must not disable capture x8; KILLED: tests/zz_review_parent_contention.rs:341:5: assertion failed: held > 0 x2
+  evidence_capture_contention::q2_per_observation_cap_and_allowance: KILLED: tests/evidence_capture_contention.rs:506:5: admission did not wait: [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1] x10
+S05-serve-sockets-5 [kill] restored=True
+  evidence_reader::library_refuses_thirteenth_socket_at_the_live_admission_boundary: KILLED: tests/evidence_reader.rs:1135:9: admitted socket 5 closed or responded early: Ok(Err(Os { code: 54, kind: ConnectionReset, message: "Connection reset by peer" })) x3
+  evidence_reader::library_queues_a_browser_request_behind_four_idle_connections: SURVIVED(passed) x3
+S11-serve-sockets-11 [kill] restored=True
+  evidence_reader::library_refuses_thirteenth_socket_at_the_live_admission_boundary: KILLED: tests/evidence_reader.rs:1135:9: admitted socket 11 closed or responded early: Ok(Err(Os { code: 54, kind: ConnectionReset, message: "Connection reset by peer" })) x3
+  evidence_reader::library_queues_a_browser_request_behind_four_idle_connections: SURVIVED(passed) x3
+S4096-serve-sockets-4096 [kill] restored=True
+  evidence_reader::library_refuses_thirteenth_socket_at_the_live_admission_boundary: KILLED: tests/evidence_reader.rs:1124:5: thirteenth socket must close at admission, not join an unbounded queue: Err(Elapsed(())) x3
+  evidence_reader::library_queues_a_browser_request_behind_four_idle_connections: SURVIVED(passed) x3

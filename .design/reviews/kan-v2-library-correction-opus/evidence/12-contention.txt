@@ -1,0 +1,25 @@
+$ cargo test --features v2-crypto --test evidence_capture_contention -- --nocapture
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/reviews/opus-resilience-correction)
+    Finished `test` profile [unoptimized] target(s) in 0.51s
+     Running tests/evidence_capture_contention.rs (target/debug/deps/evidence_capture_contention-cd3d36ed54c693da)
+
+running 6 tests
+P1 reader blocked by exclusive holder: true
+test p5_concurrent_capture_opens ... ok
+P2 ordinary queue after capture: ok=true waited=399.097875ms
+test p2_admission_restores_callers_busy_timeout ... ok
+P1 elapsed=610.1825ms status=exit status: 0 stdout_len=8 last={"attempt":"134a3a4d082af6e8c7a1f4a2fe45618f75df6167fbc6e485a88058afc51d5582","observer":"gateway","observed":7,"locally_queued":0,"unconfirmed":7,"recording_gap":true,"remote_acknowledged":false,"status":200,"outcome":"completed"}
+test p1_cli_open_does_not_wait_on_exclusive_lock ... ok
+Q2 per-observation ms=[112, 111, 100, 100, 100, 100, 100, 100, 100, 96, 0, 0, 0, 0, 0] total=1.025101834s
+Q2 after unlock queued=1 unconfirmed=15
+test q2_per_observation_cap_and_allowance ... ok
+P3 A: observed=26 queued=26 unconfirmed=0 gap=false
+P3 B: observed=26 queued=26 unconfirmed=0 gap=false
+P3 spool pending=52
+test p3_concurrent_captures_share_spool ... ok
+P4 writer windows=1 (5 ms each, ~9% duty): observed=88 queued=88 unconfirmed=0
+test p4_capture_beside_brief_periodic_writer ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.48s
+
+exit=0

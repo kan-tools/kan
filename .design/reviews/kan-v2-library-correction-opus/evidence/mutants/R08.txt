@@ -1,0 +1,61 @@
+src/evidence_library.rs
+sha256-before=f679327d791feca82ab0069f1d26b859c9949f139f5603ffa79ba97734288bf8
+OLD:
+"coverage":if partial {"partial"} else {"complete"},
+NEW:
+"coverage":if partial {"partial"} else {"complete"},"failed":configured.len()-scopes.len(),
+$ ['/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/reviews/opus-resilience-correction/review-evidence/cargo.sh', 'test', '--features', 'v2-crypto', '--test', 'evidence_reader', 'catalog_verification_failure_is_not_an_empty_authorized_inventory', '--', '--exact']
+exit=101
+
+running 1 test
+test catalog_verification_failure_is_not_an_empty_authorized_inventory ... FAILED
+
+failures:
+
+---- catalog_verification_failure_is_not_an_empty_authorized_inventory stdout ----
+
+thread 'catalog_verification_failure_is_not_an_empty_authorized_inventory' (8999127) panicked at tests/evidence_reader.rs:716:5:
+assertion `left == right` failed: catalog has no failure-count or failed-source field
+  left: ["capabilities", "coverage", "failed", "scopes", "unavailable", "version"]
+ right: ["capabilities", "coverage", "scopes", "unavailable", "version"]
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    catalog_verification_failure_is_not_an_empty_authorized_inventory
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 18 filtered out; finished in 0.14s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/reviews/opus-resilience-correction)
+    Finished `test` profile [unoptimized] target(s) in 6.78s
+     Running tests/evidence_reader.rs (target/debug/deps/evidence_reader-3bbc78385966c01b)
+error: test failed, to rerun pass `--test evidence_reader`
+
+$ ['/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/reviews/opus-resilience-correction/review-evidence/cargo.sh', 'test', '--features', 'v2-crypto', '--test', 'evidence_reader', 'catalog_keeps_healthy_scopes_and_recovers_without_disclosing_failed_sources', '--', '--exact']
+exit=101
+
+running 1 test
+test catalog_keeps_healthy_scopes_and_recovers_without_disclosing_failed_sources ... FAILED
+
+failures:
+
+---- catalog_keeps_healthy_scopes_and_recovers_without_disclosing_failed_sources stdout ----
+
+thread 'catalog_keeps_healthy_scopes_and_recovers_without_disclosing_failed_sources' (8999150) panicked at tests/evidence_reader.rs:1003:5:
+assertion `left == right` failed: partial coverage must not expose failure counts
+  left: ["capabilities", "coverage", "failed", "scopes", "unavailable", "version"]
+ right: ["capabilities", "coverage", "scopes", "unavailable", "version"]
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    catalog_keeps_healthy_scopes_and_recovers_without_disclosing_failed_sources
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 18 filtered out; finished in 5.46s
+
+    Finished `test` profile [unoptimized] target(s) in 0.11s
+     Running tests/evidence_reader.rs (target/debug/deps/evidence_reader-3bbc78385966c01b)
+error: test failed, to rerun pass `--test evidence_reader`
+
+sha256-after-restore=f679327d791feca82ab0069f1d26b859c9949f139f5603ffa79ba97734288bf8 match=True
+R08 [kill] catalog_verification_failure_is_not_an_empty_authorized_inventory: KILLED(named assertion); catalog_keeps_healthy_scopes_and_recovers_without_disclosing_failed_sources: KILLED(named assertion) | restored=True

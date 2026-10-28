@@ -1,0 +1,700 @@
+P2-capture-wait-1ms
+src/evidence_spool.rs
+sha256-before=c2f69c63564edcb7a8a54769644264619e0dfab8beb4b535039837822e4a18ef
+OLD:
+remaining: wait.min(Duration::from_millis(100)),
+NEW:
+remaining: wait.min(Duration::from_millis(1)),
+$ /Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/reviews/opus-fixture-final/review-evidence/cargo.sh test --features v2-crypto --test evidence_capture_contention p4_capture_beside_brief_periodic_writer -- --exact --nocapture  [run 1/10]
+exit=101
+
+running 1 test
+test p4_capture_beside_brief_periodic_writer ... FAILED
+
+failures:
+
+failures:
+    p4_capture_beside_brief_periodic_writer
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 5 filtered out; finished in 1.36s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/reviews/opus-fixture-final)
+    Finished `test` profile [unoptimized] target(s) in 6.83s
+     Running tests/evidence_capture_contention.rs (target/debug/deps/evidence_capture_contention-cd3d36ed54c693da)
+
+thread 'p4_capture_beside_brief_periodic_writer' (9062288) panicked at tests/evidence_capture_contention.rs:417:5:
+assertion `left == right` failed: brief contention must not disable capture
+  left: 80
+ right: 88
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+error: test failed, to rerun pass `--test evidence_capture_contention`
+
+$ /Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/reviews/opus-fixture-final/review-evidence/cargo.sh test --features v2-crypto --test evidence_capture_contention p4_capture_beside_brief_periodic_writer -- --exact --nocapture  [run 2/10]
+exit=101
+
+running 1 test
+test p4_capture_beside_brief_periodic_writer ... FAILED
+
+failures:
+
+failures:
+    p4_capture_beside_brief_periodic_writer
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 5 filtered out; finished in 1.27s
+
+    Finished `test` profile [unoptimized] target(s) in 0.11s
+     Running tests/evidence_capture_contention.rs (target/debug/deps/evidence_capture_contention-cd3d36ed54c693da)
+
+thread 'p4_capture_beside_brief_periodic_writer' (9062319) panicked at tests/evidence_capture_contention.rs:417:5:
+assertion `left == right` failed: brief contention must not disable capture
+  left: 81
+ right: 88
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+error: test failed, to rerun pass `--test evidence_capture_contention`
+
+$ /Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/reviews/opus-fixture-final/review-evidence/cargo.sh test --features v2-crypto --test evidence_capture_contention p4_capture_beside_brief_periodic_writer -- --exact --nocapture  [run 3/10]
+exit=101
+
+running 1 test
+test p4_capture_beside_brief_periodic_writer ... FAILED
+
+failures:
+
+failures:
+    p4_capture_beside_brief_periodic_writer
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 5 filtered out; finished in 1.29s
+
+    Finished `test` profile [unoptimized] target(s) in 0.11s
+     Running tests/evidence_capture_contention.rs (target/debug/deps/evidence_capture_contention-cd3d36ed54c693da)
+
+thread 'p4_capture_beside_brief_periodic_writer' (9062358) panicked at tests/evidence_capture_contention.rs:417:5:
+assertion `left == right` failed: brief contention must not disable capture
+  left: 81
+ right: 88
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+error: test failed, to rerun pass `--test evidence_capture_contention`
+
+$ /Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/reviews/opus-fixture-final/review-evidence/cargo.sh test --features v2-crypto --test evidence_capture_contention p4_capture_beside_brief_periodic_writer -- --exact --nocapture  [run 4/10]
+exit=101
+
+running 1 test
+test p4_capture_beside_brief_periodic_writer ... FAILED
+
+failures:
+
+failures:
+    p4_capture_beside_brief_periodic_writer
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 5 filtered out; finished in 1.23s
+
+    Finished `test` profile [unoptimized] target(s) in 0.11s
+     Running tests/evidence_capture_contention.rs (target/debug/deps/evidence_capture_contention-cd3d36ed54c693da)
+
+thread 'p4_capture_beside_brief_periodic_writer' (9062405) panicked at tests/evidence_capture_contention.rs:417:5:
+assertion `left == right` failed: brief contention must not disable capture
+  left: 75
+ right: 87
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+error: test failed, to rerun pass `--test evidence_capture_contention`
+
+$ /Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/reviews/opus-fixture-final/review-evidence/cargo.sh test --features v2-crypto --test evidence_capture_contention p4_capture_beside_brief_periodic_writer -- --exact --nocapture  [run 5/10]
+exit=101
+
+running 1 test
+test p4_capture_beside_brief_periodic_writer ... FAILED
+
+failures:
+
+failures:
+    p4_capture_beside_brief_periodic_writer
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 5 filtered out; finished in 1.31s
+
+    Finished `test` profile [unoptimized] target(s) in 0.11s
+     Running tests/evidence_capture_contention.rs (target/debug/deps/evidence_capture_contention-cd3d36ed54c693da)
+
+thread 'p4_capture_beside_brief_periodic_writer' (9062446) panicked at tests/evidence_capture_contention.rs:417:5:
+assertion `left == right` failed: brief contention must not disable capture
+  left: 81
+ right: 88
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+error: test failed, to rerun pass `--test evidence_capture_contention`
+
+$ /Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/reviews/opus-fixture-final/review-evidence/cargo.sh test --features v2-crypto --test evidence_capture_contention p4_capture_beside_brief_periodic_writer -- --exact --nocapture  [run 6/10]
+exit=101
+
+running 1 test
+test p4_capture_beside_brief_periodic_writer ... FAILED
+
+failures:
+
+failures:
+    p4_capture_beside_brief_periodic_writer
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 5 filtered out; finished in 1.13s
+
+    Finished `test` profile [unoptimized] target(s) in 0.11s
+     Running tests/evidence_capture_contention.rs (target/debug/deps/evidence_capture_contention-cd3d36ed54c693da)
+
+thread 'p4_capture_beside_brief_periodic_writer' (9062474) panicked at tests/evidence_capture_contention.rs:417:5:
+assertion `left == right` failed: brief contention must not disable capture
+  left: 71
+ right: 87
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+error: test failed, to rerun pass `--test evidence_capture_contention`
+
+$ /Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/reviews/opus-fixture-final/review-evidence/cargo.sh test --features v2-crypto --test evidence_capture_contention p4_capture_beside_brief_periodic_writer -- --exact --nocapture  [run 7/10]
+exit=101
+
+running 1 test
+test p4_capture_beside_brief_periodic_writer ... FAILED
+
+failures:
+
+failures:
+    p4_capture_beside_brief_periodic_writer
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 5 filtered out; finished in 1.15s
+
+    Finished `test` profile [unoptimized] target(s) in 0.11s
+     Running tests/evidence_capture_contention.rs (target/debug/deps/evidence_capture_contention-cd3d36ed54c693da)
+
+thread 'p4_capture_beside_brief_periodic_writer' (9062506) panicked at tests/evidence_capture_contention.rs:417:5:
+assertion `left == right` failed: brief contention must not disable capture
+  left: 72
+ right: 88
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+error: test failed, to rerun pass `--test evidence_capture_contention`
+
+$ /Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/reviews/opus-fixture-final/review-evidence/cargo.sh test --features v2-crypto --test evidence_capture_contention p4_capture_beside_brief_periodic_writer -- --exact --nocapture  [run 8/10]
+exit=101
+
+running 1 test
+test p4_capture_beside_brief_periodic_writer ... FAILED
+
+failures:
+
+failures:
+    p4_capture_beside_brief_periodic_writer
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 5 filtered out; finished in 1.20s
+
+    Finished `test` profile [unoptimized] target(s) in 0.11s
+     Running tests/evidence_capture_contention.rs (target/debug/deps/evidence_capture_contention-cd3d36ed54c693da)
+
+thread 'p4_capture_beside_brief_periodic_writer' (9062535) panicked at tests/evidence_capture_contention.rs:417:5:
+assertion `left == right` failed: brief contention must not disable capture
+  left: 76
+ right: 88
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+error: test failed, to rerun pass `--test evidence_capture_contention`
+
+$ /Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/reviews/opus-fixture-final/review-evidence/cargo.sh test --features v2-crypto --test evidence_capture_contention p4_capture_beside_brief_periodic_writer -- --exact --nocapture  [run 9/10]
+exit=101
+
+running 1 test
+test p4_capture_beside_brief_periodic_writer ... FAILED
+
+failures:
+
+failures:
+    p4_capture_beside_brief_periodic_writer
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 5 filtered out; finished in 1.38s
+
+    Finished `test` profile [unoptimized] target(s) in 0.11s
+     Running tests/evidence_capture_contention.rs (target/debug/deps/evidence_capture_contention-cd3d36ed54c693da)
+
+thread 'p4_capture_beside_brief_periodic_writer' (9062598) panicked at tests/evidence_capture_contention.rs:417:5:
+assertion `left == right` failed: brief contention must not disable capture
+  left: 84
+ right: 88
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+error: test failed, to rerun pass `--test evidence_capture_contention`
+
+$ /Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/reviews/opus-fixture-final/review-evidence/cargo.sh test --features v2-crypto --test evidence_capture_contention p4_capture_beside_brief_periodic_writer -- --exact --nocapture  [run 10/10]
+exit=101
+
+running 1 test
+test p4_capture_beside_brief_periodic_writer ... FAILED
+
+failures:
+
+failures:
+    p4_capture_beside_brief_periodic_writer
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 5 filtered out; finished in 1.23s
+
+    Finished `test` profile [unoptimized] target(s) in 0.11s
+     Running tests/evidence_capture_contention.rs (target/debug/deps/evidence_capture_contention-cd3d36ed54c693da)
+
+thread 'p4_capture_beside_brief_periodic_writer' (9062626) panicked at tests/evidence_capture_contention.rs:417:5:
+assertion `left == right` failed: brief contention must not disable capture
+  left: 80
+ right: 88
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+error: test failed, to rerun pass `--test evidence_capture_contention`
+
+$ /Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/reviews/opus-fixture-final/review-evidence/cargo.sh test --features v2-crypto --test zz_review_parent_contention p4_capture_beside_brief_periodic_writer -- --exact --nocapture  [run 1/10]
+exit=101
+
+running 1 test
+test p4_capture_beside_brief_periodic_writer ... FAILED
+
+failures:
+
+failures:
+    p4_capture_beside_brief_periodic_writer
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 5 filtered out; finished in 1.27s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/reviews/opus-fixture-final)
+    Finished `test` profile [unoptimized] target(s) in 0.52s
+     Running tests/zz_review_parent_contention.rs (target/debug/deps/zz_review_parent_contention-527d9a5ff1a94bbd)
+
+thread 'p4_capture_beside_brief_periodic_writer' (9062702) panicked at tests/zz_review_parent_contention.rs:342:5:
+assertion `left == right` failed: brief contention must not disable capture
+  left: 79
+ right: 87
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+error: test failed, to rerun pass `--test zz_review_parent_contention`
+
+$ /Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/reviews/opus-fixture-final/review-evidence/cargo.sh test --features v2-crypto --test zz_review_parent_contention p4_capture_beside_brief_periodic_writer -- --exact --nocapture  [run 2/10]
+exit=101
+
+running 1 test
+test p4_capture_beside_brief_periodic_writer ... FAILED
+
+failures:
+
+failures:
+    p4_capture_beside_brief_periodic_writer
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 5 filtered out; finished in 1.12s
+
+    Finished `test` profile [unoptimized] target(s) in 0.11s
+     Running tests/zz_review_parent_contention.rs (target/debug/deps/zz_review_parent_contention-527d9a5ff1a94bbd)
+
+thread 'p4_capture_beside_brief_periodic_writer' (9062739) panicked at tests/zz_review_parent_contention.rs:342:5:
+assertion `left == right` failed: brief contention must not disable capture
+  left: 75
+ right: 87
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+error: test failed, to rerun pass `--test zz_review_parent_contention`
+
+$ /Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/reviews/opus-fixture-final/review-evidence/cargo.sh test --features v2-crypto --test zz_review_parent_contention p4_capture_beside_brief_periodic_writer -- --exact --nocapture  [run 3/10]
+exit=101
+
+running 1 test
+test p4_capture_beside_brief_periodic_writer ... FAILED
+
+failures:
+
+failures:
+    p4_capture_beside_brief_periodic_writer
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 5 filtered out; finished in 1.06s
+
+    Finished `test` profile [unoptimized] target(s) in 0.11s
+     Running tests/zz_review_parent_contention.rs (target/debug/deps/zz_review_parent_contention-527d9a5ff1a94bbd)
+
+thread 'p4_capture_beside_brief_periodic_writer' (9062769) panicked at tests/zz_review_parent_contention.rs:342:5:
+assertion `left == right` failed: brief contention must not disable capture
+  left: 70
+ right: 87
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+error: test failed, to rerun pass `--test zz_review_parent_contention`
+
+$ /Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/reviews/opus-fixture-final/review-evidence/cargo.sh test --features v2-crypto --test zz_review_parent_contention p4_capture_beside_brief_periodic_writer -- --exact --nocapture  [run 4/10]
+exit=101
+
+running 1 test
+test p4_capture_beside_brief_periodic_writer ... FAILED
+
+failures:
+
+failures:
+    p4_capture_beside_brief_periodic_writer
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 5 filtered out; finished in 1.24s
+
+    Finished `test` profile [unoptimized] target(s) in 0.11s
+     Running tests/zz_review_parent_contention.rs (target/debug/deps/zz_review_parent_contention-527d9a5ff1a94bbd)
+
+thread 'p4_capture_beside_brief_periodic_writer' (9062798) panicked at tests/zz_review_parent_contention.rs:342:5:
+assertion `left == right` failed: brief contention must not disable capture
+  left: 84
+ right: 88
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+error: test failed, to rerun pass `--test zz_review_parent_contention`
+
+$ /Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/reviews/opus-fixture-final/review-evidence/cargo.sh test --features v2-crypto --test zz_review_parent_contention p4_capture_beside_brief_periodic_writer -- --exact --nocapture  [run 5/10]
+exit=101
+
+running 1 test
+test p4_capture_beside_brief_periodic_writer ... FAILED
+
+failures:
+
+failures:
+    p4_capture_beside_brief_periodic_writer
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 5 filtered out; finished in 1.30s
+
+    Finished `test` profile [unoptimized] target(s) in 0.11s
+     Running tests/zz_review_parent_contention.rs (target/debug/deps/zz_review_parent_contention-527d9a5ff1a94bbd)
+
+thread 'p4_capture_beside_brief_periodic_writer' (9062834) panicked at tests/zz_review_parent_contention.rs:341:5:
+assertion failed: held > 0
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+error: test failed, to rerun pass `--test zz_review_parent_contention`
+
+$ /Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/reviews/opus-fixture-final/review-evidence/cargo.sh test --features v2-crypto --test zz_review_parent_contention p4_capture_beside_brief_periodic_writer -- --exact --nocapture  [run 6/10]
+exit=101
+
+running 1 test
+test p4_capture_beside_brief_periodic_writer ... FAILED
+
+failures:
+
+failures:
+    p4_capture_beside_brief_periodic_writer
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 5 filtered out; finished in 1.30s
+
+    Finished `test` profile [unoptimized] target(s) in 0.11s
+     Running tests/zz_review_parent_contention.rs (target/debug/deps/zz_review_parent_contention-527d9a5ff1a94bbd)
+
+thread 'p4_capture_beside_brief_periodic_writer' (9062867) panicked at tests/zz_review_parent_contention.rs:342:5:
+assertion `left == right` failed: brief contention must not disable capture
+  left: 84
+ right: 88
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+error: test failed, to rerun pass `--test zz_review_parent_contention`
+
+$ /Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/reviews/opus-fixture-final/review-evidence/cargo.sh test --features v2-crypto --test zz_review_parent_contention p4_capture_beside_brief_periodic_writer -- --exact --nocapture  [run 7/10]
+exit=101
+
+running 1 test
+test p4_capture_beside_brief_periodic_writer ... FAILED
+
+failures:
+
+failures:
+    p4_capture_beside_brief_periodic_writer
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 5 filtered out; finished in 1.29s
+
+    Finished `test` profile [unoptimized] target(s) in 0.11s
+     Running tests/zz_review_parent_contention.rs (target/debug/deps/zz_review_parent_contention-527d9a5ff1a94bbd)
+
+thread 'p4_capture_beside_brief_periodic_writer' (9062895) panicked at tests/zz_review_parent_contention.rs:341:5:
+assertion failed: held > 0
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+error: test failed, to rerun pass `--test zz_review_parent_contention`
+
+$ /Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/reviews/opus-fixture-final/review-evidence/cargo.sh test --features v2-crypto --test zz_review_parent_contention p4_capture_beside_brief_periodic_writer -- --exact --nocapture  [run 8/10]
+exit=101
+
+running 1 test
+test p4_capture_beside_brief_periodic_writer ... FAILED
+
+failures:
+
+failures:
+    p4_capture_beside_brief_periodic_writer
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 5 filtered out; finished in 1.25s
+
+    Finished `test` profile [unoptimized] target(s) in 0.11s
+     Running tests/zz_review_parent_contention.rs (target/debug/deps/zz_review_parent_contention-527d9a5ff1a94bbd)
+
+thread 'p4_capture_beside_brief_periodic_writer' (9062924) panicked at tests/zz_review_parent_contention.rs:342:5:
+assertion `left == right` failed: brief contention must not disable capture
+  left: 84
+ right: 88
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+error: test failed, to rerun pass `--test zz_review_parent_contention`
+
+$ /Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/reviews/opus-fixture-final/review-evidence/cargo.sh test --features v2-crypto --test zz_review_parent_contention p4_capture_beside_brief_periodic_writer -- --exact --nocapture  [run 9/10]
+exit=101
+
+running 1 test
+test p4_capture_beside_brief_periodic_writer ... FAILED
+
+failures:
+
+failures:
+    p4_capture_beside_brief_periodic_writer
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 5 filtered out; finished in 1.23s
+
+    Finished `test` profile [unoptimized] target(s) in 0.11s
+     Running tests/zz_review_parent_contention.rs (target/debug/deps/zz_review_parent_contention-527d9a5ff1a94bbd)
+
+thread 'p4_capture_beside_brief_periodic_writer' (9062966) panicked at tests/zz_review_parent_contention.rs:342:5:
+assertion `left == right` failed: brief contention must not disable capture
+  left: 80
+ right: 88
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+error: test failed, to rerun pass `--test zz_review_parent_contention`
+
+$ /Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/reviews/opus-fixture-final/review-evidence/cargo.sh test --features v2-crypto --test zz_review_parent_contention p4_capture_beside_brief_periodic_writer -- --exact --nocapture  [run 10/10]
+exit=101
+
+running 1 test
+test p4_capture_beside_brief_periodic_writer ... FAILED
+
+failures:
+
+failures:
+    p4_capture_beside_brief_periodic_writer
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 5 filtered out; finished in 1.13s
+
+    Finished `test` profile [unoptimized] target(s) in 0.11s
+     Running tests/zz_review_parent_contention.rs (target/debug/deps/zz_review_parent_contention-527d9a5ff1a94bbd)
+
+thread 'p4_capture_beside_brief_periodic_writer' (9063025) panicked at tests/zz_review_parent_contention.rs:342:5:
+assertion `left == right` failed: brief contention must not disable capture
+  left: 71
+ right: 87
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+error: test failed, to rerun pass `--test zz_review_parent_contention`
+
+$ /Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/reviews/opus-fixture-final/review-evidence/cargo.sh test --features v2-crypto --test evidence_capture_contention q2_per_observation_cap_and_allowance -- --exact --nocapture  [run 1/10]
+exit=101
+
+running 1 test
+Q2 per-observation ms=[1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1] total=23.642458ms
+Q2 after unlock queued=1 unconfirmed=15
+test q2_per_observation_cap_and_allowance ... FAILED
+
+failures:
+
+failures:
+    q2_per_observation_cap_and_allowance
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 5 filtered out; finished in 0.11s
+
+    Finished `test` profile [unoptimized] target(s) in 0.11s
+     Running tests/evidence_capture_contention.rs (target/debug/deps/evidence_capture_contention-cd3d36ed54c693da)
+
+thread 'q2_per_observation_cap_and_allowance' (9063052) panicked at tests/evidence_capture_contention.rs:506:5:
+admission did not wait: [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+error: test failed, to rerun pass `--test evidence_capture_contention`
+
+$ /Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/reviews/opus-fixture-final/review-evidence/cargo.sh test --features v2-crypto --test evidence_capture_contention q2_per_observation_cap_and_allowance -- --exact --nocapture  [run 2/10]
+exit=101
+
+running 1 test
+Q2 per-observation ms=[1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1] total=23.543375ms
+Q2 after unlock queued=1 unconfirmed=15
+test q2_per_observation_cap_and_allowance ... FAILED
+
+failures:
+
+failures:
+    q2_per_observation_cap_and_allowance
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 5 filtered out; finished in 0.10s
+
+    Finished `test` profile [unoptimized] target(s) in 0.11s
+     Running tests/evidence_capture_contention.rs (target/debug/deps/evidence_capture_contention-cd3d36ed54c693da)
+
+thread 'q2_per_observation_cap_and_allowance' (9063073) panicked at tests/evidence_capture_contention.rs:506:5:
+admission did not wait: [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+error: test failed, to rerun pass `--test evidence_capture_contention`
+
+$ /Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/reviews/opus-fixture-final/review-evidence/cargo.sh test --features v2-crypto --test evidence_capture_contention q2_per_observation_cap_and_allowance -- --exact --nocapture  [run 3/10]
+exit=101
+
+running 1 test
+Q2 per-observation ms=[1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1] total=23.582625ms
+Q2 after unlock queued=1 unconfirmed=15
+test q2_per_observation_cap_and_allowance ... FAILED
+
+failures:
+
+failures:
+    q2_per_observation_cap_and_allowance
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 5 filtered out; finished in 0.10s
+
+    Finished `test` profile [unoptimized] target(s) in 0.11s
+     Running tests/evidence_capture_contention.rs (target/debug/deps/evidence_capture_contention-cd3d36ed54c693da)
+
+thread 'q2_per_observation_cap_and_allowance' (9063095) panicked at tests/evidence_capture_contention.rs:506:5:
+admission did not wait: [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+error: test failed, to rerun pass `--test evidence_capture_contention`
+
+$ /Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/reviews/opus-fixture-final/review-evidence/cargo.sh test --features v2-crypto --test evidence_capture_contention q2_per_observation_cap_and_allowance -- --exact --nocapture  [run 4/10]
+exit=101
+
+running 1 test
+Q2 per-observation ms=[1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1] total=23.22575ms
+Q2 after unlock queued=1 unconfirmed=15
+test q2_per_observation_cap_and_allowance ... FAILED
+
+failures:
+
+failures:
+    q2_per_observation_cap_and_allowance
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 5 filtered out; finished in 0.10s
+
+    Finished `test` profile [unoptimized] target(s) in 0.11s
+     Running tests/evidence_capture_contention.rs (target/debug/deps/evidence_capture_contention-cd3d36ed54c693da)
+
+thread 'q2_per_observation_cap_and_allowance' (9063115) panicked at tests/evidence_capture_contention.rs:506:5:
+admission did not wait: [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+error: test failed, to rerun pass `--test evidence_capture_contention`
+
+$ /Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/reviews/opus-fixture-final/review-evidence/cargo.sh test --features v2-crypto --test evidence_capture_contention q2_per_observation_cap_and_allowance -- --exact --nocapture  [run 5/10]
+exit=101
+
+running 1 test
+Q2 per-observation ms=[1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1] total=23.550208ms
+Q2 after unlock queued=1 unconfirmed=15
+test q2_per_observation_cap_and_allowance ... FAILED
+
+failures:
+
+failures:
+    q2_per_observation_cap_and_allowance
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 5 filtered out; finished in 0.10s
+
+    Finished `test` profile [unoptimized] target(s) in 0.11s
+     Running tests/evidence_capture_contention.rs (target/debug/deps/evidence_capture_contention-cd3d36ed54c693da)
+
+thread 'q2_per_observation_cap_and_allowance' (9063135) panicked at tests/evidence_capture_contention.rs:506:5:
+admission did not wait: [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+error: test failed, to rerun pass `--test evidence_capture_contention`
+
+$ /Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/reviews/opus-fixture-final/review-evidence/cargo.sh test --features v2-crypto --test evidence_capture_contention q2_per_observation_cap_and_allowance -- --exact --nocapture  [run 6/10]
+exit=101
+
+running 1 test
+Q2 per-observation ms=[1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1] total=23.540917ms
+Q2 after unlock queued=1 unconfirmed=15
+test q2_per_observation_cap_and_allowance ... FAILED
+
+failures:
+
+failures:
+    q2_per_observation_cap_and_allowance
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 5 filtered out; finished in 0.10s
+
+    Finished `test` profile [unoptimized] target(s) in 0.11s
+     Running tests/evidence_capture_contention.rs (target/debug/deps/evidence_capture_contention-cd3d36ed54c693da)
+
+thread 'q2_per_observation_cap_and_allowance' (9063155) panicked at tests/evidence_capture_contention.rs:506:5:
+admission did not wait: [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+error: test failed, to rerun pass `--test evidence_capture_contention`
+
+$ /Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/reviews/opus-fixture-final/review-evidence/cargo.sh test --features v2-crypto --test evidence_capture_contention q2_per_observation_cap_and_allowance -- --exact --nocapture  [run 7/10]
+exit=101
+
+running 1 test
+Q2 per-observation ms=[1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1] total=23.64ms
+Q2 after unlock queued=1 unconfirmed=15
+test q2_per_observation_cap_and_allowance ... FAILED
+
+failures:
+
+failures:
+    q2_per_observation_cap_and_allowance
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 5 filtered out; finished in 0.10s
+
+    Finished `test` profile [unoptimized] target(s) in 0.11s
+     Running tests/evidence_capture_contention.rs (target/debug/deps/evidence_capture_contention-cd3d36ed54c693da)
+
+thread 'q2_per_observation_cap_and_allowance' (9063178) panicked at tests/evidence_capture_contention.rs:506:5:
+admission did not wait: [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+error: test failed, to rerun pass `--test evidence_capture_contention`
+
+$ /Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/reviews/opus-fixture-final/review-evidence/cargo.sh test --features v2-crypto --test evidence_capture_contention q2_per_observation_cap_and_allowance -- --exact --nocapture  [run 8/10]
+exit=101
+
+running 1 test
+Q2 per-observation ms=[1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1] total=23.742458ms
+Q2 after unlock queued=1 unconfirmed=15
+test q2_per_observation_cap_and_allowance ... FAILED
+
+failures:
+
+failures:
+    q2_per_observation_cap_and_allowance
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 5 filtered out; finished in 0.10s
+
+    Finished `test` profile [unoptimized] target(s) in 0.11s
+     Running tests/evidence_capture_contention.rs (target/debug/deps/evidence_capture_contention-cd3d36ed54c693da)
+
+thread 'q2_per_observation_cap_and_allowance' (9063198) panicked at tests/evidence_capture_contention.rs:506:5:
+admission did not wait: [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+error: test failed, to rerun pass `--test evidence_capture_contention`
+
+$ /Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/reviews/opus-fixture-final/review-evidence/cargo.sh test --features v2-crypto --test evidence_capture_contention q2_per_observation_cap_and_allowance -- --exact --nocapture  [run 9/10]
+exit=101
+
+running 1 test
+Q2 per-observation ms=[1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1] total=23.549ms
+Q2 after unlock queued=1 unconfirmed=15
+test q2_per_observation_cap_and_allowance ... FAILED
+
+failures:
+
+failures:
+    q2_per_observation_cap_and_allowance
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 5 filtered out; finished in 0.10s
+
+    Finished `test` profile [unoptimized] target(s) in 0.11s
+     Running tests/evidence_capture_contention.rs (target/debug/deps/evidence_capture_contention-cd3d36ed54c693da)
+
+thread 'q2_per_observation_cap_and_allowance' (9063219) panicked at tests/evidence_capture_contention.rs:506:5:
+admission did not wait: [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+error: test failed, to rerun pass `--test evidence_capture_contention`
+
+$ /Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/reviews/opus-fixture-final/review-evidence/cargo.sh test --features v2-crypto --test evidence_capture_contention q2_per_observation_cap_and_allowance -- --exact --nocapture  [run 10/10]
+exit=101
+
+running 1 test
+Q2 per-observation ms=[1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1] total=23.588958ms
+Q2 after unlock queued=1 unconfirmed=15
+test q2_per_observation_cap_and_allowance ... FAILED
+
+failures:
+
+failures:
+    q2_per_observation_cap_and_allowance
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 5 filtered out; finished in 0.10s
+
+    Finished `test` profile [unoptimized] target(s) in 0.11s
+     Running tests/evidence_capture_contention.rs (target/debug/deps/evidence_capture_contention-cd3d36ed54c693da)
+
+thread 'q2_per_observation_cap_and_allowance' (9063243) panicked at tests/evidence_capture_contention.rs:506:5:
+admission did not wait: [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+error: test failed, to rerun pass `--test evidence_capture_contention`
+
+sha256-after-restore=c2f69c63564edcb7a8a54769644264619e0dfab8beb4b535039837822e4a18ef
+P2-capture-wait-1ms [kill] restored=True
+  evidence_capture_contention::p4_capture_beside_brief_periodic_writer: KILLED: tests/evidence_capture_contention.rs:417:5: assertion `left == right` failed: brief contention must not disable capture x10
+  zz_review_parent_contention::p4_capture_beside_brief_periodic_writer: KILLED: tests/zz_review_parent_contention.rs:342:5: assertion `left == right` failed: brief contention must not disable capture x8; KILLED: tests/zz_review_parent_contention.rs:341:5: assertion failed: held > 0 x2
+  evidence_capture_contention::q2_per_observation_cap_and_allowance: KILLED: tests/evidence_capture_contention.rs:506:5: admission did not wait: [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1] x10

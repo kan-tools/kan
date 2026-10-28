@@ -1,0 +1,102 @@
+file=src/evidence_library.rs
+--- old
+budget.run(permit, connection(stream, host, token, reader)).await;
++++ new
+let _p = permit; connection(stream, host, token, reader).await;
+
+$ cargo test -j4 --features v2-crypto --test evidence_reader library_queues_a_browser_request_behind_four_idle_connections -- --exact
+exit=101
+
+running 1 test
+test library_queues_a_browser_request_behind_four_idle_connections ... FAILED
+
+failures:
+
+---- library_queues_a_browser_request_behind_four_idle_connections stdout ----
+
+thread 'library_queues_a_browser_request_behind_four_idle_connections' (8976185) panicked at tests/evidence_reader.rs:866:5:
+fifth socket must actually queue behind the execution bound
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    library_queues_a_browser_request_behind_four_idle_connections
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 17 filtered out; finished in 0.20s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/reviews/opus-resilience)
+warning: unused variable: `budget`
+   --> src/evidence_library.rs:201:21
+    |
+201 |                 let budget = budget.clone();
+    |                     ^^^^^^ help: if this is intentional, prefix it with an underscore: `_budget`
+    |
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: field `requests` is never read
+   --> src/evidence_library.rs:243:5
+    |
+241 | struct ConnectionBudget {
+    |        ---------------- field in this struct
+242 |     sockets: Arc<Semaphore>,
+243 |     requests: Arc<Semaphore>,
+    |     ^^^^^^^^
+    |
+    = note: `ConnectionBudget` has a derived impl for the trait `Clone`, but this is intentionally ignored during dead code analysis
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: method `run` is never used
+   --> src/evidence_library.rs:255:14
+    |
+245 | impl ConnectionBudget {
+    | --------------------- method in this implementation
+...
+255 |     async fn run(&self, permit: OwnedSemaphorePermit, work: impl Future<Output = ()>) {
+    |              ^^^
+
+warning: `kan` (lib) generated 3 warnings (run `cargo fix --lib -p kan` to apply 1 suggestion)
+    Finished `test` profile [unoptimized] target(s) in 6.95s
+     Running tests/evidence_reader.rs (target/debug/deps/evidence_reader-3bbc78385966c01b)
+error: test failed, to rerun pass `--test evidence_reader`
+
+$ cargo test -j4 --features v2-crypto --test evidence_reader catalog_keeps_healthy_scopes_and_recovers_without_disclosing_failed_sources -- --exact
+exit=0
+
+running 1 test
+test catalog_keeps_healthy_scopes_and_recovers_without_disclosing_failed_sources ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 17 filtered out; finished in 5.56s
+
+warning: unused variable: `budget`
+   --> src/evidence_library.rs:201:21
+    |
+201 |                 let budget = budget.clone();
+    |                     ^^^^^^ help: if this is intentional, prefix it with an underscore: `_budget`
+    |
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: field `requests` is never read
+   --> src/evidence_library.rs:243:5
+    |
+241 | struct ConnectionBudget {
+    |        ---------------- field in this struct
+242 |     sockets: Arc<Semaphore>,
+243 |     requests: Arc<Semaphore>,
+    |     ^^^^^^^^
+    |
+    = note: `ConnectionBudget` has a derived impl for the trait `Clone`, but this is intentionally ignored during dead code analysis
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: method `run` is never used
+   --> src/evidence_library.rs:255:14
+    |
+245 | impl ConnectionBudget {
+    | --------------------- method in this implementation
+...
+255 |     async fn run(&self, permit: OwnedSemaphorePermit, work: impl Future<Output = ()>) {
+    |              ^^^
+
+warning: `kan` (lib) generated 3 warnings (run `cargo fix --lib -p kan` to apply 1 suggestion)
+    Finished `test` profile [unoptimized] target(s) in 0.11s
+     Running tests/evidence_reader.rs (target/debug/deps/evidence_reader-3bbc78385966c01b)
+

@@ -1,0 +1,60 @@
+--- probe_p4_faithful_first_admission_wait run 1 exit=0
+PROBE first_admission: caller_wait=100ms spent_ms=8.357 call_ms=42.374 ok=true start_rel_ms=8.949 window_rel_ms=[8.937,15.823] admission_started_inside_window=true
+PROBE totals: admissions=87 observed=87 queued=87 unconfirmed=0 windows=1 missed_attempts=22 admissions_with_spent>0=[0] later_windows_overlapping_an_admission=0 later_windows_with_a_waiting_admission=0 total_spent_ms=8.357
+--- probe_p4_faithful_first_admission_wait run 2 exit=0
+PROBE first_admission: caller_wait=100ms spent_ms=9.046 call_ms=28.400 ok=true start_rel_ms=2.503 window_rel_ms=[2.499,10.042] admission_started_inside_window=true
+PROBE totals: admissions=88 observed=88 queued=88 unconfirmed=0 windows=2 missed_attempts=20 admissions_with_spent>0=[0, 77] later_windows_overlapping_an_admission=1 later_windows_with_a_waiting_admission=1 total_spent_ms=18.096
+--- probe_p4_faithful_first_admission_wait run 3 exit=0
+PROBE first_admission: caller_wait=100ms spent_ms=9.061 call_ms=28.176 ok=true start_rel_ms=2.432 window_rel_ms=[2.428,9.965] admission_started_inside_window=true
+PROBE totals: admissions=88 observed=88 queued=88 unconfirmed=0 windows=2 missed_attempts=21 admissions_with_spent>0=[0, 43] later_windows_overlapping_an_admission=1 later_windows_with_a_waiting_admission=1 total_spent_ms=18.111
+--- probe_p4_faithful_first_admission_wait run 4 exit=0
+PROBE first_admission: caller_wait=100ms spent_ms=9.044 call_ms=28.442 ok=true start_rel_ms=2.377 window_rel_ms=[2.373,9.906] admission_started_inside_window=true
+PROBE totals: admissions=88 observed=88 queued=88 unconfirmed=0 windows=5 missed_attempts=17 admissions_with_spent>0=[0, 47, 55, 59, 63] later_windows_overlapping_an_admission=4 later_windows_with_a_waiting_admission=4 total_spent_ms=44.801
+--- probe_p4_faithful_first_admission_wait run 5 exit=0
+PROBE first_admission: caller_wait=100ms spent_ms=9.059 call_ms=28.376 ok=true start_rel_ms=2.442 window_rel_ms=[2.438,9.981] admission_started_inside_window=true
+PROBE totals: admissions=88 observed=88 queued=88 unconfirmed=0 windows=5 missed_attempts=18 admissions_with_spent>0=[0, 50, 54, 58, 87] later_windows_overlapping_an_admission=4 later_windows_with_a_waiting_admission=4 total_spent_ms=45.291
+--- probe_p4_faithful_first_admission_wait run 6 exit=0
+PROBE first_admission: caller_wait=100ms spent_ms=8.063 call_ms=27.309 ok=true start_rel_ms=2.407 window_rel_ms=[2.399,7.507] admission_started_inside_window=true
+PROBE totals: admissions=88 observed=88 queued=88 unconfirmed=0 windows=4 missed_attempts=18 admissions_with_spent>0=[0, 48, 68, 80] later_windows_overlapping_an_admission=3 later_windows_with_a_waiting_admission=3 total_spent_ms=35.185
+--- probe_p4_faithful_first_admission_wait run 7 exit=0
+PROBE first_admission: caller_wait=100ms spent_ms=9.059 call_ms=30.234 ok=true start_rel_ms=2.436 window_rel_ms=[2.430,9.981] admission_started_inside_window=true
+PROBE totals: admissions=88 observed=88 queued=88 unconfirmed=0 windows=3 missed_attempts=20 admissions_with_spent>0=[0, 30, 54] later_windows_overlapping_an_admission=2 later_windows_with_a_waiting_admission=2 total_spent_ms=26.807
+--- probe_p4_faithful_first_admission_wait run 8 exit=0
+PROBE first_admission: caller_wait=100ms spent_ms=9.060 call_ms=29.378 ok=true start_rel_ms=2.466 window_rel_ms=[2.462,10.008] admission_started_inside_window=true
+PROBE totals: admissions=87 observed=87 queued=87 unconfirmed=0 windows=2 missed_attempts=20 admissions_with_spent>0=[0, 68] later_windows_overlapping_an_admission=1 later_windows_with_a_waiting_admission=1 total_spent_ms=18.102
+--- probe_p4_faithful_first_admission_wait run 9 exit=0
+PROBE first_admission: caller_wait=100ms spent_ms=9.066 call_ms=28.362 ok=true start_rel_ms=2.308 window_rel_ms=[2.304,9.849] admission_started_inside_window=true
+PROBE totals: admissions=88 observed=88 queued=88 unconfirmed=0 windows=4 missed_attempts=18 admissions_with_spent>0=[0, 70, 74, 78] later_windows_overlapping_an_admission=3 later_windows_with_a_waiting_admission=3 total_spent_ms=33.196
+--- probe_p4_faithful_first_admission_wait run 10 exit=0
+PROBE first_admission: caller_wait=100ms spent_ms=9.059 call_ms=29.305 ok=true start_rel_ms=2.502 window_rel_ms=[2.497,10.046] admission_started_inside_window=true
+PROBE totals: admissions=88 observed=88 queued=88 unconfirmed=0 windows=7 missed_attempts=16 admissions_with_spent>0=[0, 15, 51, 55, 67, 71, 75] later_windows_overlapping_an_admission=6 later_windows_with_a_waiting_admission=6 total_spent_ms=62.388
+--- probe_p4_first_window_without_lock_is_detected run 1 exit=101
+PROBE first_admission: caller_wait=100ms spent_ms=0.000 call_ms=18.401 ok=true start_rel_ms=2.361 window_rel_ms=[2.357,8.057] admission_started_inside_window=true
+
+thread 'probe_p4_first_window_without_lock_is_detected' (9060196) panicked at tests/zz_review_p4_probe.rs:324:5:
+first admission must wait on the coordinated writer lock: Admission { start: Instant { tv_sec: 314137, tv_nsec: 541822666 }, end: Instant { tv_sec: 314137, tv_nsec: 560223875 }, caller_wait: 100ms, spent: 0ns, ok: true }
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+--- probe_p4_first_window_without_lock_is_detected run 2 exit=101
+PROBE first_admission: caller_wait=100ms spent_ms=0.000 call_ms=19.420 ok=true start_rel_ms=2.505 window_rel_ms=[2.501,10.009] admission_started_inside_window=true
+
+thread 'probe_p4_first_window_without_lock_is_detected' (9060241) panicked at tests/zz_review_p4_probe.rs:324:5:
+first admission must wait on the coordinated writer lock: Admission { start: Instant { tv_sec: 314139, tv_nsec: 55526875 }, end: Instant { tv_sec: 314139, tv_nsec: 74947333 }, caller_wait: 100ms, spent: 0ns, ok: true }
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+--- probe_p4_first_window_without_lock_is_detected run 3 exit=101
+PROBE first_admission: caller_wait=100ms spent_ms=0.000 call_ms=18.634 ok=true start_rel_ms=2.355 window_rel_ms=[2.351,9.862] admission_started_inside_window=true
+
+thread 'probe_p4_first_window_without_lock_is_detected' (9060281) panicked at tests/zz_review_p4_probe.rs:324:5:
+first admission must wait on the coordinated writer lock: Admission { start: Instant { tv_sec: 314140, tv_nsec: 528702958 }, end: Instant { tv_sec: 314140, tv_nsec: 547336583 }, caller_wait: 100ms, spent: 0ns, ok: true }
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+--- probe_p4_first_window_without_lock_is_detected run 4 exit=101
+PROBE first_admission: caller_wait=100ms spent_ms=0.000 call_ms=19.048 ok=true start_rel_ms=2.534 window_rel_ms=[2.530,10.039] admission_started_inside_window=true
+
+thread 'probe_p4_first_window_without_lock_is_detected' (9060314) panicked at tests/zz_review_p4_probe.rs:324:5:
+first admission must wait on the coordinated writer lock: Admission { start: Instant { tv_sec: 314142, tv_nsec: 3340583 }, end: Instant { tv_sec: 314142, tv_nsec: 22388916 }, caller_wait: 100ms, spent: 0ns, ok: true }
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+--- probe_p4_first_window_without_lock_is_detected run 5 exit=101
+PROBE first_admission: caller_wait=100ms spent_ms=0.000 call_ms=19.512 ok=true start_rel_ms=2.321 window_rel_ms=[2.317,9.827] admission_started_inside_window=true
+
+thread 'probe_p4_first_window_without_lock_is_detected' (9060352) panicked at tests/zz_review_p4_probe.rs:324:5:
+first admission must wait on the coordinated writer lock: Admission { start: Instant { tv_sec: 314143, tv_nsec: 482401416 }, end: Instant { tv_sec: 314143, tv_nsec: 501913750 }, caller_wait: 100ms, spent: 0ns, ok: true }
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace

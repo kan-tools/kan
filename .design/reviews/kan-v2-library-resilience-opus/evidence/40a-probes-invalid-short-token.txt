@@ -1,0 +1,49 @@
+$ cargo test -j4 --features v2-crypto --test evidence_reader probe_ -- --nocapture --test-threads=1
+exit=101
+
+running 4 tests
+test probe_p1_denial_only_catalog_is_complete ... FAILED
+test probe_p2_sixteen_stalled_scopes_fit_budget_and_keep_order ... FAILED
+test probe_p3_latency_reveals_stalled_wave_count ... FAILED
+test probe_p4_client_disconnect_releases_execution_permits ... FAILED
+
+failures:
+
+failures:
+    probe_p1_denial_only_catalog_is_complete
+    probe_p2_sixteen_stalled_scopes_fit_budget_and_keep_order
+    probe_p3_latency_reveals_stalled_wave_count
+    probe_p4_client_disconnect_releases_execution_permits
+
+test result: FAILED. 0 passed; 4 failed; 0 ignored; 0 measured; 18 filtered out; finished in 1.96s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/reviews/opus-resilience)
+    Finished `test` profile [unoptimized] target(s) in 6.63s
+     Running tests/evidence_reader.rs (target/debug/deps/evidence_reader-3bbc78385966c01b)
+
+thread 'probe_p1_denial_only_catalog_is_complete' (8977806) panicked at tests/evidence_reader.rs:1038:74:
+called `Result::unwrap()` on an `Err` value: reqwest::Error { kind: Request, url: "http://127.0.0.1:64313/api/library", source: hyper_util::client::legacy::Error(Connect, ConnectError("tcp connect error", 127.0.0.1:64313, Os { code: 54, kind: ConnectionReset, message: "Connection reset by peer" })) }
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+thread 'probe_p2_sixteen_stalled_scopes_fit_budget_and_keep_order' (8977809) panicked at tests/evidence_reader.rs:1038:74:
+called `Result::unwrap()` on an `Err` value: reqwest::Error { kind: Request, url: "http://127.0.0.1:64332/api/library", source: hyper_util::client::legacy::Error(Connect, ConnectError("tcp connect error", 127.0.0.1:64332, Os { code: 61, kind: ConnectionRefused, message: "Connection refused" })) }
+
+thread 'probe_p3_latency_reveals_stalled_wave_count' (8977824) panicked at tests/evidence_reader.rs:1038:74:
+called `Result::unwrap()` on an `Err` value: reqwest::Error { kind: Request, url: "http://127.0.0.1:64343/api/library", source: hyper_util::client::legacy::Error(Connect, ConnectError("tcp connect error", 127.0.0.1:64343, Os { code: 61, kind: ConnectionRefused, message: "Connection refused" })) }
+
+thread 'probe_p4_client_disconnect_releases_execution_permits' (8977825) panicked at tests/evidence_reader.rs:1114:64:
+called `Result::unwrap()` on an `Err` value: Os { code: 61, kind: ConnectionRefused, message: "Connection refused" }
+error: test failed, to rerun pass `--test evidence_reader`
+
+$ cargo test -j4 --features v2-crypto --lib probe_whole_deadline_includes_queue_time
+exit=0
+
+running 1 test
+test evidence_library::budget_tests::probe_whole_deadline_includes_queue_time ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 73 filtered out; finished in 0.00s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/reviews/opus-resilience)
+    Finished `test` profile [unoptimized] target(s) in 5.88s
+     Running unittests src/lib.rs (target/debug/deps/kan-7f955e5e00633d5f)
+

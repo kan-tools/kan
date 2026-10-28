@@ -1,0 +1,35 @@
+https://github.com/kan-tools/kan/actions/runs/39192553317
+﻿2026-10-19T03:18:29.5113457Z ##[group]Run rc=0
+2026-10-19T03:18:29.5113733Z ^[[36;1mrc=0^[[0m
+2026-10-19T03:18:29.5114183Z ^[[36;1mscripts/run-perf-grid.sh gate perf-results.tsv tests/fixtures/perf-bounds.tsv > gate.txt || rc=$?^[[0m
+2026-10-19T03:18:29.5114700Z ^[[36;1mcat gate.txt^[[0m
+2026-10-19T03:18:29.5114916Z ^[[36;1m{^[[0m
+2026-10-19T03:18:29.5115464Z ^[[36;1m  echo "## Scaling gate"^[[0m
+2026-10-19T03:18:29.5115948Z ^[[36;1m  echo '```'^[[0m
+2026-10-19T03:18:29.5116171Z ^[[36;1m  cat gate.txt^[[0m
+2026-10-19T03:18:29.5116394Z ^[[36;1m  echo '```'^[[0m
+2026-10-19T03:18:29.5116625Z ^[[36;1m} >> "$GITHUB_STEP_SUMMARY"^[[0m
+2026-10-19T03:18:29.5116884Z ^[[36;1mexit "$rc"^[[0m
+2026-10-19T03:18:29.5178520Z shell: /usr/bin/bash -e {0}
+2026-10-19T03:18:29.5178780Z env:
+2026-10-19T03:18:29.5179023Z   CARGO_HOME: /home/runner/.cargo
+2026-10-19T03:18:29.5179303Z   CARGO_INCREMENTAL: 0
+2026-10-19T03:18:29.5179566Z   CARGO_TERM_COLOR: always
+2026-10-19T03:18:29.5179935Z   CACHE_ON_FAILURE: false
+2026-10-19T03:18:29.5180172Z ##[endgroup]
+2026-10-19T03:18:29.5480013Z op            axis      small ms  large ms  ratio  bound  verdict 
+2026-10-19T03:18:29.5480819Z append        claims    87.6      1392.2    15.9   20     ok      
+2026-10-19T03:18:29.5481485Z append        subjects  1392.2    1127.6    0.8    8      ok      
+2026-10-19T03:18:29.5481909Z context       claims    81.9      656.4     8.0    8      EXCEEDED
+2026-10-19T03:18:29.5482350Z context       subjects  656.4     522.9     0.8    6      ok      
+2026-10-19T03:18:29.5482736Z issues        claims    32.4      605.2     18.7   32     ok      
+2026-10-19T03:18:29.5483118Z issues        subjects  605.2     472.6     0.8    8      ok      
+2026-10-19T03:18:29.5483523Z show-all      claims    32.3      607.0     18.8   32     ok      
+2026-10-19T03:18:29.5483897Z show-all      subjects  607.0     479.4     0.8    6      ok      
+2026-10-19T03:18:29.5484286Z show-subject  claims    31.9      606.6     19.0   32     ok      
+2026-10-19T03:18:29.5484683Z show-subject  subjects  606.6     494.1     0.8    4      ok      
+2026-10-19T03:18:29.5485364Z status-all    claims    32.3      606.0     18.8   32     ok      
+2026-10-19T03:18:29.5485788Z status-all    subjects  606.0     473.7     0.8    10     ok      
+2026-10-19T03:18:29.5486034Z 
+2026-10-19T03:18:29.5486727Z FAIL (context, claims): ratio 8.0 exceeds bound 8. Committed reason: MEASURED 2.3 in run 31447798510: the budget bounds the assembly's cost in practice, not only its output. If ranking ever becomes a full-log scan this trips.
+2026-10-19T03:18:29.5510781Z ##[error]Process completed with exit code 1.

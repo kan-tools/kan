@@ -1,0 +1,2 @@
+Evidence oracle: 27 positive, 58 negative vectors; corruption self-test passed
+exit=0

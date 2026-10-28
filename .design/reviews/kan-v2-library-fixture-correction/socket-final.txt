@@ -1,0 +1,9 @@
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience)
+    Finished `test` profile [unoptimized] target(s) in 0.66s
+     Running tests/evidence_reader.rs (.local-state/target/debug/deps/evidence_reader-3bbc78385966c01b)
+
+running 1 test
+test library_refuses_thirteenth_socket_at_the_live_admission_boundary ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 18 filtered out; finished in 0.81s
+

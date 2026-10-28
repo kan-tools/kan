@@ -1,0 +1,26 @@
+file=web/library/app.js
+--- old
+if (current !== epoch) return null;
+    if (!response.ok)
++++ new
+if (!response.ok)
+
+$ node --test --test-reporter=tap --test-name-pattern=^incomplete\ empty\ catalog\ differs\ from\ complete\ empty\ and\ late\ retry\ cannot\ repaint\ after\ lock$ tests/library_ui.test.cjs
+exit=0
+TAP version 13
+# Subtest: incomplete empty catalog differs from complete empty and late retry cannot repaint after lock
+ok 1 - incomplete empty catalog differs from complete empty and late retry cannot repaint after lock
+  ---
+  duration_ms: 3.310042
+  type: 'test'
+  ...
+1..1
+# tests 1
+# suites 0
+# pass 1
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 32.940833
+
