@@ -156,5 +156,38 @@ bundle history and compares the actual standalone output's framing commitment.
 These checks now pass author qualification; see
 `reviews/kan-v2-publication-author/` for results, controls and retained failures.
 Power loss and indefinitely blocked filesystem operations remain unqualified.
-Publication acceptance awaits fresh review; backup/rebuild and full human
-recovery remain open parent work.
+The fresh ddb4e23 Opus5.5 review approved publication with eight nonblocking
+follow-ups; its inspected report is in `reviews/kan-v2-publication-opus/`.
+Backup/rebuild and full human recovery remain open parent work.
+
+### Review follow-through
+
+`Published::output_created` distinguishes creating the physical output during
+this call from reusing an already present output. `duplicate` means reusing a
+historical publication-observed statement. Both can be true: explicit Resume
+may recreate an absent output while returning the original observation unchanged.
+The new physical file is freshly verified but receives no new historical
+attribution. O1 identifies exact content, not a path or file creation event.
+
+The acquisition item/byte budgets are cumulative across repeated bundle and
+output verification passes. A publication may consume about five to six times
+one inspection's acquisition, depending on its history and selected candidates;
+six times is not a universal sizing guarantee. This is distinct from the main
+file page ceilings. An undersized acquisition budget may fail after the durable
+intent or output exists, returning retained Interrupted state. Resume with an
+adequate explicit budget; no automatic artifact cleanup occurs. A pre-intent
+whole-operation cost estimate remains a future owner-job usability improvement.
+
+Abrupt-death tests cover named boundaries around COMMIT, not death inside COMMIT
+or power loss. A genuinely hot SQLite journal can make the read-only inspection
+refuse SQLITE_READONLY_ROLLBACK (776). Retain the database and all sidecars;
+there is no shipped owner rollback-recovery action yet. That action remains an
+explicit recovery-roadmap requirement, not an implicit destructive fallback.
+
+Five promoted regression tests now assert recreated-output reporting, preservation
+of an interleaved publication history, real failure-event COMMIT uncertainty and
+stale failure pins, stale New publication with a fresh destination, and selection
+of restored bytes over corrupt present originals for both profiles. Catalog rows
+now attribute bundle appends to restoration, publication and failure recording
+alongside creation. These changes await fresh qualification and independent review;
+the prior verdict applies only to its frozen source.

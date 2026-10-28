@@ -1,0 +1,17 @@
+CI39334311418 at537a309
+2026-10-19T22:25:55.5957978Z failures:
+2026-10-19T22:25:55.5958051Z 
+2026-10-19T22:25:55.5958167Z ---- catalog_is_well_formed_and_cites_real_designs stdout ----
+2026-10-19T22:25:55.5958323Z 
+2026-10-19T22:25:55.5960475Z thread 'catalog_is_well_formed_and_cites_real_designs' (36239) panicked at tests/surface_conformance.rs:935:32:
+2026-10-19T22:25:55.5961646Z unregistered conformance rule `checkpointed-bundle-copy`: Row { status: "implemented", authority: "authoritative-kan", source: "evidence-store", scope: "system", artifact: "evidence-bundle-copy:database", value: "*", writer: "src/evidence_store/bundle/copy.rs", reader: "crate::evidence_store::bundle::backup", rule: "validate:checkpointed-bundle-copy", lifecycle: "retain-until-explicit-owner-erasure", design: ".design/kan-v2-recovery-bundle-copy.md#architecture" }
+2026-10-19T22:25:55.5963385Z note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+2026-10-19T22:25:55.5963618Z 
+2026-10-19T22:25:55.5963621Z 
+2026-10-19T22:25:55.5963937Z failures:
+2026-10-19T22:25:55.5964072Z     catalog_is_well_formed_and_cites_real_designs
+2026-10-19T22:25:55.5964198Z 
+2026-10-19T22:25:55.5964349Z test result: FAILED. 18 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.69s
+2026-10-19T22:25:55.5964553Z 
+2026-10-19T22:25:55.5970632Z ^[[1m^[[91merror^[[0m: test failed, to rerun pass `--test surface_conformance`
+2026-10-19T22:25:55.6096335Z ##[error]Process completed with exit code 101.

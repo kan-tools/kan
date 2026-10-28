@@ -178,6 +178,10 @@ pub struct Published {
     pub intent: observation::Authenticated,
     pub observation: observation::Authenticated,
     pub output: PathBuf,
+    /// True when this call created the physical output, including when it reuses
+    /// a historical observation. Does not imply a new observation was appended.
+    pub output_created: bool,
+    /// Reuses an existing publication-observed statement, not necessarily a file.
     pub duplicate: bool,
 }
 #[derive(Debug, thiserror::Error)]
@@ -603,7 +607,8 @@ pub fn publish_observed(
             request.output_bytes,
             &work,
         )?;
-        if !destination.try_exists()? {
+        let output_created = !destination.try_exists()?;
+        if output_created {
             write_output(
                 &destination,
                 &data,
@@ -717,6 +722,7 @@ pub fn publish_observed(
             intent,
             observation,
             output: destination.clone(),
+            output_created,
             duplicate,
         })
     })();

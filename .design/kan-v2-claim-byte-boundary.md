@@ -63,3 +63,24 @@ from run39315201306 or prove that run's root cause.
 `day design check` was attempted in this worktree and refused its missing local
 kan workspace under day#168/kan#197. That is unavailable validation, not a passing
 check, and no redirect to the main checkout's log was attempted.
+
+## Remaining generic IPLD boundary inventory
+
+A source inventory at the bundle-copy checkpoint found these remaining uses.
+This closes only the location-finding portion of C-I2; behavioral probes and any
+needed fixes remain separate work. No runtime acceptance or data-loss claim is
+inferred solely from a matching source pattern.
+
+| Boundary | Current behavior | Required follow-through |
+| --- | --- | --- |
+| `src/identity/control.rs::decode_preserving` | Generic IPLD decode followed by canonical byte equality, then common/additive envelope interpretation. | Probe CID-shaped opaque bytes in signatures and future fields; preserve additive unsupported envelopes without treating valid bytes as noncanonical. |
+| `src/identity/capability.rs`, `src/identity/did_kan.rs`, `src/identity/did_kan_update.rs`, `src/identity/governance.rs`, `src/identity/scope_inception.rs` | Typed canonical payloads are decoded into generic IPLD to construct control envelopes. | Trace opaque digest/identifier fields through encoding and decoding; keep domain/signature rules fixed. |
+| `src/claim/mod.rs::TaggedFields` and `take` | Generic serde/IPLD buffering for ControlRef, ResourceRef, ArtifactRef and ClaimBody, followed by per-field typed decoding. | Probe both actual tag42 links and CID-shaped untagged digest bytes. The promoted PC3 artifact test passes, but does not establish every nested arm. Avoid replacing the visitor with one that loses genuine link tags. |
+| `src/claim/v1.rs::ClaimBody` Unknown serialization/deserialization | Generic IPLD captures and re-emits the unknown body. Its comment currently assumes byte-exact IPLD round trips. | Probe unknown-body CID-shaped bytes and mixed real links; qualify exact preservation through legacy imports and common envelopes before changing this compatibility boundary. |
+| `src/store/log.rs::common_envelope` and `legacy_at_claim_candidate` | Generic IPLD is used to select the common or compatibility decoder by the `$type` field. | Preserve fail-closed routing; establish that changed byte/link classification cannot route malformed common envelopes into legacy acceptance. |
+| `src/migration_preflight.rs::scan_car_inner` | Bounded generic IPLD parses the CAR header, requiring roots to decode as links. | Probe real tag42 roots versus CID-shaped untagged bytes, malformed headers and retained raw forensic evidence. Do not broaden preflight acceptance accidentally. |
+
+The v2 evidence parser remains separate with a deliberately narrower scalar
+contract. A shared parser extraction or upstream serde repair must retain those
+contracts explicitly. This inventory does not recover the lost perf claim723
+record or establish its root cause. No live log or archive was opened.

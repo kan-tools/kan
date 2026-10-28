@@ -1,0 +1,30 @@
+Initial candidate 8f2bcb6, CI39333736409 / MSRV job118337942099.
+2026-10-19T22:18:39.7700862Z error[E0603]: function `destination_path` is private
+2026-10-19T22:18:39.7701776Z    --> src/evidence_store/bundle/copy.rs:167:31
+2026-10-19T22:18:39.7702350Z     |
+2026-10-19T22:18:39.7710142Z 167 |         destination = create::destination_path(&source, request.destination)?;
+2026-10-19T22:18:39.7711481Z     |                               ^^^^^^^^^^^^^^^^ private function
+2026-10-19T22:18:39.7712277Z     |
+2026-10-19T22:18:39.7712932Z note: the function `destination_path` is defined here
+2026-10-19T22:18:39.7713879Z    --> src/evidence_store/bundle/create.rs:448:1
+2026-10-19T22:18:39.7714515Z     |
+2026-10-19T22:18:39.7715696Z 448 | fn destination_path(source: &Path, destination: &Path) -> Result<PathBuf> {
+2026-10-19T22:18:39.7716938Z     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-10-19T22:18:39.7717451Z 
+2026-10-19T22:18:39.7739919Z error[E0603]: function `destination_path` is private
+2026-10-19T22:18:39.7740754Z    --> src/evidence_store/bundle/copy.rs:186:31
+2026-10-19T22:18:39.7741321Z     |
+2026-10-19T22:18:39.7742212Z 186 |         destination = create::destination_path(&source, &destination)?;
+2026-10-19T22:18:39.7743200Z     |                               ^^^^^^^^^^^^^^^^ private function
+2026-10-19T22:18:39.7743856Z     |
+2026-10-19T22:18:39.7744391Z note: the function `destination_path` is defined here
+2026-10-19T22:18:39.7745114Z    --> src/evidence_store/bundle/create.rs:448:1
+2026-10-19T22:18:39.7745890Z     |
+2026-10-19T22:18:39.7746654Z 448 | fn destination_path(source: &Path, destination: &Path) -> Result<PathBuf> {
+2026-10-19T22:18:39.7747673Z     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-10-19T22:18:39.7748150Z 
+2026-10-19T22:18:46.2232052Z For more information about this error, try `rustc --explain E0603`.
+2026-10-19T22:18:46.2341437Z error: could not compile `kan` (lib) due to 2 previous errors
+2026-10-19T22:18:46.2342427Z warning: build failed, waiting for other jobs to finish...
+2026-10-19T22:18:46.7768957Z error: could not compile `kan` (lib test) due to 2 previous errors
+2026-10-19T22:18:46.8319040Z ##[error]Process completed with exit code 101.
