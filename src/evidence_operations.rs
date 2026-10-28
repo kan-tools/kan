@@ -7,10 +7,11 @@ use crate::{
 use rusqlite::{params, Connection, OpenFlags, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use std::{
+    collections::BTreeMap,
     path::Path,
     sync::{
         atomic::{AtomicU64, Ordering},
-        mpsc, Arc,
+        mpsc, Arc, Mutex,
     },
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
@@ -185,29 +186,26 @@ impl Journal {
         Ok(())
     }
     pub fn record(&mut self, h: &Health) -> Result<()> {
-        if h.attempt.len() != 64
-            || !h.attempt.bytes().all(|c| c.is_ascii_hexdigit())
-            || h.observed != h.locally_queued.saturating_add(h.unconfirmed)
-            || h.recording_gap != (h.unconfirmed > 0)
-            || h.remote_acknowledged
-        {
+        if !valid_health(h) {
             return Err(invalid());
         }
         let tx = self.conn.transaction()?;
         let count = tx.query_row("SELECT count(*) FROM attempts", [], |r| unsigned(r, 0))?;
-        let old: Option<(u64, u64, u64)> = tx
+        let old: Option<String> = tx
             .query_row(
-                "SELECT observed,queued,unconfirmed FROM attempts WHERE attempt=?",
+                "SELECT body FROM attempts WHERE attempt=?",
                 [&h.attempt],
-                |r| Ok((unsigned(r, 0)?, unsigned(r, 1)?, unsigned(r, 2)?)),
+                |r| r.get(0),
             )
             .optional()?;
         if old.is_none() && count >= 100_000 {
             return Err(invalid());
         }
-        if old.is_some_and(|(o, q, u)| h.observed < o || h.locally_queued < q || h.unconfirmed < u)
-        {
-            return Err(invalid());
+        if let Some(old) = old {
+            let old: Health = serde_json::from_str(&old)?;
+            if !dominates(h, &old) {
+                return Err(invalid());
+            }
         }
         tx.execute("INSERT INTO attempts VALUES(?,?,?,?,?,?) ON CONFLICT(attempt) DO UPDATE SET updated=excluded.updated, observed=excluded.observed,queued=excluded.queued,unconfirmed=excluded.unconfirmed,body=excluded.body",params![h.attempt,now() as i64,i64::try_from(h.observed)?,i64::try_from(h.locally_queued)?,i64::try_from(h.unconfirmed)?,serde_json::to_string(h)?])?;
         tx.commit()?;
@@ -268,6 +266,64 @@ impl Journal {
     }
 }
 
+fn valid_health(h: &Health) -> bool {
+    h.attempt.len() == 64
+        && h.attempt.bytes().all(|c| c.is_ascii_hexdigit())
+        && h.locally_queued.checked_add(h.unconfirmed) == Some(h.observed)
+        && h.recording_gap == (h.unconfirmed > 0)
+        && !h.remote_acknowledged
+}
+// Replace with a whole observation, never independently maximize its fields.
+fn dominates(new: &Health, old: &Health) -> bool {
+    valid_health(new)
+        && valid_health(old)
+        && new.attempt == old.attempt
+        && new.observer == old.observer
+        && new.observed >= old.observed
+        && new.locally_queued >= old.locally_queued
+        && new.unconfirmed >= old.unconfirmed
+        && old.status.is_none_or(|s| new.status == Some(s))
+        && old.outcome.is_none_or(|o| new.outcome == Some(o))
+}
+#[derive(Default)]
+struct PendingHealth {
+    revision: u64,
+    entries: BTreeMap<String, (u64, Health)>,
+}
+impl PendingHealth {
+    fn offer(&mut self, health: &Health) -> bool {
+        if !valid_health(health) {
+            return false;
+        }
+        if let Some((_, old)) = self.entries.get(&health.attempt) {
+            if !dominates(health, old) {
+                return false;
+            }
+        } else if self.entries.len() >= 256 {
+            return false;
+        }
+        let Some(revision) = self.revision.checked_add(1) else {
+            return false;
+        };
+        self.revision = revision;
+        self.entries
+            .insert(health.attempt.clone(), (revision, health.clone()));
+        true
+    }
+    fn batch(&self) -> Vec<(u64, Health)> {
+        self.entries.values().cloned().collect()
+    }
+    fn finish(&mut self, attempt: &str, revision: u64) {
+        if self
+            .entries
+            .get(attempt)
+            .is_some_and(|(current, _)| *current == revision)
+        {
+            self.entries.remove(attempt);
+        }
+    }
+}
+
 /// Guard joins only after every reporter clone has been dropped.
 pub struct ReporterGuard(std::thread::JoinHandle<()>);
 impl ReporterGuard {
@@ -301,13 +357,19 @@ fn reporter_inner(
             .as_ref()
             .is_some_and(|j| j.session(&id, 0, false).is_err()),
     );
-    let (tx, rx) = mpsc::sync_channel::<Health>(256);
+    let (tx, rx) = mpsc::sync_channel::<()>(1);
+    let pending = Arc::new(Mutex::new(PendingHealth::default()));
+    let writer_pending = pending.clone();
     let dropped = Arc::new(AtomicU64::new(initial_loss));
     let losses = dropped.clone();
+    let mut heartbeat = std::time::Instant::now();
     let thread = std::thread::Builder::new()
         .name("kan-health".into())
         .spawn(move || loop {
-            let message = rx.recv_timeout(Duration::from_millis(500));
+            let disconnected = matches!(
+                rx.recv_timeout(Duration::from_millis(500)),
+                Err(mpsc::RecvTimeoutError::Disconnected)
+            );
             if journal.is_none() {
                 if let Some((path, spool, writer)) = &selection {
                     journal = Journal::open(path)
@@ -318,16 +380,27 @@ fn reporter_inner(
                         .ok();
                 }
             }
-            let disconnected = match message {
-                Ok(h) => {
-                    if journal.as_mut().is_none_or(|j| j.record(&h).is_err()) {
-                        losses.fetch_add(1, Ordering::Relaxed);
-                    }
-                    false
+            // Clone one bounded batch under the memory lock; no database I/O or
+            // callback is ever executed while holding that lock.
+            let batch = writer_pending
+                .lock()
+                .expect("health buffer poisoned")
+                .batch();
+            for (revision, h) in batch {
+                if journal.as_mut().is_none_or(|j| j.record(&h).is_err()) {
+                    losses.fetch_add(1, Ordering::Relaxed);
                 }
-                Err(mpsc::RecvTimeoutError::Timeout) => false,
-                Err(mpsc::RecvTimeoutError::Disconnected) => true,
-            };
+                writer_pending
+                    .lock()
+                    .expect("health buffer poisoned")
+                    .finish(&h.attempt, revision);
+                if heartbeat.elapsed() >= Duration::from_millis(500) {
+                    if let Some(j) = &journal {
+                        let _ = j.session(&id, losses.load(Ordering::Relaxed), false);
+                    }
+                    heartbeat = std::time::Instant::now();
+                }
+            }
             if let Some(j) = &journal {
                 let _ = j.session(&id, losses.load(Ordering::Relaxed), disconnected);
             }
@@ -336,7 +409,13 @@ fn reporter_inner(
             }
         })?;
     let callback = Arc::new(move |h: &Health| {
-        if tx.try_send(h.clone()).is_err() {
+        let admitted = pending.try_lock().is_ok_and(|mut p| p.offer(h));
+        if !admitted {
+            dropped.fetch_add(1, Ordering::Relaxed);
+            return;
+        }
+        // A full wake channel already guarantees a pending wake, not lost data.
+        if matches!(tx.try_send(()), Err(mpsc::TrySendError::Disconnected(_))) {
             dropped.fetch_add(1, Ordering::Relaxed);
         }
     });
@@ -547,6 +626,94 @@ pub async fn drain(spool_path: &Path, journal_path: &Path, endpoint: &str) -> Re
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn burst_keeps_final_cumulative_summary_and_terminal_gap() {
+        use std::sync::atomic::AtomicBool;
+        static BLOCKED: AtomicBool = AtomicBool::new(false);
+        static RELEASE: AtomicBool = AtomicBool::new(false);
+        fn hold_writer(_: i32) -> bool {
+            BLOCKED.store(true, Ordering::SeqCst);
+            while !RELEASE.load(Ordering::SeqCst) {
+                std::thread::sleep(Duration::from_millis(1));
+            }
+            true
+        }
+        struct ReleaseOnDrop;
+        impl Drop for ReleaseOnDrop {
+            fn drop(&mut self) {
+                RELEASE.store(true, Ordering::SeqCst);
+            }
+        }
+        let _release = ReleaseOnDrop;
+        BLOCKED.store(false, Ordering::SeqCst);
+        RELEASE.store(false, Ordering::SeqCst);
+        let dir = tempfile::tempdir().unwrap();
+        let spool = dir.path().join("queue");
+        let path = dir.path().join("health");
+        let id = crate::sign::Identity::generate();
+        Spool::create(
+            &spool,
+            &crate::evidence_service::hex(&[3; 32]),
+            id.did().as_str(),
+            id.did().as_str(),
+            10000,
+        )
+        .unwrap();
+        let journal = Journal::create(&path, &spool).unwrap();
+        journal.conn.busy_handler(Some(hold_writer)).unwrap();
+        let (report, guard) = reporter(journal).unwrap();
+        let lock = Connection::open(&path).unwrap();
+        lock.execute_batch("BEGIN EXCLUSIVE").unwrap();
+        let mut h = Health {
+            attempt: format!("{:064x}", 0),
+            observer: crate::evidence_capture::Observer::Collector,
+            observed: 1,
+            locally_queued: 0,
+            unconfirmed: 1,
+            recording_gap: true,
+            remote_acknowledged: false,
+            status: Some(200),
+            outcome: None,
+        };
+        report(&h);
+        let deadline = std::time::Instant::now() + Duration::from_secs(3);
+        while !BLOCKED.load(Ordering::SeqCst) && std::time::Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        let blocked = BLOCKED.load(Ordering::SeqCst);
+        // SQLite itself signals the writer is inside I/O; callback offers are
+        // uncontended and completion of the older revision is still pending.
+        for n in 2..1003 {
+            h.observed = n;
+            h.locally_queued = n - 1;
+            report(&h);
+        }
+        h.outcome = Some(crate::evidence_capture::Outcome::Completed);
+        report(&h);
+        let mut contradiction = h.clone();
+        contradiction.outcome = None;
+        report(&contradiction);
+        lock.execute_batch("ROLLBACK").unwrap();
+        RELEASE.store(true, Ordering::SeqCst);
+        drop(report);
+        guard.join();
+        assert!(blocked, "test did not establish the I/O barrier");
+        let snapshot = Journal::open(&path).unwrap().snapshot().unwrap();
+        assert_eq!(
+            (
+                snapshot.observed,
+                snapshot.locally_queued,
+                snapshot.unconfirmed
+            ),
+            (1002, 1001, 1)
+        );
+        assert_eq!(snapshot.recent[0]["capture"]["outcome"], "completed");
+        assert_eq!(snapshot.recent[0]["capture"]["recording_gap"], true);
+        assert_eq!(
+            snapshot.telemetry_dropped, 1,
+            "only the contradiction is lost; coalescing is not dropped evidence"
+        );
+    }
     #[test]
     fn worker_checkpoint_retry_is_idempotent_after_uncertain_commit() {
         let dir = tempfile::tempdir().unwrap();

@@ -512,3 +512,42 @@ across the whole capability matrix. No implementation or production readiness is
 claimed by this design checkpoint. Fresh Opus 5.5 reviews remain required at
 substantive build/fix points. Worktree: `.worktrees/kan-v2-operations-polish`,
 branch `design/kan-v2-operations-polish`, parent operations 0729bbb / draft #279.
+
+
+## Studio appearance and operations recovery — 2026-10-18
+
+Draft #281 (`feat/kan-v2-studio-build`) implements the shared System/Light/Dark
+appearance controller in both the production operations dashboard and synthetic
+full Studio preview. System is the initial default and follows platform changes;
+explicit choices persist only the appearance enum. Browser checks cover desktop,
+390px mobile, reload persistence and dialogs. Worker history now reconciles late
+journal recovery transactionally, preserving valid acknowledgment/time pairs and
+deduplicating cumulative failure counts. Current activity and retained coverage
+are presented separately. Fresh actual Claude Code Opus 5.5 approved production
+c2f1017 with follow-ups; 96c67f7 adds regression coverage and review evidence without
+changing production. Linux CI independently killed the previously surviving global
+pending-cap mutation. See `.design/reviews/kan-v2-studio-2026-10-18.md`.
+
+Draft #282 (`feat/kan-v2-health-coalescing`), stacked on #281, replaces the health
+FIFO with a bounded map of cumulative observations per attempt. Revision-checked
+completion preserves a newer observation arriving during I/O, and durable updates
+reject contradictory or regressed terminal/observer/status data. Callback memory
+contention and failed persistence remain visible best-effort losses. This is not a
+guarantee that every health sample is retained; encrypted raw capture is separate.
+The dashboard also aligns worker badges with freshness notices and lists uncertain
+unclosed sessions in retained coverage. All CI jobs passed for production cde8b0f
+in run 39158573019; whole-correction reversion evidence is retained in the coalescing
+review artifacts. The independent review disposition is recorded separately.
+
+These checkpoints do not complete the operations or full-frontend acceptance
+criteria. Next are explicit capacity/counter certainty and owner-triggered journal
+rotation preserving old history, followed by the authorized reader/query boundary
+and real Library/session/source workflows. Knowledge/annotations, saved views,
+analysis/day and full storage/migration/access workflows remain in the complete
+frontend matrix. Reader deployment location is still open; no key placement is
+inferred. Stable source identity and rejected-checkpoint diagnostics remain named
+operations follow-ups. The nine-area Studio is still a synthetic preview.
+
+Both worktrees are permanent under `.worktrees/`. No main merge, live installation,
+provider traffic, live migration or v1 ground-truth alteration occurred. Legacy
+kan/day claim backfill remains pending under the recorded partial-trust limitation.

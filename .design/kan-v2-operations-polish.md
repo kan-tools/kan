@@ -144,3 +144,52 @@ already declared sequence. The Linux global-cap negative control now has a CI
 runner; a successful Linux run is required before claiming the earlier survivor
 was killed. New persistence fields live in the already cataloged operations
 journal, under its existing typed creation capability.
+
+## Build checkpoint — cumulative health coalescing
+
+The next child slice replaces the volatile FIFO with a 256-distinct-attempt map
+and a one-item wake channel. A callback only attempts a memory lock; contention,
+invalid/contradictory updates, distinct-attempt overflow and a dead writer remain
+counted handoff losses. An accepted newer cumulative observation replaces the
+whole pending observation. That coalescing is not counted as missing raw traffic.
+No capture callback waits on database I/O or a writer-held lock.
+
+The writer snapshots one bounded batch and releases its memory lock before I/O.
+Each pending entry carries a revision. Completion or failure removes only that
+revision, so a newer update received during the write survives for the next pass.
+A queued wake covers concurrent updates; disconnect drains the final bounded batch
+before the existing clean-close observation. Failed persistence remains counted;
+this does not solve exhausted-journal counter certainty or whole-device failure.
+
+Both pending replacement and durable `Journal::record` enforce whole-observation
+monotonicity: same attempt/observer, nondecreasing consistent counters, and retained
+HTTP/terminal outcomes. A conflicting summary is refused rather than assembled
+from independent maxima. SQLite schema, public snapshot shape and the existing
+cataloged journal persistence surface do not change. Raw capture and encrypted
+spool records are unaffected. The capacity/reserve and preserved-history rotation
+workstream remains required before claiming the operations design complete.
+
+The child also closes the reviewed badge mismatch: a single worker freshness
+predicate controls both badge and notice, including future/non-finite samples.
+Unclosed sessions without a current heartbeat are listed in retained coverage.
+They still conservatively affect current certainty; distinguishing superseded
+reporters from required-but-missing sources needs stable source identity in the
+future status contract and is not inferred from an arbitrary age cutoff.
+
+The burst test establishes an exclusive SQLite read barrier via the connection's
+busy handler, then sends newer cumulative observations and a terminal update while
+an older revision is in flight. It verifies exact final counters, terminal/gap
+preservation and a separately counted contradictory update. This avoids a timing
+assumption about when a background writer has started. The bounded distinct-attempt
+pressure test retains its independent callback deadline and overflow accounting.
+
+
+Fresh actual Opus 5.5 review of cde8b0f returned APPROVE WITH FOLLOW-UPS. The
+independent report and author disposition are in
+`.design/reviews/kan-v2-coalescing-2026-10-18.{txt,md}`. Its probes found substantial
+counted terminal-summary loss under synchronized healthy-journal contention.
+Before claiming normal-load reliability, add deterministic contention accounting,
+qualify callback concurrency, and tighten the burst barrier to the record write.
+Unsampled-session wording, summary counter units and native mixed-language
+reversion replay also remain explicit follow-ups. Capacity/rotation and the full
+reader/frontend sequence remain unchanged.

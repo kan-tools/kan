@@ -72,7 +72,8 @@ pub struct Header {
     pub event: Event,
 }
 /// Volatile observation, not a remotely acknowledged completeness certificate.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Health {
     pub attempt: String,
     pub observer: Observer,
