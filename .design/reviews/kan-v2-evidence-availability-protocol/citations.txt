@@ -1,0 +1,12 @@
+---
+citations: 90 symbolic resolved to definitions, 95 positional in range and non-blank
+           9 positional citation(s) SKIPPED by extension -- not checked, not a pass
+           (positional citations are checked for plausibility, not for pointing at what the prose claims)
+RFC/ADR self-test: historical-prose mutation rejected
+URI v1 fixtures: 60 URI vectors, 9 service-discovery vectors, 22/22 families, 24/24 stable failures
+URI v1 fixture negative controls: 5/5 mutations killed
+Lexicon publication v2 fixtures: 7 resolution, 8 codec, 7 codec/type, 4 binding, 4 publication, 5 lens, 6 normalization cases
+Lexicon publication v2 mutation controls: 35/35 killed
+Lexicon publication v2 aggregate-limit controls: 3/3 rejected
+Lexicon publication v2 path-selection controls: 3/3 passed
+RFC/ADR check: 91 reconstructed ADRs and 5 numbered RFCs are structurally valid
