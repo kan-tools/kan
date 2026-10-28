@@ -1,0 +1,34 @@
+{
+  "source_commit": "a2666df287e0007ad69c8b06e54279740e7c87b7",
+  "source_clean": true,
+  "integration_tests": 138,
+  "ignored_crash_helpers": 4,
+  "suites": {
+    "evidence_bundle_creation": 51,
+    "evidence_inventory": 21,
+    "evidence_recovery_bundle": 15,
+    "evidence_recovery_member": 16,
+    "evidence_recovery_replay": 10,
+    "evidence_recovery_replay_review_regressions": 6,
+    "surface_conformance": 19
+  },
+  "logs": {
+    "01-clean": {
+      "sha256": "76867e77a622bf1e000efcf338d544ae7bfb94cb825376809f0bbacad4d4e253",
+      "exit": 0
+    },
+    "02-tests": {
+      "sha256": "a63c9742392590ecf147234cba5909098aa3e8031c48bf075ea07ceb43de28e3",
+      "exit": 0
+    },
+    "05-clippy": {
+      "sha256": "8376bd4ea0aa637ad0fe1088edbb167987a82bb6926430af5da8bfe3985017c2",
+      "exit": 0
+    },
+    "06-format": {
+      "sha256": "6af71d4eb79c367a78c0543b3baaf7fee12b6f15f7e614602e41a8738b3615e0",
+      "exit": 0
+    }
+  },
+  "raw_logs": "ignored .local-state/copy-pin-author/attempt-1"
+}
