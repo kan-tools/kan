@@ -1,0 +1,23 @@
+wouldblock-refusal: named assertion killed
+cas-single-try: named assertion killed
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-admission-audit)
+    Finished `test` profile [unoptimized] target(s) in 5.78s
+     Running unittests src/lib.rs (.local-state/target/debug/deps/kan-ef78140debb95ee4)
+
+running 13 tests
+test evidence_operations::tests::admission_retries_transient_contention_but_stops_at_budget ... ok
+test evidence_operations::tests::reservation_retries_spurious_failure_and_stops_at_its_finite_budget ... ok
+test evidence_operations::tests::actual_shard_contention_retries_after_release_without_loss ... ok
+test evidence_operations::tests::contended_admission_is_bounded_and_counts_one_summary ... ok
+test evidence_operations::tests::sharded_admission_is_independent_and_globally_bounded ... ok
+test evidence_operations::tests::worker_full_failure_marks_capacity_and_retains_recovery_space ... ok
+test evidence_operations::tests::legacy_snapshot_does_not_rewrite_or_invent_control_evidence ... ok
+test evidence_operations::tests::worker_checkpoint_retry_is_idempotent_after_uncertain_commit ... ok
+test evidence_operations::tests::successful_write_is_observed_only_after_commit ... ok
+test evidence_operations::tests::session_capacity_is_sticky_and_existing_control_still_updates ... ok
+test evidence_operations::tests::physical_full_keeps_prior_health_and_rejects_new_record ... ok
+test evidence_operations::tests::attempt_count_exhaustion_retains_existing_rows_and_marks_once ... ok
+test evidence_operations::tests::burst_keeps_final_cumulative_summary_and_terminal_gap ... ok
+
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 58 filtered out; finished in 1.41s
+

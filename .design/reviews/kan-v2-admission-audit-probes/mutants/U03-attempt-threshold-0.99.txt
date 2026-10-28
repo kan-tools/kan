@@ -1,0 +1,34 @@
+mutant U03-attempt-threshold-0.99 on web/operations/app.js
+--- old
+j.attempts_used>=j.attempts_limit*0.9
++++ new
+j.attempts_used>=j.attempts_limit*0.99
+
+$ node --test tests/operations_ui.test.cjs
+[exit=0 timeout=False]
+✔ auth is header-only; gap filtering and untrusted values use text (14.825417ms)
+✔ late authenticated response cannot unlock a locked view (0.655459ms)
+✔ missing/stale data and HTTP failure cannot look healthy (0.635875ms)
+✔ absent and stale capture reporters remain explicitly unknown (0.70225ms)
+✔ fresh active sessions are current while historical losses remain visible (0.579708ms)
+✔ delivery retries, unsampled unclosed sessions and future clocks cannot look current (0.71475ms)
+✔ future clock samples produce consistent badges and retain uncertain reporter history (0.68625ms)
+✔ unsampled sessions and summary loss units are explicit (0.478709ms)
+✔ journal capacity is independent, sticky and never an exact coverage claim (0.606834ms)
+✔ unsupported status version retains visibly disconnected values (0.457916ms)
+✔ search is sample-bounded and inspection preserves exact untrusted identifiers (0.648375ms)
+✔ locking clears rendered private metadata and closes the inspector (0.726042ms)
+✔ reporter and attempt limits warn before exhaustion and preserve partial recording semantics (0.630292ms)
+✔ future persistence timestamps stay unknown (0.514ms)
+✔ polling preserves the focused attempt and inspector close returns to the replacement row (0.729334ms)
+✔ unchanged notices are not announced again on every poll (0.605584ms)
+ℹ tests 16
+ℹ suites 0
+ℹ pass 16
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 54.771042
+
+RESULT [{"cmd": "tests/operations_ui.test.cjs", "verdict": "PASS", "failed": [], "panic": []}]

@@ -1,0 +1,8 @@
+
+running 1 test
+test session_exhaustion_escalates_when_attempt_capacity_is_reached ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 21 filtered out; finished in 0.42s
+
+    Finished `test` profile [unoptimized] target(s) in 0.11s
+     Running tests/evidence_operations.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-admission-audit/.local-state/reviews/opus-admission/target/debug/deps/evidence_operations-8f396ba67ddb65cc)

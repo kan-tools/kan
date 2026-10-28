@@ -47,14 +47,14 @@ $('copy-id').addEventListener('click',async()=>{
 function journalState(j,now){
   const fresh=Number.isFinite(j.last_success_at)&&j.last_success_at>0&&j.last_success_at<=now+5&&now-j.last_success_at<=5;
   const used=j.pages_used-j.free_pages;
-  const near=used>=j.pages_limit*0.9;
-  $('journal-state').textContent=j.exhausted_observed===true?'Exhaustion recorded':j.schema===1?'Legacy · persistence unknown':near?'Near page limit':fresh?'Write observed':'Persistence unknown';
+  const nearCauses=[];if(used>=j.pages_limit*0.9)nearCauses.push('pages');if(j.attempts_used>=j.attempts_limit*0.9)nearCauses.push('attempts');if(Number.isFinite(j.sessions_limit)&&j.sessions_limit>0&&j.sessions_used>=j.sessions_limit*0.9)nearCauses.push('reporter sessions');const near=nearCauses.length>0;const sessionsExhausted=j.exhausted_observed===true&&j.exhaustion_reason==='session_limit';
+  $('journal-state').textContent=sessionsExhausted?'Reporter capacity exhausted':j.exhausted_observed===true?'Exhaustion recorded':j.schema===1?'Legacy · persistence unknown':near?'Near capacity limit':fresh?'Write observed':'Persistence unknown';
   $('journal-capacity').value=Math.min(100,100*used/j.pages_limit);
   $('journal-pages').textContent=bytes(j.pages_used*j.page_size)+' allocated / '+bytes(j.pages_limit*j.page_size)+' page ceiling · '+bytes(j.free_pages*j.page_size)+' reusable';
   $('journal-limits').textContent=count(j.attempts_used)+' / '+count(j.attempts_limit)+' attempts · '+count(j.sessions_used)+' / '+(j.sessions_limit===null?'legacy unbounded':count(j.sessions_limit))+' reporter sessions · '+bytes(j.reserve_bytes)+' control reserve';
   $('journal-persistence').textContent='Last successful persistence observation: '+time(j.last_success_at)+(j.exhaustion_reason?' · '+j.exhaustion_reason:'');
   $('journal-scope').textContent='Scope: '+j.scope+'. Loss counts are lower bounds, not a count of missing raw messages.';
-  return {fresh,near,exhausted:j.exhausted_observed===true};
+  return {fresh,near,nearCauses,sessionsExhausted,exhausted:j.exhausted_observed===true};
 }
 function render(s){snapshot=s;const w=s.worker,q=w?.queue;const now=Date.now()/1000;const age=w?Math.max(0,now-w.sampled_at):Infinity;const workerCurrent=!!w&&Number.isFinite(w.sampled_at)&&w.sampled_at<=now+5&&age<=45;
   const storage=journalState(s.journal,now);
@@ -78,11 +78,12 @@ function render(s){snapshot=s;const w=s.worker,q=w?.queue;const now=Date.now()/1
   if(stale.length)history.push(count(stale.length)+' sampled unclosed sessions without a current heartbeat');
   if(unseen)history.push(count(unseen)+' unclosed sessions outside the recent sample');
   $('coverage-history').textContent=history.length?history.join(' · '):'No gaps reported in the retained observations. This does not establish complete capture.';
-  if(storage.exhausted)notice('Health journal exhaustion was recorded. Capture and delivery continue; journal history requires owner rotation.','warning');
+  if(storage.sessionsExhausted)notice('New reporter registration is exhausted. Attempt summaries may still persist; coverage is incomplete. Owner rotation preserves history.','warning');
+  else if(storage.exhausted)notice('Health journal exhaustion was recorded. Capture and delivery continue; journal history requires owner rotation.','warning');
   else if(!workerCurrent)notice('Worker status is missing or stale. These values do not establish current service health.','warning');
   else if(w.state==='retrying')notice('Archive delivery is retrying. Retained evidence remains queued.','warning');
   else if(!storage.fresh)notice('Health persistence has no recent successful observation. Loss counts are lower bounds and coverage is unknown.','warning');
-  else if(storage.near)notice('Health journal is near its page ceiling. Prepare owner rotation; evidence queue capacity is separate.','warning');
+  else if(storage.near)notice('Health journal is near its capacity limit ('+storage.nearCauses.join(', ')+'). Prepare owner rotation; evidence queue capacity is separate.','warning');
   else if(stale.length||unseen)notice('A health reporter is stale or has no recent sampled heartbeat. Capture coverage is unknown.','warning');
   else if(!unclosed.length)notice('No active capture reporter is recorded. Capture coverage is unknown.','warning');
   else notice('Status is current. Capture completion and archive acknowledgment are separate observations.');

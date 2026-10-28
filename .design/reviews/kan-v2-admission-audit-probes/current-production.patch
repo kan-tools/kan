@@ -1,0 +1,852 @@
+diff --git a/.design/kan-v2-human-frontend.md b/.design/kan-v2-human-frontend.md
+index 8d84ba0..d967d36 100644
+--- a/.design/kan-v2-human-frontend.md
++++ b/.design/kan-v2-human-frontend.md
+@@ -142,7 +142,9 @@ serves the production dashboard and the generated offline design artifact.
+ The shared appearance controller and worker-history correction are in draft #281;
+ bounded coalescing is in #282; sharded admission/reversion tooling is in #283.
+ Capacity, preserved-history collection commands, recent-list search and metadata
+-inspection are the next unreviewed operations slice. They still do not provide
++inspection are in draft #284 (production 67e3414, review record 771341e). Fresh
++Opus 5.5 review approved with follow-ups. The child admission-audit correction
++addresses those findings plus WAL-header refusal; its review remains pending. They still do not provide
+ raw message browsing. The collection-wide deduplicated overview remains required.
+ 
+ `.design/kan-v2-reader-library.md` makes the next real Library API boundary concrete:
+diff --git a/.design/kan-v2-journal-generations.md b/.design/kan-v2-journal-generations.md
+index e011c68..3891a67 100644
+--- a/.design/kan-v2-journal-generations.md
++++ b/.design/kan-v2-journal-generations.md
+@@ -22,7 +22,7 @@ Implement the remaining capacity and owner-rotation operations requirements from
+ - [ ] AC-7: Surface catalog, capabilities and conformance tests cover collection manifest, generations, temporary files and lock. Independent review and real reversion evidence accompany corrections. (REQ-7)
+ 
+ ## Architecture
+-The standalone reader in `src/evidence_operations.rs` accepts exact schema v1 or v2. New v2 adds a preallocated control row with 256 KiB of reserve, the last successful persistence timestamp and sticky exhaustion. On a record capacity failure, a separate transaction releases reserve and sets the sticky marker; later attempt writes are refused. Reporter/worker metadata can use the finite freed pages, but whole-device failure and session exhaustion remain possible. Every reported loss count is a lower bound, including legacy values. No exactness is inferred from a successful read. v1 is not rewritten or silently adopted.
++The standalone reader in `src/evidence_operations.rs` accepts exact schema v1 or v2. New v2 adds a preallocated control row with 256 KiB of reserve, the last successful persistence timestamp and sticky exhaustion. On an attempt/page capacity failure, a separate transaction releases reserve and sets the sticky marker; later attempt writes are refused. Session capacity is instead a sticky coverage warning that retains the reserve and allows writable attempt summaries to continue; a later attempt/page failure promotes the reason and releases the reserve. Repeated unchanged refusals do not rewrite control. Older v2 session-exhausted journals with an already released reserve remain readable without repair. Reporter/worker metadata can use the finite freed pages, but whole-device failure and session exhaustion remain possible. Every reported loss count is a lower bound, including legacy values. No exactness is inferred from a successful read. v1 is not rewritten or silently adopted.
+ 
+ Journal connections hold an advisory shared lifetime lock on a private `.lock`
+ sidecar, and maintenance takes it exclusively. This is a separate inode because
+diff --git a/docs/V2-OPERATIONS.md b/docs/V2-OPERATIONS.md
+index caba579..b69a974 100644
+--- a/docs/V2-OPERATIONS.md
++++ b/docs/V2-OPERATIONS.md
+@@ -68,11 +68,13 @@ reporter sessions and the latest worker checkpoint. It cannot replace the raw
+ encrypted append-only evidence ledger. No automatic expiry or deletion occurs.
+ 
+ New v2 journals have an 8192-page (32 MiB) ceiling plus rollback-journal space,
+-a 100,000-attempt bound and a 1,024-session bound. The first limit reached wins;
+-the row limits are not promised physical capacities. A 256 KiB reserve is
+-preallocated for finite control-record recovery. A recorded capacity failure
+-releases the reserve and sets a sticky exhaustion marker; subsequent attempt
+-writes are refused until owner rotation. Existing metadata may still update.
++a 100,000-attempt bound and a 1,024-session bound. Row limits are not promised
++physical capacities. A 256 KiB reserve is preallocated for finite control-record
++recovery. Attempt/page exhaustion releases it and seals further attempt writes
++until owner rotation. Session exhaustion is a sticky coverage warning: it refuses
++new reporter registration while writable attempt summaries continue, retaining
++the reserve until attempt/page exhaustion occurs. Existing metadata may still
++update. Repeated unchanged exhaustion refusals do not rewrite the control row.
+ Restart or a later successful heartbeat never clears exhaustion. Whole-device
+ failure can also prevent the marker from being recorded. Capacity, last success
+ and loss-count certainty are distinct observations, not a disk-health guarantee.
+@@ -82,7 +84,7 @@ buffer with sharded locks and finite nonblocking retries. Distinct-attempt
+ overflow, exhausted retry budgets, contradictions and failed summary writes are
+ counted where possible. Counts are lower bounds, not missing-raw-message counts;
+ older journal histories can include individual update losses. No arbitrary-load
+-lossless guarantee is made. A separate journal reserves logical queue-independent
++lossless guarantee is made. Finite shard-lock and atomic reservation retry budgets can both exhaust below the global attempt cap; those failed admissions count as telemetry losses. A separate journal reserves logical queue-independent
+ capacity, not physical capacity when the entire device fails or fills.
+ 
+ Startup audit and filesystem calls remain synchronous and are not hard-time
+@@ -113,7 +115,7 @@ kan-v2 ops-rotate "$HEALTH_COLLECTION"
+ kan-v2 ops-history "$HEALTH_COLLECTION" --generation "$GENERATION_ID"
+ ```
+ 
+-Adoption requires a new private destination. It copies and verifies the standalone
++Adoption requires a new private destination. This journal profile accepts only SQLite rollback-journal format; WAL-mode headers are refused before SQLite access, without changing the source or creating WAL/SHM sidecars. It copies and verifies the standalone
+ journal, seals that history by hash and creates a fresh v2 active generation.
+ Reconfigure `--health-journal` and `--journal`, and the dashboard positional path,
+ to the collection directory before restarting writers. Worker acknowledgment and
+diff --git a/scripts/revert_v2.py b/scripts/revert_v2.py
+index 60fde85..cebfc05 100644
+--- a/scripts/revert_v2.py
++++ b/scripts/revert_v2.py
+@@ -1,5 +1,5 @@
+ #!/usr/bin/env python3
+-"""Replay v2 Rust/Node correction evidence using the bundled day reversion engine.
++"""Replay v2 Rust/Node/Python correction evidence using the bundled day reversion engine.
+ 
+ Required: --helper /absolute/path/to/day/scripts/revert-demo.py
+ Working diff: --tests target::exact_name,node::summary_loss_units
+@@ -29,10 +29,18 @@ NODE_TESTS = {
+     'future_clock_badge': ('tests/operations_ui.test.cjs', 'future clock samples produce consistent badges and retain uncertain reporter history'),
+     'summary_loss_units': ('tests/operations_ui.test.cjs', 'unsampled sessions and summary loss units are explicit'),
+ }
++PYTHON_TESTS = {
++    'bounded_pipe_cleanup': ('tests/test_revert_v2.py', 'Execution.test_detached_pipe_holder_cannot_hang_timeout_cleanup'),
++}
++
+ 
+ 
+ def run_process(command, cwd, timeout):
+-    """Own a POSIX process group so timeout cannot orphan a test descendant."""
++    """Kill our POSIX group and bound pipe cleanup, including escaped pipe owners.
++
++    Deliberately detached descendants are outside our kill group; never wait
++    indefinitely for their inherited pipes or claim to have terminated them.
++    """
+     if os.name != 'posix':
+         raise ValueError('the reversion runner requires POSIX process-group cleanup')
+     process = subprocess.Popen(command, cwd=cwd, stdout=subprocess.PIPE,
+@@ -44,25 +52,39 @@ def run_process(command, cwd, timeout):
+             os.killpg(process.pid, signal.SIGKILL)
+         except ProcessLookupError:
+             pass
+-        process.communicate()
++        try:
++            process.communicate(timeout=1)
++        except subprocess.TimeoutExpired:
++            # A descendant may leave the group while retaining our pipe. Close
++            # our handles; the already-killed direct child can still be reaped.
++            process.stdout.close()
++            process.stderr.close()
++            process.wait(timeout=1)
+         raise
+     return subprocess.CompletedProcess(command, process.returncode, stdout, stderr)
+ 
+ 
+ def parse_result(kind, name, output, returncode):
+     """One exact executed result; skips, duplicates, crashes and empty runs fail closed."""
+-    expression = (r'^(ok|not ok) \d+ - (.+)$' if kind == 'node'
+-                  else r'^test (.+) \.\.\. (ok|FAILED)$')
++    expression = (r'^(ok|not ok) \d+ - (.+)$' if kind == 'node' else
++                  r'^(\w+) \(__main__\.(\w+)(?:\.\1)?\) \.\.\. (ok|FAIL|ERROR)$' if kind == 'python' else
++                  r'^test (.+) \.\.\. (ok|FAILED)$')
+     hits = []
+     for line in output.splitlines():
+         m = re.fullmatch(expression, line)
+         if m:
+-            verdict, actual = m.groups() if kind == 'node' else m.groups()[::-1]
++            if kind == 'python':
++                method, cls, verdict = m.groups()
++                actual = cls + '.' + method
++            else:
++                verdict, actual = m.groups() if kind == 'node' else m.groups()[::-1]
+             if actual == name:
+                 hits.append(verdict)
+     if len(hits) != 1:
+         return set(), set()
+-    failed = hits[0] in ('not ok', 'FAILED')
++    if hits[0] == 'ERROR':
++        raise ValueError('named Python test errored rather than failing an assertion')
++    failed = hits[0] in ('not ok', 'FAILED', 'FAIL')
+     if (returncode != 0) != failed:
+         raise ValueError('exit status and named assertion result disagree')
+     return {name}, {name} if failed else set()
+@@ -139,6 +161,8 @@ def main():
+         for name in names:
+             if name.startswith('node::') and name[6:] not in NODE_TESTS:
+                 raise ValueError(f'unknown Node test alias: {name}')
++            if name.startswith('python::') and name[8:] not in PYTHON_TESTS:
++                raise ValueError(f'unknown Python test alias: {name}')
+             if not re.fullmatch(r'[A-Za-z0-9_]+::[A-Za-z0-9_:]+', name):
+                 raise ValueError(f'expected exact qualified test name: {name}')
+         dest = root / '.local-state/reversion' / uuid.uuid4().hex
+@@ -157,6 +181,9 @@ def main():
+                 if target == 'node':
+                     path, exact = NODE_TESTS[exact]
+                     command = ['node', '--test', '--test-reporter=tap', '--test-name-pattern=^'+re.escape(exact)+'$', path]
++                elif target == 'python':
++                    path, exact = PYTHON_TESTS[exact]
++                    command = [sys.executable, path, '-v', exact]
+                 else:
+                     command = ['cargo', 'test', '--features', 'v2-crypto']
+                     command += ['--lib'] if target == 'lib' else ['--test', target]
+diff --git a/src/evidence_operations.rs b/src/evidence_operations.rs
+index a134291..979d3ce 100644
+--- a/src/evidence_operations.rs
++++ b/src/evidence_operations.rs
+@@ -183,6 +183,15 @@ impl Journal {
+                 return Err(invalid());
+             }
+         }
++        // This profile owns rollback-journal files only. A WAL-mode header can
++        // make even read-only SQLite access create -wal/-shm files, and copied
++        // WAL headers cannot serve as standalone sealed history. Refuse before
++        // SQLite opens the file; do not repair or rewrite an existing journal.
++        let mut header = [0u8; 20];
++        std::io::Read::read_exact(&mut std::fs::File::open(path)?, &mut header)?;
++        if &header[..16] != b"SQLite format 3\0" || header[18..20] != [1, 1] {
++            return Err(invalid());
++        }
+         // flock and SQLite fcntl locks can interact on macOS. Lifetime
+         // maintenance coordination must use a separate inode.
+         let mut lock_name = path.as_os_str().to_os_string();
+@@ -266,11 +275,11 @@ impl Journal {
+             if rows != 1
+                 || (exhausted == 0 && (!reason.is_empty() || reserved != 64 || valid != 64))
+                 || (exhausted == 1
+-                    && (reserved != 0
+-                        || !matches!(
+-                            reason.as_str(),
+-                            "sqlite_full" | "attempt_limit" | "session_limit"
+-                        )))
++                    && match reason.as_str() {
++                        "session_limit" => !(reserved == 0 || (reserved == 64 && valid == 64)),
++                        "sqlite_full" | "attempt_limit" => reserved != 0,
++                        _ => true,
++                    })
+                 || !matches!(exhausted, 0 | 1)
+             {
+                 return Err(invalid());
+@@ -366,11 +375,30 @@ impl Journal {
+             else if e.downcast_ref::<rusqlite::Error>().is_some_and(|e| matches!(e, rusqlite::Error::SqliteFailure(code, _) if code.code == rusqlite::ErrorCode::DiskFull)) { Some("sqlite_full") }
+             else { None }
+         });
+-        if let Some(reason) = reason {
++        if let Some(reason) = reason.filter(|reason| *reason != "sealed_for_capacity") {
+             let mark = || -> Result<()> {
+                 let tx = self.conn.unchecked_transaction()?;
+-                tx.execute("DELETE FROM reserve", [])?;
+-                tx.execute("UPDATE control SET exhausted=1, reason=CASE WHEN exhausted=0 THEN ? ELSE reason END WHERE singleton=1", [reason])?;
++                let (exhausted, prior): (bool, String) = tx.query_row(
++                    "SELECT exhausted,reason FROM control WHERE singleton=1",
++                    [],
++                    |r| Ok((r.get(0)?, r.get(1)?)),
++                )?;
++                // Session exhaustion is a sticky coverage warning. Escalate it
++                // when attempt/page capacity also fails, but never fsync an
++                // unchanged exhaustion observation on every refused update.
++                if exhausted
++                    && !(prior == "session_limit"
++                        && matches!(reason, "attempt_limit" | "sqlite_full"))
++                {
++                    return Ok(());
++                }
++                if reason != "session_limit" {
++                    tx.execute("DELETE FROM reserve", [])?;
++                }
++                tx.execute(
++                    "UPDATE control SET exhausted=1, reason=? WHERE singleton=1",
++                    [reason],
++                )?;
+                 tx.commit()?;
+                 Ok(())
+             };
+@@ -387,12 +415,15 @@ impl Journal {
+             return Err(invalid());
+         }
+         let tx = self.conn.transaction()?;
+-        if self.schema == 2
+-            && tx.query_row("SELECT exhausted FROM control WHERE singleton=1", [], |r| {
+-                r.get::<_, bool>(0)
+-            })?
+-        {
+-            return Err(Box::new(CapacityLimit("sealed_for_capacity")));
++        if self.schema == 2 {
++            let (exhausted, reason): (bool, String) = tx.query_row(
++                "SELECT exhausted,reason FROM control WHERE singleton=1",
++                [],
++                |r| Ok((r.get(0)?, r.get(1)?)),
++            )?;
++            if exhausted && reason != "session_limit" {
++                return Err(Box::new(CapacityLimit("sealed_for_capacity")));
++            }
+         }
+         let count = tx.query_row("SELECT count(*) FROM attempts", [], |r| unsigned(r, 0))?;
+         let old: Option<String> = tx
+@@ -561,17 +592,20 @@ fn dominates(new: &Health, old: &Health) -> bool {
+         && old.outcome.is_none_or(|o| new.outcome == Some(o))
+ }
+ fn reserve_attempt(count: &AtomicUsize) -> bool {
++    reserve_attempt_observed(count, |current| {
++        count.compare_exchange_weak(current, current + 1, Ordering::Relaxed, Ordering::Relaxed)
++    })
++}
++fn reserve_attempt_observed(
++    count: &AtomicUsize,
++    mut compare: impl FnMut(usize) -> std::result::Result<usize, usize>,
++) -> bool {
+     let mut current = count.load(Ordering::Relaxed);
+     for _ in 0..64 {
+         if current >= 256 {
+             return false;
+         }
+-        match count.compare_exchange_weak(
+-            current,
+-            current + 1,
+-            Ordering::Relaxed,
+-            Ordering::Relaxed,
+-        ) {
++        match compare(current) {
+             Ok(_) => return true,
+             Err(observed) => {
+                 current = observed;
+@@ -663,9 +697,12 @@ impl HealthBuffer {
+ 
+ // Bounded CPU work only: never wait for a lock holder to be scheduled. Shared
+ // observations keep the writer's batch copy short. A stalled holder still causes
+-// one visible lost-summary observation after the finite admission budget.
++// one visible lost-telemetry observation after the finite admission budget.
+ const ADMISSION_TRIES: usize = 512;
+ fn offer_pending(pending: &HealthBuffer, h: &Health) -> bool {
++    offer_pending_observed(pending, h, || {})
++}
++fn offer_pending_observed(pending: &HealthBuffer, h: &Health, mut contended: impl FnMut()) -> bool {
+     if !valid_health(h) {
+         return false;
+     }
+@@ -673,7 +710,10 @@ fn offer_pending(pending: &HealthBuffer, h: &Health) -> bool {
+     bounded_admission(|| match shard.try_lock() {
+         Ok(mut p) => Some(p.offer(h, &pending.count)),
+         Err(std::sync::TryLockError::Poisoned(_)) => Some(false),
+-        Err(std::sync::TryLockError::WouldBlock) => None,
++        Err(std::sync::TryLockError::WouldBlock) => {
++            contended();
++            None
++        }
+     })
+ }
+ fn bounded_admission(mut attempt: impl FnMut() -> Option<bool>) -> bool {
+@@ -1104,6 +1144,73 @@ mod tests {
+         );
+     }
+     #[test]
++    fn actual_shard_contention_retries_after_release_without_loss() {
++        let pending = HealthBuffer::default();
++        let health = Health {
++            attempt: format!("{:064x}", 1),
++            observer: crate::evidence_capture::Observer::Collector,
++            observed: 1,
++            locally_queued: 0,
++            unconfirmed: 1,
++            recording_gap: true,
++            remote_acknowledged: false,
++            status: None,
++            outcome: None,
++        };
++        let mut held = Some(pending.shards[pending.shard(&health)].lock().unwrap());
++        let mut contentions = 0;
++        assert!(
++            offer_pending_observed(&pending, &health, || {
++                contentions += 1;
++                if contentions == 3 {
++                    drop(held.take());
++                }
++            }),
++            "real WouldBlock must retry and admit after release"
++        );
++        assert_eq!(contentions, 3);
++        assert_eq!(pending.count.load(Ordering::Relaxed), 1);
++        assert_eq!(
++            pending.shards[pending.shard(&health)]
++                .lock()
++                .unwrap()
++                .entries[&health.attempt]
++                .1
++                .observed,
++            1
++        );
++    }
++    #[test]
++    fn reservation_retries_spurious_failure_and_stops_at_its_finite_budget() {
++        let count = AtomicUsize::new(0);
++        let mut calls = 0;
++        assert!(reserve_attempt_observed(&count, |current| {
++            calls += 1;
++            if calls < 4 {
++                Err(current)
++            } else {
++                count.compare_exchange(current, current + 1, Ordering::Relaxed, Ordering::Relaxed)
++            }
++        }));
++        assert_eq!(calls, 4);
++        assert_eq!(count.load(Ordering::Relaxed), 1);
++        calls = 0;
++        assert!(!reserve_attempt_observed(&count, |current| {
++            calls += 1;
++            Err(current)
++        }));
++        assert_eq!(calls, 64, "CAS retry budget must be finite and explicit");
++        assert_eq!(
++            count.load(Ordering::Relaxed),
++            1,
++            "failed reservation must not leak capacity"
++        );
++        count.store(256, Ordering::Relaxed);
++        assert!(!reserve_attempt_observed(&count, |_| panic!(
++            "full capacity must not attempt a reservation"
++        )));
++    }
++    #[test]
+     fn admission_retries_transient_contention_but_stops_at_budget() {
+         let mut calls = 0;
+         assert!(bounded_admission(|| {
+@@ -1329,6 +1436,150 @@ mod tests {
+         assert_eq!(after.journal.loss_count_certainty, "lower_bound");
+     }
+     #[test]
++    fn worker_full_failure_marks_capacity_and_retains_recovery_space() {
++        let dir = tempfile::tempdir().unwrap();
++        let spool = dir.path().join("queue");
++        let path = dir.path().join("health");
++        let id = crate::sign::Identity::generate();
++        Spool::create(
++            &spool,
++            &crate::evidence_service::hex(&[3; 32]),
++            id.did().as_str(),
++            id.did().as_str(),
++            10000,
++        )
++        .unwrap();
++        let journal = Journal::create(&path, &spool).unwrap();
++        let pages: i64 = journal
++            .conn
++            .query_row("PRAGMA page_count", [], |r| r.get(0))
++            .unwrap();
++        journal
++            .conn
++            .execute_batch(&format!("PRAGMA max_page_count={pages}"))
++            .unwrap();
++        let mut journal = Some(journal);
++        // A synthetic oversized checkpoint requires new pages at the actual
++        // SQLite page ceiling. No device-wide ENOSPC is claimed by this test.
++        let mut status = WorkerStatus {
++            sampled_at: now(),
++            state: "x".repeat(20000),
++            queue: None,
++            nonempty_since: None,
++            last_ack_at: None,
++            last_ack_position: None,
++            consecutive_failures: 0,
++            retry_seconds: 0,
++            telemetry_failures: 0,
++        };
++        let mut run = WorkerRun::new();
++        let mut next_open = std::time::Instant::now();
++        let load = || -> Result<Journal> { panic!("existing journal should not reopen") };
++        persist_worker(&mut journal, &mut status, &mut run, &load, &mut next_open);
++        assert_eq!(run.failures, 1);
++        let failed = journal.as_mut().unwrap().snapshot().unwrap();
++        assert_eq!(
++            failed.journal.exhaustion_reason.as_deref(),
++            Some("sqlite_full")
++        );
++        assert_eq!(failed.journal.reserve_bytes, 0);
++        assert_eq!(failed.journal.last_success_at, None);
++        status.state = "idle".into();
++        persist_worker(&mut journal, &mut status, &mut run, &load, &mut next_open);
++        assert_eq!(run.failures, 1);
++        assert!(run.committed);
++        let recovered = journal.as_mut().unwrap().snapshot().unwrap();
++        assert_eq!(recovered.journal.exhausted_observed, Some(true));
++        assert!(recovered.journal.last_success_at.is_some());
++        assert_eq!(recovered.worker.unwrap().telemetry_failures, 1);
++    }
++    #[test]
++    fn successful_write_is_observed_only_after_commit() {
++        let dir = tempfile::tempdir().unwrap();
++        let spool = dir.path().join("queue");
++        let path = dir.path().join("health");
++        let id = crate::sign::Identity::generate();
++        Spool::create(
++            &spool,
++            &crate::evidence_service::hex(&[3; 32]),
++            id.did().as_str(),
++            id.did().as_str(),
++            10000,
++        )
++        .unwrap();
++        let mut journal = Journal::create(&path, &spool).unwrap();
++        assert_eq!(journal.snapshot().unwrap().journal.last_success_at, None);
++        let mut health = Health {
++            attempt: format!("{:064x}", 1),
++            observer: crate::evidence_capture::Observer::Collector,
++            observed: 2,
++            locally_queued: 0,
++            unconfirmed: 1,
++            recording_gap: true,
++            remote_acknowledged: false,
++            status: None,
++            outcome: None,
++        };
++        assert!(journal.record(&health).is_err());
++        assert_eq!(journal.snapshot().unwrap().journal.last_success_at, None);
++        health.observed = 1;
++        journal.record(&health).unwrap();
++        assert!(journal
++            .snapshot()
++            .unwrap()
++            .journal
++            .last_success_at
++            .is_some());
++        journal
++            .conn
++            .execute("UPDATE control SET last_success=0", [])
++            .unwrap();
++        journal.conn.execute_batch("CREATE TEMP TRIGGER refuse_control BEFORE UPDATE ON control BEGIN SELECT RAISE(ABORT,'synthetic control write failure'); END").unwrap();
++        health.observed = 2;
++        health.unconfirmed = 2;
++        assert!(journal.record(&health).is_err());
++        let rolled_back = journal.snapshot().unwrap();
++        assert_eq!(
++            rolled_back.observed, 1,
++            "failed control write must roll back the attempt transaction"
++        );
++        assert_eq!(rolled_back.journal.last_success_at, None);
++        journal
++            .conn
++            .execute_batch("DROP TRIGGER refuse_control")
++            .unwrap();
++        journal.session("freshness-session", 0, false).unwrap();
++        assert!(journal
++            .snapshot()
++            .unwrap()
++            .journal
++            .last_success_at
++            .is_some());
++        journal
++            .conn
++            .execute("UPDATE control SET last_success=0", [])
++            .unwrap();
++        journal
++            .save_worker(&WorkerStatus {
++                sampled_at: now(),
++                state: "idle".into(),
++                queue: None,
++                nonempty_since: None,
++                last_ack_at: None,
++                last_ack_position: None,
++                consecutive_failures: 0,
++                retry_seconds: 0,
++                telemetry_failures: 0,
++            })
++            .unwrap();
++        assert!(journal
++            .snapshot()
++            .unwrap()
++            .journal
++            .last_success_at
++            .is_some());
++    }
++    #[test]
+     fn legacy_snapshot_does_not_rewrite_or_invent_control_evidence() {
+         use sha2::{Digest, Sha256};
+         let dir = tempfile::tempdir().unwrap();
+@@ -1445,6 +1696,29 @@ mod tests {
+             Some("session_limit")
+         );
+         assert_eq!(s.telemetry_dropped, 12);
+-        assert_eq!(s.journal.reserve_bytes, 0);
++        assert_eq!(s.journal.reserve_bytes, 256 * 1024);
++        drop(journal);
++        assert_eq!(
++            Journal::open(&path)
++                .unwrap()
++                .snapshot()
++                .unwrap()
++                .journal
++                .reserve_bytes,
++            256 * 1024
++        );
++        // Accept older v2 journals that had already released this reserve.
++        let conn = Connection::open(&path).unwrap();
++        conn.execute("DELETE FROM reserve", []).unwrap();
++        drop(conn);
++        assert_eq!(
++            Journal::open(&path)
++                .unwrap()
++                .snapshot()
++                .unwrap()
++                .journal
++                .reserve_bytes,
++            0
++        );
+     }
+ }
+diff --git a/tests/evidence_operations.rs b/tests/evidence_operations.rs
+index ee373cf..4f9bd15 100644
+--- a/tests/evidence_operations.rs
++++ b/tests/evidence_operations.rs
+@@ -926,7 +926,7 @@ fn synchronized_streams_retain_terminal_summaries() {
+         .filter(|r| r["capture"]["outcome"] == "completed")
+         .count();
+     eprintln!(
+-        "synchronized terminals={terminal}/80; lost-summary observations={}",
++        "synchronized terminals={terminal}/80; lost-telemetry observations={}",
+         s.telemetry_dropped
+     );
+     assert!(
+@@ -959,9 +959,52 @@ fn journal_session_exhaustion_is_visible_without_refusing_reporter_start() {
+     );
+     assert_eq!(value["journal"]["exhaustion_reason"], "session_limit");
+     assert_eq!(value["journal"]["sessions_used"], 1024);
++    assert_eq!(value["journal"]["reserve_bytes"], 256 * 1024);
+     assert_eq!(value["journal"]["loss_count_certainty"], "lower_bound");
+     assert!(
+-        journal.record(&f.health()).is_err(),
+-        "a heartbeat cannot unseal exhausted history"
++        journal.record(&f.health()).is_ok(),
++        "session capacity must not stop writable attempt recording"
+     );
++    let after = serde_json::to_value(journal.snapshot().unwrap()).unwrap();
++    assert_eq!(after["journal"]["exhausted_observed"], true);
++    assert_eq!(after["journal"]["exhaustion_reason"], "session_limit");
++}
++
++#[test]
++fn sealed_record_refusals_do_not_rewrite_control() {
++    let f = Fixture::new();
++    let conn = rusqlite::Connection::open(&f.journal).unwrap();
++    conn.execute_batch("WITH RECURSIVE n(i) AS (VALUES(0) UNION ALL SELECT i+1 FROM n WHERE i<99999) INSERT INTO attempts SELECT printf('%064x',i),0,0,0,0,'{}' FROM n").unwrap();
++    drop(conn);
++    let mut journal = Journal::open(&f.journal).unwrap();
++    assert!(journal.record(&f.health()).is_err());
++    let before = std::fs::read(&f.journal).unwrap();
++    for _ in 0..20 {
++        assert!(journal.record(&f.health()).is_err());
++    }
++    assert_eq!(
++        std::fs::read(&f.journal).unwrap(),
++        before,
++        "already sealed refusals must not cause another durable control write"
++    );
++}
++
++#[test]
++fn session_exhaustion_escalates_when_attempt_capacity_is_reached() {
++    let f = Fixture::new();
++    let conn = rusqlite::Connection::open(&f.journal).unwrap();
++    conn.execute_batch("WITH RECURSIVE n(i) AS (VALUES(0) UNION ALL SELECT i+1 FROM n WHERE i<1023) INSERT INTO sessions SELECT printf('%032x',i),0,0,1 FROM n").unwrap();
++    let (report, guard) = ops::reporter(Journal::open(&f.journal).unwrap()).unwrap();
++    drop(report);
++    guard.join();
++    conn.execute_batch("WITH RECURSIVE n(i) AS (VALUES(0) UNION ALL SELECT i+1 FROM n WHERE i<99999) INSERT INTO attempts SELECT printf('%064x',i),0,0,0,0,'{}' FROM n").unwrap();
++    drop(conn);
++    let mut journal = Journal::open(&f.journal).unwrap();
++    assert!(journal.record(&f.health()).is_err());
++    let value = serde_json::to_value(journal.snapshot().unwrap()).unwrap();
++    assert_eq!(value["journal"]["exhaustion_reason"], "attempt_limit");
++    assert_eq!(value["journal"]["reserve_bytes"], 0);
++    let before = std::fs::read(&f.journal).unwrap();
++    assert!(journal.record(&f.health()).is_err());
++    assert_eq!(std::fs::read(&f.journal).unwrap(), before);
+ }
+diff --git a/tests/evidence_operations_collection.rs b/tests/evidence_operations_collection.rs
+index 0d99471..0b8ede9 100644
+--- a/tests/evidence_operations_collection.rs
++++ b/tests/evidence_operations_collection.rs
+@@ -240,13 +240,14 @@ fn malformed_membership_and_bounds_are_rejected_without_repair() {
+     let path = f.root.join("manifest.json");
+     let original = std::fs::read(&path).unwrap();
+     let value: serde_json::Value = serde_json::from_slice(&original).unwrap();
+-    for mutation in 0..4 {
++    for mutation in 0..5 {
+         let mut bad = value.clone();
+         match mutation {
+             0 => bad["version"] = 99.into(),
+             1 => bad["active"] = "../../outside".into(),
+             2 => bad["generations"][1]["id"] = bad["generations"][0]["id"].clone(),
+-            _ => bad["binding"]["scope"] = "wrong-scope".into(),
++            3 => bad["binding"]["scope"] = "wrong-scope".into(),
++            _ => bad["active"] = bad["generations"][0]["id"].clone(),
+         };
+         let bytes = serde_json::to_vec(&bad).unwrap();
+         std::fs::write(&path, &bytes).unwrap();
+@@ -304,3 +305,47 @@ fn source_aliases_and_malformed_coordination_files_cannot_bypass_lifetime_locks(
+     assert!(Journal::open(&f.source).is_err());
+     assert_eq!(digest(&f.source), before);
+ }
++
++#[test]
++fn wal_format_is_refused_before_sqlite_can_create_untracked_sidecars() {
++    for legacy in [false, true] {
++        let f = Fixture::new();
++        let connection = rusqlite::Connection::open(&f.source).unwrap();
++        if legacy {
++            connection
++                .execute_batch("DROP TABLE control; DROP TABLE reserve; PRAGMA user_version=1")
++                .unwrap();
++        }
++        let mode: String = connection
++            .query_row("PRAGMA journal_mode=WAL", [], |row| row.get(0))
++            .unwrap();
++        assert_eq!(mode, "wal");
++        drop(connection);
++        std::fs::remove_file(f._dir.path().join("health.lock")).unwrap();
++        let original = digest(&f.source);
++        let files = || {
++            let mut names = std::fs::read_dir(f._dir.path())
++                .unwrap()
++                .map(|e| e.unwrap().file_name())
++                .collect::<Vec<_>>();
++            names.sort();
++            names
++        };
++        let before = files();
++        assert!(
++            Journal::open(&f.source).is_err(),
++            "WAL-format journals must be refused before SQLite access"
++        );
++        assert!(collection::adopt(&f.source, &f.root).is_err());
++        assert!(
++            !f.root.exists(),
++            "unsupported source cannot publish a collection"
++        );
++        assert_eq!(digest(&f.source), original);
++        assert_eq!(
++            files(),
++            before,
++            "refusal must not create WAL or SHM sidecars"
++        );
++    }
++}
+diff --git a/tests/operations_ui.test.cjs b/tests/operations_ui.test.cjs
+index 846ff0e..b9cc021 100644
+--- a/tests/operations_ui.test.cjs
++++ b/tests/operations_ui.test.cjs
+@@ -1,7 +1,7 @@
+ // Execute the actual client against controlled responses; no browser/network or dependencies.
+ const {test}=require('node:test');const assert=require('node:assert/strict');const vm=require('node:vm');const fs=require('node:fs');
+-function ui(){const nodes=new Map();class Element{constructor(){this.value='';this.hidden=false;this.events={};this.children=[];this.checked=false;this.open=false;this.isConnected=true;}setAttribute(k,v){this[k]=v;}showModal(){this.open=true;}close(){this.open=false;}focus(){this.focused=true;}select(){this.selected=true;}addEventListener(k,f){this.events[k]=f;}replaceChildren(){this.children=[];}append(x){this.children.push(x);}}
+- const node=id=>{if(!nodes.has(id))nodes.set(id,new Element());return nodes.get(id);};const pending=[];const context={document:{getElementById:node,createElement:()=>new Element()},fetch:(url,opts)=>new Promise(resolve=>pending.push({url,opts,resolve})),setInterval:()=>{},setTimeout,clearTimeout,AbortController,Date,Number};vm.createContext(context);vm.runInContext(fs.readFileSync('web/operations/app.js','utf8'),context);
++function ui(){const nodes=new Map();class Element{constructor(){this.value='';this.hidden=false;this.events={};this.children=[];this.checked=false;this.open=false;this.isConnected=true;this.textWrites=0;}set textContent(value){this._text=value;this.textWrites++;}get textContent(){return this._text;}getAttribute(k){return this[k]??null;}setAttribute(k,v){this[k]=v;}showModal(){this.open=true;}close(){this.open=false;}focus(){this.focused=true;document.activeElement=this;}select(){this.selected=true;}addEventListener(k,f){this.events[k]=f;}replaceChildren(){const disconnect=n=>{n.isConnected=false;for(const child of n.children)disconnect(child);};for(const child of this.children)disconnect(child);this.children=[];}append(x){this.children.push(x);}}
++ const node=id=>{if(!nodes.has(id))nodes.set(id,new Element());return nodes.get(id);};const pending=[];const document={getElementById:node,createElement:()=>new Element(),activeElement:null};const context={document,fetch:(url,opts)=>new Promise(resolve=>pending.push({url,opts,resolve})),setInterval:()=>{},setTimeout,clearTimeout,AbortController,Date,Number};vm.createContext(context);vm.runInContext(fs.readFileSync('web/operations/app.js','utf8'),context);
+  const login=()=>{node('token').value='synthetic-operator-token';node('connect').events.submit({preventDefault(){}});};const respond=async(s,status=200)=>{pending.shift().resolve({ok:status===200,status,json:async()=>s});await new Promise(setImmediate);};return{node,pending,login,respond};}
+ const snapshot=()=>({version:2,journal:{schema:2,pages_used:80,pages_limit:8192,free_pages:0,page_size:4096,attempts_used:1,attempts_limit:100000,sessions_used:1,sessions_limit:1024,reserve_bytes:262144,exhausted_observed:false,last_success_at:Date.now()/1000,scope:"selected journal only"},read_at:Date.now()/1000,worker:{sampled_at:Date.now()/1000,state:'idle',queue:{next:9,pending:2,pending_bytes:64,budget:128}},attempts:1,unconfirmed:1,telemetry_dropped:0,unclosed_sessions:0,reporters:[],recent:[{updated_at:1,capture:{attempt:'<img src=x onerror=alert(1)>',observer:'collector',observed:2,locally_queued:1,unconfirmed:1,recording_gap:true,outcome:'completed'}}]});
+ test('auth is header-only; gap filtering and untrusted values use text',async()=>{const u=ui();u.login();assert.equal(u.pending[0].url,'/api/status');assert.equal(u.pending[0].opts.headers.Authorization,'Bearer synthetic-operator-token');assert.equal(u.pending[0].opts.credentials,'omit');assert.equal(u.node('token').value,'');await u.respond(snapshot());assert.equal(u.node('gaps').textContent,'1');assert.equal(u.node('acked').textContent,'7');assert.equal(u.node('rows').children[0].children[0].title,'<img src=x onerror=alert(1)>');assert.match(u.node('coverage-history').textContent,/unconfirmed/);u.node('gaps-only').checked=true;u.node('gaps-only').events.change();assert.equal(u.node('rows').children.length,1);});
+@@ -16,8 +16,14 @@ test('future clock samples produce consistent badges and retain uncertain report
+ 
+ test('unsampled sessions and summary loss units are explicit',async()=>{const u=ui();u.login();const s=snapshot();s.reporters=[{clean:false,updated_at:1}];s.unclosed_sessions=4;s.telemetry_dropped=8;await u.respond(s);assert.match(u.node('coverage-history').textContent,/1 sampled unclosed sessions without a current heartbeat/);assert.match(u.node('coverage-history').textContent,/3 unclosed sessions outside the recent sample/);assert.match(u.node('telemetry').textContent,/8 health telemetry loss observations \(at least\)/);assert.doesNotMatch(u.node('telemetry').textContent,/capture updates lost/);});
+ 
+-test('journal capacity is independent, sticky and never an exact coverage claim',async()=>{const u=ui();u.login();const s=snapshot();s.reporters=[{clean:false,updated_at:Date.now()/1000}];s.unclosed_sessions=1;s.journal.exhausted_observed=true;s.journal.exhaustion_reason='sqlite_full';s.journal.reserve_bytes=0;await u.respond(s);assert.match(u.node('notice').textContent,/exhaustion was recorded/);assert.equal(u.node('journal-state').textContent,'Exhaustion recorded');assert.match(u.node('journal-scope').textContent,/lower bounds/);assert.equal(u.node('pending').textContent,'2');s.journal.exhausted_observed=false;s.journal.pages_used=8000;u.node('refresh').events.click();await u.respond(s);assert.match(u.node('notice').textContent,/near its page ceiling/);s.journal.schema=1;s.journal.last_success_at=null;u.node('refresh').events.click();await u.respond(s);assert.match(u.node('journal-state').textContent,/Legacy.*unknown/);assert.match(u.node('notice').textContent,/no recent successful observation/);});
++test('journal capacity is independent, sticky and never an exact coverage claim',async()=>{const u=ui();u.login();const s=snapshot();s.reporters=[{clean:false,updated_at:Date.now()/1000}];s.unclosed_sessions=1;s.journal.exhausted_observed=true;s.journal.exhaustion_reason='sqlite_full';s.journal.reserve_bytes=0;await u.respond(s);assert.match(u.node('notice').textContent,/exhaustion was recorded/);assert.equal(u.node('journal-state').textContent,'Exhaustion recorded');assert.match(u.node('journal-scope').textContent,/lower bounds/);assert.equal(u.node('pending').textContent,'2');s.journal.exhausted_observed=false;s.journal.pages_used=8000;u.node('refresh').events.click();await u.respond(s);assert.match(u.node('notice').textContent,/near its capacity limit/);s.journal.schema=1;s.journal.last_success_at=null;u.node('refresh').events.click();await u.respond(s);assert.match(u.node('journal-state').textContent,/Legacy.*unknown/);assert.match(u.node('notice').textContent,/no recent successful observation/);});
+ test('unsupported status version retains visibly disconnected values',async()=>{const u=ui();u.login();await u.respond({...snapshot(),version:1});assert.match(u.node('notice').textContent,/Unsupported status version/);assert.match(u.node('updated').textContent,/Disconnected/);});
+ 
+ test('search is sample-bounded and inspection preserves exact untrusted identifiers',async()=>{const u=ui();u.login();await u.respond(snapshot());u.node('search').value='collector';u.node('search').events.input();assert.equal(u.node('rows').children.length,1);assert.match(u.node('sample-count').textContent,/does not scan older history/);const button=u.node('rows').children[0].children[0].children[0];button.events.click();assert.equal(u.node('inspector').open,true);assert.equal(u.node('attempt-id').value,'<img src=x onerror=alert(1)>');assert.equal(u.node('inspect-close').focused,true);await u.node('copy-id').events.click();assert.equal(u.node('attempt-id').selected,true);u.node('inspector').events.cancel({preventDefault(){}});assert.equal(u.node('inspector').open,false);assert.equal(button.focused,true);u.node('search').value='absent';u.node('search').events.input();assert.equal(u.node('rows').children.length,0);assert.match(u.node('empty').textContent,/latest sample/);});
+ test('locking clears rendered private metadata and closes the inspector',async()=>{const u=ui();u.login();await u.respond(snapshot());u.node('rows').children[0].children[0].children[0].events.click();u.node('lock').events.click();assert.equal(u.node('inspector').open,false);assert.equal(u.node('inspect-fields').children.length,0);assert.equal(u.node('attempt-id').value,'');assert.equal(u.node('journal-scope').textContent,'');assert.equal(u.node('coverage-history').textContent,'');assert.equal(u.node('pending').textContent,'');assert.equal(u.node('token').focused,true);});
++
++test('reporter and attempt limits warn before exhaustion and preserve partial recording semantics',async()=>{const u=ui();u.login();const s=snapshot();s.reporters=[{clean:false,updated_at:Date.now()/1000}];s.unclosed_sessions=1;s.journal.sessions_used=1000;await u.respond(s);assert.match(u.node('notice').textContent,/capacity limit \(reporter sessions\)/);s.journal.sessions_used=1;s.journal.attempts_used=99000;u.node('refresh').events.click();await u.respond(s);assert.match(u.node('notice').textContent,/capacity limit \(attempts\)/);s.journal.exhausted_observed=true;s.journal.exhaustion_reason='session_limit';u.node('refresh').events.click();await u.respond(s);assert.match(u.node('notice').textContent,/Attempt summaries may still persist/);assert.equal(u.node('journal-state').textContent,'Reporter capacity exhausted');});
++test('future persistence timestamps stay unknown',async()=>{const u=ui();u.login();const s=snapshot();s.journal.last_success_at=Date.now()/1000+3600;s.reporters=[{clean:false,updated_at:Date.now()/1000}];s.unclosed_sessions=1;await u.respond(s);assert.equal(u.node('journal-state').textContent,'Persistence unknown');assert.match(u.node('notice').textContent,/no recent successful observation/);});
++
++test('polling preserves the focused attempt and inspector close returns to the replacement row',async()=>{const u=ui();u.login();await u.respond(snapshot());const first=u.node('rows').children[0].children[0].children[0];first.focus();u.node('refresh').events.click();await u.respond(snapshot());const second=u.node('rows').children[0].children[0].children[0];assert.notEqual(first,second);assert.equal(first.isConnected,false);assert.equal(second.focused,true);second.events.click();u.node('refresh').events.click();await u.respond(snapshot());const third=u.node('rows').children[0].children[0].children[0];u.node('inspect-close').events.click();assert.equal(third.focused,true);});
++test('unchanged notices are not announced again on every poll',async()=>{const u=ui();u.login();const s=snapshot();s.reporters=[{clean:false,updated_at:Date.now()/1000}];s.unclosed_sessions=1;await u.respond(s);const before=u.node('notice').textWrites;u.node('refresh').events.click();await u.respond(s);assert.equal(u.node('notice').textWrites,before);s.unclosed_sessions=2;u.node('refresh').events.click();await u.respond(s);assert.equal(u.node('notice').textWrites,before+1);});
+diff --git a/tests/test_revert_v2.py b/tests/test_revert_v2.py
+index c22a7d7..e9becf7 100644
+--- a/tests/test_revert_v2.py
++++ b/tests/test_revert_v2.py
+@@ -6,6 +6,8 @@ import subprocess
+ import sys
+ import time
+ import os
++import signal
++import threading
+ spec = importlib.util.spec_from_file_location('revert_v2', Path(__file__).resolve().parents[1] / 'scripts/revert_v2.py')
+ runner = importlib.util.module_from_spec(spec)
+ spec.loader.exec_module(runner)
+@@ -15,6 +17,14 @@ class Results(unittest.TestCase):
+         self.assertEqual(runner.parse_result('node', 'a', 'ok 1 - a\nnot ok 2 - ab', 0), ({'a'}, set()))
+         self.assertEqual(runner.parse_result('node', 'a', 'not ok 1 - a', 1), ({'a'}, {'a'}))
+         self.assertEqual(runner.parse_result('lib', 'a::b', 'test a::b ... FAILED', 101), ({'a::b'}, {'a::b'}))
++    def test_python_assertions_are_distinct_from_errors_and_skips(self):
++        for name in ('__main__.Execution', '__main__.Execution.sample'):
++            self.assertEqual(runner.parse_result('python','Execution.sample',f'sample ({name}) ... ok',0),({'Execution.sample'},set()))
++            self.assertEqual(runner.parse_result('python','Execution.sample',f'sample ({name}) ... FAIL',1),({'Execution.sample'},{'Execution.sample'}))
++            with self.assertRaises(ValueError):
++                runner.parse_result('python','Execution.sample',f'sample ({name}) ... ERROR',1)
++        self.assertEqual(runner.parse_result('python','Execution.sample',"sample (__main__.Execution) ... skipped 'reason'",0),(set(),set()))
++        self.assertEqual(runner.parse_result('python','Execution.sample','sample (__main__.Other) ... FAIL',1),(set(),set()))
+     def test_ignored_duplicate_missing_or_crashed_are_not_passes(self):
+         for output in ('ok 1 - a # SKIP', 'ok 1 - a # TODO', 'ok 1 - ab', 'ok 1 - a\nok 2 - a', 'test a ... ignored', ''):
+             self.assertEqual(runner.parse_result('node', 'a', output, 0), (set(), set()))
+@@ -39,17 +49,44 @@ class Execution(unittest.TestCase):
+                 (root/'link').symlink_to(root/'tracked')
+                 with self.assertRaises(ValueError):
+                     runner.export(root,Path(tmp)/'rejected',None)
++    def timeout_probe(self, detached):
++        with tempfile.TemporaryDirectory() as tmp:
++            ticks=Path(tmp)/'ticks'; child_pid=Path(tmp)/'child.pid'; parent_pid=Path(tmp)/'parent.pid'
++            child="import os,time; from pathlib import Path; Path("+repr(str(child_pid))+").write_text(str(os.getpid())); p=Path("+repr(str(ticks))+");\nwhile True:\n p.open('a').write('x'); time.sleep(.02)"
++            parent="import os,subprocess,sys,time; from pathlib import Path; Path("+repr(str(parent_pid))+").write_text(str(os.getpid())); subprocess.Popen([sys.executable,'-c',"+repr(child)+"],start_new_session="+repr(detached)+"); time.sleep(30)"
++            result=[]
++            def invoke():
++                try: result.append(runner.run_process([sys.executable,'-c',parent],tmp,1))
++                except BaseException as error: result.append(error)
++            worker=threading.Thread(target=invoke,daemon=True)
++            worker.start()
++            try:
++                # Independent watchdog: a broken production drain must fail an
++                # assertion, not hang the test process or leave a probe behind.
++                worker.join(8)
++                self.assertFalse(worker.is_alive(),'timeout cleanup exceeded its outer watchdog')
++                self.assertTrue(result)
++                self.assertIsInstance(result[0],subprocess.TimeoutExpired)
++                self.assertTrue(ticks.exists(),'descendant must actually run')
++                size=ticks.stat().st_size; time.sleep(.15)
++                if not detached:
++                    self.assertEqual(ticks.stat().st_size,size,'timeout left test descendant running')
++                else:
++                    self.assertGreater(ticks.stat().st_size,size,'probe must own an escaped pipe holder')
++            finally:
++                # These PIDs came only from this test's own subprocesses.
++                for path in (child_pid, parent_pid):
++                    if path.exists():
++                        try:
++                            os.kill(int(path.read_text()),signal.SIGKILL)
++                        except ProcessLookupError: pass
++                worker.join(2)
+     @unittest.skipUnless(os.name=='posix','requires POSIX process groups')
+     def test_timeout_stops_descendant_writes(self):
+-        with tempfile.TemporaryDirectory() as tmp:
+-            ticks=Path(tmp)/'ticks'
+-            child="import time; from pathlib import Path; p=Path("+repr(str(ticks))+ ");\nwhile True:\n p.open('a').write('x'); time.sleep(.02)"
+-            parent="import subprocess,sys,time; subprocess.Popen([sys.executable,'-c',"+repr(child)+"]); time.sleep(30)"
+-            with self.assertRaises(subprocess.TimeoutExpired):
+-                runner.run_process([sys.executable,'-c',parent],tmp,1)
+-            self.assertTrue(ticks.exists(),'descendant must actually run')
+-            size=ticks.stat().st_size; time.sleep(.15)
+-            self.assertEqual(ticks.stat().st_size,size,'timeout left test descendant running')
++        self.timeout_probe(False)
++    @unittest.skipUnless(os.name=='posix','requires POSIX process groups')
++    def test_detached_pipe_holder_cannot_hang_timeout_cleanup(self):
++        self.timeout_probe(True)
+     def test_process_exit_status_is_preserved(self):
+         with tempfile.TemporaryDirectory() as tmp:
+             result=runner.run_process([sys.executable,'-c',"print('not ok 1 - named'); raise SystemExit(7)"],tmp,3)
+diff --git a/web/operations/app.js b/web/operations/app.js
+index 7e2b6e0..d0ca583 100644
+--- a/web/operations/app.js
++++ b/web/operations/app.js
+@@ -47,14 +47,14 @@ $('copy-id').addEventListener('click',async()=>{
+ function journalState(j,now){
+   const fresh=Number.isFinite(j.last_success_at)&&j.last_success_at>0&&j.last_success_at<=now+5&&now-j.last_success_at<=5;
+   const used=j.pages_used-j.free_pages;
+-  const near=used>=j.pages_limit*0.9;
+-  $('journal-state').textContent=j.exhausted_observed===true?'Exhaustion recorded':j.schema===1?'Legacy · persistence unknown':near?'Near page limit':fresh?'Write observed':'Persistence unknown';
++  const nearCauses=[];if(used>=j.pages_limit*0.9)nearCauses.push('pages');if(j.attempts_used>=j.attempts_limit*0.9)nearCauses.push('attempts');if(Number.isFinite(j.sessions_limit)&&j.sessions_limit>0&&j.sessions_used>=j.sessions_limit*0.9)nearCauses.push('reporter sessions');const near=nearCauses.length>0;const sessionsExhausted=j.exhausted_observed===true&&j.exhaustion_reason==='session_limit';
++  $('journal-state').textContent=sessionsExhausted?'Reporter capacity exhausted':j.exhausted_observed===true?'Exhaustion recorded':j.schema===1?'Legacy · persistence unknown':near?'Near capacity limit':fresh?'Write observed':'Persistence unknown';
+   $('journal-capacity').value=Math.min(100,100*used/j.pages_limit);
+   $('journal-pages').textContent=bytes(j.pages_used*j.page_size)+' allocated / '+bytes(j.pages_limit*j.page_size)+' page ceiling · '+bytes(j.free_pages*j.page_size)+' reusable';
+   $('journal-limits').textContent=count(j.attempts_used)+' / '+count(j.attempts_limit)+' attempts · '+count(j.sessions_used)+' / '+(j.sessions_limit===null?'legacy unbounded':count(j.sessions_limit))+' reporter sessions · '+bytes(j.reserve_bytes)+' control reserve';
+   $('journal-persistence').textContent='Last successful persistence observation: '+time(j.last_success_at)+(j.exhaustion_reason?' · '+j.exhaustion_reason:'');
+   $('journal-scope').textContent='Scope: '+j.scope+'. Loss counts are lower bounds, not a count of missing raw messages.';
+-  return {fresh,near,exhausted:j.exhausted_observed===true};
++  return {fresh,near,nearCauses,sessionsExhausted,exhausted:j.exhausted_observed===true};
+ }
+ function render(s){snapshot=s;const w=s.worker,q=w?.queue;const now=Date.now()/1000;const age=w?Math.max(0,now-w.sampled_at):Infinity;const workerCurrent=!!w&&Number.isFinite(w.sampled_at)&&w.sampled_at<=now+5&&age<=45;
+   const storage=journalState(s.journal,now);
+@@ -78,11 +78,12 @@ function render(s){snapshot=s;const w=s.worker,q=w?.queue;const now=Date.now()/1
+   if(stale.length)history.push(count(stale.length)+' sampled unclosed sessions without a current heartbeat');
+   if(unseen)history.push(count(unseen)+' unclosed sessions outside the recent sample');
+   $('coverage-history').textContent=history.length?history.join(' · '):'No gaps reported in the retained observations. This does not establish complete capture.';
+-  if(storage.exhausted)notice('Health journal exhaustion was recorded. Capture and delivery continue; journal history requires owner rotation.','warning');
++  if(storage.sessionsExhausted)notice('New reporter registration is exhausted. Attempt summaries may still persist; coverage is incomplete. Owner rotation preserves history.','warning');
++  else if(storage.exhausted)notice('Health journal exhaustion was recorded. Capture and delivery continue; journal history requires owner rotation.','warning');
+   else if(!workerCurrent)notice('Worker status is missing or stale. These values do not establish current service health.','warning');
+   else if(w.state==='retrying')notice('Archive delivery is retrying. Retained evidence remains queued.','warning');
+   else if(!storage.fresh)notice('Health persistence has no recent successful observation. Loss counts are lower bounds and coverage is unknown.','warning');
+-  else if(storage.near)notice('Health journal is near its page ceiling. Prepare owner rotation; evidence queue capacity is separate.','warning');
++  else if(storage.near)notice('Health journal is near its capacity limit ('+storage.nearCauses.join(', ')+'). Prepare owner rotation; evidence queue capacity is separate.','warning');
+   else if(stale.length||unseen)notice('A health reporter is stale or has no recent sampled heartbeat. Capture coverage is unknown.','warning');
+   else if(!unclosed.length)notice('No active capture reporter is recorded. Capture coverage is unknown.','warning');
+   else notice('Status is current. Capture completion and archive acknowledgment are separate observations.');

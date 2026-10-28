@@ -1,0 +1,32 @@
+
+running 1 test
+test evidence_operations::tests::reservation_retries_spurious_failure_and_stops_at_its_finite_budget ... FAILED
+
+failures:
+
+---- evidence_operations::tests::reservation_retries_spurious_failure_and_stops_at_its_finite_budget stdout ----
+
+thread 'evidence_operations::tests::reservation_retries_spurious_failure_and_stops_at_its_finite_budget' (8641084) panicked at src/evidence_operations.rs:1187:9:
+assertion failed: reserve_attempt_observed(&count,
+    |current|
+        {
+            calls += 1;
+            if calls < 4 {
+                Err(current)
+            } else {
+                count.compare_exchange(current, current + 1,
+                    Ordering::Relaxed, Ordering::Relaxed)
+            }
+        })
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    evidence_operations::tests::reservation_retries_spurious_failure_and_stops_at_its_finite_budget
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 70 filtered out; finished in 0.00s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-admission-audit)
+    Finished `test` profile [unoptimized] target(s) in 5.72s
+     Running unittests src/lib.rs (.local-state/target/debug/deps/kan-ef78140debb95ee4)
+error: test failed, to rerun pass `--lib`

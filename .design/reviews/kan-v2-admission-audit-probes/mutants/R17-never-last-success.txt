@@ -1,0 +1,78 @@
+mutant R17-never-last-success on src/evidence_operations.rs
+--- old
+"UPDATE control SET last_success=? WHERE singleton=1",
+            [now() as i64],
+        )?;
++++ new
+"UPDATE control SET last_success=last_success WHERE ?=?",
+            [0, 0],
+        )?;
+
+$ cargo test --features v2-crypto --lib evidence_operations::tests::successful_write_is_observed_only_after_commit -- --exact evidence_operations::tests::successful_write_is_observed_only_after_commit
+[exit=101 timeout=False]
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-admission-audit/.local-state/reviews/opus-admission)
+    Finished `test` profile [unoptimized] target(s) in 5.90s
+     Running unittests src/lib.rs (target/debug/deps/kan-ef78140debb95ee4)
+
+running 1 test
+test evidence_operations::tests::successful_write_is_observed_only_after_commit ... FAILED
+
+failures:
+
+---- evidence_operations::tests::successful_write_is_observed_only_after_commit stdout ----
+
+thread 'evidence_operations::tests::successful_write_is_observed_only_after_commit' (8680877) panicked at src/evidence_operations.rs:1527:9:
+assertion failed: journal.snapshot().unwrap().journal.last_success_at.is_some()
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    evidence_operations::tests::successful_write_is_observed_only_after_commit
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 70 filtered out; finished in 0.20s
+
+error: test failed, to rerun pass `--lib`
+
+$ cargo test --features v2-crypto --lib evidence_operations
+[exit=101 timeout=False]
+    Finished `test` profile [unoptimized] target(s) in 0.12s
+     Running unittests src/lib.rs (target/debug/deps/kan-ef78140debb95ee4)
+
+running 13 tests
+test evidence_operations::tests::admission_retries_transient_contention_but_stops_at_budget ... ok
+test evidence_operations::tests::reservation_retries_spurious_failure_and_stops_at_its_finite_budget ... ok
+test evidence_operations::tests::actual_shard_contention_retries_after_release_without_loss ... ok
+test evidence_operations::tests::contended_admission_is_bounded_and_counts_one_summary ... ok
+test evidence_operations::tests::sharded_admission_is_independent_and_globally_bounded ... ok
+test evidence_operations::tests::successful_write_is_observed_only_after_commit ... FAILED
+test evidence_operations::tests::legacy_snapshot_does_not_rewrite_or_invent_control_evidence ... ok
+test evidence_operations::tests::worker_full_failure_marks_capacity_and_retains_recovery_space ... FAILED
+test evidence_operations::tests::worker_checkpoint_retry_is_idempotent_after_uncertain_commit ... ok
+test evidence_operations::tests::session_capacity_is_sticky_and_existing_control_still_updates ... ok
+test evidence_operations::tests::physical_full_keeps_prior_health_and_rejects_new_record ... ok
+test evidence_operations::tests::attempt_count_exhaustion_retains_existing_rows_and_marks_once ... ok
+test evidence_operations::tests::burst_keeps_final_cumulative_summary_and_terminal_gap ... ok
+
+failures:
+
+---- evidence_operations::tests::successful_write_is_observed_only_after_commit stdout ----
+
+thread 'evidence_operations::tests::successful_write_is_observed_only_after_commit' (8680925) panicked at src/evidence_operations.rs:1527:9:
+assertion failed: journal.snapshot().unwrap().journal.last_success_at.is_some()
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- evidence_operations::tests::worker_full_failure_marks_capacity_and_retains_recovery_space stdout ----
+
+thread 'evidence_operations::tests::worker_full_failure_marks_capacity_and_retains_recovery_space' (8680927) panicked at src/evidence_operations.rs:1493:9:
+assertion failed: recovered.journal.last_success_at.is_some()
+
+
+failures:
+    evidence_operations::tests::successful_write_is_observed_only_after_commit
+    evidence_operations::tests::worker_full_failure_marks_capacity_and_retains_recovery_space
+
+test result: FAILED. 11 passed; 2 failed; 0 ignored; 0 measured; 58 filtered out; finished in 1.35s
+
+error: test failed, to rerun pass `--lib`
+
+RESULT [{"cmd": "evidence_operations::tests::successful_write_is_observed_only_after_commit", "verdict": "ASSERT-KILL", "failed": ["evidence_operations::tests::successful_write_is_observed_only_after_commit"], "panic": [["src/evidence_operations.rs:1527:9:", "assertion failed: journal.snapshot().unwrap().journal.last_success_at.is_some()"]]}, {"cmd": "evidence_operations", "verdict": "ASSERT-KILL", "failed": ["evidence_operations::tests::successful_write_is_observed_only_after_commit", "evidence_operations::tests::worker_full_failure_marks_capacity_and_retains_recovery_space"], "panic": [["src/evidence_operations.rs:1527:9:", "assertion failed: journal.snapshot().unwrap().journal.last_success_at.is_some()"], ["src/evidence_operations.rs:1493:9:", "assertion failed: recovered.journal.last_success_at.is_some()"]]}]

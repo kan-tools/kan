@@ -1,0 +1,12 @@
+✔ first paint defaults to platform; System follows live platform changes (1.021291ms)
+✔ explicit choice persists only the theme and overrides platform until System selected (0.679125ms)
+✔ invalid preference, unavailable storage and cross-tab updates degrade safely (0.703417ms)
+✔ production and preview load the same theme controller before content (0.482708ms)
+ℹ tests 4
+ℹ suites 0
+ℹ pass 4
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 31.811375

@@ -142,7 +142,9 @@ serves the production dashboard and the generated offline design artifact.
 The shared appearance controller and worker-history correction are in draft #281;
 bounded coalescing is in #282; sharded admission/reversion tooling is in #283.
 Capacity, preserved-history collection commands, recent-list search and metadata
-inspection are the next unreviewed operations slice. They still do not provide
+inspection are in draft #284 (production 67e3414, review record 771341e). Fresh
+Opus 5.5 review approved with follow-ups. The child admission-audit correction
+addresses those findings plus WAL-header refusal; its review remains pending. They still do not provide
 raw message browsing. The collection-wide deduplicated overview remains required.
 
 `.design/kan-v2-reader-library.md` makes the next real Library API boundary concrete:

@@ -1,0 +1,32 @@
+mutant R19-manifest-active-any-member on src/evidence_operations_collection.rs
+--- old
+if g.id != m.active || g.sealed_sha256.is_some() {
++++ new
+if g.sealed_sha256.is_some() {
+
+$ cargo test --features v2-crypto --test evidence_operations_collection -- --exact malformed_membership_and_bounds_are_rejected_without_repair
+[exit=101 timeout=False]
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-admission-audit/.local-state/reviews/opus-admission)
+    Finished `test` profile [unoptimized] target(s) in 6.75s
+     Running tests/evidence_operations_collection.rs (target/debug/deps/evidence_operations_collection-9f7d9f7685ac0e2b)
+
+running 1 test
+test malformed_membership_and_bounds_are_rejected_without_repair ... FAILED
+
+failures:
+
+---- malformed_membership_and_bounds_are_rejected_without_repair stdout ----
+
+thread 'malformed_membership_and_bounds_are_rejected_without_repair' (8681352) panicked at tests/evidence_operations_collection.rs:254:9:
+assertion failed: Journal::open(&f.root).is_err()
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    malformed_membership_and_bounds_are_rejected_without_repair
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 8 filtered out; finished in 0.45s
+
+error: test failed, to rerun pass `--test evidence_operations_collection`
+
+RESULT [{"cmd": "malformed_membership_and_bounds_are_rejected_without_repair", "verdict": "ASSERT-KILL", "failed": ["malformed_membership_and_bounds_are_rejected_without_repair"], "panic": [["tests/evidence_operations_collection.rs:254:9:", "assertion failed: Journal::open(&f.root).is_err()"]]}]

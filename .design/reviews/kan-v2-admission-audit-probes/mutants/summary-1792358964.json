@@ -1,0 +1,91 @@
+[
+ {
+  "id": "R06b-always-rewrite-control-wide",
+  "results": [
+   {
+    "cmd": "evidence_operations",
+    "verdict": "PASS",
+    "failed": [],
+    "panic": []
+   },
+   {
+    "cmd": "evidence_operations",
+    "verdict": "PASS",
+    "failed": [],
+    "panic": []
+   },
+   {
+    "cmd": "evidence_operations_collection",
+    "verdict": "PASS",
+    "failed": [],
+    "panic": []
+   },
+   {
+    "cmd": "--nocapture",
+    "verdict": "PASS",
+    "failed": [],
+    "panic": []
+   }
+  ]
+ },
+ {
+  "id": "R20-guard-and-filter-both-removed",
+  "results": [
+   {
+    "cmd": "sealed_record_refusals_do_not_rewrite_control",
+    "verdict": "ASSERT-KILL",
+    "failed": [
+     "sealed_record_refusals_do_not_rewrite_control"
+    ],
+    "panic": [
+     [
+      "tests/evidence_operations.rs:985:5:",
+      "assertion `left == right` failed: already sealed refusals must not cause another durable control write"
+     ]
+    ]
+   }
+  ]
+ },
+ {
+  "id": "R21-attempt-escalation-only-sqlite",
+  "results": [
+   {
+    "cmd": "session_exhaustion_escalates_when_attempt_capacity_is_reached",
+    "verdict": "ASSERT-KILL",
+    "failed": [
+     "session_exhaustion_escalates_when_attempt_capacity_is_reached"
+    ],
+    "panic": [
+     [
+      "tests/evidence_operations.rs:1005:5:",
+      "assertion `left == right` failed"
+     ]
+    ]
+   },
+   {
+    "cmd": "--test-threads=1",
+    "verdict": "PASS",
+    "failed": [],
+    "panic": []
+   }
+  ]
+ },
+ {
+  "id": "R22-wouldblock-callback-skipped",
+  "results": [
+   {
+    "cmd": "evidence_operations::tests::actual_shard_contention_retries_after_release_without_loss",
+    "verdict": "ASSERT-KILL",
+    "failed": [
+     "evidence_operations::tests::actual_shard_contention_retries_after_release_without_loss"
+    ],
+    "panic": [
+     [
+      "src/evidence_operations.rs:1159:9:",
+      "real WouldBlock must retry and admit after release"
+     ]
+    ]
+   }
+  ]
+ }
+]

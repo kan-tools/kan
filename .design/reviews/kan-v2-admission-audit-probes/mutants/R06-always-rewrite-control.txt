@@ -1,0 +1,50 @@
+mutant R06-always-rewrite-control on src/evidence_operations.rs
+--- old
+                if exhausted
+                    && !(prior == "session_limit"
++++ new
+                if false
+                    && !(prior == "session_limit"
+
+$ cargo test --features v2-crypto --test evidence_operations -- --exact sealed_record_refusals_do_not_rewrite_control
+[exit=0 timeout=False]
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-admission-audit/.local-state/reviews/opus-admission)
+warning: unused variable: `exhausted`
+   --> src/evidence_operations.rs:381:22
+    |
+381 |                 let (exhausted, prior): (bool, String) = tx.query_row(
+    |                      ^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_exhausted`
+    |
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: `kan` (lib) generated 1 warning (run `cargo fix --lib -p kan` to apply 1 suggestion)
+    Finished `test` profile [unoptimized] target(s) in 6.75s
+     Running tests/evidence_operations.rs (target/debug/deps/evidence_operations-8f396ba67ddb65cc)
+
+running 1 test
+test sealed_record_refusals_do_not_rewrite_control ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 21 filtered out; finished in 0.36s
+
+
+$ cargo test --features v2-crypto --test evidence_operations -- --exact session_exhaustion_escalates_when_attempt_capacity_is_reached
+[exit=0 timeout=False]
+warning: unused variable: `exhausted`
+   --> src/evidence_operations.rs:381:22
+    |
+381 |                 let (exhausted, prior): (bool, String) = tx.query_row(
+    |                      ^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_exhausted`
+    |
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: `kan` (lib) generated 1 warning (run `cargo fix --lib -p kan` to apply 1 suggestion)
+    Finished `test` profile [unoptimized] target(s) in 0.11s
+     Running tests/evidence_operations.rs (target/debug/deps/evidence_operations-8f396ba67ddb65cc)
+
+running 1 test
+test session_exhaustion_escalates_when_attempt_capacity_is_reached ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 21 filtered out; finished in 0.41s
+
+
+RESULT [{"cmd": "sealed_record_refusals_do_not_rewrite_control", "verdict": "PASS", "failed": [], "panic": []}, {"cmd": "session_exhaustion_escalates_when_attempt_capacity_is_reached", "verdict": "PASS", "failed": [], "panic": []}]

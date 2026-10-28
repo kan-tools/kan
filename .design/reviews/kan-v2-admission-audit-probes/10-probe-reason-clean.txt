@@ -1,0 +1,10 @@
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-admission-audit/.local-state/reviews/opus-admission)
+    Finished `test` profile [unoptimized] target(s) in 6.60s
+     Running tests/zz_review_probe.rs (target/debug/deps/zz_review_probe-165f9159ec825e19)
+
+running 1 test
+PROBE attempt_limit then worker full: save=Err("database or disk is full") reason="attempt_limit"
+test probe_attempt_limit_reason_survives_later_page_full ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 4 filtered out; finished in 0.98s
+

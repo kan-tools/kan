@@ -1,0 +1,22 @@
+
+running 1 test
+test wal_format_is_refused_before_sqlite_can_create_untracked_sidecars ... FAILED
+
+failures:
+
+---- wal_format_is_refused_before_sqlite_can_create_untracked_sidecars stdout ----
+
+thread 'wal_format_is_refused_before_sqlite_can_create_untracked_sidecars' (8642320) panicked at tests/evidence_operations_collection.rs:335:9:
+WAL-format journals must be refused before SQLite access
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    wal_format_is_refused_before_sqlite_can_create_untracked_sidecars
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 8 filtered out; finished in 0.27s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-admission-audit/.local-state/reversion/e20cb5b39a874f778bc6cccdc8e8c6ca)
+    Finished `test` profile [unoptimized] target(s) in 6.73s
+     Running tests/evidence_operations_collection.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-admission-audit/.local-state/reversion-target/debug/deps/evidence_operations_collection-9f7d9f7685ac0e2b)
+error: test failed, to rerun pass `--test evidence_operations_collection`

@@ -1,0 +1,34 @@
+mutant R01-wouldblock-immediate-refusal on src/evidence_operations.rs
+--- old
+contended();
+            None
++++ new
+contended();
+            Some(false)
+
+$ cargo test --features v2-crypto --lib evidence_operations::tests::actual_shard_contention_retries_after_release_without_loss -- --exact evidence_operations::tests::actual_shard_contention_retries_after_release_without_loss
+[exit=101 timeout=False]
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-admission-audit/.local-state/reviews/opus-admission)
+    Finished `test` profile [unoptimized] target(s) in 5.68s
+     Running unittests src/lib.rs (target/debug/deps/kan-ef78140debb95ee4)
+
+running 1 test
+test evidence_operations::tests::actual_shard_contention_retries_after_release_without_loss ... FAILED
+
+failures:
+
+---- evidence_operations::tests::actual_shard_contention_retries_after_release_without_loss stdout ----
+
+thread 'evidence_operations::tests::actual_shard_contention_retries_after_release_without_loss' (8674230) panicked at src/evidence_operations.rs:1162:9:
+real WouldBlock must retry and admit after release
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    evidence_operations::tests::actual_shard_contention_retries_after_release_without_loss
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 70 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `--lib`
+
+RESULT [{"cmd": "evidence_operations::tests::actual_shard_contention_retries_after_release_without_loss", "verdict": "ASSERT-KILL", "failed": ["evidence_operations::tests::actual_shard_contention_retries_after_release_without_loss"], "panic": [["src/evidence_operations.rs:1162:9:", "real WouldBlock must retry and admit after release"]]}]

@@ -1,0 +1,28 @@
+✔ auth is header-only; gap filtering and untrusted values use text (13.36675ms)
+✔ late authenticated response cannot unlock a locked view (0.930542ms)
+✔ missing/stale data and HTTP failure cannot look healthy (0.57625ms)
+✔ absent and stale capture reporters remain explicitly unknown (0.681125ms)
+✔ fresh active sessions are current while historical losses remain visible (0.551375ms)
+✔ delivery retries, unsampled unclosed sessions and future clocks cannot look current (0.70525ms)
+✔ future clock samples produce consistent badges and retain uncertain reporter history (0.580458ms)
+✔ unsampled sessions and summary loss units are explicit (0.405583ms)
+✔ journal capacity is independent, sticky and never an exact coverage claim (0.626167ms)
+✔ unsupported status version retains visibly disconnected values (0.480416ms)
+✔ search is sample-bounded and inspection preserves exact untrusted identifiers (0.586041ms)
+✔ locking clears rendered private metadata and closes the inspector (0.636209ms)
+✔ reporter and attempt limits warn before exhaustion and preserve partial recording semantics (0.5545ms)
+✔ future persistence timestamps stay unknown (0.418875ms)
+✔ polling preserves the focused attempt and inspector close returns to the replacement row (0.514792ms)
+✔ unchanged notices are not announced again on every poll (0.479292ms)
+✔ first paint defaults to platform; System follows live platform changes (1.026542ms)
+✔ explicit choice persists only the theme and overrides platform until System selected (0.668209ms)
+✔ invalid preference, unavailable storage and cross-tab updates degrade safely (0.729666ms)
+✔ production and preview load the same theme controller before content (0.163375ms)
+ℹ tests 20
+ℹ suites 0
+ℹ pass 20
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 49.650959

@@ -1,0 +1,34 @@
+mutant R14-header-check-after-lock-sidecar on src/evidence_operations.rs
+--- old
+None
++++ new
+None
+
+$ cargo test --features v2-crypto --test evidence_operations_collection -- --exact wal_format_is_refused_before_sqlite_can_create_untracked_sidecars
+[exit=101 timeout=False]
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-admission-audit/.local-state/reviews/opus-admission)
+    Finished `test` profile [unoptimized] target(s) in 6.75s
+     Running tests/evidence_operations_collection.rs (target/debug/deps/evidence_operations_collection-9f7d9f7685ac0e2b)
+
+running 1 test
+test wal_format_is_refused_before_sqlite_can_create_untracked_sidecars ... FAILED
+
+failures:
+
+---- wal_format_is_refused_before_sqlite_can_create_untracked_sidecars stdout ----
+
+thread 'wal_format_is_refused_before_sqlite_can_create_untracked_sidecars' (8680248) panicked at tests/evidence_operations_collection.rs:345:9:
+assertion `left == right` failed: refusal must not create WAL or SHM sidecars
+  left: ["health", "health.lock", "queue"]
+ right: ["health", "queue"]
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    wal_format_is_refused_before_sqlite_can_create_untracked_sidecars
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 8 filtered out; finished in 0.26s
+
+error: test failed, to rerun pass `--test evidence_operations_collection`
+
+RESULT [{"cmd": "wal_format_is_refused_before_sqlite_can_create_untracked_sidecars", "verdict": "ASSERT-KILL", "failed": ["wal_format_is_refused_before_sqlite_can_create_untracked_sidecars"], "panic": [["tests/evidence_operations_collection.rs:345:9:", "assertion `left == right` failed: refusal must not create WAL or SHM sidecars"]]}]

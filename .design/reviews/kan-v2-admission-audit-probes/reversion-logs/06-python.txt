@@ -1,0 +1,16 @@
+test_detached_pipe_holder_cannot_hang_timeout_cleanup (__main__.Execution) ... FAIL
+
+======================================================================
+FAIL: test_detached_pipe_holder_cannot_hang_timeout_cleanup (__main__.Execution)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/m/code/kan-tools/kan/.worktrees/kan-v2-admission-audit/.local-state/reviews/opus-admission/.local-state/reversion/0c537f8b41da442384dd0c090a89bcf9/tests/test_revert_v2.py", line 89, in test_detached_pipe_holder_cannot_hang_timeout_cleanup
+    self.timeout_probe(True)
+  File "/Users/m/code/kan-tools/kan/.worktrees/kan-v2-admission-audit/.local-state/reviews/opus-admission/.local-state/reversion/0c537f8b41da442384dd0c090a89bcf9/tests/test_revert_v2.py", line 67, in timeout_probe
+    self.assertFalse(worker.is_alive(),'timeout cleanup exceeded its outer watchdog')
+AssertionError: True is not false : timeout cleanup exceeded its outer watchdog
+
+----------------------------------------------------------------------
+Ran 1 test in 8.014s
+
+FAILED (failures=1)

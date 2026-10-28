@@ -1,0 +1,24 @@
+mutant P08-unknown-python-alias-allowed on scripts/revert_v2.py
+--- old
+            if name.startswith('python::') and name[8:] not in PYTHON_TESTS:
+                raise ValueError(f'unknown Python test alias: {name}')
+
++++ new
+
+
+$ /Library/Developer/CommandLineTools/usr/bin/python3 -I tests/test_revert_v2.py -v
+[exit=0 timeout=False]
+test_detached_pipe_holder_cannot_hang_timeout_cleanup (__main__.Execution) ... ok
+test_export_isolated_including_untracked_and_rejects_symlink (__main__.Execution) ... ok
+test_process_exit_status_is_preserved (__main__.Execution) ... ok
+test_timeout_stops_descendant_writes (__main__.Execution) ... ok
+test_exact_assertions (__main__.Results) ... ok
+test_ignored_duplicate_missing_or_crashed_are_not_passes (__main__.Results) ... ok
+test_python_assertions_are_distinct_from_errors_and_skips (__main__.Results) ... ok
+
+----------------------------------------------------------------------
+Ran 7 tests in 3.424s
+
+OK
+
+RESULT [{"cmd": "-v", "verdict": "PASS", "failed": [], "panic": []}]

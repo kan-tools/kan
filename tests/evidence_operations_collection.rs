@@ -240,13 +240,14 @@ fn malformed_membership_and_bounds_are_rejected_without_repair() {
     let path = f.root.join("manifest.json");
     let original = std::fs::read(&path).unwrap();
     let value: serde_json::Value = serde_json::from_slice(&original).unwrap();
-    for mutation in 0..4 {
+    for mutation in 0..5 {
         let mut bad = value.clone();
         match mutation {
             0 => bad["version"] = 99.into(),
             1 => bad["active"] = "../../outside".into(),
             2 => bad["generations"][1]["id"] = bad["generations"][0]["id"].clone(),
-            _ => bad["binding"]["scope"] = "wrong-scope".into(),
+            3 => bad["binding"]["scope"] = "wrong-scope".into(),
+            _ => bad["active"] = bad["generations"][0]["id"].clone(),
         };
         let bytes = serde_json::to_vec(&bad).unwrap();
         std::fs::write(&path, &bytes).unwrap();
@@ -303,4 +304,48 @@ fn source_aliases_and_malformed_coordination_files_cannot_bypass_lifetime_locks(
     symlink(f._dir.path().join("missing"), &lock).unwrap();
     assert!(Journal::open(&f.source).is_err());
     assert_eq!(digest(&f.source), before);
+}
+
+#[test]
+fn wal_format_is_refused_before_sqlite_can_create_untracked_sidecars() {
+    for legacy in [false, true] {
+        let f = Fixture::new();
+        let connection = rusqlite::Connection::open(&f.source).unwrap();
+        if legacy {
+            connection
+                .execute_batch("DROP TABLE control; DROP TABLE reserve; PRAGMA user_version=1")
+                .unwrap();
+        }
+        let mode: String = connection
+            .query_row("PRAGMA journal_mode=WAL", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(mode, "wal");
+        drop(connection);
+        std::fs::remove_file(f._dir.path().join("health.lock")).unwrap();
+        let original = digest(&f.source);
+        let files = || {
+            let mut names = std::fs::read_dir(f._dir.path())
+                .unwrap()
+                .map(|e| e.unwrap().file_name())
+                .collect::<Vec<_>>();
+            names.sort();
+            names
+        };
+        let before = files();
+        assert!(
+            Journal::open(&f.source).is_err(),
+            "WAL-format journals must be refused before SQLite access"
+        );
+        assert!(collection::adopt(&f.source, &f.root).is_err());
+        assert!(
+            !f.root.exists(),
+            "unsupported source cannot publish a collection"
+        );
+        assert_eq!(digest(&f.source), original);
+        assert_eq!(
+            files(),
+            before,
+            "refusal must not create WAL or SHM sidecars"
+        );
+    }
 }

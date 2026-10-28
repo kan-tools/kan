@@ -1,0 +1,41 @@
+Source export and logs: /Users/m/code/kan-tools/kan/.worktrees/kan-v2-admission-audit/.local-state/reviews/opus-admission/.local-state/reversion/0c537f8b41da442384dd0c090a89bcf9
+note: untracked and therefore NOT reverted: ['.design/reviews/kan-v2-admission-audit-reversion/08-evidence_operations.txt.gz', 'review-context.txt', 'review-evidence/01-build.txt', 'review-evidence/02-units.txt', 'review-evidence/03-evidence_operations.txt', 'review-evidence/03-evidence_operations_collection.txt', 'review-evidence/03-surface_conformance.txt', 'review-evidence/04-node-ui.txt', 'review-evidence/04b-node-theme.txt', 'review-evidence/05-python.txt', 'review-evidence/06-fmt.txt', 'review-evidence/07-clippy-v2.txt', 'review-evidence/08-clippy-default.txt', 'review-evidence/09-probe-clean.txt', 'review-evidence/10-probe-reason-clean.txt', 'review-evidence/11-reversion.txt', 'review-evidence/current-production.patch', 'review-evidence/env.sh', 'review-evidence/mutants-run-2.txt', 'review-evidence/mutants-run-3.txt', 'review-evidence/mutants-run.txt', 'review-evidence/mutants/P01-unbounded-drain.txt', 'review-evidence/mutants/P02-no-pipe-close.txt', 'review-evidence/mutants/P03-kill-direct-child-only.txt', 'review-evidence/mutants/P04-error-accepted.txt', 'review-evidence/mutants/P05-error-counted-as-fail.txt', 'review-evidence/mutants/P06-no-py311-format.txt', 'review-evidence/mutants/P07-any-module-class.txt', 'review-evidence/mutants/P08-unknown-python-alias-allowed.txt', 'review-evidence/mutants/R01-wouldblock-immediate-refusal.txt', 'review-evidence/mutants/R02-callsite-single-try-bypass.txt', 'review-evidence/mutants/R03-cas-budget-one.txt', 'review-evidence/mutants/R04-reserve-production-single-try.txt', 'review-evidence/mutants/R05-no-capacity-precheck.txt', 'review-evidence/mutants/R06-always-rewrite-control.txt', 'review-evidence/mutants/R06b-always-rewrite-control-wide.txt', 'review-evidence/mutants/R06c-always-rewrite-reason-probe.txt', 'review-evidence/mutants/R07-no-escalation.txt', 'review-evidence/mutants/R08-session-releases-reserve.txt', 'review-evidence/mutants/R09-session-seals-record.txt', 'review-evidence/mutants/R10-no-sealed-filter.txt', 'review-evidence/mutants/R11-old-session-reserve-refused.txt', 'review-evidence/mutants/R12-session-requires-released-reserve.txt', 'review-evidence/mutants/R13-no-wal-byte-check.txt', 'review-evidence/mutants/R14-header-check-after-lock-sidecar.txt', 'review-evidence/mutants/R15-timestamp-before-validation.txt', 'review-evidence/mutants/R16-timestamp-after-commit.txt', 'review-evidence/mutants/R17-never-last-success.txt', 'review-evidence/mutants/R18-worker-no-capacity-mark.txt', 'review-evidence/mutants/R19-manifest-active-any-member.txt', 'review-evidence/mutants/R20-guard-and-filter-both-removed.txt', 'review-evidence/mutants/R21-attempt-escalation-only-sqlite.txt', 'review-evidence/mutants/R22-wouldblock-callback-skipped.txt', 'review-evidence/mutants/U01-no-session-threshold.txt', 'review-evidence/mutants/U02-no-attempt-threshold.txt', 'review-evidence/mutants/U03-attempt-threshold-0.99.txt', 'review-evidence/mutants/U04-no-session-exhausted-branch.txt', 'review-evidence/mutants/U05-future-clock-guard.txt', 'review-evidence/mutants/U06-row-focus-not-restored.txt', 'review-evidence/mutants/U07-notice-rewritten.txt', 'review-evidence/mutants/U08-polling-steals-modal-focus.txt', 'review-evidence/mutants/U09-close-ignores-replacement.txt', 'review-evidence/mutants/summary-1792358808.json', 'review-evidence/mutants/summary-1792358964.json', 'review-evidence/mutants/summary-1792359018.json', 'review-evidence/mutate.py', 'review-evidence/source-before.sha', 'review-evidence/zz_review_probe.rs']
+What would be reverted (worktree):
+  skipped .design/kan-v2-admission-audit.md (not in --include)
+  skipped .design/kan-v2-human-frontend.md (not in --include)
+  skipped .design/kan-v2-journal-generations.md (not in --include)
+  skipped .design/reviews/kan-v2-admission-audit-author/admission-mutations.txt (not in --include)
+  skipped .design/reviews/kan-v2-admission-audit-author/audit-integration.txt (not in --include)
+  skipped .design/reviews/kan-v2-admission-audit-author/cas-single-try.txt (not in --include)
+  skipped .design/reviews/kan-v2-admission-audit-author/clippy.txt (not in --include)
+  skipped .design/reviews/kan-v2-admission-audit-author/node-check.txt (not in --include)
+  skipped .design/reviews/kan-v2-admission-audit-author/wouldblock-refusal.txt (not in --include)
+  skipped .design/reviews/kan-v2-admission-audit-reversion/01-python.txt (not in --include)
+  skipped .design/reviews/kan-v2-admission-audit-reversion/02-evidence_operations_collection.txt (not in --include)
+  skipped .design/reviews/kan-v2-admission-audit-reversion/03-evidence_operations.txt (not in --include)
+  skipped .design/reviews/kan-v2-admission-audit-reversion/04-evidence_operations.txt (not in --include)
+  skipped .design/reviews/kan-v2-admission-audit-reversion/05-python.txt (not in --include)
+  skipped .design/reviews/kan-v2-admission-audit-reversion/06-evidence_operations_collection.txt (not in --include)
+  skipped .design/reviews/kan-v2-admission-audit-reversion/07-evidence_operations.txt (not in --include)
+  skipped .design/reviews/kan-v2-admission-audit-reversion/08-evidence_operations.txt (not in --include)
+  skipped .design/reviews/kan-v2-admission-audit-reversion/09-python.txt (not in --include)
+  skipped .design/reviews/kan-v2-admission-audit-reversion/10-evidence_operations_collection.txt (not in --include)
+  skipped .design/reviews/kan-v2-admission-audit-reversion/11-evidence_operations.txt (not in --include)
+  skipped .design/reviews/kan-v2-admission-audit-reversion/12-evidence_operations.txt (not in --include)
+  skipped .design/reviews/kan-v2-admission-audit-reversion/production.patch (not in --include)
+  skipped .design/reviews/kan-v2-admission-audit-reversion/result.txt (not in --include)
+  skipped docs/V2-OPERATIONS.md (not in --include)
+  reverting scripts/revert_v2.py: 9/9 hunk(s)
+  reverting src/evidence_operations.rs: 10/13 hunk(s) (3 test-side hunk(s) kept in place)
+  skipped tests/evidence_operations.rs (not in --include)
+  skipped tests/evidence_operations_collection.rs (not in --include)
+  skipped tests/operations_ui.test.cjs (not in --include)
+  skipped tests/test_revert_v2.py (not in --include)
+  reverting web/operations/app.js: 4/4 hunk(s)
+
+DEMONSTRATED — failed under revert: python::bounded_pipe_cleanup, evidence_operations_collection::wal_format_is_refused_before_sqlite_can_create_untracked_sidecars, evidence_operations::journal_session_exhaustion_is_visible_without_refusing_reporter_start, evidence_operations::sealed_record_refusals_do_not_rewrite_control, evidence_operations::session_exhaustion_escalates_when_attempt_capacity_is_reached
+
+Paste into the commit message:
+
+    Demonstrated-by: revert=HEAD tests=python::bounded_pipe_cleanup,evidence_operations_collection::wal_format_is_refused_before_sqlite_can_create_untracked_sidecars,evidence_operations::journal_session_exhaustion_is_visible_without_refusing_reporter_start,evidence_operations::sealed_record_refusals_do_not_rewrite_control,evidence_operations::session_exhaustion_escalates_when_attempt_capacity_is_reached outcome=DEMONSTRATED
+python3 -I scripts/revert_v2.py --helper  --tests  --production  --production  41.07s user 3.88s system 104% cpu 42.804 total

@@ -1,0 +1,37 @@
+mutant U02-no-attempt-threshold on web/operations/app.js
+--- old
+if(j.attempts_used>=j.attempts_limit*0.9)nearCauses.push('attempts');
++++ new
+
+
+$ node --test --test-name-pattern=reporter and attempt limits tests/operations_ui.test.cjs
+[exit=1 timeout=False]
+✖ reporter and attempt limits warn before exhaustion and preserve partial recording semantics (12.820125ms)
+ℹ tests 1
+ℹ suites 0
+ℹ pass 0
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 40.952791
+
+✖ failing tests:
+
+test at tests/operations_ui.test.cjs:25:1
+✖ reporter and attempt limits warn before exhaustion and preserve partial recording semantics (12.820125ms)
+  AssertionError [ERR_ASSERTION]: The input did not match the regular expression /capacity limit \(attempts\)/. Input:
+  
+  'Status is current. Capture completion and archive acknowledgment are separate observations.'
+  
+      at TestContext.<anonymous> (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-admission-audit/.local-state/reviews/opus-admission/tests/operations_ui.test.cjs:25:474)
+      at async Test.run (node:internal/test_runner/test:1069:7)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:332:3) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 'Status is current. Capture completion and archive acknowledgment are separate observations.',
+    expected: /capacity limit \(attempts\)/,
+    operator: 'match'
+  }
+
+RESULT [{"cmd": "tests/operations_ui.test.cjs", "verdict": "ASSERT-KILL", "failed": ["reporter and attempt limits warn before exhaustion and preserve partial recording semantics"], "panic": []}]
