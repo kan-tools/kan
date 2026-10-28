@@ -19,6 +19,8 @@ pub mod git;
 pub mod identity;
 pub mod json;
 pub mod mcp;
+#[cfg(feature = "v2-storage")]
+pub mod migration_preflight;
 pub mod mixed_render;
 pub mod mst;
 pub mod persistence;
