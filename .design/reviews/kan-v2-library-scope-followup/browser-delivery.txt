@@ -1,0 +1,11 @@
+2026-10-19 synthetic browser recheck:
+Native app inventory: Mac locked, automatic unlock failed. No unlock attempted.
+In-app browser tab 10 opened the production Library fixture on loopback :61521.
+Selected scope 16 repeated 32 bytes; occurrence 1 displayed exact 64-byte hex:
+5365636f6e6420617574686f72697a65642073636f70652e0a427974652d657861637420736f7572636520776974682062696e617279207375666669783a00ff
+Started documented waitForEvent('download', timeoutMs:15000), then clicked
+Download this range. The download event timed out; no delivered path obtained.
+This verifies displayed source and UI operation, NOT file delivery or its absence.
+Locked the Library; AX state confirmed source/rows hidden and token field focused.
+Closed owned tab 10, sent SIGINT to exact owned fixture PID 85328, test exited 0.
+No fixture listeners remain. Existing user tab 4 left untouched.

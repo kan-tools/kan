@@ -1,0 +1,26 @@
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-build-next)
+    Finished `test` profile [unoptimized] target(s) in 0.37s
+     Running tests/evidence_attestation.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_attestation-cba5a126dc479c9c)
+
+running 5 tests
+test valid_same_manifest_alternate_statement_does_not_replace_pinned_predecessor ... ok
+test issuance_cannot_sign_mismatched_records_or_overflow_frontiers ... ok
+test independent_bytes_signatures_and_chain_match ... ok
+test descending_pages_link_to_the_exact_pin_and_terminate_at_genesis ... ok
+test independent_resigned_negative_vectors_fail_at_named_check ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+
+     Running tests/evidence_contract.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_contract-739e9b0c63002558)
+
+running 7 tests
+test byte_depth_and_allocation_bounds ... ok
+test exact_encoded_size_boundary ... ok
+test retry_decisions_do_not_depend_on_view_trust_or_subject_existence ... ok
+test malformed_known_records_never_fall_back_to_unsupported ... ok
+test inventory_distinguishes_absence_withholding_and_incomplete_coverage ... ok
+test independent_canonical_cid_and_signing_vectors ... ok
+test receipts_bind_all_manifest_coordinates_but_do_not_prove_durability ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+

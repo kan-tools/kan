@@ -1,0 +1,56 @@
+My verdict is **APPROVE WITH FOLLOW-UPS**, for design and protocol readiness only. This is not approval of any runtime code. The original three blockers are fixed at the protocol level, and none of my findings changes the statement bytes. One real contradiction is left (R1), and it must be settled in the text before anyone builds the reader's source-read path or the proof-aware spool release.
+
+**Required runs.** Both pass with exit 0:
+- `attestation_vectors.py --check`: 2 signed vectors and 46 labelled negatives.
+- `attestation_mutations.py`: 27/27 killed. Each kill really comes from a wrong or missing label, not from some other failure.
+
+**Original blockers**
+- **B1 (fixtures didn't test the chain checks): resolved.** The negatives are now re-signed with the pinned key, saved in the JSON, and checked against their exact expected failure label. All 13 survivors from the previous review are now caught.
+- **B2 (who signs upgraded chains): resolved for proofs.** One configured current issuer signs everything, and its key stays on the service host. An `admitted` proof now needs the receipt issuer to match, and the receipt must belong to the proof's manifest; both have vectors.
+- **B3 (page linkage, no archive identity): resolved as a specification.** `archiveId` is in the statement bytes, and pages descend from a pinned tip. I wrote my own descending verifier from the design text alone. It rejects:
+  - a same-height fork spliced under another branch's tip;
+  - a different valid statement substituted at the tip;
+  - a page that runs past genesis.
+- The design now states plainly that it guarantees nothing against equivocation or rollback.
+- **F1–F8:** each is now specified. I checked in code that old readers refuse `user_version` 2.
+
+**R1 — must decide before building those two paths.** Allowing the historical receipt issuer (H) to differ from the current issuer (C) conflicts with RFC 4's request-audience rule (`rfcs/4-evidence-contract.md:303-309`) and with existing code:
+- `src/evidence_service.rs:549` refuses a request whose audience isn't C *before* it looks for a duplicate. A spooled legacy request addressed to H is refused, so that spool never drains.
+- `src/evidence_reader.rs:287` refuses a source read when the request's audience isn't the configured issuer. Every upgraded row with H ≠ C would fail as corrupt.
+
+I recommend requiring H = C for the first profile. If that's not acceptable, write down an exact rule that applies only to `retained-verified` rows. Leaving it unstated invites someone to loosen the audience check everywhere, which would allow requests to be redirected to another service.
+
+**Why "27/27 killed" isn't the whole story.** The author's mutants each delete a whole check. I also weakened single conditions inside compound checks: 13 of my 25 extra mutants survive, and 9 of those are real gaps. In every real case the oracle's logic rejects the bad input, but no fixture vector exists, so a Rust port could get it wrong unnoticed. The uncovered cases:
+- a receipt whose operation or position differs from its manifest's;
+- a manifest from another scope under a correctly scoped statement;
+- a statement after sequence 1 that has no predecessor;
+- the profile, off-curve key and signature-range boundary checks.
+
+**Other follow-ups**
+- **No page or snapshot vectors (F-new-1).** The oracle and fixtures have none, so the design's own requirement (line 326) to test alternate statements against a pinned successor isn't met.
+- **Receipt schema is unchecked (F-new-2).** The Python oracle accepts a receipt with a wrong durability value, an extra field, or a junk historical issuer, so Rust needs vectors for these.
+- **Purpose order isn't checked (F-new-3).** The oracle accepts chains that mix `admitted` and `retained-verified` in any order, with several historical issuers. The positive fixture itself uses an order the upgrade can never produce (`admitted` then `retained-verified`).
+- **Who asserts what (F-new-4).** The UI requirements should say which statements come from whom:
+  - The caller's unsigned page coordinates and cursor bytes are never trusted.
+  - "Missing" and "corrupt" are signed service claims the reader cannot check.
+  - Only "available" is ever verified by the reader, and only when it actually reads the source and checks the writer's signature.
+- **Recovery descriptor (F-new-5).** It records a loss observed at one point in time, so call it an observation rather than "authoritative". Specify how owner recovery lifts the refusal without deleting it.
+- **Archive ID setup (F-new-6).** Say where readers and spool clients get the configured `archiveId`. An owner-copy changes it, so every config needs updating.
+- **Stop the legacy service during upgrade (F-new-7).** Resume refuses a changed plan, so the legacy service must stop admitting between pinning the plan and cutover. Otherwise those appends are missing from the copy.
+
+**Process notes**
+- The live worktree has uncommitted Rust work (`src/evidence_attestation.rs`, tests, and changes to the oracle and fixture). So implementation has started ahead of this gate. I reviewed the committed snapshot (HEAD `b81eb4f`) only, not that work.
+- I made no kan/day reads or writes, did no Rust builds, used no network, and recorded nothing to day. Source, design, fixture and oracle hashes are the same before and after.
+
+Files are in `.local-state/reviews/protocol-correction/review-evidence/`:
+- REPORT.txt
+- oracle-check.log
+- oracle-mutations.log
+- probe_correction.py
+- probe_correction.log
+- mutate_extended.py
+- mutate_extended.log
+- probe_survivors.py
+- probe_survivors.log
+- tree-state-before.log
+- tree-state-after.log

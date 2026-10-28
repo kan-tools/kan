@@ -1,0 +1,7 @@
+foreign-scope manifest under configured-scope statement: oracle=reject:receipt-binding
+receipt position != manifest position: oracle=reject:receipt-binding
+receipt operation != manifest operation: oracle=reject:receipt-binding
+sequence>1 with null predecessors, no previous: oracle=reject:genesis
+admitted receipt issuer same principal, other method: oracle=reject:admitted-issuer
+fixture labels present: ['admitted-issuer', 'archive-length', 'body-fields', 'chain-commitments', 'chain-position', 'configured-archive', 'configured-scope', 'envelope-bound', 'envelope-canonical', 'envelope-fields', 'genesis', 'issuer-algorithm', 'issuer-encoding', 'issuer-fields', 'issuer-method', 'issuer-version', 'pinned-issuer', 'profile', 'purpose', 'receipt-binding', 'record-binding', 'record-cid', 'safe-integer', 'scope-length', 'sequence', 'signature-encoding', 'signature-invalid', 'signature-range', 'statement-bytes', 'statement-canonical', 'statement-fields']
+fixture negatives touching receipt operation/position or manifest scope: []

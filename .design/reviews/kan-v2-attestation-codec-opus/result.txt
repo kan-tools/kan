@@ -1,0 +1,57 @@
+# Codec review at 2e96685 (design b81eb4f): APPROVE WITH FOLLOW-UPS
+
+**APPROVE WITH FOLLOW-UPS**, for the codec checkpoint only. I found no correctness or safety violation in the codec. Rust reproduces the independent oracle's signed vectors byte for byte, every binding and signature check holds up under hostile input, and the same-height fork defence is guarded by the committed tests. The gaps are in test coverage, label consistency and how the API describes its own trust. They need fixing before the storage and reader slices build on this code, but none breaks the codec.
+
+I wrote none of this code and did not delegate any of it. I made no kan or day writes; the north star came from the supplied `north-star.json` (the one live telos, `telos/raw-data-and-projections`). No storage or runtime acceptance criterion is met: AC-1 to AC-6 all stay open.
+
+## What I ran
+I ran `cargo clean -p kan` first, then built sequentially with 4 jobs on the shared target. The export matches `git archive 2e96685` exactly, apart from the harness-supplied `north-star.json`.
+
+| Check | Result |
+|---|---|
+| attestation, contract, store, service, reader, library_cli, surface_conformance tests | 95 passed, 1 ignored (a manual browser fixture) |
+| Oracle `--check` | 2 exact signed vectors, 60 labelled negatives, exit 0 |
+| Author's whole-check oracle mutations | 27/27 killed |
+| Node CI suites | 50/50 passed, including the Library probe tests PB1–PB7 |
+| v2 all-target Clippy (`-D warnings`) and fmt | both clean |
+| Restore | all 1,377 file hashes identical before and after; no leftover processes or listeners |
+
+I did not run default-feature Clippy, the full CI test list, the MSRV job or the macOS canary.
+
+## What I confirmed by running it
+- **Signature matches the oracle:** `issue()` reproduces the oracle's exact envelope bytes for both rows. Both sides use deterministic P-256 signing normalised to low-S.
+- **Binding:** issuer, archive and scope are checked against the caller's pinned configuration. The predecessor's archive, scope and issuer are checked too, as are the manifest and receipt CIDs and the receipt-to-manifest binding. An `admitted` proof requires the receipt issuer to equal the statement issuer.
+- **Signature range:** r must be 0 < r < n and s must be 0 < s ≤ n/2. DER and high-S signatures are rejected.
+- **Pinned DID:** must be a base58btc P-256 did:key, 56–80 bytes, canonical spelling, with the exact `did#fingerprint` method and a static version.
+- **Parser:** negative integers, floats, unknown tags, out-of-order keys and non-minimal encodings are all refused. The shared parser refactor keeps schema-1 behaviour; only an unused error message changed.
+- **Descending verification:** `verify_at` rejects forks, splices, wrong heights, rows past genesis and frontiers from another archive.
+- **Hostile bytes:** 13,420 truncated or bit-flipped variants were all rejected, with no panics.
+- **Differential against the oracle:** across 36 hostile cases Rust never accepted anything the oracle rejected.
+
+## Findings and follow-ups
+- **F1 – a panic guard has no committed test.** Removing the DID 56–80 length bound (my mutant RM1) lets `did:key:z` or `did:key:z2` crash inside the atrium did:key parser ("range end index 2 out of range"). The committed tests all still pass with the guard removed; only my probe caught it.
+- **F2 – unlabelled assertions and inconsistent labels.** The fork, wrong-height and genesis assertions only check `.is_err()`, so dropping the `row-after-genesis` check (RM3) goes unnoticed. `verify_at` also reports framing errors with a raw message ("trailing bytes") where `verify` reports `envelope-canonical`.
+- **F3 – the API implies more trust than the caller supplied.** `verify()` accepts whatever predecessor it is given. A predecessor built from row 2's own body verifies row 2 without row 1 ever being seen. `Frontier` has public fields, and the doc comment on `Verified` says "chain verification", which is only true relative to the caller's input. The planned spool-release check needs to verify a single proof on its own, and today the only way to do that is to make up a predecessor. Add an explicit unchained API before that slice.
+- **F4 – the oracle checks source records less strictly than Rust.**
+  - My conjunct mutations left 37 of 76 alive. Some are equivalent; the real gaps are missing manifest-schema checks and weak receipt-schema checks.
+  - The oracle accepts records Rust rejects: empty manifests, a manifest writer that isn't a valid author, and malformed historical-issuer versions in receipts.
+  - Three error labels differ between Rust and the oracle. For an off-curve key, Rust's `issuer-point` label can never fire and it reports `issuer-algorithm` instead.
+  - No vectors exist for `issuer-point` or `manifest-canonical`.
+- **F5 – no independent page or snapshot vectors.** This was flagged as F-new-1 in the earlier protocol review and is still open. The "alternate statement against a pinned successor" requirement (design line 326) is only tested with alternates generated by Rust itself.
+- **F6 – things the codec deliberately allows that the store must refuse.** It accepts the same manifest at two heights, `retained-verified` after `admitted`, and timestamps that go backwards. Purpose order is already documented as a store rule; refusing a duplicate manifest across heights is not named anywhere. Separately, the RFC 4 section header still says "(not implemented)" although the codec now is.
+
+## Other checks you asked for
+- **Audience and RetryImported:** I found no contradiction with the code. The design's claim that `verify_retained_request` already requires the request audience to equal the historical receipt issuer is true (`src/evidence_service.rs:339-340`). The legacy reader's check that the audience equals the configured issuer (`src/evidence_reader.rs:287`) is unchanged. RetryImported exists only in prose.
+- **Library:** the commit only adds tests; no production `web/` code changed since the approved 4b0ebc1.
+- **Oracle location:** the brief's `tests/fixtures/oracle` path doesn't exist. The oracle is `.design/tools/attestation_vectors.py` plus `.design/fixtures/service-attestation-v1.json`.
+
+## My mutation results
+All 10 of my Rust mutants compiled, and every kill was a named assertion failure, not a compile error.
+- **The committed tests kill five:** the disabled frontier pin (RM4), the manifest-only pin (RM8), the low-S off-by-one (RM5) and the dropped chain-issuer check (RM6). The changed shared-decoder size limit (RM10) is killed by the contract tests.
+- **Only my probes kill two:** RM1 and RM3, as described in F1 and F2.
+- **Nothing kills three:** RM2, RM7 and RM9. The checks they remove are redundant: a later check still rejects the input, possibly with a different label.
+
+## Limits
+These mutation sets are samples, not exhaustive. The byte-flip probing changes one byte at a time and is not structured fuzzing. I did not do a timing or side-channel review, and I only read atrium-crypto's parse, verify and sign paths rather than auditing the crate. I make no storage, runtime or acceptance-criterion claims.
+
+Everything is in `.local-state/reviews/codec/review-evidence/`; open `REPORT.txt` first. The probe scripts, the 36 differential cases and per-mutant logs are alongside it.

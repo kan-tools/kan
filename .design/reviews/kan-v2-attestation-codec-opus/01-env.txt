@@ -1,0 +1,6 @@
+Mon Oct 19 00:56:48 PDT 2026
+rustc 1.96.1 (31fca3adb 2026-06-26)
+cargo 1.96.1 (356927216 2026-06-26)
+v24.1.0
+Python 3.9.6
+CARGO_TARGET_DIR=/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target

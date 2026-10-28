@@ -1,0 +1,49 @@
+✔ real endpoint uses header auth and untrusted source stays text (3.668125ms)
+✔ lock aborts pending source and clears every private view (0.788125ms)
+✔ page and scope navigation carry only the selected authenticated pin (0.917542ms)
+✔ download rechecks authorization and denied export clears prior plaintext (0.991208ms)
+✔ old transport errors cannot lock a newer session (0.666708ms)
+✔ range reads do not accumulate plaintext and inspector close returns focus (0.760792ms)
+✔ pagehide locks and no reader persistence or HTML execution sinks are present (0.611791ms)
+✔ source view can inspect exact bytes even when UTF-8 contains controls (0.636417ms)
+✔ export keeps exact bytes alive until navigation starts and releases on timeout or lock (2.023833ms)
+✔ scope changes remove old-scope rows before a new pin is used (0.6095ms)
+✔ unavailable or unverifiable source clears plaintext but preserves other browsing (1.296334ms)
+✔ unverifiable page removes old rows and leaves scope recovery available (0.527667ms)
+✔ directional format controls default to exact hex and permit explicit UTF-8 (1.019ms)
+✔ capability matrix renders actual service capabilities without claiming unknown support (0.535083ms)
+✔ partial catalog coverage persists while browsing and retry clears old authority (0.694291ms)
+✔ incomplete empty catalog differs from complete empty and late retry cannot repaint after lock (0.822417ms)
+✔ both authorization denial statuses lock an already open Library (1.166291ms)
+✔ Previous is disabled immediately when leaving a later page (0.642292ms)
+✔ malformed duplicate and inconsistent capabilities never open a Library (2.1755ms)
+✔ all directional control families default to exact hex with explicit text access (5.46475ms)
+✔ malformed retry clears partially rendered capabilities and keeps recovery available (0.6245ms)
+✖ malformed scope catalogs are rejected before any option or page request (1.802292ms)
+✔ malformed scope retry clears old plaintext and permits recovery (1.246ms)
+ℹ tests 23
+ℹ suites 0
+ℹ pass 22
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 58.60575
+
+✖ failing tests:
+
+test at tests/library_ui.test.cjs:48:1
+✖ malformed scope catalogs are rejected before any option or page request (1.802292ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  
+  false !== true
+  
+      at TestContext.<anonymous> (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-build-next/.local-state/reviews/library/tests/library_ui.test.cjs:51:10)
+      at async Test.run (node:internal/test_runner/test:1069:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:752:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: false,
+    expected: true,
+    operator: 'strictEqual'
+  }

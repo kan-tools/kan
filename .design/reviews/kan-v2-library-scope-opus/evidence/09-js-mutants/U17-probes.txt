@@ -1,0 +1,33 @@
+✔ PB1 boundary values are accepted, not falsely rejected (3.726042ms)
+✔ PB2 complete empty catalog still opens without page request (0.671125ms)
+✔ PB3 over-limit scope name and pin request are rejected (1.051417ms)
+✖ PB4 non-string scope/request with a length property are rejected (1.537958ms)
+✔ PB5 malformed retry from partial resets capabilities, styling and keeps lock/recovery (1.256667ms)
+✔ PB6 lock during malformed-catalog reply ignores the late reply (0.532666ms)
+✔ PB7 after malformed retry, old scope names and pins cannot be navigated (0.710834ms)
+ℹ tests 7
+ℹ suites 0
+ℹ pass 6
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 37.868667
+
+✖ failing tests:
+
+test at review-evidence/probes/scope_probes.test.cjs:29:1
+✖ PB4 non-string scope/request with a length property are rejected (1.537958ms)
+  AssertionError [ERR_ASSERTION]: [{"scope":"a","pin":{"request":["x"],"reply":{}}}]
+  
+  false !== true
+  
+      at TestContext.<anonymous> (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-build-next/.local-state/reviews/library/review-evidence/probes/scope_probes.test.cjs:30:211)
+      at async Test.run (node:internal/test_runner/test:1069:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:752:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: false,
+    expected: true,
+    operator: 'strictEqual'
+  }

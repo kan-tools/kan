@@ -1,0 +1,2 @@
+2 exact P-256 low-S signed proposal vectors; byte/CID/preimage/signature and 20 negative checks passed. No Rust/admission/availability claim.
+exit=0

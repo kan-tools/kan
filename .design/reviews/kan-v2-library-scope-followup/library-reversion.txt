@@ -1,0 +1,15 @@
+Source export and logs: /Users/m/code/kan-tools/kan/.worktrees/kan-v2-build-next/.local-state/reversion/937d867b72b5409690dd82281a25f603
+note: untracked and therefore NOT reverted: ['src/evidence_attestation.rs']
+What would be reverted (worktree):
+  skipped scripts/revert_v2.py (not in --include)
+  skipped src/evidence.rs (not in --include)
+  skipped src/lib.rs (not in --include)
+  skipped tests/evidence_capture_contention.rs (not in --include)
+  skipped tests/library_ui.test.cjs (not in --include)
+  reverting web/library/app.js: 2/2 hunk(s)
+
+DEMONSTRATED — failed under revert: node::library_scope_shapes
+
+Paste into the commit message:
+
+    Demonstrated-by: revert=HEAD tests=node::library_scope_shapes outcome=DEMONSTRATED

@@ -1,0 +1,314 @@
+PROTOCOL / DESIGN-READINESS REVIEW — kan-v2-evidence-availability
+=================================================================
+Reviewer: fresh Claude Code session, model claude-opus-5-5. Not the author. No delegation.
+Reviewed tree: export at fa60c3157262c392b3830c0a6cc33c2b91582828
+  (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-evidence-availability/.local-state/reviews/protocol;
+   `diff -rq` against the worktree showed it is identical except for the supplied north-star.json)
+Targets: .design/kan-v2-evidence-availability.md (232 lines)
+         rfcs/4-evidence-contract.md §"Proposed payload-independent admission attestation" (lines 87-160)
+         .design/fixtures/service-attestation-v1.json, .design/tools/attestation_vectors.py
+Code read: src/evidence_store.rs, src/evidence_service.rs, src/evidence_reader.rs (head),
+           src/evidence_library.rs (grep), src/evidence_restore.rs (head), src/surface.rs,
+           src/persistence.rs (grep), src/sign.rs (sign/verify), scripts/evidence_reference.py (grep),
+           atrium-crypto-0.1.3 src/verify.rs + src/keypair.rs (from the local cargo registry, read only),
+           tests/fixtures/read-write-surface.tsv (evidence rows)
+Skill followed: /Users/m/.codex/plugins/cache/kan-tools/day/0.12.0-beta.3/skills/adversarial-review/SKILL.md
+
+VERDICT (design readiness ONLY): **BLOCK**
+Nothing in this document is a runtime claim. No requirement or acceptance criterion is met:
+none of the design is implemented, and prose does not count as evidence.
+
+-----------------------------------------------------------------
+0. Constraints honoured / deviations from the skill
+-----------------------------------------------------------------
+- No kan/day reads or writes. I did not run `kan show --all --json`; I used the supplied
+  north-star.json as the record of telos/raw-data-and-projections. Skill Step 7 (day review
+  record / kan observe / kan mark) was NOT done, because the operator prohibited kan/day writes.
+- No Rust build, test, clippy or fmt, and no target/. Skill Step 3's cargo steps were NOT run.
+- No network, real archives or keys. The probes use only public test scalars 1 and 2.
+- Source, fixtures and design were not modified. The only files written are under
+  review-evidence/: REPORT.txt, probe_attestation.py, probe_attestation.log,
+  mutate_oracle.py, mutate_oracle.log, oracle-check.log.
+- No browser claims are made.
+
+-----------------------------------------------------------------
+1. Commands run (exact) and raw results
+-----------------------------------------------------------------
+C1  /Users/m/code/kan-tools/kan/.worktrees/kan-v2-encryption/.local-state/crypto-oracle-env/bin/python \
+      .design/tools/attestation_vectors.py --check
+    -> exit 0: "2 exact P-256 low-S signed proposal vectors; byte/CID/preimage/signature and
+       20 negative checks passed. No Rust/admission/availability claim."   (oracle-check.log)
+C2  <same python> -I review-evidence/probe_attestation.py "$PWD"           (probe_attestation.log)
+    -> 15 probes, 0 unexpected.
+C3  <same python> -I review-evidence/mutate_oracle.py "$PWD"               (mutate_oracle.log)
+    -> 10 of 13 assertion-removal mutants SURVIVE `check()`.
+C4  git -C <worktree> status --short -> empty before and after (the tree was not modified).
+
+-----------------------------------------------------------------
+2. North star
+-----------------------------------------------------------------
+telos/raw-data-and-projections (north-star.json, Decision bafyreied3rk…): "Raw attested data is
+retained in full and never collapsed in the store. Every simplification … is a determined
+projection … A field holding a computed value is the failure mode."
+The Observation bafyreicakl3… says the telos DELIBERATELY DECLARES NO WITNESSES. I invent none.
+excluded_by_trust: 2. Those withheld claims stay withheld; I did not try to read them.
+This work serves the telos as a direction. Loss is represented as a sampled per-row state that is
+never stored, and retained-verified is labelled present-time rather than backdated. That
+direction is correct. The blockers are protocol gaps, not drift away from the telos.
+Tension: performance-at-scale is InTensionWith this telos (north-star.json, Relation). B3
+below is where the two meet: per-pin full-chain verification against a bounded page API.
+
+-----------------------------------------------------------------
+3. Concrete protocol BLOCKERS (must be resolved before implementation)
+-----------------------------------------------------------------
+B1  The fixtures do not support the proposed chain bindings. The design claims they do.
+    Evidence: C3, mutate_oracle.log. With each verify() assertion deleted in turn, `--check`
+    still PASSES for:
+      chain commitments (attestation_vectors.py:118), chain position/scope (:117),
+      genesis rule (:114), sequence arithmetic (:109), purpose allow-list (:112),
+      scope length (:106), closed statement body (:103), profile v/kind (:101),
+      record-CID shape (:91), and envelope bound (:95; it is masked because "oversize" is also
+      "trailing").
+    Only low-S, pinned-issuer and closed-envelope are killed. Every one of the "20 negative
+    checks" (lines 142-167) mutates signed content WITHOUT re-signing. Each is therefore
+    rejected by the signature, or by decoder framing, and never exercises the field or chain
+    rule it is named after.
+    The fixture JSON also contains only `positive` rows. The negatives are generated inside
+    Python, so a Rust implementation has no negative vectors to consume.
+    C2 shows the oracle's verify() logic does reject chain attacks once they are re-signed with
+    the pinned key (P1: wrong previousAttestation/previousManifest/sequence/previousSequence,
+    and non-null genesis). The logic is present; the gate does not exercise it.
+    Contradicts: design :96-97 ("Independent codec fixtures must … reject noncanonical/
+    duplicate/unknown fields"), AC-2 ("Removing attestation binding fails a named assertion"),
+    and RFC :155-158 / design :199-201, which present the 20 negatives as chain/profile
+    coverage.
+    Required: commit re-signed negative vectors to the JSON, each labelled with the exact
+    check it must trip and its error class. Cover: wrong previousAttestation, wrong
+    previousManifest, skipped sequence, previousSequence ≠ sequence-1, non-null genesis,
+    null predecessor at sequence>1, scope change mid-chain, configured-scope mismatch,
+    unknown body field, v=2, unknown purpose, DER signature, r=0, s=0, s=n/2+1, non-P-256
+    did:key, noncanonical did:key, verificationMethod mismatch, non-static identityVersion,
+    CID-shaped bytes, nested-statement trailing bytes, and statement-level size.
+    Make --check assert the specific failure label, not just any exception. The oracle
+    currently catches (AssertionError, ValueError, InvalidSignature) indiscriminately
+    (:155-161). Re-run mutate_oracle.py: zero survivors is the bar.
+
+B2  The issuer model for upgraded chains is internally contradictory.
+    - RFC :129-131: "an explicit upgrade preserves the historical receipt issuer and
+      distinguishes the present verification issuer". This implies the upgrade signer can
+      differ from the receipt issuer.
+    - Oracle verify (:104-105) and RFC :121-122 pin ONE configured issuer per chain.
+      P5 (C2) confirms that a chain cannot change issuer: "reject(pinned issuer)".
+    - The existing reader pins one `issuer` per scope (src/evidence_reader.rs ScopeAccess)
+      and requires receipt.issuer == that issuer (decode_record).
+    - After an upgrade, new `admitted` statements must come from the service key
+      (RFC :129: "New admission requires the current receipt issuer"). They chain after
+      `retained-verified` statements.
+    So either (a) the upgrade signer MUST be the live service key, or (b) the profile allows
+    distinct receipt-issuer and attestation-issuer configuration, or issuer transitions.
+    (a) puts the service private key into an offline CLI. Design :194 says no key-placement
+    preference is selected, which contradicts :202 ("No unresolved owner preference blocks
+    that technical pass").
+    (b) requires new reader configuration, a new chain rule and new fixtures.
+    Neither is specified. The fixture's retained-verified row uses receipt issuer ==
+    attestation issuer, so the "distinct verification issuer" case is never exercised.
+    Also unspecified and unfixtured:
+      - `admitted` requires receipt.issuer == statement.issuer. P4 accepts an `admitted`
+        statement over a foreign-issuer receipt.
+      - The statement's receipt CID must decode to a receipt that structurally binds the
+        statement's manifest. P3 accepts a statement whose receipt belongs to a different
+        manifest, because the oracle never decodes receipts.
+
+B3  Snapshot linkage for paginated reads is not specified, and the statement carries no
+    archive-instance or epoch identity.
+    The chain is backward-linked (previousAttestation). A reader pinned at (N, tip, S_N) can
+    link page rows k..k+40 to the pin only by also fetching and verifying S_{k+41}…S_N, or by
+    verifying the whole chain from genesis. P6 shows verify() cannot validate a mid-chain row
+    without the verified predecessor.
+    REQ-4/design :127-129 ("independently verifies issuer proofs and snapshot linkage before
+    exposing any row") is O(N) ECDSA work per pin as written. Implementers will be pushed to
+    check per-row signatures only.
+    Per-row signatures are not enough, because legitimate same-issuer forks are reachable
+    under this design. P2 shows a second, different, validly signed statement at sequence 2
+    with the same predecessor verifies. Forks arise from:
+      * restoring a profile-2 backup (Ledger::backup) and resuming admission: the same
+        sequence numbers are re-signed with different manifests/issuedAt;
+      * running the copy-upgrade twice to two fresh destinations with the same signer
+        (resume binding only constrains ONE destination);
+      * two service partitions with the same scopeToken and issuer.
+    RFC 4 Terminology (:26) already requires a frontier "bound to an archive instance". The
+    statement has no such field, and InventorySnapshot (through, tip, attestation) does not
+    add one.
+    Decide before freezing bytes:
+      - add an archive-instance/epoch identifier, and/or an accumulator, to the statement.
+        This changes the pinned bytes and CIDs;
+      - specify the page-verification algorithm (descending-from-pin pages; a
+        reader-verified chain cache with stated trust status; or a cumulative commitment);
+      - state whether readers keep a per-scope monotonic pin to detect rollback/truncation.
+        That would be new persistence with a surface row, not an access grant.
+      - say explicitly that a single issuer can equivocate and that no signature here
+        detects it across readers.
+
+-----------------------------------------------------------------
+4. Non-blocking findings (follow-ups that must land with the implementation)
+-----------------------------------------------------------------
+F1  The P-256 restriction is not provided by the reused verifier.
+    src/sign.rs:1854 `verify` → atrium-crypto 0.1.3 verify.rs:68-69 dispatches BOTH P256 and
+    Secp256k1. High-S IS refused by default (verify.rs:84-90, allow_malleable=false), and DER
+    is only parsed when malleable. The design's "reuse pinned did:key machinery" therefore
+    needs an explicit multicodec 0x1200 check, or a configured secp256k1 issuer will verify.
+    Signing (keypair.rs:75-77) normalises low-S. It is RFC 6979 via try_sign, so Rust can
+    reproduce the fixture signatures exactly. Assert that in parity.
+F2  The proof-profile Append output and the client spool-release rule are not framed.
+    Today admitted_manifest (src/evidence_service.rs:352-377) releases on the receipt only.
+    Decide:
+      - Is the proof carried in Committed and required for release?
+      - Does a retry of a pre-upgrade operation return `retained-verified`?
+      - Must a client accept that purpose? If not, its spool never drains.
+F3  Degraded mode entry is unspecified. Service::new → audit_suffix → read_signed fails on
+    any missing object (evidence_service.rs:481, 672-675), and Ledger::open → verify() reads
+    every object (evidence_store.rs:608, 1000).
+    Decide:
+      - Is the read-only inventory server an explicit operator mode or an automatic fallback?
+      - Which process serves InventorySnapshot/Page when the writable Service cannot start?
+      - Are integrity and unavailable states disclosed only after scope/grant checks, so that
+        unknown principals keep the access-limited shape (REQ-3)?
+F4  Legacy RecoveryReader::rebuild recreates SCHEMA v1 (evidence_store.rs:263). Any new
+    rebuild/backup verification that forgets the proof table silently drops proofs.
+    Profile 2 MUST change user_version: legacy check_schema refuses only on version≠1
+    (:620), and RecoveryReader does not run check_write_schema. A profile that kept
+    user_version=1 and added a table would be read by old recovery and silently lose proofs.
+    Pin this as a test.
+F5  Metadata-only recovery output has no declared format or marker. Strict verify_file
+    (:1085-1092) rejects missing objects, so the "payload-incomplete" label must be durable
+    in the output (surface row and report), not just CLI text. The output must be unable to
+    pass the evidence_restore full contract or Ledger::open.
+F6  Legacy-copy honesty is sound, but it narrows the motivating case. A legacy archive
+    with any missing payload can never be upgraded (design :168-170, REQ-5). Already-damaged
+    legacy archives therefore gain no payload-independent browsing. That is honest and was
+    decided before implementation (legitimate narrowing), but the owner should be told
+    explicitly. Prefix-only upgrade (through < first loss) is neither specified nor
+    forbidden; decide it.
+F7  Profile-2 raw `Ledger::commit` / `commit_partition` (no proof) must be refused at the
+    type level, not just detected later. Specify the chain's scope rule as partition-only:
+    the oracle requires scope equality across the chain, but Ledger::commit permits
+    multi-scope archives (evidence_store.rs:709-726).
+F8  The statement-level size bound and the envelope 16 KiB bound interact with the existing
+    65,536-byte decoder limit (scripts/evidence_reference.py decode). State that the nested
+    statement must decode under the 16 KiB envelope cap. Python and Rust must enforce it in
+    the same order.
+
+-----------------------------------------------------------------
+5. REQ / AC coverage (preimplementation; prose is not evidence)
+-----------------------------------------------------------------
+REQ-1 proof binding ............ unmet (no code). Spec mostly adequate. Fixture coverage of
+                                 chain bindings is inadequate (B1). Issuer/receipt rules are
+                                 unresolved (B2).
+REQ-2 atomic admission/retry ... unmet. Design adequate: sign inside the immediate tx after
+                                 rowid assignment, then insert the proof. The existing fence
+                                 at evidence_store.rs:763-781 and the duplicate path at
+                                 :785-803 are the correct hook points. F2 is open.
+REQ-3 inventory states/auth .... unmet. Mostly specified. Disclosure ordering in degraded
+                                 mode is open (F3).
+REQ-4 startup/pinned chain ..... unmet. Specification inadequate (B3).
+REQ-5 owner-copy upgrade ....... unmet. Issuer model unresolved (B2). Fork via repeated copy
+                                 (B3). Prefix decision open (F6).
+REQ-6 surfaces/backup/indexes .. unmet. Rows not yet added (expected). F4 and F5 are open.
+REQ-7 Library states ........... unmet / unverifiable here (no browser claims).
+REQ-8 qualification/review ..... unmet. This review is one input. It is not the build-time
+                                 Opus review.
+AC-1..AC-6 ..................... all unchecked; nothing to verify yet. The design doc itself
+                                 lists them unchecked.
+
+-----------------------------------------------------------------
+6. Scope-narrowing language (design doc)
+-----------------------------------------------------------------
+- "append-while-degraded … needs its own storage proof" (:146, Out of Scope :207):
+  legitimate. Named before implementation and separable.
+- "First implementation runs damaged archives through this explicitly degraded read-only path"
+  (:141-143): legitimate.
+- "Missing payloads without existing trusted proofs are a hard failure" (:168): legitimate but
+  consequential (F6).
+- "No unresolved owner preference blocks that technical pass" (:202): incorrect. B2 is a
+  key-custody preference, and :194 admits none is selected.
+- Rust parity "remain[s] required" (:230-232): legitimate. It is declared, not claimed.
+
+-----------------------------------------------------------------
+7. House-rule check
+-----------------------------------------------------------------
+- Fold/no destruction: no in-place migration, and the source is preserved. OK as designed.
+- Raw vs projection: availability is sampled and never stored. Indexed proof coordinates are
+  declared derived. OK. One risk: any reader pin/chain cache added for B3 must be catalogued as
+  derived and must never confer trust or access.
+- Surface contract: the design names surface.rs/persistence.rs/tsv/surface_conformance together.
+  OK as a requirement; not yet done.
+- One surface: the owner authorized the frontend and missing/corrupt browsing (per the operator).
+  This was not re-litigated.
+- Provenance: `retained-verified` is not backdated and the purposes are not interchangeable.
+  OK as designed. B2 must keep a distinct upgrade issuer from being displayed as the
+  admitting service.
+- No fabricated witnesses: none declared, none invented.
+
+-----------------------------------------------------------------
+8. Required implementation tests (in addition to AC-1..AC-6)
+-----------------------------------------------------------------
+T1  Rust parity: decode, re-encode, CID, preimage and verify both JSON positives. Reproduce
+    the exact RFC 6979 signature bytes with scalar 1.
+T2  Rust consumes the committed, labelled negative vectors (B1). Each fails with the named
+    class. A mutation test that removes each chain/field check must fail one named test.
+T3  Receipt decode + binds(statement.manifest) + CID equality. `admitted` ⇒
+    receipt.issuer == statement.issuer == configured issuer.
+    `retained-verified` follows whatever B2 decides.
+T4  Fork and substitution: same-height statement from a restored backup or a second upgrade
+    copy is rejected against an existing pin. Mid-chain page linkage follows the B3 algorithm.
+    Mixed-chain page splice rejected.
+T5  Configured scope ≠ statement scope → integrity error, not access-limited. Unknown principal
+    on a damaged archive → access-limited shape, with no integrity disclosure.
+T6  The secp256k1 did:key issuer is refused even when configured (F1).
+T7  Crash at each boundary: after commit insert, after signing, after proof insert, before
+    commit and after commit. Result is both-or-neither. A retry after AfterCommit returns
+    byte-identical receipt and proof envelope.
+T8  A raw append between audit and insertion conflicts. A profile-2 raw commit without proof is
+    refused by the type/API. A raw SQL insert without proof → inventory integrity error.
+T9  Old-binary refusal: a legacy check_schema/RecoveryReader on a profile-2 file errors before
+    any evidence write. A user_version=1-with-proof-table variant is not produced by any code
+    path.
+T10 Profile-2 backup, rebuild and restore preserve proof bytes exactly. A metadata-only output
+    carries a durable payload-incomplete marker and fails full restore and Ledger::open.
+T11 Degraded read-only open: the authoritative DB and retained WAL bytes are unchanged, only the
+    declared -shm/-wal coordination changes, and a hot journal fails closed. There is no
+    immutable=1 path.
+T12 Upgrade: pinned plan mismatch on resume is refused. A missing or invalid legacy payload
+    aborts. The source files are hashed before and after (byte-identical). issuedAt is ≥ the
+    plan time, never a historical receipt time.
+
+-----------------------------------------------------------------
+9. Unresolved decisions (owner or protocol)
+-----------------------------------------------------------------
+U1 (B2) Upgrade signer = service key, or a distinct verification issuer with a dual-issuer
+   reader config. This is key custody, so it is an owner decision.
+U2 (B3) Archive-instance/epoch field and/or accumulator in the statement. Page-linkage
+   algorithm. Reader pin monotonicity/rollback detection.
+U3 (F2) Proof in the Committed output; client release rule; retry purpose after upgrade.
+U4 (F3) Degraded mode: explicit flag or automatic; which process serves it.
+U5 (F6) Allow prefix-only upgrade of partially damaged legacy archives, or forbid it explicitly.
+
+-----------------------------------------------------------------
+10. Verdict rationale
+-----------------------------------------------------------------
+**BLOCK** (design readiness only). The direction is right and consistent with
+telos/raw-data-and-projections:
+  - loss is a sampled, labelled projection;
+  - strict writable verification is unchanged;
+  - upgrades are present-time and non-destructive;
+  - atomic proof insertion has a clear hook in the existing immediate-transaction fence.
+But the gate's own preconditions are not met:
+  - The independent fixtures do not actually exercise the chain/field bindings: 10/13
+    removal mutants survive, and the JSON has no negatives a Rust implementation can consume.
+  - The issuer model for upgraded chains contradicts the single-pinned-issuer verifier and
+    reader, and resolving it is an unselected key-custody choice.
+  - Snapshot linkage for paginated reads, and forks from backup restore or repeated upgrade,
+    are unspecified. Fixing them may change the statement bytes that the fixtures now pin.
+Implementing now would freeze bytes and storage tables around unresolved semantics.
+Resolve B1-B3 (and U1-U3), regenerate and re-review the fixtures, then re-run this gate with
+a fresh reviewer.

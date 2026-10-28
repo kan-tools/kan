@@ -1,0 +1,228 @@
+ADVERSARIAL REVIEW — narrow checkpoint: 4b0ebc1 vs fa60c31
+Library scope-catalog validation + P4 actual-wait assertion
+Reviewer: fresh Claude Code Opus 5.5 (claude-opus-5-5) session, not delegated.
+
+VERDICT: APPROVE WITH FOLLOW-UPS
+
+SCOPE DECLARATION
+This is a narrow checkpoint review of one commit (4 files: web/library/app.js,
+tests/library_ui.test.cjs, tests/evidence_capture_contention.rs,
+scripts/revert_v2.py). It is not a review of the whole Library roadmap, the
+workspace, the attestation work, or earlier checkpoints. It does not approve
+real-browser export delivery (REQ-5/AC-5), which is still unverified because the
+Mac is locked; I made no browser claim. Missing-evidence rows, collection
+overview, normalized conversations, search, annotations/views, analysis and
+admin are still open roadmap work.
+
+INDEPENDENCE / PROCESS
+- I did not write this code. Skill Step 0 (offer to delegate) does not apply,
+  and the operator forbade delegation.
+- Skill Step 7 (day review record / kan observe) was skipped on purpose. The
+  operator forbade kan/day writes.
+- Export identity: all 1249 files tracked at 4b0ebc1 compare byte-identical to
+  `git show 4b0ebc1:<path>`. change.diff equals the commit's diff for the four
+  files. The author's uncommitted attestation WIP (src/evidence.rs,
+  src/lib.rs, src/evidence_attestation.rs) is NOT in this export.
+- CARGO_TARGET_DIR is the shared author cache
+  (.../kan-v2-library-resilience/.local-state/target). I used it sequentially
+  and did not copy or delete it.
+
+NORTH STAR (from supplied north-star.json; quoted)
+telos/raw-data-and-projections: "Raw attested data is retained in full and
+never collapsed in the store. Every simplification ... is a determined
+projection computed on demand over that raw data ..."
+This work serves it via the design summary (.design/kan-v2-library-resilience.md):
+"an incomplete check must remain visible and must not erase accessible
+neighbours or promote unverified metadata to authority." Malformed scope
+entries are unverified metadata, and this change stops them from becoming
+selectable navigation authority. It closes prior-Opus F5 ("Client-side
+scope-entry shape checking remains a follow-up").
+Tension: none material. Fail-closed on a malformed catalog hides the healthy
+neighbours in that response. That is correct, because the response as a whole
+is untrustworthy, and Retry sources keeps recovery available.
+
+WHAT THE CODE DOES (read)
+- web/library/app.js:106-117 validateScopes. The value must be an array of 16
+  or fewer entries. Each entry must be a plain object with a scope string of
+  1..256 chars, unique, and a pin object whose request is a 1..8192-char
+  string and whose reply is a plain object.
+- app.js:118-125: catalog() clears the inspector, buttons, rows, scope options,
+  scopes, pin, history, coverage, count, capability list and pager state BEFORE
+  the rpc.
+- app.js:126-130: validateScopes runs before renderCapabilities, before
+  `scopes = value.scopes`, before any <option> is built, before the Library is
+  unhidden, and before page(0).
+- On throw, run() (app.js:36-41) locks when the Library is hidden (first
+  login). Otherwise it clears the inspector and, since pin is null, clears the
+  capability list and scope options and sets "coverage is unknown" with the
+  className reset. So state is cleared before navigation and no page/source
+  request is issued.
+- The limits match the server. Scopes are 64-hex (evidence_reader.rs:109,117).
+  There are at most 16 (evidence_reader.rs:97). Pin request is
+  `unhex(&pin.request, 4096)` (evidence_reader.rs:178), so at most 8192 hex
+  chars. Pin.reply is a SignedReply struct, i.e. a JSON object
+  (evidence_reader.rs:65-70). No false rejection of server-valid output; probe
+  PB1 confirms the boundaries 16 / 256 / 8192 are accepted.
+- The service still re-verifies every pin (evidence_reader.rs:178-187). The
+  client check is a fail-closed UI guard, not an authorization boundary.
+
+P4 ACTUAL-WAIT ASSERTION — MEANING
+- `spent` comes from Spool::with_capture_wait (evidence_spool.rs:278-317). It
+  is the sum of sleeps inside the SQLite busy handler capture_busy
+  (evidence_spool.rs:712-728), not elapsed admission time. Crypto/fsync are
+  excluded, matching evidence_capture.rs:250-252 ("Charge actual SQLite
+  busy-handler sleep").
+- So `waited > 0` means the production admission path actually hit SQLITE_BUSY
+  against the coordinated writer's BEGIN IMMEDIATE window and the busy handler
+  ran. That is the claim the test previously only implied through timestamps.
+- Wrapper fidelity (tests/evidence_capture_contention.rs:236-253):
+  admit_with_wait passes `operation`, `frame` and `wait` unchanged to inner and
+  returns `result` unchanged. It sends a copy of result.1 on a capacity-1
+  channel only for the first window. admit() still forwards to inner.admit.
+  Faithful by reading.
+- Determinism of delivery: the send happens inside the capture thread before
+  `.join()`, so try_recv after join is ordered (happens-before), not racy.
+
+FLAKE IMPLICATIONS
+- enqueue_generated takes TransactionBehavior::Immediate as its first SQLite
+  action (evidence_spool.rs:391-395), before any crypto
+  (evidence_delivery.rs:42-66). After the rendezvous, the capture thread only
+  has to reach BEGIN IMMEDIATE (microseconds) within the writer's ≥5 ms hold.
+- The new failure mode is: the capture thread is descheduled for more than
+  about 5 ms between `locked.recv` and BEGIN IMMEDIATE, so spent is 0. This is
+  possible in principle on a heavily oversubscribed CI host, but small.
+- Measured with temporary instrumentation (restored), first-admission waited:
+  - 10 unloaded runs: 6.04–9.07 ms.
+  - 20 runs under 20 busy loops on 10 CPUs: 8.31–10.13 ms.
+  - 30/30 pass; minimum 6.04 ms. No near-zero values.
+- The pre-existing 100 ms cap and `locally_queued == observed` assertion are
+  unchanged and carry their own (separate) load sensitivity.
+
+VERIFICATION RUN (raw logs in this directory)
+01-env.txt                  toolchain/env
+02-fmt.txt                  cargo fmt --all -- --check: exit 0
+03-contention-suite.txt     cargo test --features v2-crypto --test evidence_capture_contention: 6/6 pass
+04-p4-repeat10.txt          P4 --exact x10: 10/10 pass
+05-node-library.txt         node --test tests/library_ui.test.cjs: 23/23 pass
+06-node-ci-trio.txt         library+operations+theme (CI line): 43/43 pass
+07-clippy-v2.txt            cargo clippy --features v2-crypto --all-targets -- -D warnings: exit 0
+08-probes-baseline.txt      reviewer probes PB1–PB7 on production: 7/7 pass
+09-js-mutants/              23 app.js mutants vs committed suite + probes
+10-rs-mutants/              7 wait/wrapper/production mutants
+11-p4-instrumented.txt      waited values, unloaded + loaded
+12-revert-registry.txt      registry name check
+13-processes-listeners.txt  none left
+00/14/15 hashes             before/after identical, 1251 files
+
+JS MUTANTS (09-js-mutants/SUMMARY.txt). Every kill is an AssertionError.
+Killed by the committed suite:
+  U01 delete call
+  U02 >16
+  U05 duplicate
+  U06 empty scope
+  U07 empty request
+  U08 reply object
+  U10 object() accepts arrays
+  U11 seen.add
+  U13 validate after unhide
+  U19–U22 catalog-start clearing
+Killed only by reviewer probes:
+  U03  scope >256 dropped: no overlong case committed
+  U04  request >8192 dropped: no overlong case committed
+  U14  typeof scope dropped: scope:['a'] passes
+  U17  typeof request dropped: request:['x'] passes
+  U12  validate moved after `scopes = value.scopes` + option render: the
+       malformed array stays in `scopes`, and a later change event navigates
+       with its pin (PB5)
+  U23  catalog-start `scopes = []` dropped: old pins stay reachable after a
+       malformed retry (PB7). Pre-existing line.
+Survivors, judged equivalent for JSON input:
+  U09/U15/U16  the removed checks are re-caught by a TypeError or a later
+               check, and the error path fails closed identically
+  U18          validate after renderCapabilities: synchronous, and the catch
+               clears the capability list
+Committed second test ("malformed scope retry clears old plaintext...") does
+NOT kill U01. Its `null` entry throws in the option loop even without the
+validator. It is a regression test of the clearing path, not a negative
+control for validateScopes. Only "malformed scope catalogs are rejected ..."
+is registered in scripts/revert_v2.py (12-revert-registry.txt), and that one
+does kill U01.
+
+RUST MUTANTS (10-rs-mutants/SUMMARY*.txt). All kills are compiled assertion
+failures:
+  W1  first window BEGIN (no lock)        KILLED  "must wait ... 0ns"
+  W2  wrapper passes Duration::ZERO wait  KILLED  "must wait ... 0ns"
+  W3  wrapper reports ZERO on channel     KILLED  "must wait ... 0ns"
+  W5  wrapper override removed            KILLED  "must report its actual wait: Disconnected"
+  W6  production busy handler no spent    KILLED  P4 "0ns" + q2 "allowance not exhausted"
+  W7  writer releases before signalling   KILLED  "must wait ... 0ns"
+  W4  wrapper returns ZERO spent to the   SURVIVED (see F3)
+      production caller (still reports
+      the true value on the channel)
+Invalid run, retained and not counted: the first W5 attempt
+(W5-INVALID-compile-error.txt, E0407). It was my mutant construction error
+and was re-run correctly.
+
+FINDINGS
+F1 (test gap, low): the committed list has no overlong scope/request case and
+   no non-string-with-length case. U03/U04/U14/U17 survive it. PB3/PB4 kill
+   them.
+F2 (test gap, low): "validation precedes `scopes = value.scopes`" is not
+   pinned. U12 survives the committed suite. In a real DOM, a select with no
+   options cannot take value 'a', so the gap is not user-reachable today. The
+   ordering is still the property the commit title claims ("before
+   navigation"). PB5 pins it.
+F3 (test gap, low): P4 does not pin that the wrapper returns production's
+   `spent` (W4 survives). Fidelity is established by reading only
+   (contention.rs:250-252).
+F4 (evidence labeling, info): the second new Node test is not a negative
+   control for validateScopes (U01 survives it) and is not registered in
+   revert_v2.py. Do not cite it as demonstrating the validator.
+F5 (flake, info): new failure mode = capture thread preempted >5 ms inside a
+   microsecond window. 30/30 measured with ≥6 ms margin. Acceptable; if CI
+   ever shows "0ns", lengthen the first hold rather than weakening the
+   assertion.
+No correctness, privacy or invariant defect found in the changed code.
+
+SCOPE NARROWING / HOUSE RULES
+- The diff has no narrowing language. This change removes a prior follow-up
+  (prior F5) rather than deferring one.
+- No store/fold mutation and no stored computed value.
+- No new surface: client-only validation inside the owner-authorized v2
+  Library.
+- No enforcement hooks, no provenance edges touched.
+- textContent is still the only label sink (option.textContent, app.js:130).
+
+RESTORATION / CLEANUP
+- app.js, contention.rs and evidence_spool.rs were restored after every
+  mutant, each verified by SHA-256 inside the scripts.
+- Final whole-export hash comparison: identical (15-hash-diff.txt).
+- No target/ created in the export.
+- CPU busy loops used for the load run are killed. No test processes or
+  listeners remain (13-processes-listeners.txt).
+- All servers were in-test loopback fixtures, with synthetic data only.
+- No kan/day writes, keys, archives, install/deploy/merge, Mathlib/.lake.
+- Untracked, reviewer-owned: review-evidence/ (probes/ holds the probe test
+  and the mutation scripts).
+
+FOLLOW-UPS
+1. Add overlong (257 / 8193) and non-string-with-length cases to the committed
+   malformed-scope list (PB3/PB4).
+2. Add an assertion that a malformed retry leaves no navigable `scopes`
+   (PB5/PB7 style), pinning the validate-before-assign order (U12).
+3. Optionally assert in P4 that production receives the same `spent` the
+   channel reports (W4).
+4. Register or relabel the second new Node test so it is not mistaken for
+   validator evidence.
+Real-browser export delivery is still unverified. This approval does not
+close it or any later roadmap item.
+
+**APPROVE WITH FOLLOW-UPS**
+The commit does what it says. Malformed, duplicate, over-limit and over-count
+scope catalogs are rejected before any option, scope authority or page request
+exists, after a pre-rpc clear. The limits match the server, so no valid
+response is refused. The new P4 assertion measures real SQLite busy-handler
+waiting through a wrapper that forwards wait and result faithfully, and
+compiled mutants of the lock, the wrapper and production accounting all fail
+it. The gaps are small committed-test gaps (F1–F4) that my probes close. They
+do not undermine the north star.

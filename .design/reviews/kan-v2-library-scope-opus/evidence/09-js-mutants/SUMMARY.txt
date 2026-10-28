@@ -1,0 +1,70 @@
+U01 delete validateScopes call: KILLED-by-committed
+   committed rc=1 kinds=['AssertionError'] failed=['malformed scope catalogs are rejected before any option or page request']
+   probes rc=1 kinds=['AssertionError'] failed=['PB3 over-limit scope name and pin request are rejected', 'PB4 non-string scope/request with a length property are rejected', 'PB5 malformed retry from partial resets capabilities, styling and keeps lock/recovery', 'PB7 after malformed retry, old scope names and pins cannot be navigated']
+U02 drop >16 limit: KILLED-by-committed
+   committed rc=1 kinds=['AssertionError'] failed=['malformed scope catalogs are rejected before any option or page request']
+   probes rc=0 kinds=[] failed=[]
+U03 drop scope >256: KILLED-by-probes-only
+   committed rc=0 kinds=[] failed=[]
+   probes rc=1 kinds=['AssertionError'] failed=['PB3 over-limit scope name and pin request are rejected']
+U04 drop request >8192: KILLED-by-probes-only
+   committed rc=0 kinds=[] failed=[]
+   probes rc=1 kinds=['AssertionError'] failed=['PB3 over-limit scope name and pin request are rejected']
+U05 drop duplicate check: KILLED-by-committed
+   committed rc=1 kinds=['AssertionError'] failed=['malformed scope catalogs are rejected before any option or page request']
+   probes rc=1 kinds=['AssertionError'] failed=['PB5 malformed retry from partial resets capabilities, styling and keeps lock/recovery']
+U06 drop empty scope check: KILLED-by-committed
+   committed rc=1 kinds=['AssertionError'] failed=['malformed scope catalogs are rejected before any option or page request']
+   probes rc=0 kinds=[] failed=[]
+U07 drop empty request check: KILLED-by-committed
+   committed rc=1 kinds=['AssertionError'] failed=['malformed scope catalogs are rejected before any option or page request']
+   probes rc=0 kinds=[] failed=[]
+U08 drop reply object check: KILLED-by-committed
+   committed rc=1 kinds=['AssertionError'] failed=['malformed scope catalogs are rejected before any option or page request']
+   probes rc=0 kinds=[] failed=[]
+U09 drop isArray(value): SURVIVED
+   committed rc=0 kinds=[] failed=[]
+   probes rc=0 kinds=[] failed=[]
+U10 object() accepts arrays: KILLED-by-committed
+   committed rc=1 kinds=['AssertionError'] failed=['malformed scope catalogs are rejected before any option or page request']
+   probes rc=0 kinds=[] failed=[]
+U11 drop seen.add: KILLED-by-committed
+   committed rc=1 kinds=['AssertionError'] failed=['malformed scope catalogs are rejected before any option or page request']
+   probes rc=1 kinds=['AssertionError'] failed=['PB5 malformed retry from partial resets capabilities, styling and keeps lock/recovery']
+U12 validate after option render: KILLED-by-probes-only
+   committed rc=0 kinds=[] failed=[]
+   probes rc=1 kinds=['AssertionError'] failed=['PB5 malformed retry from partial resets capabilities, styling and keeps lock/recovery']
+U13 validate after library unhide: KILLED-by-committed
+   committed rc=1 kinds=['AssertionError'] failed=['malformed scope catalogs are rejected before any option or page request']
+   probes rc=1 kinds=['AssertionError'] failed=['PB3 over-limit scope name and pin request are rejected', 'PB4 non-string scope/request with a length property are rejected', 'PB5 malformed retry from partial resets capabilities, styling and keeps lock/recovery']
+U14 drop typeof scope string: KILLED-by-probes-only
+   committed rc=0 kinds=[] failed=[]
+   probes rc=1 kinds=['AssertionError'] failed=['PB4 non-string scope/request with a length property are rejected']
+U15 drop object(entry): SURVIVED
+   committed rc=0 kinds=[] failed=[]
+   probes rc=0 kinds=[] failed=[]
+U16 drop object(entry.pin): SURVIVED
+   committed rc=0 kinds=[] failed=[]
+   probes rc=0 kinds=[] failed=[]
+U17 drop typeof request string: KILLED-by-probes-only
+   committed rc=0 kinds=[] failed=[]
+   probes rc=1 kinds=['AssertionError'] failed=['PB4 non-string scope/request with a length property are rejected']
+U18 validate after renderCapabilities: SURVIVED
+   committed rc=0 kinds=[] failed=[]
+   probes rc=0 kinds=[] failed=[]
+U19 drop catalog-start clearInspector: KILLED-by-committed
+   committed rc=1 kinds=['AssertionError'] failed=['partial catalog coverage persists while browsing and retry clears old authority']
+   probes rc=1 kinds=['AssertionError'] failed=['PB5 malformed retry from partial resets capabilities, styling and keeps lock/recovery']
+U20 drop clearInspector at start and in run catch: KILLED-by-committed
+   committed rc=1 kinds=['AssertionError'] failed=['malformed scope retry clears old plaintext and permits recovery', 'partial catalog coverage persists while browsing and retry clears old authority', 'unavailable or unverifiable source clears plaintext but preserves other browsing']
+   probes rc=1 kinds=['AssertionError'] failed=['PB5 malformed retry from partial resets capabilities, styling and keeps lock/recovery']
+U21 drop catalog-start rows clear: KILLED-by-committed
+   committed rc=1 kinds=['AssertionError'] failed=['malformed retry clears partially rendered capabilities and keeps recovery available', 'malformed scope retry clears old plaintext and permits recovery', 'partial catalog coverage persists while browsing and retry clears old authority']
+   probes rc=1 kinds=['AssertionError'] failed=['PB5 malformed retry from partial resets capabilities, styling and keeps lock/recovery']
+U22 drop catalog-start pin reset: KILLED-by-committed
+   committed rc=1 kinds=['AssertionError'] failed=['malformed retry clears partially rendered capabilities and keeps recovery available']
+   probes rc=1 kinds=['AssertionError'] failed=['PB5 malformed retry from partial resets capabilities, styling and keeps lock/recovery', 'PB7 after malformed retry, old scope names and pins cannot be navigated']
+U23 drop catalog-start scopes reset: KILLED-by-probes-only
+   committed rc=0 kinds=[] failed=[]
+   probes rc=1 kinds=['AssertionError'] failed=['PB7 after malformed retry, old scope names and pins cannot be navigated']
+restored app.js sha256=34aca62effaffbef4cc8e4c61a98e2d639c9196fe7245c04c73753df25106692 original=34aca62effaffbef4cc8e4c61a98e2d639c9196fe7245c04c73753df25106692

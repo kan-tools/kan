@@ -1,0 +1,19 @@
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-build-next/.local-state/reviews/library)
+error[E0407]: method `unused_admit_with_wait` is not a member of trait `capture::Sink`
+   --> tests/evidence_capture_contention.rs:241:5
+    |
+241 |       fn unused_admit_with_wait(
+    |       ^  ---------------------- help: there is an associated function with a similar name: `admit_with_wait`
+    |  _____|
+    | |
+242 | |         &mut self,
+243 | |         operation: &[u8; 16],
+244 | |         frame: &[u8],
+...   |
+252 | |         result
+253 | |     }
+    | |_____^ not a member of trait `capture::Sink`
+
+For more information about this error, try `rustc --explain E0407`.
+error: could not compile `kan` (test "evidence_capture_contention") due to 1 previous error
+warning: build failed, waiting for other jobs to finish...

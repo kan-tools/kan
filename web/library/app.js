@@ -103,6 +103,18 @@
       }
     }
   }
+  function validateScopes(value) {
+    const object = v => v !== null && typeof v === 'object' && !Array.isArray(v);
+    if (!Array.isArray(value) || value.length > 16) throw new Error('Invalid scope catalog.');
+    const seen = new Set();
+    for (const entry of value) {
+      if (!object(entry) || typeof entry.scope !== 'string' || !entry.scope.length || entry.scope.length > 256 || seen.has(entry.scope)
+          || !object(entry.pin) || typeof entry.pin.request !== 'string' || !entry.pin.request.length || entry.pin.request.length > 8192 || !object(entry.pin.reply)) {
+        throw new Error('Invalid or duplicate scope entry.');
+      }
+      seen.add(entry.scope);
+    }
+  }
   async function catalog() {
     clearInspector(); buttons.clear(); $('rows').replaceChildren(); $('scope').replaceChildren();
     scopes = []; pin = null; history = []; after = 0; next = null;
@@ -112,6 +124,7 @@
     notice('Checking scope access…');
     const value = await rpc({action:'catalog'}); if (!value) return;
     if (value.version !== 1 || !['complete','partial'].includes(value.coverage)) throw new Error('Unsupported reader version or coverage.');
+    validateScopes(value.scopes);
     renderCapabilities(value);
     scopes = value.scopes;
     for (const scope of scopes) { const option = document.createElement('option'); option.value = scope.scope; option.textContent = scope.scope; $('scope').append(option); }
