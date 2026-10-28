@@ -99,7 +99,7 @@ impl Workspace {
             true,
         )?;
         private(path, false)?;
-        let maintenance = lease(path, ".maintenance-lock", true)?;
+        let maintenance = MaintenanceLease::acquire(path, true)?;
         let mut workspace = Self::open_locked(path, signer, private_key, maintenance, false)?;
         workspace.erasure_maintenance = true;
         Ok(workspace)

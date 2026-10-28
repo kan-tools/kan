@@ -12,7 +12,7 @@ use sha2::{Digest, Sha256};
 use std::{
     io::{Read, Seek, SeekFrom, Write},
     path::Path,
-    sync::Mutex,
+    sync::{Arc, Mutex},
 };
 pub(crate) mod annotations;
 pub mod erasure;
@@ -25,17 +25,39 @@ CREATE TABLE entries(kind TEXT NOT NULL, id TEXT NOT NULL, body BLOB NOT NULL, P
 const DOMAIN: &[u8] = b"tools.kan.reader.workspace.v1\0";
 // A scheduler owns this lease independently of database/maintenance locks.
 // Explicit unlock prevents fork-inherited descriptors delaying a clean restart.
-// This lease is deliberately not clonable; maintenance leases have a separate
-// transfer lifetime during recovery and retain their existing behavior.
+// This lease is deliberately not clonable; maintenance leases below share an
+// owned guard to extend their lifetime through recovery cleanup.
 pub(crate) struct AnalysisLease(std::fs::File);
 impl Drop for AnalysisLease {
     fn drop(&mut self) {
         let _ = fs4::FileExt::unlock(&self.0);
     }
 }
+// Recovery must retain exclusion after closing the recovered SQLite connection.
+// Share the guard, not duplicated file handles: only the last deliberate owner
+// unlocks, even if an unrelated fork still holds an inherited descriptor.
+struct MaintenanceLease(Arc<MaintenanceLock>);
+struct MaintenanceLock {
+    file: std::fs::File,
+}
+impl Drop for MaintenanceLock {
+    fn drop(&mut self) {
+        let _ = fs4::FileExt::unlock(&self.file);
+    }
+}
+impl MaintenanceLease {
+    fn acquire(path: &Path, exclusive: bool) -> Result<Self> {
+        lease(path, ".maintenance-lock", exclusive)
+            .map(|file| Self(Arc::new(MaintenanceLock { file })))
+    }
+    fn retain(&self) -> Self {
+        Self(Arc::clone(&self.0))
+    }
+}
 pub struct Workspace {
     conn: Mutex<Connection>,
-    _maintenance: std::fs::File,
+    // Field order matters: close SQLite before releasing maintenance exclusion.
+    _maintenance: MaintenanceLease,
     erasure_maintenance: bool,
     erasure_histories: Vec<crate::evidence_erasure_history::Access>,
     erasure_audit: Mutex<Option<(i64, Vec<String>)>>,
@@ -124,14 +146,14 @@ impl Workspace {
                 .ok_or(Failure::Invalid)?,
             true,
         )?;
-        let maintenance = lease(path, ".maintenance-lock", false)?;
+        let maintenance = MaintenanceLease::acquire(path, false)?;
         Self::open_locked(path, signer, private_key, maintenance, false)
     }
     fn open_locked(
         path: &Path,
         signer: Identity,
         private_key: [u8; 32],
-        maintenance: std::fs::File,
+        maintenance: MaintenanceLease,
         recover_copy: bool,
     ) -> Result<Self> {
         for suffix in ["-journal", "-wal", "-shm"] {
@@ -276,8 +298,8 @@ impl Workspace {
             )?;
         }
         private(source, false)?;
-        let _source_lease = lease(source, ".maintenance-lock", true)?;
-        let target_lease = lease(destination, ".maintenance-lock", true)?;
+        let _source_lease = MaintenanceLease::acquire(source, true)?;
+        let target_lease = MaintenanceLease::acquire(destination, true)?;
         for suffix in ["", "-journal", "-wal", "-shm"] {
             match std::fs::symlink_metadata(sidecar(destination, suffix)) {
                 Err(e) if e.kind() == std::io::ErrorKind::NotFound => (),
@@ -392,7 +414,7 @@ impl Workspace {
             }
         }
         let author = recovered.author();
-        let _cleanup_lease = recovered._maintenance.try_clone().map_err(invalid)?;
+        let _cleanup_lease = recovered._maintenance.retain();
         drop(recovered);
         // SQLite can leave an ignored, non-hot journal. Only the verified new
         // copy's sidecar is removed; the original remains available for forensics.
@@ -787,6 +809,76 @@ impl Workspace {
 #[cfg(all(test, unix))]
 mod lease_tests {
     use super::*;
+
+    fn workspace_fixture() -> (tempfile::TempDir, std::path::PathBuf) {
+        use std::os::unix::fs::PermissionsExt;
+        let directory = tempfile::tempdir().unwrap();
+        std::fs::set_permissions(directory.path(), std::fs::Permissions::from_mode(0o700)).unwrap();
+        let path = directory.path().join("workspace.sqlite");
+        (directory, path)
+    }
+
+    fn signer() -> Identity {
+        let mut seed = tempfile::NamedTempFile::new().unwrap();
+        seed.write_all(&[6; 32]).unwrap();
+        Identity::load_existing(seed.path()).unwrap()
+    }
+
+    #[test]
+    fn workspace_maintenance_releases_inherited_descriptor_without_unlocking_other_users() {
+        let (_directory, path) = workspace_fixture();
+        let first = Workspace::open(&path, signer(), [8; 32]).unwrap();
+        let second = Workspace::open(&path, signer(), [8; 32]).unwrap();
+        let inherited = first._maintenance.0.file.try_clone().unwrap();
+        assert!(Workspace::open_for_erasure(&path, signer(), [8; 32]).is_err());
+        drop(first);
+        assert!(Workspace::open_for_erasure(&path, signer(), [8; 32]).is_err());
+        drop(second);
+        // A close-only guard fails here while inherited remains alive.
+        let maintenance = Workspace::open_for_erasure(&path, signer(), [8; 32]).unwrap();
+        drop(inherited);
+        assert!(Workspace::open(&path, signer(), [8; 32]).is_err());
+        drop(maintenance);
+        Workspace::open(&path, signer(), [8; 32]).unwrap();
+    }
+
+    #[test]
+    fn recovery_cleanup_retains_exclusion_until_last_owned_lease_drops() {
+        let (_directory, path) = workspace_fixture();
+        let target = MaintenanceLease::acquire(&path, true).unwrap();
+        let inherited = target.0.file.try_clone().unwrap();
+        let recovered = Workspace::open_locked(&path, signer(), [8; 32], target, true).unwrap();
+        let cleanup = recovered._maintenance.retain();
+        drop(recovered);
+        // Closing SQLite must not release the lease used by subsequent cleanup.
+        assert!(Workspace::open(&path, signer(), [8; 32]).is_err());
+        assert!(Workspace::open_for_erasure(&path, signer(), [8; 32]).is_err());
+        drop(cleanup);
+        let replacement = Workspace::open_for_erasure(&path, signer(), [8; 32]).unwrap();
+        drop(inherited);
+        assert!(Workspace::open(&path, signer(), [8; 32]).is_err());
+        drop(replacement);
+        Workspace::open(&path, signer(), [8; 32]).unwrap();
+    }
+
+    #[test]
+    fn failed_workspace_open_preserves_retained_lease_and_releases_last_owner() {
+        let (_directory, path) = workspace_fixture();
+        let owner = MaintenanceLease::acquire(&path, true).unwrap();
+        let inherited = owner.0.file.try_clone().unwrap();
+        std::fs::write(sidecar(&path, "-journal"), b"interrupted").unwrap();
+        assert!(matches!(
+            Workspace::open_locked(&path, signer(), [8; 32], owner.retain(), false),
+            Err(Failure::Unavailable)
+        ));
+        assert!(MaintenanceLease::acquire(&path, false).is_err());
+        drop(owner);
+        let replacement = MaintenanceLease::acquire(&path, true).unwrap();
+        drop(inherited);
+        assert!(MaintenanceLease::acquire(&path, false).is_err());
+        drop(replacement);
+        MaintenanceLease::acquire(&path, false).unwrap();
+    }
 
     #[test]
     fn scheduler_owner_unlocks_even_with_inherited_descriptor() {

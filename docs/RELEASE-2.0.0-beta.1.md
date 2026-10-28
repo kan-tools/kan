@@ -45,6 +45,17 @@ helper versus compiler failure classification, actual-manifest writer selection
 in CI, and corrected status prose. It does not change storage/admission code.
 The candidate itself is not qualified by the preceding green run.
 
+Candidate `32ebf71` subsequently passed all 56 collect-all checks and 19 browser
+groups, but separate PR CI failed a workspace maintenance reopen after erasure
+setup (`Unavailable`). Its repair changes workspace coordination: a shared owned
+maintenance guard explicitly unlocks only when its final owner drops, including
+recovery cleanup. Archive admission/storage formats remain unchanged. New
+regressions and the repaired revision still require CI and narrow review; neither
+the successful parallel run nor the local lock primitive reproduction closes the
+qualification failure. The migration bot's `ea0dac3` conversion of v1 keychain
+expectations to measured capability exclusions is retained.
+
+
 - [ ] Record the frozen candidate SHA, current PR/push CI, collect-all, migration,
   performance and RFC results; inspect actual per-check artifacts, not just the
   aggregate green run. Require all 56 checks and 19 browser groups, and all

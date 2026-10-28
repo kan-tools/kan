@@ -55,6 +55,17 @@ historical implementation snapshots; the qualified revisions and retained review
 reports above supersede their pending-test wording. No merge, tag, publication or
 live migration is implied by candidate preparation.
 
+Candidate `32ebf71` passed all 56 collect-all checks, 19 browser groups, both
+packaged builds, three installs and the representative historical migration
+matrix including keychain cells. PR CI separately failed the workspace erasure
+restart test with `Unavailable` after the old workspace was dropped. Qualification
+is therefore incomplete. The repair gives maintenance leases a shared owned guard
+that explicitly unlocks only after the last owner drops, preserving the recovery
+cleanup handoff. New deterministic descriptor-duplication, independent-reader,
+cleanup and error-path regressions await remote CI. The local OS primitive
+reproduces close-only descriptor retention; the failing CI descriptor provenance
+was not traced. The matrix bot's `ea0dac3` measurement conversion is preserved.
+
 ### Completion checklist
 
 Mark a row complete only when its backend, shared API/CLI where applicable, human
