@@ -51,7 +51,7 @@ try:
     if code: raise SystemExit(output)
     source=scratch/'src/evidence_capture.rs'; original=source.read_text()
     controls=[
-        ('gap-health','if self.sink.admit(&operation, &frame).is_ok() {','if { let _ = self.sink.admit(&operation, &frame); true } {','full_and_unavailable_capture_continue_with_visible_gap'),
+        ('gap-health','if admitted.is_ok() {','if true {','full_and_unavailable_capture_continue_with_visible_gap'),
         ('response-evidence','recorder.record(Event::ResponseChunk { offset }, chunk)?;','let _ = offset;','disconnect_is_unknown_and_retains_observed_prefix'),
         ('unknown-outcome','let success = result.is_ok();','let success = true;','disconnect_is_unknown_and_retains_observed_prefix'),
         ('redirect','reqwest::redirect::Policy::none()','reqwest::redirect::Policy::limited(1)','redirect_is_observed_but_never_followed'),
@@ -77,7 +77,7 @@ try:
         controls = controls[-2:]
     command=['cargo','test','--features','v2-crypto','--test','evidence_capture', '--test', 'evidence_capture_adversarial']
     code,output=run(command,'baseline')
-    if code or not passed(output,16) or not passed(output,13): raise SystemExit('baseline failed\n'+output)
+    if code or not passed(output,18) or not passed(output,13): raise SystemExit('baseline failed\n'+output)
     for name,old,new,test in controls:
         source = scratch / ('src/bin/kan-v2.rs' if name == 'writer-config' else 'src/evidence_capture.rs')
         original = source.read_text()

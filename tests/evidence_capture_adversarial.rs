@@ -762,7 +762,7 @@ async fn locked_spool_cli_keeps_completed_outcome() {
     )
     .await;
     let output = tokio::time::timeout(
-        Duration::from_secs(60),
+        Duration::from_secs(3),
         cli(&[
             "--endpoint",
             &p.url,

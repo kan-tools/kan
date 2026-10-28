@@ -65,6 +65,14 @@ pub struct Unconfirmed;
 /// be ambiguous. Never retry inference here; retain original queued bytes instead.
 pub trait Sink {
     fn admit(&mut self, operation: &[u8; 16], frame: &[u8]) -> Result<(), Unconfirmed>;
+    fn admit_with_wait(
+        &mut self,
+        operation: &[u8; 16],
+        frame: &[u8],
+        _wait: Duration,
+    ) -> (Result<(), Unconfirmed>, Duration) {
+        (self.admit(operation, frame), Duration::ZERO)
+    }
 }
 pub struct EncryptedSpool<'a> {
     pub spool: Option<&'a mut Spool>,
@@ -73,10 +81,22 @@ pub struct EncryptedSpool<'a> {
 }
 impl Sink for EncryptedSpool<'_> {
     fn admit(&mut self, operation: &[u8; 16], frame: &[u8]) -> Result<(), Unconfirmed> {
-        let spool = self.spool.as_deref_mut().ok_or(Unconfirmed)?;
-        evidence_delivery::queue(spool, self.signer, &self.recipient, operation, frame)
-            .map(|_| ())
-            .map_err(|_| Unconfirmed)
+        self.admit_with_wait(operation, frame, Duration::from_millis(100))
+            .0
+    }
+    fn admit_with_wait(
+        &mut self,
+        operation: &[u8; 16],
+        frame: &[u8],
+        wait: Duration,
+    ) -> (Result<(), Unconfirmed>, Duration) {
+        let Some(spool) = self.spool.as_deref_mut() else {
+            return (Err(Unconfirmed), Duration::ZERO);
+        };
+        let (result, spent) = spool.with_capture_wait(wait, |spool| {
+            evidence_delivery::queue(spool, self.signer, &self.recipient, operation, frame)
+        });
+        (result.map(|_| ()).map_err(|_| Unconfirmed), spent)
     }
 }
 
@@ -101,6 +121,7 @@ pub struct Recorder<'a> {
     started: Instant,
     health: Health,
     finished: bool,
+    admission_allowance: Duration,
 }
 impl<'a> Recorder<'a> {
     pub fn new(
@@ -131,6 +152,7 @@ impl<'a> Recorder<'a> {
             started: Instant::now(),
             health,
             finished: false,
+            admission_allowance: Duration::from_secs(1),
         })
     }
     /// One bounded observation; invalid shape is rejected before admission.
@@ -187,7 +209,15 @@ impl<'a> Recorder<'a> {
         digest.update(ordinal.to_be_bytes());
         let operation: [u8; 16] = digest.finalize()[..16].try_into().expect("16 bytes");
         self.health.observed += 1;
-        if self.sink.admit(&operation, &frame).is_ok() {
+        let (admitted, spent) = self.sink.admit_with_wait(
+            &operation,
+            &frame,
+            self.admission_allowance.min(Duration::from_millis(100)),
+        );
+        // Charge actual SQLite busy-handler sleep, not healthy crypto/fsync work.
+        // Exhaustion removes waiting, never later admission attempts.
+        self.admission_allowance = self.admission_allowance.saturating_sub(spent);
+        if admitted.is_ok() {
             self.health.locally_queued += 1;
         } else {
             self.health.unconfirmed += 1;
@@ -369,6 +399,9 @@ impl IoBudget {
         let started = Instant::now();
         let result = tokio::time::timeout(self.remaining, future).await;
         self.remaining = self.remaining.saturating_sub(started.elapsed());
+        if self.remaining.is_zero() {
+            return Err(Error::OutcomeUnknown);
+        }
         match result {
             Ok(Ok(value)) => Ok(value),
             _ => Err(Error::OutcomeUnknown),
