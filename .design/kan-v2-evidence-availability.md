@@ -20,7 +20,7 @@ hidden by a projection or repaired by inventing historical provenance.
 ## Acceptance Criteria
 - [ ] AC-1: Delete/corrupt one synthetic payload in a proof-bearing archive; restart and browse its neighbours while the exact retained row remains missing/corrupt. Missing tip and a missing middle record have separate cases. Metadata tampering, foreign scope/issuer, wrong sequence/predecessor and forged signatures refuse inventory. (REQ-1, REQ-3, REQ-4, REQ-7, REQ-8)
 - [ ] AC-2: Fault injection and process-death tests around attestation insertion and commit show both metadata/proof or neither; old exact retries preserve byte-identical receipt and proof. Concurrent raw append between audit and insertion still conflicts. Removing attestation binding fails a named assertion. (REQ-1, REQ-2, REQ-8)
-- [ ] AC-3: Owner-copy upgrade verifies a pinned source, changes no source file/record bytes, records present-time proof purpose, resumes without changing existing output records, and refuses missing/invalid legacy requests. Old binaries refuse the new profile before writes. (REQ-5, REQ-6, REQ-8)
+- [ ] AC-3: Owner-copy upgrade verifies a pinned source, changes no source file/record bytes, records present-time proof purpose, resumes without changing existing output records, and refuses missing/invalid legacy requests. Legacy binaries refuse logical record/schema writes to the new profile; released read-write SQLite openers may checkpoint an existing WAL before refusing, so this is not a physical-media no-write guarantee. (REQ-5, REQ-6, REQ-8)
 - [ ] AC-4: Denied/unknown requests disclose no availability, counts or object IDs. Grant revocation between inventory and source/export prevents disclosure; payload loss after an available observation returns explicit unavailable state. Reader rejects modified availability replies and metadata/proof substitutions. (REQ-3, REQ-4, REQ-7)
 - [ ] AC-5: Backup/recovery preserve exact proofs and label payload-incomplete outputs; full restore verification continues to reject missing source bytes. Surface catalog, typed mutation capability and fixture/conformance matrix cover every new stored field and index. (REQ-5, REQ-6, REQ-8)
 - [ ] AC-6: Real CLI and browser show available/missing/corrupt rows, never fabricated source; provenance distinguishes current writer verification from issuer attestation. New RPC capability negotiation fails explicitly against old servers. Fresh Opus review and compiled assertion-based reversion evidence are retained. (REQ-1, REQ-7, REQ-8)
@@ -387,3 +387,63 @@ all payloads; it never deletes or overwrites the loss observation. Strict open i
 controlled by current full verification and the descriptor/resolution contract,
 not an unlabelled removal of the marker. Declare both physical record surfaces
 with the profile-2 implementation.
+
+## Storage checkpoint scope
+
+The first runtime slice lives in `src/evidence_store/attested.rs`: an owner-side
+profile-2 storage API with explicit configured archive/scope/issuer binding,
+atomic metadata/proof insertion, and exact stored-proof retry. It is not wired
+into an HTTP listener or CLI yet. A trusted caller supplies the current grant;
+a remote request must never select that grant. Existing profile-1 service and
+raw Ledger APIs cannot open profile 2, including through initialization resume
+or recovery. Writable profile-2 open still requires all retained payloads.
+
+This checkpoint performs a complete read-transaction audit before each append,
+then checks the manifest frontier, proof frontier and proof count under the
+immediate transaction. Historical signature verification remains outside the
+write lock. As with the existing append-only service fence, this protects against
+concurrent append and tip replacement; it does not promise safety against an
+arbitrary privileged process rewriting an earlier row after its audit while
+preserving the observed tips. No finite endpoint fence establishes that stronger
+filesystem threat model. The strict next audit refuses such corruption.
+The full pre-admission scan is a correctness baseline, not a large-archive
+throughput qualification. A cached verified-prefix optimization needs its own
+integrity and performance review before production use.
+
+Full store audit also enforces unique manifest and writer-operation identities
+through exact schema validation plus integrity checks, contiguous sequence,
+retained request verification, and a retained-verified prefix from one historical
+issuer followed by admitted records. Ordinary Append cannot confirm a retained
+record; RetryImported remains a later explicit command. Time regression is
+allowed: signed sequence, not wall-clock time, determines ordering.
+
+No full acceptance criterion is closed solely by this checkpoint. Copy upgrade,
+initialization recovery for profile 2, proof-preserving backup/rebuild, degraded
+read-only inventory, framed cursors, proof-aware spool release and Library UI
+integration remain required. The independent codec review's source-oracle and
+page-vector follow-ups remain open; its short-key regression and framing labels
+are incorporated here. A separate detached proof API is required before spool
+release consumes the codec.
+
+
+### Storage review follow-ups
+
+Fresh actual Claude Code Opus 5.5 approved 9f1dffa with follow-ups for the owner-side
+checkpoint only. The unmodified report and probes are retained under
+`.design/reviews/kan-v2-proof-storage-opus/`. Its retry-race, real historical-issuer,
+non-P-256 and true signature-corruption probes are incorporated into CI. A receipt
+change during retry is now a conflict, not invalid caller input. SQLite limit
+configuration errors propagate. Explicit indexes on the proof tables must also
+appear in the independent surface inventory; no index currently exists beyond
+INTEGER PRIMARY KEY row coordinates.
+
+The review demonstrated that the SQL helpers are inventoried conventions, not a
+compiler-enforced ban on arbitrary raw SQL. Global SQL mutation enforcement remains
+open under AC-5; the existing filesystem policy must not be described as enforcing
+SQL calls. Also, PRAGMA integrity_check can materialize a hostile oversized
+WITHOUT ROWID object before SQLITE_LIMIT_LENGTH rejects it (pre-existing in the
+legacy writable opener). The future degraded reader must use bounded raw scans
+and must not inherit that writable integrity-check path. Profile-2 initialization
+resume, upgrade-plan/history pin, recovery observations, configured service grants,
+backup/rebuild and a reviewed scalable admission path remain prerequisites before
+production evidence or RPC exposure.

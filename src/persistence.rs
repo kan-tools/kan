@@ -36,6 +36,7 @@ pub enum SurfaceWrite {
     EvidenceOperations,
     EvidenceOperationsCollection,
     EvidenceArchive,
+    EvidenceAttestation,
     EvidenceBackup,
     EvidenceRecovery,
     EvidenceRecoverySource,
@@ -68,6 +69,7 @@ impl SurfaceWrite {
         Self::EvidenceOperations,
         Self::EvidenceOperationsCollection,
         Self::EvidenceArchive,
+        Self::EvidenceAttestation,
         Self::EvidenceBackup,
         Self::EvidenceRecovery,
         Self::EvidenceRecoverySource,
@@ -145,6 +147,10 @@ impl SurfaceWrite {
                 "evidence-spool:database-wal",
                 "evidence-spool:database-shm",
                 "evidence-spool:database-journal",
+            ],
+            Self::EvidenceAttestation => &[
+                "evidence-proof-sqlite:archive_identity",
+                "evidence-proof-sqlite:attestations",
             ],
             Self::EvidenceArchive => &[
                 "evidence-crypto:chunk",
@@ -292,4 +298,34 @@ pub fn open_new_owner_only(_surface: SurfaceWrite, path: &Path) -> std::io::Resu
         options.mode(0o600);
     }
     options.open(path)
+}
+
+/// Fixed profile-2 mutations keep the SQL write boundary explicit.
+#[cfg(feature = "v2-storage")]
+pub fn initialize_evidence_proofs(
+    _surface: SurfaceWrite,
+    tx: &rusqlite::Transaction<'_>,
+    archive: &[u8; 32],
+    scope: &[u8; 32],
+    issuer: &str,
+) -> rusqlite::Result<()> {
+    tx.execute_batch(crate::evidence_store::attested::SCHEMA)?;
+    tx.execute(
+        "INSERT INTO archive_identity VALUES(1,?,?,?)",
+        rusqlite::params![archive, scope, issuer],
+    )?;
+    Ok(())
+}
+#[cfg(feature = "v2-storage")]
+pub fn insert_evidence_proof(
+    _surface: SurfaceWrite,
+    tx: &rusqlite::Transaction<'_>,
+    sequence: i64,
+    envelope: &[u8],
+) -> rusqlite::Result<()> {
+    tx.execute(
+        "INSERT INTO attestations VALUES(?,?)",
+        rusqlite::params![sequence, envelope],
+    )?;
+    Ok(())
 }

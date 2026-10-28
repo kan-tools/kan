@@ -1,0 +1,11 @@
+-rw-------@ 1 m  wheel  36864 Oct 19 01:30 /tmp/kanrev-p9.NHoW/none/archive.sqlite
+[none] P9 OPEN-RESULT ok
+[none]             10321920  maximum resident set size
+-rw-------@ 1 m  wheel  100798464 Oct 19 01:30 /tmp/kanrev-p9.NHoW/object/archive.sqlite
+[object] P9 OPEN-RESULT err: corrupt evidence: CHECK constraint failed in objects
+[object]            112852992  maximum resident set size
+-rw-------@ 1 m  wheel  100798464 Oct 19 01:30 /tmp/kanrev-p9.NHoW/envelope/archive.sqlite
+[envelope] P9 OPEN-RESULT err: corrupt evidence: CHECK constraint failed in attestations
+[envelope]             12075008  maximum resident set size
+[legacy-profile1-object] P9 LEGACY-OPEN err: corrupt evidence: CHECK constraint failed in objects
+[legacy-profile1-object]            112164864  maximum resident set size

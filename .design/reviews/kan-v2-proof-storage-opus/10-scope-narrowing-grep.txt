@@ -1,0 +1,7 @@
+24:+concurrent append and tip replacement; it does not promise safety against an
+36:+record; RetryImported remains a later explicit command. Time regression is
+42:+integration remain required. The independent codec review's source-oracle and
+43:+page-vector follow-ups remain open; its short-key regression and framing labels
+62:+claimed from this storage API alone. All six parent acceptance criteria remain open.
+92:+The final follow-up adds the create-handle SQLite materialization limit and an
+94:+logs precede those two changes and are not claimed as exhaustive final-code probes.

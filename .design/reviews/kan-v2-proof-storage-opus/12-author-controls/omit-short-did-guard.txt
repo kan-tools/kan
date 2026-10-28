@@ -1,0 +1,25 @@
+
+running 1 test
+test short_issuer_never_reaches_dependency_panic ... FAILED
+
+failures:
+
+---- short_issuer_never_reaches_dependency_panic stdout ----
+
+thread 'short_issuer_never_reaches_dependency_panic' (9412189) panicked at /Users/m/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/atrium-crypto-0.1.3/src/did.rs:85:32:
+range end index 2 out of range for slice of length 0
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+thread 'short_issuer_never_reaches_dependency_panic' (9412189) panicked at tests/evidence_attestation.rs:337:33:
+short issuer must not panic: Any { .. }
+
+
+failures:
+    short_issuer_never_reaches_dependency_panic
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 6 filtered out; finished in 0.00s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-proof-storage/.local-state/reviews/storage)
+    Finished `test` profile [unoptimized] target(s) in 7.13s
+     Running tests/evidence_attestation.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_attestation-cba5a126dc479c9c)
+error: test failed, to rerun pass `--test evidence_attestation`
