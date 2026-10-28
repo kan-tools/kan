@@ -31,6 +31,7 @@ pub enum SurfaceWrite {
     GitTree,
     Overlay,
     Sqlite,
+    /// Exact encrypted requests; prepared requests reserve the writer through commit.
     EvidenceSpool,
     EvidenceArchive,
     EvidenceBackup,

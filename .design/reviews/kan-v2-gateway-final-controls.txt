@@ -1,0 +1,9 @@
+/var/folders/dr/fk0t7xz16x9b3980ch9qcdr40000gp/T/kan-frontier-witness-3_ewu57o
+     Removed 819 files, 329.5MiB total
+P3: baseline passed; pre-transaction frontier preparation failed at runtime; restored passed
+M6-auth-slots-7: named runtime failure
+M7-body-timeout-5s: named runtime failure
+M8-mtls-no-slot-limit: named runtime failure
+M17-token-before-promote-swapped: named runtime failure
+All four reviewer survivors now fail at runtime; restored gateway suite passes 16 tests
+removed scratch target; source/logs retained

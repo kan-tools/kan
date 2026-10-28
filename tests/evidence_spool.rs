@@ -449,3 +449,95 @@ fn actual_writer_lock_reports_storage_unavailable_without_advancing() {
     lock.execute_batch("ROLLBACK").unwrap();
     assert_eq!(spool.frontier().unwrap().next, 0);
 }
+
+#[cfg(feature = "v2-crypto")]
+#[test]
+fn generated_encrypted_requests_reserve_frontier_before_preparation() {
+    use std::sync::{Arc, Barrier};
+    let dir = tempfile::tempdir().unwrap();
+    let writer = Identity::generate();
+    let key = dir.path().join("key");
+    writer.save(&key).unwrap();
+    let path = dir.path().join("spool");
+    let scope = [17; 32];
+    let private = [73; 32];
+    drop(
+        Spool::create(
+            &path,
+            &service::hex(&scope),
+            writer.did().as_str(),
+            Identity::generate().did().as_str(),
+            64 << 20,
+        )
+        .unwrap(),
+    );
+    let barrier = Arc::new(Barrier::new(2));
+    let mut jobs = Vec::new();
+    for producer in 0..2u8 {
+        let (path, key, barrier) = (path.clone(), key.clone(), barrier.clone());
+        jobs.push(std::thread::spawn(move || {
+            let writer = Identity::load_existing(&key).unwrap();
+            let mut spool = Spool::open(&path).unwrap();
+            let recipient = kan::evidence_crypto::public_key(&private).unwrap();
+            let mut results = Vec::new();
+            for n in 0..40u8 {
+                let mut id = [99; 16];
+                id[0] = producer;
+                id[1] = n;
+                let body = format!("producer {producer} frame {n}");
+                barrier.wait();
+                results.push(
+                    kan::evidence_delivery::queue(
+                        &mut spool,
+                        &writer,
+                        &recipient,
+                        &id,
+                        body.as_bytes(),
+                    )
+                    .map(|_| ())
+                    .map_err(|e| e.to_string()),
+                );
+                barrier.wait();
+            }
+            results
+        }));
+    }
+    for job in jobs {
+        let results = job.join().unwrap();
+        assert!(results.iter().all(Result::is_ok), "{results:?}");
+    }
+    let raw = rusqlite::Connection::open(&path).unwrap();
+    let mut query = raw
+        .prepare("SELECT position,request FROM pending ORDER BY position")
+        .unwrap();
+    let rows = query
+        .query_map([], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, Vec<u8>>(1)?)))
+        .unwrap();
+    let mut plaintext = std::collections::BTreeSet::new();
+    let mut count = 0;
+    for row in rows {
+        let (position, bytes) = row.unwrap();
+        assert_eq!(position, count);
+        count += 1;
+        plaintext.insert(
+            String::from_utf8(
+                kan::evidence_delivery::decrypt_request(
+                    &bytes,
+                    &private,
+                    &scope,
+                    writer.did().as_str(),
+                )
+                .unwrap(),
+            )
+            .unwrap(),
+        );
+    }
+    assert_eq!(count, 80);
+    assert_eq!(plaintext.len(), 80);
+    for p in 0..2 {
+        for n in 0..40 {
+            assert!(plaintext.contains(&format!("producer {p} frame {n}")));
+        }
+    }
+    assert_eq!(Spool::open(&path).unwrap().status().unwrap().pending, 80);
+}
