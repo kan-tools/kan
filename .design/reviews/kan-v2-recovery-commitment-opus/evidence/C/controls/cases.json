@@ -1,0 +1,57 @@
+[
+ {
+  "name": "CC1-clock-check-removed",
+  "file": "src/evidence_reconstruction.rs",
+  "old": "    if !object.contains_key(\"observed_at_unix_micros\") {\n        return Err(Error::Header);\n    }\n",
+  "new": "",
+  "count": 1,
+  "cargo_tests": [
+   "evidence_reconstruction_review_regressions",
+   "evidence_reconstruction"
+  ]
+ },
+ {
+  "name": "CC2-unit-extra-off-by-one",
+  "file": "src/evidence_reconstruction.rs",
+  "old": "if kind == \"forwarding-intent\" && event.len() != 1",
+  "new": "if kind == \"forwarding-intent\" && event.len() > 2",
+  "count": 1,
+  "cargo_tests": [
+   "evidence_reconstruction_review_regressions",
+   "evidence_reconstruction"
+  ]
+ },
+ {
+  "name": "CC3-vacuity-all-small-frames-opaque",
+  "file": "src/evidence_reconstruction.rs",
+  "old": "pub fn decode(bytes: &[u8]) -> Result<Decoded<'_>, Error> {",
+  "new": "pub fn decode(bytes: &[u8]) -> Result<Decoded<'_>, Error> {\n    if bytes.len() < 4096 {\n        return Ok(Decoded::Opaque);\n    }",
+  "count": 1,
+  "cargo_tests": [
+   "evidence_reconstruction_review_regressions",
+   "evidence_reconstruction"
+  ]
+ },
+ {
+  "name": "CC4-projection-skips-null-clock",
+  "file": "src/evidence_capture.rs",
+  "old": "    pub observed_at_unix_micros: Option<u64>,",
+  "new": "    #[serde(skip_serializing_if = \"Option::is_none\")]\n    pub observed_at_unix_micros: Option<u64>,",
+  "count": 1,
+  "cargo_tests": [
+   "evidence_reconstruction_review_regressions",
+   "evidence_reconstruction"
+  ]
+ },
+ {
+  "name": "CC5-absent-method-defaulted",
+  "file": "src/evidence_capture.rs",
+  "old": "        method: String,",
+  "new": "        #[serde(default)]\n        method: String,",
+  "count": 1,
+  "cargo_tests": [
+   "evidence_reconstruction_review_regressions",
+   "evidence_reconstruction"
+  ]
+ }
+]

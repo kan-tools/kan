@@ -1,0 +1,4 @@
+sha256-4MiB-in-test-build=103.706084ms
+cancel-member-object	result=Err(Cancelled)	call=3.173917ms
+cancel-r1-candidate	result=Err(Cancelled)	call=3.162291ms
+deadline-member-object	result=Err(Budget)	call=6.312459ms

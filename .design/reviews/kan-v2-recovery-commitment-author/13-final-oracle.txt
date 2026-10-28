@@ -1,0 +1,1 @@
+9 member/output and 4 restoration framing vectors; local negative checks pass. No logical-member acceptance claimed.

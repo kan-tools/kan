@@ -1,0 +1,26 @@
+
+running 1 test
+test failure_mid_payload_and_candidate_verification_consumes_budget_and_poisons ... FAILED
+
+failures:
+
+---- failure_mid_payload_and_candidate_verification_consumes_budget_and_poisons stdout ----
+
+thread 'failure_mid_payload_and_candidate_verification_consumes_budget_and_poisons' (9921307) panicked at tests/evidence_recovery_commitment.rs:258:5:
+assertion `left == right` failed
+  left: Ok(())
+ right: Err(Budget)
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    failure_mid_payload_and_candidate_verification_consumes_budget_and_poisons
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 7 filtered out; finished in 0.19s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-recovery-state)
+    Finished `test` profile [unoptimized] target(s) in 7.21s
+     Running tests/evidence_recovery_commitment.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_recovery_commitment-5a89bc2efd1208f4)
+error: test failed, to rerun pass `--test evidence_recovery_commitment`
+
+exit=101

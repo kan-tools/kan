@@ -1,0 +1,14 @@
+DEMONSTRATED: AC01-put-unchunked
+DEMONSTRATED: AC02-verify-unchunked
+DEMONSTRATED: AC03-candidate-empty-allowed
+DEMONSTRATED: AC04-membership-zero-length
+DEMONSTRATED: AC05-proof-bound-16385
+DEMONSTRATED: AC06-plan-bound-4097
+DEMONSTRATED: AC07-plan-empty-allowed
+DEMONSTRATED: AC08-issuer-bound-removed
+DEMONSTRATED: AC09-membership-phase-check-removed
+DEMONSTRATED: AC10-member-finish-count-removed
+DEMONSTRATED: AC16-safe-count-removed
+DEMONSTRATED: AC17-duration-upper-removed
+DEMONSTRATED: AC25-cancel-check-only-at-new
+13 compiled controls fail assertions; restored tests pass.

@@ -1,0 +1,77 @@
+9,10c9,20
+<         json!(null), json!(0), json!(-1), json!(1.0), json!(1e0), json!("x"), json!(true),
+<         json!([]), json!({}), json!(18446744073709551615u64), json!([["a","b","c"]]), json!([["a"]]),
+---
+>         json!(null),
+>         json!(0),
+>         json!(-1),
+>         json!(1.0),
+>         json!(1e0),
+>         json!("x"),
+>         json!(true),
+>         json!([]),
+>         json!({}),
+>         json!(18446744073709551615u64),
+>         json!([["a", "b", "c"]]),
+>         json!([["a"]]),
+21c31,33
+<                 if key == "event" { continue; }
+---
+>                 if key == "event" {
+>                     continue;
+>                 }
+28c40,42
+<             if key == "type" { continue; }
+---
+>             if key == "type" {
+>                 continue;
+>             }
+62,65c76,81
+<     out.push_str(&format!("captures={captures} violations={}\n", violations.len()));
+<     for v in &violations { out.push_str(&format!("VIOLATION {v}\n")); }
+<     if let Ok(path) = std::env::var("REVIEW_OUT") {
+<         std::fs::write(format!("{path}/pa1-corpus.tsv"), &out).unwrap();
+---
+>     out.push_str(&format!(
+>         "captures={captures} violations={}\n",
+>         violations.len()
+>     ));
+>     for v in &violations {
+>         out.push_str(&format!("VIOLATION {v}\n"));
+66a83,84
+>     eprintln!("{out}");
+>     assert!(captures > 10, "nonvacuous accepted corpus");
+97,99c115,129
+<         ("observer", json!({"observer":"future"}), "Unsupported(Observer)"),
+<         ("event", json!({"event":{"type":"future","x":1}}), "Unsupported(Event)"),
+<         ("outcome", json!({"event":{"type":"terminal","outcome":"future"}}), "Unsupported(Outcome)"),
+---
+>         (
+>             "observer",
+>             json!({"observer":"future"}),
+>             "Unsupported(Observer)",
+>         ),
+>         (
+>             "event",
+>             json!({"event":{"type":"future","x":1}}),
+>             "Unsupported(Event)",
+>         ),
+>         (
+>             "outcome",
+>             json!({"event":{"type":"terminal","outcome":"future"}}),
+>             "Unsupported(Outcome)",
+>         ),
+103c133,135
+<         for (k, val) in mutate.as_object().unwrap() { v[k] = val.clone(); }
+---
+>         for (k, val) in mutate.as_object().unwrap() {
+>             v[k] = val.clone();
+>         }
+116,118c148
+<     if let Ok(path) = std::env::var("REVIEW_OUT") {
+<         std::fs::write(format!("{path}/pa2-timestamp.tsv"), &out).unwrap();
+<     }
+---
+>     eprintln!("{out}");
+120d149
+< 

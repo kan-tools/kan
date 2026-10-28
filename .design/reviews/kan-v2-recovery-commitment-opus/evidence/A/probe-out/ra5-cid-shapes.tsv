@@ -1,0 +1,4 @@
+dag-cbor	membership=true	object=true	candidate=true
+cidv0	membership=true	object=true	candidate=true
+sha2-512	membership=true	object=true	candidate=true
+identity	membership=true	object=true	candidate=true

@@ -1,0 +1,366 @@
+[
+ {
+  "name": "AC00-author-binary-cid-order",
+  "file": "src/evidence_recovery_commitment.rs",
+  "old": "Ok((cid.to_string(), raw))",
+  "new": "Ok((format!(\"{:02x?}\", raw), raw))",
+  "count": 1,
+  "cargo_tests": [
+   "evidence_recovery_commitment",
+   "zz_review_commitment_probes"
+  ],
+  "env": {
+   "REVIEW_VECTORS": "/Users/m/code/kan-tools/kan/.worktrees/kan-v2-recovery-state/.local-state/reviews/recovery-commitment/review-evidence/probes/reviewer-vectors.json"
+  }
+ },
+ {
+  "name": "AC01-put-unchunked",
+  "file": "src/evidence_recovery_commitment.rs",
+  "old": "for part in bytes.chunks(64 * 1024) {\n            self.meter.spend(part.len())?;\n            self.hash.update(part)",
+  "new": "for part in bytes.chunks(usize::MAX) {\n            self.meter.spend(part.len())?;\n            self.hash.update(part)",
+  "count": 1,
+  "cargo_tests": [
+   "evidence_recovery_commitment",
+   "zz_review_commitment_probes"
+  ],
+  "env": {
+   "REVIEW_VECTORS": "/Users/m/code/kan-tools/kan/.worktrees/kan-v2-recovery-state/.local-state/reviews/recovery-commitment/review-evidence/probes/reviewer-vectors.json"
+  }
+ },
+ {
+  "name": "AC02-verify-unchunked",
+  "file": "src/evidence_recovery_commitment.rs",
+  "old": "for part in bytes.chunks(64 * 1024) {\n            self.core.meter.spend(part.len())?;\n            hash.update(part)",
+  "new": "for part in bytes.chunks(usize::MAX) {\n            self.core.meter.spend(part.len())?;\n            hash.update(part)",
+  "count": 1,
+  "cargo_tests": [
+   "evidence_recovery_commitment",
+   "zz_review_commitment_probes"
+  ],
+  "env": {
+   "REVIEW_VECTORS": "/Users/m/code/kan-tools/kan/.worktrees/kan-v2-recovery-state/.local-state/reviews/recovery-commitment/review-evidence/probes/reviewer-vectors.json"
+  }
+ },
+ {
+  "name": "AC03-candidate-empty-allowed",
+  "file": "src/evidence_recovery_commitment.rs",
+  "old": "!bytes.is_empty() && bytes.len() <= MAX_OBJECT,",
+  "new": "bytes.len() <= MAX_OBJECT,",
+  "count": 1,
+  "cargo_tests": [
+   "evidence_recovery_commitment",
+   "zz_review_commitment_probes"
+  ],
+  "env": {
+   "REVIEW_VECTORS": "/Users/m/code/kan-tools/kan/.worktrees/kan-v2-recovery-state/.local-state/reviews/recovery-commitment/review-evidence/probes/reviewer-vectors.json"
+  }
+ },
+ {
+  "name": "AC04-membership-zero-length",
+  "file": "src/evidence_recovery_commitment.rs",
+  "old": "(1..=MAX_OBJECT as u64).contains(&length)",
+  "new": "(0..=MAX_OBJECT as u64).contains(&length)",
+  "count": 1,
+  "cargo_tests": [
+   "evidence_recovery_commitment",
+   "zz_review_commitment_probes"
+  ],
+  "env": {
+   "REVIEW_VECTORS": "/Users/m/code/kan-tools/kan/.worktrees/kan-v2-recovery-state/.local-state/reviews/recovery-commitment/review-evidence/probes/reviewer-vectors.json"
+  }
+ },
+ {
+  "name": "AC05-proof-bound-16385",
+  "file": "src/evidence_recovery_commitment.rs",
+  "old": "(proof, 16384)",
+  "new": "(proof, 16385)",
+  "count": 1,
+  "cargo_tests": [
+   "evidence_recovery_commitment",
+   "zz_review_commitment_probes"
+  ],
+  "env": {
+   "REVIEW_VECTORS": "/Users/m/code/kan-tools/kan/.worktrees/kan-v2-recovery-state/.local-state/reviews/recovery-commitment/review-evidence/probes/reviewer-vectors.json"
+  }
+ },
+ {
+  "name": "AC06-plan-bound-4097",
+  "file": "src/evidence_recovery_commitment.rs",
+  "old": "p.len() <= 4096",
+  "new": "p.len() <= 4097",
+  "count": 1,
+  "cargo_tests": [
+   "evidence_recovery_commitment",
+   "zz_review_commitment_probes"
+  ],
+  "env": {
+   "REVIEW_VECTORS": "/Users/m/code/kan-tools/kan/.worktrees/kan-v2-recovery-state/.local-state/reviews/recovery-commitment/review-evidence/probes/reviewer-vectors.json"
+  }
+ },
+ {
+  "name": "AC07-plan-empty-allowed",
+  "file": "src/evidence_recovery_commitment.rs",
+  "old": "!p.is_empty() && p.len() <= 4096",
+  "new": "p.len() <= 4096",
+  "count": 1,
+  "cargo_tests": [
+   "evidence_recovery_commitment",
+   "zz_review_commitment_probes"
+  ],
+  "env": {
+   "REVIEW_VECTORS": "/Users/m/code/kan-tools/kan/.worktrees/kan-v2-recovery-state/.local-state/reviews/recovery-commitment/review-evidence/probes/reviewer-vectors.json"
+  }
+ },
+ {
+  "name": "AC08-issuer-bound-removed",
+  "file": "src/evidence_recovery_commitment.rs",
+  "old": "!header.issuer.is_empty() && header.issuer.len() <= 80",
+  "new": "true",
+  "count": 1,
+  "cargo_tests": [
+   "evidence_recovery_commitment",
+   "zz_review_commitment_probes"
+  ],
+  "env": {
+   "REVIEW_VECTORS": "/Users/m/code/kan-tools/kan/.worktrees/kan-v2-recovery-state/.local-state/reviews/recovery-commitment/review-evidence/probes/reviewer-vectors.json"
+  }
+ },
+ {
+  "name": "AC09-membership-phase-check-removed",
+  "file": "src/evidence_recovery_commitment.rs",
+  "old": "s.phase == Phase::Membership && s.seen < s.counts.membership",
+  "new": "s.seen < s.counts.membership",
+  "count": 1,
+  "cargo_tests": [
+   "evidence_recovery_commitment",
+   "zz_review_commitment_probes"
+  ],
+  "env": {
+   "REVIEW_VECTORS": "/Users/m/code/kan-tools/kan/.worktrees/kan-v2-recovery-state/.local-state/reviews/recovery-commitment/review-evidence/probes/reviewer-vectors.json"
+  }
+ },
+ {
+  "name": "AC10-member-finish-count-removed",
+  "file": "src/evidence_recovery_commitment.rs",
+  "old": "self.phase == Phase::Objects && self.seen == self.counts.objects",
+  "new": "self.phase == Phase::Objects",
+  "count": 1,
+  "cargo_tests": [
+   "evidence_recovery_commitment",
+   "zz_review_commitment_probes"
+  ],
+  "env": {
+   "REVIEW_VECTORS": "/Users/m/code/kan-tools/kan/.worktrees/kan-v2-recovery-state/.local-state/reviews/recovery-commitment/review-evidence/probes/reviewer-vectors.json"
+  }
+ },
+ {
+  "name": "AC11-object-order-not-reset",
+  "file": "src/evidence_recovery_commitment.rs",
+  "old": "s.phase = Phase::Objects;\n            s.seen = 0;\n            s.last = None;",
+  "new": "s.phase = Phase::Objects;\n            s.seen = 0;",
+  "count": 1,
+  "cargo_tests": [
+   "evidence_recovery_commitment",
+   "zz_review_commitment_probes"
+  ],
+  "env": {
+   "REVIEW_VECTORS": "/Users/m/code/kan-tools/kan/.worktrees/kan-v2-recovery-state/.local-state/reviews/recovery-commitment/review-evidence/probes/reviewer-vectors.json"
+  }
+ },
+ {
+  "name": "AC12-item-precheck-removed",
+  "file": "src/evidence_recovery_commitment.rs",
+  "old": "if items > limits.items {\n            return Err(Error::Budget);\n        }",
+  "new": "",
+  "count": 1,
+  "cargo_tests": [
+   "evidence_recovery_commitment",
+   "zz_review_commitment_probes"
+  ],
+  "env": {
+   "REVIEW_VECTORS": "/Users/m/code/kan-tools/kan/.worktrees/kan-v2-recovery-state/.local-state/reviews/recovery-commitment/review-evidence/probes/reviewer-vectors.json"
+  }
+ },
+ {
+  "name": "AC13-item-runtime-check-removed",
+  "file": "src/evidence_recovery_commitment.rs",
+  "old": "if self.items > self.limits.items {",
+  "new": "if false && self.items > self.limits.items {",
+  "count": 1,
+  "cargo_tests": [
+   "evidence_recovery_commitment",
+   "zz_review_commitment_probes"
+  ],
+  "env": {
+   "REVIEW_VECTORS": "/Users/m/code/kan-tools/kan/.worktrees/kan-v2-recovery-state/.local-state/reviews/recovery-commitment/review-evidence/probes/reviewer-vectors.json"
+  }
+ },
+ {
+  "name": "AC14-deadline-removed",
+  "file": "src/evidence_recovery_commitment.rs",
+  "old": "if Instant::now() >= self.deadline {",
+  "new": "if false && Instant::now() >= self.deadline {",
+  "count": 1,
+  "cargo_tests": [
+   "evidence_recovery_commitment",
+   "zz_review_commitment_probes"
+  ],
+  "env": {
+   "REVIEW_VECTORS": "/Users/m/code/kan-tools/kan/.worktrees/kan-v2-recovery-state/.local-state/reviews/recovery-commitment/review-evidence/probes/reviewer-vectors.json"
+  }
+ },
+ {
+  "name": "AC15-finish-recheck-removed",
+  "file": "src/evidence_recovery_commitment.rs",
+  "old": "self.meter.check()?;\n        Ok(self.hash.finalize().into())",
+  "new": "Ok(self.hash.finalize().into())",
+  "count": 1,
+  "cargo_tests": [
+   "evidence_recovery_commitment",
+   "zz_review_commitment_probes"
+  ],
+  "env": {
+   "REVIEW_VECTORS": "/Users/m/code/kan-tools/kan/.worktrees/kan-v2-recovery-state/.local-state/reviews/recovery-commitment/review-evidence/probes/reviewer-vectors.json"
+  }
+ },
+ {
+  "name": "AC16-safe-count-removed",
+  "file": "src/evidence_recovery_commitment.rs",
+  "old": "shape(count <= SAFE, \"count\")?",
+  "new": "shape(true, \"count\")?",
+  "count": 2,
+  "cargo_tests": [
+   "evidence_recovery_commitment",
+   "zz_review_commitment_probes"
+  ],
+  "env": {
+   "REVIEW_VECTORS": "/Users/m/code/kan-tools/kan/.worktrees/kan-v2-recovery-state/.local-state/reviews/recovery-commitment/review-evidence/probes/reviewer-vectors.json"
+  }
+ },
+ {
+  "name": "AC17-duration-upper-removed",
+  "file": "src/evidence_recovery_commitment.rs",
+  "old": " && limits.duration <= Duration::from_secs(3600)",
+  "new": "",
+  "count": 1,
+  "cargo_tests": [
+   "evidence_recovery_commitment",
+   "zz_review_commitment_probes"
+  ],
+  "env": {
+   "REVIEW_VECTORS": "/Users/m/code/kan-tools/kan/.worktrees/kan-v2-recovery-state/.local-state/reviews/recovery-commitment/review-evidence/probes/reviewer-vectors.json"
+  }
+ },
+ {
+  "name": "AC18-verify-not-charged",
+  "file": "src/evidence_recovery_commitment.rs",
+  "old": "self.core.meter.spend(part.len())?;\n            hash.update(part)",
+  "new": "hash.update(part)",
+  "count": 1,
+  "cargo_tests": [
+   "evidence_recovery_commitment",
+   "zz_review_commitment_probes"
+  ],
+  "env": {
+   "REVIEW_VECTORS": "/Users/m/code/kan-tools/kan/.worktrees/kan-v2-recovery-state/.local-state/reviews/recovery-commitment/review-evidence/probes/reviewer-vectors.json"
+  }
+ },
+ {
+  "name": "AC19-operation-poison-not-set",
+  "file": "src/evidence_recovery_commitment.rs",
+  "old": "self.core.failed = true;\n        let result",
+  "new": "let result",
+  "count": 1,
+  "cargo_tests": [
+   "evidence_recovery_commitment",
+   "zz_review_commitment_probes"
+  ],
+  "env": {
+   "REVIEW_VECTORS": "/Users/m/code/kan-tools/kan/.worktrees/kan-v2-recovery-state/.local-state/reviews/recovery-commitment/review-evidence/probes/reviewer-vectors.json"
+  }
+ },
+ {
+  "name": "AC20-candidate-poison-not-set",
+  "file": "src/evidence_recovery_commitment.rs",
+  "old": "self.core.failed = true;\n        shape(self.seen < self.count",
+  "new": "shape(self.seen < self.count",
+  "count": 1,
+  "cargo_tests": [
+   "evidence_recovery_commitment",
+   "zz_review_commitment_probes"
+  ],
+  "env": {
+   "REVIEW_VECTORS": "/Users/m/code/kan-tools/kan/.worktrees/kan-v2-recovery-state/.local-state/reviews/recovery-commitment/review-evidence/probes/reviewer-vectors.json"
+  }
+ },
+ {
+  "name": "AC21-object-max-plus1",
+  "file": "src/evidence_recovery_commitment.rs",
+  "old": "shape(bytes.len() <= MAX_OBJECT, \"object bytes\")",
+  "new": "shape(bytes.len() <= MAX_OBJECT + 1, \"object bytes\")",
+  "count": 1,
+  "cargo_tests": [
+   "evidence_recovery_commitment",
+   "zz_review_commitment_probes"
+  ],
+  "env": {
+   "REVIEW_VECTORS": "/Users/m/code/kan-tools/kan/.worktrees/kan-v2-recovery-state/.local-state/reviews/recovery-commitment/review-evidence/probes/reviewer-vectors.json"
+  }
+ },
+ {
+  "name": "AC22-raw-key-any-codec",
+  "file": "src/evidence_recovery_commitment.rs",
+  "old": "raw[..4] == [1, 0x55, 0x12, 0x20]",
+  "new": "raw[..4] == [1, raw[1], 0x12, 0x20]",
+  "count": 1,
+  "cargo_tests": [
+   "evidence_recovery_commitment",
+   "zz_review_commitment_probes"
+  ],
+  "env": {
+   "REVIEW_VECTORS": "/Users/m/code/kan-tools/kan/.worktrees/kan-v2-recovery-state/.local-state/reviews/recovery-commitment/review-evidence/probes/reviewer-vectors.json"
+  }
+ },
+ {
+  "name": "AC23-record-receipt-proof-swapped",
+  "file": "src/evidence_recovery_commitment.rs",
+  "old": "s.core.frame(receipt)?;\n            s.core.frame(proof)?;",
+  "new": "s.core.frame(proof)?;\n            s.core.frame(receipt)?;",
+  "count": 1,
+  "cargo_tests": [
+   "evidence_recovery_commitment",
+   "zz_review_commitment_probes"
+  ],
+  "env": {
+   "REVIEW_VECTORS": "/Users/m/code/kan-tools/kan/.worktrees/kan-v2-recovery-state/.local-state/reviews/recovery-commitment/review-evidence/probes/reviewer-vectors.json"
+  }
+ },
+ {
+  "name": "AC24-membership-length-unframed",
+  "file": "src/evidence_recovery_commitment.rs",
+  "old": "s.core.frame(&key)?;\n            s.core.n(length)?;",
+  "new": "s.core.frame(&key)?;",
+  "count": 1,
+  "cargo_tests": [
+   "evidence_recovery_commitment",
+   "zz_review_commitment_probes"
+  ],
+  "env": {
+   "REVIEW_VECTORS": "/Users/m/code/kan-tools/kan/.worktrees/kan-v2-recovery-state/.local-state/reviews/recovery-commitment/review-evidence/probes/reviewer-vectors.json"
+  }
+ },
+ {
+  "name": "AC25-cancel-check-only-at-new",
+  "file": "src/evidence_recovery_commitment.rs",
+  "old": "fn spend(&mut self, bytes: usize) -> Result<()> {\n        self.check()?;",
+  "new": "fn spend(&mut self, bytes: usize) -> Result<()> {",
+  "count": 1,
+  "cargo_tests": [
+   "evidence_recovery_commitment",
+   "zz_review_commitment_probes"
+  ],
+  "env": {
+   "REVIEW_VECTORS": "/Users/m/code/kan-tools/kan/.worktrees/kan-v2-recovery-state/.local-state/reviews/recovery-commitment/review-evidence/probes/reviewer-vectors.json"
+  }
+ }
+]

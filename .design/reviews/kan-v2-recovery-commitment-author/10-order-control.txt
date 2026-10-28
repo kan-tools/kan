@@ -1,0 +1,2 @@
+DEMONSTRATED: binary-cid-order
+1 compiled controls; restored suite passed.

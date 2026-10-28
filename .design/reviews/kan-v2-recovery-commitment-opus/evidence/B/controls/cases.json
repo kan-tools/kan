@@ -1,0 +1,50 @@
+[
+ {
+  "name": "BC1-author-binary-cid-order",
+  "file": "src/evidence_recovery_observation.rs",
+  "old": "cid.to_string(),",
+  "new": "format!(\"{:02x?}\", cid.to_bytes()),",
+  "count": 1,
+  "cargo_tests": [
+   "evidence_recovery_observation",
+   "zz_review_observation_probes",
+   "zz_review_multifault"
+  ],
+  "env": {
+   "REVIEW_PROBES": "/Users/m/code/kan-tools/kan/.worktrees/kan-v2-recovery-state/.local-state/reviews/recovery-commitment/.design/reviews/kan-v2-recovery-wire-opus/evidence/B/probes.json",
+   "REVIEW_MULTIFAULT": "/Users/m/code/kan-tools/kan/.worktrees/kan-v2-recovery-state/.local-state/reviews/recovery-commitment/review-evidence/probes/multifault.json"
+  }
+ },
+ {
+  "name": "BC2-refuse-same-key-roles",
+  "file": "src/evidence_recovery_observation.rs",
+  "old": "did(&self.issuer)?;\n        did(&self.observer)",
+  "new": "did(&self.issuer)?;\n        require(self.issuer != self.observer, \"same-key\")?;\n        did(&self.observer)",
+  "count": 1,
+  "cargo_tests": [
+   "evidence_recovery_observation",
+   "zz_review_observation_probes",
+   "zz_review_multifault"
+  ],
+  "env": {
+   "REVIEW_PROBES": "/Users/m/code/kan-tools/kan/.worktrees/kan-v2-recovery-state/.local-state/reviews/recovery-commitment/.design/reviews/kan-v2-recovery-wire-opus/evidence/B/probes.json",
+   "REVIEW_MULTIFAULT": "/Users/m/code/kan-tools/kan/.worktrees/kan-v2-recovery-state/.local-state/reviews/recovery-commitment/review-evidence/probes/multifault.json"
+  }
+ },
+ {
+  "name": "BC3-created-position-before-body",
+  "file": "src/evidence_recovery_observation.rs",
+  "old": "    body(event, &st[\"body\"])?;\n    require((event == \"created\") == (sequence == 1), \"created-position\")?;",
+  "new": "    require((event == \"created\") == (sequence == 1), \"created-position\")?;\n    body(event, &st[\"body\"])?;",
+  "count": 1,
+  "cargo_tests": [
+   "evidence_recovery_observation",
+   "zz_review_observation_probes",
+   "zz_review_multifault"
+  ],
+  "env": {
+   "REVIEW_PROBES": "/Users/m/code/kan-tools/kan/.worktrees/kan-v2-recovery-state/.local-state/reviews/recovery-commitment/.design/reviews/kan-v2-recovery-wire-opus/evidence/B/probes.json",
+   "REVIEW_MULTIFAULT": "/Users/m/code/kan-tools/kan/.worktrees/kan-v2-recovery-state/.local-state/reviews/recovery-commitment/review-evidence/probes/multifault.json"
+  }
+ }
+]

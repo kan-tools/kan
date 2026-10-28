@@ -1,0 +1,35 @@
+
+running 1 test
+test independent_python_member_output_and_restoration_framing_matches ... FAILED
+
+failures:
+
+---- independent_python_member_output_and_restoration_framing_matches stdout ----
+
+thread 'independent_python_member_output_and_restoration_framing_matches' (9968709) panicked at tests/evidence_recovery_commitment.rs:111:9:
+assertion `left == right` failed: "staged"
+  left: "e82988660b206e9d94102f3cf51d8f02a7a192bdb6c195efbe9f5e4660551c02"
+ right: String("6e8edce17402639db9a7a918156cd36e23b3979534e3715bfe9fa7bb45854f20")
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    independent_python_member_output_and_restoration_framing_matches
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 7 filtered out; finished in 0.00s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-recovery-state/.local-state/reviews/recovery-commitment)
+warning: unused variable: `key`
+   --> src/evidence_recovery_commitment.rs:328:24
+    |
+328 |             let (name, key) = raw_key(cid)?;
+    |                        ^^^ help: if this is intentional, prefix it with an underscore: `_key`
+    |
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: `kan` (lib) generated 1 warning (run `cargo fix --lib -p kan` to apply 1 suggestion)
+    Finished `test` profile [unoptimized] target(s) in 7.29s
+     Running tests/evidence_recovery_commitment.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_recovery_commitment-5a89bc2efd1208f4)
+error: test failed, to rerun pass `--test evidence_recovery_commitment`
+
+exit=101

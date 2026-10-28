@@ -1,0 +1,28 @@
+2026-10-19T14:34:28Z	10-clean	cargo clean -p kan --offline
+2026-10-19T14:34:28Z	11-baseline-tests	cargo test --offline --locked --features v2-crypto --test evidence_recovery_commitment --test evidence_recovery_observation --test evidence_reconstruction --test evidence_reconstruction_review_regressions
+2026-10-19T14:34:48Z	12-oracle-wire	/Users/m/code/kan-tools/kan/.worktrees/kan-v2-encryption/.local-state/crypto-oracle-env/bin/python -I .design/tools/recovery_observation_vectors.py --check
+2026-10-19T14:34:48Z	13-oracle-framing	python3 -I .design/tools/recovery_commitments.py --check
+2026-10-19T14:34:48Z	14-oracle-schema	python3 -I .design/tools/recovery_bundle_schema.py -v
+2026-10-19T14:34:53Z	15-clippy	cargo clippy --offline --locked --features v2-crypto --all-targets -- -D warnings
+2026-10-19T14:35:02Z	16-fmt	cargo fmt --all -- --check
+2026-10-19T14:35:53Z	A-20-indep-commitments	python3 -I /Users/m/code/kan-tools/kan/.worktrees/kan-v2-recovery-state/.local-state/reviews/recovery-commitment/review-evidence/probes/indep_commitments.py /Users/m/code/kan-tools/kan/.worktrees/kan-v2-recovery-state/.local-state/reviews/recovery-commitment/.design/fixtures/recovery-commitments-v1.json /Users/m/code/kan-tools/kan/.worktrees/kan-v2-recovery-state/.local-state/reviews/recovery-commitment/review-evidence/probes/reviewer-vectors.json
+TEMP tests/zz_review_commitment_probes.rs placed
+2026-10-19T14:37:57Z	A-21-probes-run1	cargo test --offline --locked --features v2-crypto --test zz_review_commitment_probes -- --test-threads=1
+2026-10-19T14:38:12Z	A-20b-indep-commitments-run2	python3 -I /Users/m/code/kan-tools/kan/.worktrees/kan-v2-recovery-state/.local-state/reviews/recovery-commitment/review-evidence/probes/indep_commitments.py /Users/m/code/kan-tools/kan/.worktrees/kan-v2-recovery-state/.local-state/reviews/recovery-commitment/.design/fixtures/recovery-commitments-v1.json /Users/m/code/kan-tools/kan/.worktrees/kan-v2-recovery-state/.local-state/reviews/recovery-commitment/review-evidence/probes/reviewer-vectors.json
+2026-10-19T14:38:16Z	A-22-probes-run2	cargo test --offline --locked --features v2-crypto --test zz_review_commitment_probes -- --test-threads=1
+2026-10-19T14:39:10Z	A-30-controls	python3 -I review-evidence/scripts/mutate.py review-evidence/A/controls/cases.json review-evidence/A/controls
+2026-10-19T14:43:38Z	A-31-author-controls	python3 review-evidence/scripts/author_controls_adapted.py /Users/m/code/kan-tools/kan/.worktrees/kan-v2-recovery-state/.local-state/reviews/recovery-commitment/review-evidence/A/author-controls
+2026-10-19T14:45:22Z	B-10-sql-reversion	python3 -I review-evidence/scripts/sql_reversion.py /Users/m/code/kan-tools/kan/.worktrees/kan-v2-recovery-state/.local-state/reviews/recovery-commitment/review-evidence/B/sql-reversion
+2026-10-19T14:45:54Z	B-11-sql-probe	python3 -I review-evidence/probes/sql_probe.py /Users/m/code/kan-tools/kan/.worktrees/kan-v2-recovery-state/.local-state/reviews/recovery-commitment/.design/fixtures/recovery-bundle-v1-schema.sql
+2026-10-19T14:46:19Z	B-12-obs-order-probe	python3 -I review-evidence/probes/obs_order_probe.py .design/fixtures/recovery-observation-v1.json
+2026-10-19T14:46:50Z	B-13-multifault-gen	/Users/m/code/kan-tools/kan/.worktrees/kan-v2-encryption/.local-state/crypto-oracle-env/bin/python -I review-evidence/probes/multifault_gen.py /Users/m/code/kan-tools/kan/.worktrees/kan-v2-recovery-state/.local-state/reviews/recovery-commitment/review-evidence/probes/multifault.json
+2026-10-19T14:47:03Z	B-13b-multifault-gen-run2	/Users/m/code/kan-tools/kan/.worktrees/kan-v2-encryption/.local-state/crypto-oracle-env/bin/python -I review-evidence/probes/multifault_gen.py /Users/m/code/kan-tools/kan/.worktrees/kan-v2-recovery-state/.local-state/reviews/recovery-commitment/review-evidence/probes/multifault.json
+TEMP tests/zz_review_multifault.rs and tests/zz_review_observation_probes.rs (prior reviewer source, unmodified) placed
+2026-10-19T14:47:19Z	B-14-probes	cargo test --offline --locked --no-fail-fast --features v2-crypto --test zz_review_multifault --test zz_review_observation_probes -- --test-threads=1
+2026-10-19T14:47:39Z	B-20-controls	python3 -I review-evidence/scripts/mutate.py review-evidence/B/controls/cases.json review-evidence/B/controls
+2026-10-19T14:48:51Z	C-10-author-controls	python3 -I review-evidence/scripts/decoder_author_controls_adapted.py
+2026-10-19T14:49:30Z	C-11-regressions-nocapture	cargo test --offline --locked --features v2-crypto --test evidence_reconstruction_review_regressions -- --nocapture --test-threads=1
+2026-10-19T14:50:00Z	C-20-controls	python3 -I review-evidence/scripts/mutate.py review-evidence/C/controls/cases.json review-evidence/C/controls
+REMOVED tests/zz_review_{observation_probes,multifault,commitment_probes}.rs (copies retained under review-evidence)
+2026-10-19T14:50:55Z	90-final-tests	cargo test --offline --locked --features v2-crypto --test evidence_recovery_commitment --test evidence_recovery_observation --test evidence_reconstruction --test evidence_reconstruction_review_regressions
+2026-10-19T14:54:01Z wrote review-evidence/REPORT.txt

@@ -1,0 +1,11 @@
+9 author cases
+DEMONSTRATED: binary-cid-order
+DEMONSTRATED: poisoned-builder
+DEMONSTRATED: record-order
+DEMONSTRATED: output-domain
+DEMONSTRATED: original-key
+DEMONSTRATED: candidate-hash
+DEMONSTRATED: duplicate-cid
+DEMONSTRATED: byte-budget
+DEMONSTRATED: cancellation
+9 compiled controls; restored suite passed.

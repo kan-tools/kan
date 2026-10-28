@@ -1,0 +1,21 @@
+{
+  "label": "before",
+  "commit": "a8927a64005b8fc27ae55bcb17577cb3ff070fd6",
+  "manifest_files": 2883,
+  "git_blobs_at_commit": 2883,
+  "on_disk_files_excluding_review_evidence": 2884,
+  "missing_from_disk": [],
+  "extra_on_disk": [
+    "north-star.json"
+  ],
+  "disk_sha256_mismatch": [],
+  "git_only_not_in_manifest": [],
+  "manifest_only_not_in_git": [],
+  "git_blob_sha256_vs_manifest_mismatch": [],
+  "disk_git_oid_mismatch": []
+}
+RESULT: OK (only extra: north-star.json)
+a8927a64005b8fc27ae55bcb17577cb3ff070fd6
+a8927a64005b8fc27ae55bcb17577cb3ff070fd6
+64a00fe76d22f33b199d9191acbf21436190472eafb7b5680a12368777e1c19b  north-star.json
+63130a8dcef9b8af3a7c5969b12d4b5d8dd99a7e4c19f9743fe2c0f6d9404307  ../recovery-commitment-identity.json
