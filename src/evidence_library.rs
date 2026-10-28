@@ -1,5 +1,11 @@
 //! Human evidence Library. Loopback presentation with a separate read capability.
+mod download;
+mod mcp;
+pub use mcp::serve as serve_mcp;
+mod owner;
+mod proof;
 use crate::evidence_content::ContentError;
+use crate::evidence_reader::proof as verified;
 use crate::evidence_reader::{Pin, Reader};
 use crate::evidence_service::Failure;
 use http_body_util::{BodyExt, Full, Limited};
@@ -8,6 +14,17 @@ use hyper::{
     Request, Response, StatusCode,
 };
 use hyper_util::rt::TokioIo;
+pub use owner::{Config as OwnerConfig, Owner, Request as OwnerRequest};
+pub use proof::analysis::{Config as AnalysisConfig, Draft as AnalysisDraft};
+pub use proof::attachments::Direction as AttachmentDirection;
+pub use proof::imports::{ControlEvidence as ImportControlEvidence, View as ImportView};
+pub use proof::knowledge::{Citation as EvidenceCitation, Draft as AnnotationDraft};
+pub use proof::outbox::AnnotationOutbox;
+pub use proof::sessions::{Identity as SessionIdentity, Selection as SessionSelection};
+pub use proof::{
+    search::{Filter as SearchFilter, Target as SearchTarget},
+    Readers,
+};
 use serde::Deserialize;
 use std::{convert::Infallible, future::Future, io, sync::Arc, time::Duration};
 use tokio::{
@@ -15,9 +32,185 @@ use tokio::{
     sync::{OwnedSemaphorePermit, Semaphore},
     task::JoinSet,
 };
+/// Source configuration shared by the launcher and migration route validator.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SourceConfig {
+    pub scope: String,
+    pub endpoint: String,
+    pub issuer: String,
+    pub private_key_file: std::path::PathBuf,
+    #[serde(default)]
+    pub historical_key_files: Vec<std::path::PathBuf>,
+    #[serde(default)]
+    pub epoch_keys: Option<crate::evidence_keys::ReaderAccess>,
+    #[serde(default)]
+    pub protocol: Option<String>,
+    #[serde(default)]
+    pub profile: Option<crate::evidence_proof_service::Profile>,
+    #[serde(default)]
+    pub archive: Option<String>,
+}
+
 #[derive(Deserialize)]
 #[serde(tag = "action", rename_all = "kebab-case", deny_unknown_fields)]
-enum Query {
+pub enum Query {
+    ProofAttachment {
+        source: String,
+        pin: verified::Pin,
+        selections: Vec<verified::Token>,
+        direction: proof::attachments::Direction,
+        pointer: String,
+    },
+    SaveImportView {
+        name: String,
+        source: String,
+        pin: verified::Pin,
+        selections: Vec<verified::Token>,
+        plan: String,
+        file: Option<usize>,
+        #[serde(default)]
+        view: ImportView,
+    },
+    ProofImport {
+        source: String,
+        pin: verified::Pin,
+        selections: Vec<verified::Token>,
+        plan: String,
+        file: Option<usize>,
+        #[serde(default)]
+        after: usize,
+        #[serde(default)]
+        view: ImportView,
+    },
+    KnowledgeGraph {
+        subject: Option<String>,
+        #[serde(default)]
+        day: bool,
+        after: Option<String>,
+        limit: Option<usize>,
+    },
+    AnnotationTriggers {
+        id: String,
+        #[serde(default)]
+        retry: bool,
+    },
+    AnalysisPreview {
+        draft: AnalysisDraft,
+    },
+    AnalysisSubmit {
+        draft: AnalysisDraft,
+        preview: String,
+        nonce: String,
+        #[serde(default)]
+        wait: bool,
+    },
+    AnalysisJobs,
+    AnalysisJob {
+        id: String,
+        #[serde(default)]
+        cancel: bool,
+    },
+    ProofSession {
+        identity: SessionIdentity,
+        attempts: Vec<SessionSelection>,
+        format: crate::evidence_content::Format,
+    },
+    AnnotationDelivery {
+        id: String,
+    },
+    AnnotationQueue {
+        id: String,
+        destination: String,
+    },
+    AnnotationDrain {
+        destination: String,
+    },
+    AnnotationPreview {
+        draft: AnnotationDraft,
+    },
+    AnnotationSave {
+        draft: AnnotationDraft,
+        preview: String,
+    },
+    Annotations {
+        subject: Option<String>,
+        tag: Option<String>,
+        after: Option<String>,
+        limit: Option<usize>,
+    },
+    PruneSearchCache,
+    IndexPage {
+        target: SearchTarget,
+        cursor: Option<verified::Token>,
+    },
+    SearchAttempt {
+        target: SearchTarget,
+        selections: Vec<verified::Token>,
+        filter: SearchFilter,
+    },
+    SearchPage {
+        target: SearchTarget,
+        cursor: Option<verified::Token>,
+        filter: SearchFilter,
+    },
+    SaveView {
+        name: String,
+        targets: Vec<SearchTarget>,
+        filter: SearchFilter,
+    },
+    Views {
+        after: Option<String>,
+    },
+    CitationSource {
+        cite: EvidenceCitation,
+        offset: String,
+        length: String,
+    },
+    RestoreAnnotation {
+        reference: verified::Reference,
+        preview: Option<String>,
+    },
+    ResolveCaptureUri {
+        uri: String,
+    },
+    ResolveReference {
+        reference: verified::Reference,
+    },
+    ProofAttempt {
+        source: String,
+        pin: verified::Pin,
+        selections: Vec<verified::Token>,
+        format: crate::evidence_content::Format,
+    },
+    ProofDiscover {
+        source: String,
+        pin: verified::Pin,
+        cursor: Option<verified::Token>,
+        limit: usize,
+    },
+    ProofContent {
+        source: String,
+        pin: verified::Pin,
+        selections: Vec<verified::Token>,
+        format: crate::evidence_content::Format,
+    },
+    ProofSnapshot {
+        source: String,
+    },
+    ProofPage {
+        source: String,
+        pin: verified::Pin,
+        cursor: Option<verified::Token>,
+        limit: usize,
+    },
+    ProofSource {
+        source: String,
+        pin: verified::Pin,
+        selection: verified::Token,
+        offset: String,
+        length: String,
+    },
     Content {
         pin_wire: String,
         sequences: Vec<String>,
@@ -53,7 +246,7 @@ enum Query {
 fn response(code: StatusCode, mime: &'static str, body: impl Into<Bytes>) -> Response<Full<Bytes>> {
     let mut r = Response::new(Full::new(body.into()));
     *r.status_mut() = code;
-    for (key,value) in [("content-type",mime),("cache-control","no-store"),("x-content-type-options","nosniff"),("referrer-policy","no-referrer"),("content-security-policy","default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'"),("cross-origin-resource-policy","same-origin")] {
+    for (key,value) in [("content-type",mime),("cache-control","no-store"),("x-content-type-options","nosniff"),("referrer-policy",if mime == "text/html; charset=utf-8" { "same-origin" } else { "no-referrer" }),("content-security-policy","default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'"),("cross-origin-resource-policy","same-origin")] {
         r.headers_mut().insert(key,hyper::header::HeaderValue::from_static(value));
     }
     r
@@ -68,6 +261,38 @@ fn denied(code: StatusCode) -> Response<Full<Bytes>> {
 async fn query(reader: &Reader, query: Query) -> Result<Vec<u8>, ContentError> {
     use crate::evidence_content as content;
     let value: serde_json::Value = match query {
+        Query::ProofImport { .. }
+        | Query::KnowledgeGraph { .. }
+        | Query::AnnotationTriggers { .. }
+        | Query::AnalysisPreview { .. }
+        | Query::AnalysisSubmit { .. }
+        | Query::AnalysisJobs
+        | Query::AnalysisJob { .. }
+        | Query::ProofSession { .. }
+        | Query::AnnotationDelivery { .. }
+        | Query::AnnotationQueue { .. }
+        | Query::AnnotationDrain { .. }
+        | Query::AnnotationPreview { .. }
+        | Query::AnnotationSave { .. }
+        | Query::Annotations { .. }
+        | Query::ProofAttachment { .. }
+        | Query::PruneSearchCache
+        | Query::IndexPage { .. }
+        | Query::SearchPage { .. }
+        | Query::SearchAttempt { .. }
+        | Query::SaveView { .. }
+        | Query::SaveImportView { .. }
+        | Query::Views { .. }
+        | Query::ProofAttempt { .. }
+        | Query::ResolveReference { .. }
+        | Query::ResolveCaptureUri { .. }
+        | Query::RestoreAnnotation { .. }
+        | Query::CitationSource { .. }
+        | Query::ProofDiscover { .. }
+        | Query::ProofContent { .. }
+        | Query::ProofSnapshot { .. }
+        | Query::ProofPage { .. }
+        | Query::ProofSource { .. } => return Err(Failure::Invalid.into()),
         Query::Content {
             pin_wire,
             sequences,
@@ -167,7 +392,7 @@ async fn handle(
     r: Request<Incoming>,
     host: String,
     token: Arc<String>,
-    reader: Arc<Reader>,
+    reader: Arc<Readers>,
 ) -> Result<Response<Full<Bytes>>, Infallible> {
     if r.headers().get("host").and_then(|v| v.to_str().ok()) != Some(host.as_str())
         || r.headers()
@@ -177,6 +402,58 @@ async fn handle(
         return Ok(denied(StatusCode::FORBIDDEN));
     }
     let path = r.uri().path_and_query().map(|p| p.as_str());
+    if matches!(path, Some("/api/library/download" | "/api/owner/download")) {
+        let owner = path == Some("/api/owner/download");
+        return Ok(download::handle(r, &host, &token, &reader, owner).await);
+    }
+    if path == Some("/api/owner") {
+        let Some(owner) = &reader.owner else {
+            return Ok(denied(StatusCode::NOT_FOUND));
+        };
+        if r.method() != hyper::Method::POST {
+            return Ok(denied(StatusCode::METHOD_NOT_ALLOWED));
+        }
+        if !owner.authorized(r.headers()) {
+            return Ok(denied(StatusCode::UNAUTHORIZED));
+        }
+        if r.headers()
+            .get("content-type")
+            .and_then(|v| v.to_str().ok())
+            != Some("application/json")
+        {
+            return Ok(denied(StatusCode::BAD_REQUEST));
+        }
+        let body = match tokio::time::timeout(
+            Duration::from_secs(3),
+            Limited::new(r.into_body(), 262144).collect(),
+        )
+        .await
+        {
+            Ok(Ok(body)) => body.to_bytes(),
+            Ok(Err(_)) => return Ok(denied(StatusCode::PAYLOAD_TOO_LARGE)),
+            Err(_) => return Ok(denied(StatusCode::REQUEST_TIMEOUT)),
+        };
+        let request = match serde_json::from_slice(&body) {
+            Ok(request) => request,
+            Err(_) => return Ok(denied(StatusCode::BAD_REQUEST)),
+        };
+        return Ok(match owner.execute(request).await {
+            Ok(value) => match serde_json::to_vec(&value) {
+                Ok(bytes) => response(StatusCode::OK, "application/json", bytes),
+                Err(_) => denied(StatusCode::SERVICE_UNAVAILABLE),
+            },
+            Err(Failure::Invalid) => denied(StatusCode::BAD_REQUEST),
+            Err(Failure::AccessLimited) => denied(StatusCode::FORBIDDEN),
+            Err(Failure::Conflict) => denied(StatusCode::CONFLICT),
+            Err(_) => denied(StatusCode::SERVICE_UNAVAILABLE),
+        });
+    }
+    if path.is_some_and(|p| p == "/operations" || p.starts_with("/operations/")) {
+        return match &reader.operations {
+            Some(operations) => operations.handle(r, host).await,
+            None => Ok(denied(StatusCode::NOT_FOUND)),
+        };
+    }
     if r.method() == hyper::Method::GET {
         return Ok(match path {
             Some("/") => response(
@@ -207,7 +484,21 @@ async fn handle(
             _ => denied(StatusCode::NOT_FOUND),
         });
     }
-    if r.method() != hyper::Method::POST || path != Some("/api/library") {
+    let search_attempt = path == Some("/api/library/search-attempt");
+    let proof_content = path == Some("/api/library/proof-content");
+    let proof_attempt = path == Some("/api/library/proof-attempt");
+    let proof_attachment = path == Some("/api/library/proof-attachment");
+    let proof_import = path == Some("/api/library/proof-import");
+    let proof_session = path == Some("/api/library/proof-session");
+    if r.method() != hyper::Method::POST
+        || (path != Some("/api/library")
+            && !proof_content
+            && !proof_attachment
+            && !proof_attempt
+            && !proof_session
+            && !proof_import
+            && !search_attempt)
+    {
         return Ok(denied(StatusCode::METHOD_NOT_ALLOWED));
     }
     let wanted = format!("Bearer {token}");
@@ -225,7 +516,18 @@ async fn handle(
     }
     let body = match tokio::time::timeout(
         Duration::from_secs(3),
-        Limited::new(r.into_body(), 16384).collect(),
+        Limited::new(
+            r.into_body(),
+            if proof_attempt || proof_attachment || proof_session || proof_import || search_attempt
+            {
+                2 * 1024 * 1024
+            } else if proof_content {
+                65536
+            } else {
+                262144
+            },
+        )
+        .collect(),
     )
     .await
     {
@@ -237,7 +539,16 @@ async fn handle(
         Ok(request) => request,
         Err(_) => return Ok(denied(StatusCode::BAD_REQUEST)),
     };
-    Ok(match query(&reader, request).await {
+    if matches!(&request, Query::ProofContent { .. }) != proof_content
+        || matches!(&request, Query::ProofAttempt { .. }) != proof_attempt
+        || matches!(&request, Query::ProofAttachment { .. }) != proof_attachment
+        || matches!(&request, Query::ProofSession { .. }) != proof_session
+        || matches!(&request, Query::ProofImport { .. }) != proof_import
+        || matches!(&request, Query::SearchAttempt { .. }) != search_attempt
+    {
+        return Ok(denied(StatusCode::BAD_REQUEST));
+    }
+    Ok(match reader.query(request).await {
         Ok(bytes) => response(StatusCode::OK, "application/json", bytes),
         Err(ContentError::Read(Failure::AccessLimited)) => denied(StatusCode::FORBIDDEN),
         Err(ContentError::Read(Failure::Missing)) => denied(StatusCode::NOT_FOUND),
@@ -257,7 +568,27 @@ async fn handle(
 }
 /// Bounded concurrent reads. Tokens/keys are operator-configured and never logged.
 pub async fn serve(listener: TcpListener, token: String, reader: Reader) -> io::Result<()> {
+    serve_readers(
+        listener,
+        token,
+        Readers::new(Some(reader), Vec::new()).map_err(io::Error::other)?,
+    )
+    .await
+}
+/// Serve explicit legacy and proof sources using the same bounded local UI.
+pub async fn serve_readers(
+    listener: TcpListener,
+    token: String,
+    reader: Readers,
+) -> io::Result<()> {
     let addr = listener.local_addr()?;
+    if reader
+        .owner
+        .as_ref()
+        .is_some_and(|owner| owner.same_token(&token))
+    {
+        return Err(io::Error::other("owner and reader credentials must differ"));
+    }
     if !addr.ip().is_loopback()
         || token.len() < 32
         || token.len() > 4096
@@ -298,7 +629,7 @@ async fn connection(
     stream: tokio::net::TcpStream,
     host: String,
     token: Arc<String>,
-    reader: Arc<Reader>,
+    reader: Arc<Readers>,
 ) {
     let mut builder = hyper::server::conn::http1::Builder::new();
     builder
@@ -343,7 +674,7 @@ impl ConnectionBudget {
             };
             work.await;
         };
-        let _ = tokio::time::timeout(Duration::from_secs(35), connection).await;
+        let _ = tokio::time::timeout(Duration::from_secs(150), connection).await;
     }
 }
 
@@ -399,7 +730,7 @@ mod budget_tests {
             4,
             "expired queued work must never start"
         );
-        tokio::time::advance(Duration::from_millis(28_998)).await;
+        tokio::time::advance(Duration::from_millis(143_998)).await;
         tokio::task::yield_now().await;
         assert_eq!(
             jobs.iter().filter(|j| j.is_finished()).count(),
@@ -410,7 +741,7 @@ mod budget_tests {
         tokio::task::yield_now().await;
         assert!(
             jobs.iter().all(|j| j.is_finished()),
-            "whole connection expires at thirty-five seconds"
+            "whole connection expires at 150 seconds"
         );
         for job in jobs {
             job.await.unwrap();
@@ -437,17 +768,17 @@ mod budget_tests {
         tokio::time::advance(Duration::from_secs(5)).await;
         drop(held);
         started_rx.await.unwrap();
-        tokio::time::advance(Duration::from_millis(29_999)).await;
+        tokio::time::advance(Duration::from_millis(144_999)).await;
         tokio::task::yield_now().await;
         assert!(
             !job.is_finished(),
-            "whole budget lasts until 35s since admission"
+            "whole budget lasts until 150s since admission"
         );
         tokio::time::advance(Duration::from_millis(2)).await;
         tokio::task::yield_now().await;
         assert!(
             job.is_finished(),
-            "queued time must not extend the 35s whole-connection budget"
+            "queued time must not extend the 150s whole-connection budget"
         );
         job.await.unwrap();
         assert_eq!(budget.sockets.available_permits(), 12);

@@ -10,7 +10,7 @@
 //! was found by running the released one rather than by reasoning about it:
 //!
 //! ```text
-//! $ kan observe ...        # v0.9.2, after a v0.11 build touched the workspace
+//! $ kan-v1 observe ...        # v0.9.2, after a v0.11 build touched the workspace
 //! error: sqlite error: NOT NULL constraint failed: claims.origin
 //! ```
 //!

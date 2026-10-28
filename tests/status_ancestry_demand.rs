@@ -49,7 +49,7 @@ fn install_git_shim(bin_dir: &Path, log: &Path) -> String {
 }
 
 fn run_kan(dir: &Path, key: &Path, args: &[&str], path: Option<&str>) -> Output {
-    let mut command = Command::new(env!("CARGO_BIN_EXE_kan"));
+    let mut command = Command::new(env!("CARGO_BIN_EXE_kan-v1"));
     command
         .args(args)
         .current_dir(dir)

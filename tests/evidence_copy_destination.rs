@@ -326,39 +326,69 @@ fn copy_death_child() {
 }
 #[test]
 fn every_copy_transaction_boundary_resumes_without_replacing_acknowledged_bytes() {
-    for phase in [
-        CopyBoundary::ObjectInserted,
-        CopyBoundary::InventoryInserted,
-        CopyBoundary::ManifestInserted,
-        CopyBoundary::ProofSigned,
-        CopyBoundary::ProofInserted,
-        CopyBoundary::BeforeCommit,
-        CopyBoundary::AfterCommit,
-    ] {
-        let t = tempfile::tempdir().unwrap();
-        let path = fixture(t.path(), 2, 2);
-        let s = source(&path);
-        let root = t.path().join("copy");
-        drop(Archive::create(&root, &s, binding(&s)).unwrap());
-        let before = std::fs::read(&path).unwrap();
-        let result = std::process::Command::new(std::env::current_exe().unwrap())
-            .args(["--exact", "copy_death_child", "--nocapture"])
-            .env("KAN_COPY_DEATH_PHASE", format!("{phase:?}"))
-            .env("KAN_COPY_DEATH_ROOT", t.path())
-            .output()
-            .unwrap();
-        assert_eq!(
-            result.status.code(),
-            Some(91),
-            "{phase:?}: {}",
-            String::from_utf8_lossy(&result.stderr)
-        );
-        let acknowledged = rows(&root);
-        let mut a = Archive::open(&root, binding(&s)).unwrap();
-        finish(&mut a, &s);
-        assert!(rows(&root).starts_with(&acknowledged));
-        assert_eq!(rows(&root).len(), 2);
-        assert_eq!(std::fs::read(&path).unwrap(), before);
+    for indexed in [false, true] {
+        for phase in [
+            CopyBoundary::ObjectInserted,
+            CopyBoundary::InventoryInserted,
+            CopyBoundary::ManifestInserted,
+            CopyBoundary::ProofSigned,
+            CopyBoundary::ProofInserted,
+            CopyBoundary::BeforeCommit,
+            CopyBoundary::AfterCommit,
+        ] {
+            let t = tempfile::tempdir().unwrap();
+            let path = fixture(t.path(), 2, 2);
+            let s = source(&path);
+            let root = t.path().join("copy");
+            let initialized = Archive::create(&root, &s, binding(&s)).unwrap();
+            if indexed {
+                initialized.rebuild_serving_index(&identity(8)).unwrap();
+            }
+            drop(initialized);
+            let before = std::fs::read(&path).unwrap();
+            let result = std::process::Command::new(std::env::current_exe().unwrap())
+                .args(["--exact", "copy_death_child", "--nocapture"])
+                .env("KAN_COPY_DEATH_PHASE", format!("{phase:?}"))
+                .env("KAN_COPY_DEATH_ROOT", t.path())
+                .output()
+                .unwrap();
+            assert_eq!(
+                result.status.code(),
+                Some(91),
+                "{phase:?}: {}",
+                String::from_utf8_lossy(&result.stderr)
+            );
+            let acknowledged = rows(&root);
+            let inventory = || {
+                kan::evidence_store::inventory::Inventory::open_indexed(
+                    &root.join("archive.sqlite"),
+                    kan::evidence_store::inventory::Profile::Copied,
+                    binding(&s),
+                    None,
+                    None,
+                    kan::evidence_store::inventory::Budget {
+                        items: 1,
+                        metadata_bytes: 1024 * 1024,
+                        duration: std::time::Duration::from_secs(10),
+                        cancelled: Default::default(),
+                    },
+                )
+                .unwrap()
+            };
+            if indexed {
+                assert_eq!(inventory().frontier().through as usize, acknowledged.len());
+            }
+            let mut a = Archive::open(&root, binding(&s)).unwrap();
+            finish(&mut a, &s);
+            assert!(rows(&root).starts_with(&acknowledged));
+            assert_eq!(rows(&root).len(), 2);
+            if indexed {
+                let opened = inventory();
+                assert_eq!(opened.frontier().through, 2);
+                assert_eq!(opened.recipe_metadata_match(), Some(true));
+            }
+            assert_eq!(std::fs::read(&path).unwrap(), before);
+        }
     }
 }
 #[test]
@@ -539,7 +569,7 @@ fn interrupted_initialization_requires_explicit_resume_with_retained_recipe() {
     }
 }
 fn cli(args: &[&str]) -> std::process::Output {
-    std::process::Command::new(env!("CARGO_BIN_EXE_kan-v2"))
+    std::process::Command::new(env!("CARGO_BIN_EXE_kan"))
         .args(args)
         .output()
         .unwrap()
@@ -1585,4 +1615,44 @@ fn copy_plan_cli_refuses_preexisting_sidecar_outputs_before_opening_source() {
         assert_eq!(std::fs::read(&alias).unwrap(), original, "{name}");
         assert_eq!(std::fs::read(&db).unwrap(), before, "{name}");
     }
+}
+
+#[test]
+fn copied_archive_erasure_retains_original_membership_and_recovery_authority() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = fixture(dir.path(), 2, 0);
+    let source = source(&path);
+    let root = dir.path().join("copied-erasure");
+    let mut archive = Archive::create(&root, &source, binding(&source)).unwrap();
+    assert!(archive
+        .preview_erasure(&[1], service::hex(&[1; 32]), 100)
+        .is_err());
+    finish(&mut archive, &source);
+    let before = archive.verify().unwrap();
+    let plan = archive
+        .preview_erasure(&[1], service::hex(&[2; 32]), 101)
+        .unwrap();
+    let package = archive
+        .apply_erasure(kan::evidence_store::erasure::Record::sign(plan, &identity(8)).unwrap())
+        .unwrap();
+    let after = archive.verify().unwrap();
+    assert_eq!(before.contents.snapshot, after.contents.snapshot);
+    assert_eq!(before.copy.original_objects, after.copy.original_objects);
+    assert!(after.copy.source_copy_complete);
+    assert_eq!(after.copy.erased_original_objects, 1);
+    assert_eq!(after.contents.erased_objects, 1);
+    let backup = dir.path().join("erased-backup.sqlite");
+    assert!(archive.backup(&backup).unwrap().copy.source_copy_complete);
+    let recovered = dir.path().join("recovered.sqlite");
+    kan::evidence_store::copied::Recovery::open(&backup, binding(&source))
+        .unwrap()
+        .rebuild(&recovered)
+        .unwrap();
+    assert!(
+        Archive::verify_file(&recovered, binding(&source))
+            .unwrap()
+            .copy
+            .source_copy_complete
+    );
+    assert_eq!(archive.erasure_history().unwrap().tip, package.tip);
 }

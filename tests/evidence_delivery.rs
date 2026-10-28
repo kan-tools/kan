@@ -15,7 +15,7 @@ const SCOPE: [u8; 32] = [42; 32];
 const PRIVATE: [u8; 32] = [29; 32];
 const CANARY: &[u8] = b"raw-private-delivery-canary\0\xff\n{not-json}";
 fn cli(args: &[&str], input: &[u8]) -> Output {
-    let mut child = Command::new(env!("CARGO_BIN_EXE_kan-v2"))
+    let mut child = Command::new(env!("CARGO_BIN_EXE_kan"))
         .args(args)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -46,7 +46,7 @@ fn server(root: &Path, signer: &Identity, grants: &[Grant]) -> (Server, String) 
     signer.save(&key).unwrap();
     let config = root.join("grants.json");
     std::fs::write(&config, serde_json::to_vec(grants).unwrap()).unwrap();
-    let mut child = Command::new(env!("CARGO_BIN_EXE_kan-v2"))
+    let mut child = Command::new(env!("CARGO_BIN_EXE_kan"))
         .args([
             "serve",
             archive.to_str().unwrap(),
@@ -190,6 +190,17 @@ async fn cli_offline_admission_lost_reply_restart_bounded_drain_and_recovery() {
     assert_eq!(String::from_utf8(first.stdout).unwrap().lines().count(), 2);
     assert_eq!(status(&path, 1)["operation"]["pending"], false);
     assert_eq!(status(&path, 2)["status"]["pending"], 1);
+    let mut concurrent = Spool::open(&path).unwrap();
+    let second = concurrent.head().unwrap();
+    assert!(
+        matches!(
+            delivery::deliver_expected(&mut concurrent, "not-an-endpoint", &original).await,
+            Err(delivery::Error::Spool(kan::evidence_spool::Error::Conflict))
+        ),
+        "a previously checked head cannot authorize its successor"
+    );
+    assert_eq!(concurrent.head().unwrap(), second);
+    drop(concurrent);
     assert!(!queue(&path, &key, 1, CANARY).status.success());
     success(&cli(
         &[

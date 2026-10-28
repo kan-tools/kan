@@ -1,5 +1,5 @@
 {
   "name": "kan",
-  "description": "Local-first, provenance-preserving memory substrate for AI agents.",
+  "description": "Legacy repository knowledge tools; requires the optional kan-v1 executable.",
   "repository": "https://github.com/kan-tools/kan"
 }

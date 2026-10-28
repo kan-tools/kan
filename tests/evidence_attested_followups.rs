@@ -459,7 +459,7 @@ fn profile2_cli_refuses_planless_retained_history_with_named_reason() {
             "--proof-issuer",
             &pins.issuer,
         ]);
-        let output = std::process::Command::new(env!("CARGO_BIN_EXE_kan-v2"))
+        let output = std::process::Command::new(env!("CARGO_BIN_EXE_kan"))
             .args(args)
             .output()
             .unwrap();

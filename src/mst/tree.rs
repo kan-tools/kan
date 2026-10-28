@@ -230,7 +230,7 @@ impl<S: BlockStorage> Mst<S> {
         // where every block is still reachable by a full walk, but a key sits
         // in a sub-tree whose range does not contain it, so ORDERED DESCENT
         // (`get`, and therefore the fold) can no longer find it. Measured: a
-        // claim written by an old flat-MST binary went invisible to `kan show`
+        // claim written by an old flat-MST binary went invisible to `kan-v1 show`
         // while remaining present in the MST -- orphaned, not destroyed.
         //
         // Sorting here is the whole repair. It is not defensive tidying: it is

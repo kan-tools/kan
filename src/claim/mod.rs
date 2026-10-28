@@ -900,6 +900,10 @@ impl ClaimContent {
         self.scope
     }
 
+    pub fn delegation(&self) -> Option<&DelegationId> {
+        self.delegation.as_ref()
+    }
+
     pub fn subject(&self) -> &SubjectPath {
         &self.subject
     }

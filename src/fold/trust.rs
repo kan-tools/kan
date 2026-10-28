@@ -84,7 +84,7 @@ pub enum TrustBase {
 
 /// The literal a `--trust` argument accepts in place of a DID, resolved
 /// against the workspace's own identity. Saves a caller shelling out to
-/// `kan identity did` just to name itself in its own frame — which the
+/// `kan-v1 identity did` just to name itself in its own frame — which the
 /// multi-role case (#115) does constantly, since a role almost always wants
 /// itself plus its peers.
 pub const SELF_ALIAS: &str = "me";

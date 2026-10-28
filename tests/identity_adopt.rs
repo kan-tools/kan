@@ -1,4 +1,4 @@
-//! `.design/v0.9-milestone.md` REQ-8/AC-6 — `kan identity adopt`, the
+//! `.design/v0.9-milestone.md` REQ-8/AC-6 — `kan-v1 identity adopt`, the
 //! supported way back from a lost identity (issue #90).
 //!
 //! v0.8 made this state *visible*: a workspace whose claims belong to an
@@ -16,7 +16,7 @@ struct Run {
 }
 
 fn kan(dir: &std::path::Path, key: Option<&std::path::Path>, args: &[&str]) -> Run {
-    let mut cmd = Command::new(env!("CARGO_BIN_EXE_kan"));
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_kan-v1"));
     cmd.args(args).current_dir(dir).env("KAN_NO_KEYCHAIN", "1");
     match key {
         Some(k) => {

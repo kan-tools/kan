@@ -45,7 +45,7 @@ async fn http_roundtrip_and_rejections() {
         .unwrap(),
     )
     .unwrap();
-    let child = Process::new(env!("CARGO_BIN_EXE_kan-v2"))
+    let child = Process::new(env!("CARGO_BIN_EXE_kan"))
         .args([
             "serve",
             root.to_str().unwrap(),
@@ -86,7 +86,7 @@ async fn http_roundtrip_and_rejections() {
     // Actual CLI signing, including exact newline-free wire output.
     let writerkey = t.path().join("writer.key");
     writer.save(&writerkey).unwrap();
-    let mut signing = Process::new(env!("CARGO_BIN_EXE_kan-v2"))
+    let mut signing = Process::new(env!("CARGO_BIN_EXE_kan"))
         .args(["sign-request", "--key", writerkey.to_str().unwrap()])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -128,7 +128,7 @@ async fn http_roundtrip_and_rejections() {
     );
     let file = t.path().join("request.json");
     std::fs::write(&file, &signed.stdout).unwrap();
-    let rpc = Process::new(env!("CARGO_BIN_EXE_kan-v2"))
+    let rpc = Process::new(env!("CARGO_BIN_EXE_kan"))
         .args([
             "rpc",
             file.to_str().unwrap(),

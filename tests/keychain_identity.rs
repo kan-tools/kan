@@ -5,7 +5,7 @@
 //! `a_migrated_plaintext_identity_is_removed_once_the_keychain_holds_it` and
 //! `a_different_key_plaintext_file_survives_a_keychain_hit`, and all three
 //! asserted the plaintext→keychain migration that REQ-1 removed from the
-//! resolution path and REQ-3 retired as a feature (`kan identity protect` is
+//! resolution path and REQ-3 retired as a feature (`kan-v1 identity protect` is
 //! the deliberate way in now). They exercised `Identity::load_or_create`,
 //! which `src/` no longer calls.
 //!
@@ -76,7 +76,7 @@ fn a_fresh_workspace_refuses_without_touching_the_keychain_or_disk() {
     let dir = git_repo();
 
     let started = std::time::Instant::now();
-    let output = Command::new(env!("CARGO_BIN_EXE_kan"))
+    let output = Command::new(env!("CARGO_BIN_EXE_kan-v1"))
         .args(["observe", "x"])
         .current_dir(dir.path())
         .output()
@@ -85,8 +85,8 @@ fn a_fresh_workspace_refuses_without_touching_the_keychain_or_disk() {
 
     assert!(!output.status.success());
     let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(stderr.contains("kan identity init"), "stderr: {stderr}");
-    assert!(stderr.contains("kan init"), "stderr: {stderr}");
+    assert!(stderr.contains("kan-v1 identity init"), "stderr: {stderr}");
+    assert!(stderr.contains("kan-v1 init"), "stderr: {stderr}");
 
     let kan_dir = dir.path().join(".kan");
     assert!(!kan_dir.exists(), "a refused first write created `.kan`");
@@ -109,7 +109,7 @@ fn a_fresh_workspace_refuses_without_touching_the_keychain_or_disk() {
 #[test]
 fn a_fresh_workspace_explains_the_initialization_sequence() {
     let dir = git_repo();
-    let output = Command::new(env!("CARGO_BIN_EXE_kan"))
+    let output = Command::new(env!("CARGO_BIN_EXE_kan-v1"))
         .args(["observe", "x"])
         .current_dir(dir.path())
         .output()
@@ -118,11 +118,11 @@ fn a_fresh_workspace_explains_the_initialization_sequence() {
     let stderr = String::from_utf8_lossy(&output.stderr);
 
     assert!(
-        stderr.contains("kan identity init"),
+        stderr.contains("kan-v1 identity init"),
         "the notice must name system identity initialization.\nstderr: {stderr}"
     );
     assert!(
-        stderr.contains("kan init"),
+        stderr.contains("kan-v1 init"),
         "the notice must name scope initialization.\nstderr: {stderr}"
     );
     assert!(

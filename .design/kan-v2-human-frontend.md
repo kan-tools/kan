@@ -1,5 +1,11 @@
 # Feature: Kan Studio — the complete human frontend
 
+> Development flow update (owner decision, 2026-10-19): complete the full v2
+> feature set with continuous integration, then conduct one thorough integrated
+> Opus 5.5 review campaign. The active checklist and policy are in
+> [kan-v2-next-build-status.md](kan-v2-next-build-status.md). This supersedes older
+> per-checkpoint review/reversion instructions below, without reducing product scope.
+
 ## Summary
 Build a full human client for Kan: a rich, navigable library of retained work, messages, evidence, annotations and interpretations, with process assessment and administration in the same coherent application. Operations is one area, not the product boundary. Use the user's selected technical-studio direction: clean light surfaces, dense data and vivid accents.
 
@@ -164,3 +170,743 @@ implemented. These do not close this document's composite acceptance criteria.
 The next operations projection contract is #287. See
 `.design/kan-v2-followup-status.md` for concrete remaining work and preserved
 review gaps; this table must not turn “foundation exists” into “workflow complete”.
+
+### Persistent reader search and pinned views (integration, 2026-10-20)
+
+The Library accepts an optional dedicated encrypted workspace database and recipient
+key, outside repositories. Its signer is the configured reader. Index pages and
+saved view declarations are signed with a separate workspace domain and encrypted
+in bounded HPKE chunks; no plaintext SQLite index or browser cache is created.
+A workspace signature, immutable source occurrence identity and projection version
+are required on a cached document; current pins/cursors are verified independently. Database identifiers expose kind, sizes and opaque
+hashes under the default rich-metadata policy. This is a reader-owned projection
+service, not a new authority for the blind evidence service.
+
+`index-page` builds eight occurrences at a time, `search-page` queries that exact
+page, and `save-view`/`views` preserve explicit source snapshots, text and conjunctive
+writer/kind filters. The shared JSON request also runs through `kan-v2 library
+--request`. Raw text search is ASCII case-insensitive with exact UTF-8 byte citations;
+non-ASCII text matches exactly. Capture headers and complete UTF-8 bodies are
+separate spans. Binary spans and phrases crossing capture chunks are explicitly
+outside this projection's coverage; normalized-session search remains a later layer.
+Every search rechecks present remote authorization and rereads matches before
+returning snippets. Facets are labeled as indexed. Saved views pin membership and
+trust framing, not enduring access or current payload availability. Listing a view
+requires present access to all its sources; unavailable scopes reveal no titles.
+
+The database is owner-only, rollback-journal mode, with SQLite's maximum page count;
+a value is bounded to 12 MiB and view declarations to 256 KiB. View lists paginate
+without a lifetime declaration cap. Capacity
+exhaustion is an explicit failure without silent expiry or overwrite. View saves
+are content-addressed and idempotent; changed declarations retain prior versions.
+Search documents are disposable projections that can be refreshed or explicitly
+pruned without replacing authored history. Normal open refuses hot journals. Explicit CLI or owner recovery copies
+a stopped database and its rollback journal into a new file, lets SQLite recover
+only that copy, then authenticates every retained entry. Originals and failed
+outputs remain. Maintenance and scheduler locks use separate owner-private inodes;
+older processes without these locks must also be stopped. WAL workspaces,
+malformed journals and super-journal references are refused. A separately functioning
+owner journal can recover a reader workspace; a damaged owner journal uses the CLI.
+A recovered file is never activated automatically. Entry authentication does not
+prove completeness against an independent checkpoint. Back up the workspace and its key separately: deleting
+it loses view declarations. Source erasure must also clear affected projections in
+the eventual owner erasure plan; normal search does not serve cached deleted bytes.
+
+### Explicit annotations on verified evidence (integration)
+
+The reader workspace also stores signed, encrypted owner annotations. This is an
+explicit new record type, distinct from observed raw bytes, imported v1 claims and
+machine-generated outputs. `annotation-preview` verifies the exact supplied source
+selection tokens and reports current availability and the configured signing author;
+`annotation-save` rechecks the citations and requires the preview's content digest.
+The CLI and UI share these operations. Drafts contain subject, text, tags and up to
+eight whole-occurrence citations. Tags are deterministic sorted sets. `supersedes`
+adds a correction edge to an earlier annotation by the same author and subject,
+inheriting every earlier evidence citation. It never mutates or hides the original.
+Saves are content-addressed and idempotent; the annotation list displays all history
+and permits exact subject/tag filtering. All cited sources must remain authorized
+for the annotation to be displayed. Missing payloads remain citable as explicitly
+unavailable evidence. The private workspace has a 1,000 annotation declaration
+budget, with explicit capacity failure and no automatic expiry. Other relation
+kinds, imported-v1 claim rendering and tag-triggered analysis remain separate work.
+
+### Annotation withdrawal
+
+`withdraws` appends a reason against one earlier annotation by the same author
+and subject. It is mutually exclusive with correction, carries no new tags or
+relations, inherits all original citations and analysis lineage, and schedules no
+automatic analysis. A withdrawal cannot target another withdrawal. The original
+record, subject, relation edges and published copies remain evidence; lists and
+relation views label the author's withdrawal rather than erase history. Retraction
+of a correction does not implicitly retract its parent or reinstate another record.
+A new declaration can express a later position. Restored links affect display only
+when the original and linked record are both authorized and their authors and
+subjects match. Missing parents remain unresolved. Search over annotation history
+continues to include withdrawn records and reports that history scope explicitly.
+
+### Live proof-archive ingress
+
+`serve-admitted` connects the existing durable spool protocol to the profile-2
+admission API. It accepts only authenticated scoped append requests, returns the
+existing signed durable commit reply after atomic source/receipt/attestation
+commit, and leaves all reads to the proof-aware read service. No append-to-read
+fallback or automatic legacy conversion is introduced. This supplies the live
+capture-to-proof-Library route; full-archive admission audit performance remains
+unchanged. Reader-workspace annotations are currently local authored records;
+publication of those declarations to the blind ledger is still required before
+calling the knowledge work package complete.
+
+### Annotation publication through the shared spool
+
+An optional operator-selected annotation outbox binds an existing spool, a fixed
+loopback/tunnel service endpoint, a recipient key and the workspace signing author.
+The UI first reads a destination preview, then explicitly queues the selected
+immutable declaration. Its confirmation digest binds scope, issuer, recipient,
+endpoint, spool path and writer; every use rechecks the spool's current binding.
+The plaintext frame is canonical JSON `{format: "kan-annotation/1", declaration}`,
+encrypted and signed by the existing delivery layer. The inner author is the
+workspace signer and the outer retained writer; no plaintext enters the blind
+service. A deterministic operation ID makes retries reuse the exact queued bytes.
+The UI distinguishes local-only, queued and acknowledged publication; a lost reply
+is resolved by inspecting the spool, never by resealing or replaying inference.
+One bounded delivery action advances the configured queue; the existing drainer
+can run it independently. Cross-reader citation resolution, reconstruction of
+workspace projections from published declarations and imported v1 claim rendering
+remain required; this publication adapter alone does not close Knowledge.
+
+### Conversation reading across archives
+
+`proof-session` composes the existing verified attempt interpreter for up to eight
+explicit attempts / 1024 occurrences / 96 MiB rendered content per request. Every
+archive is checked again before returning any content. Missing payloads remain
+visible; membership metadata is labeled claimed, conflicting or unconfirmed.
+The response keeps each original pin, occurrence and byte citation. Selection
+order is a presentation order, not an invented chronology. Supplied request
+history is collapsed separately from responses; archive copies, branch and
+compaction claims are never collapsed into a single fabricated conversation.
+The frontend offers consecutive eight-attempt windows and retains exact source
+navigation. Larger selections remain browsable individually. This is shared
+CLI/API/UI presentation over the raw ledger, with no new persistent authority.
+
+### Background analysis execution contract
+
+An optional private instance configuration enables named, versioned recipes
+(including day assessment), a fixed local inference-gateway endpoint/model, an
+explicit source allowlist, byte/output/job quotas and at most one active job.
+The reader preview rereads exact authorized citations and hashes the complete
+provider request plus recipe and destination. Submission must repeat that digest
+and a retry-stable nonce. A changed source or configuration invalidates preview.
+No model output creates an annotation, changes a grant or invokes a tool.
+
+Encrypted signed workspace records retain the job declaration, exact input bytes,
+provider request, observed response and append-only lifecycle events. A running
+job with no live worker after restart is interrupted, never silently resumed.
+Explicit retry is a new linked job with fresh source checks; cancellation records
+intent before aborting the worker. Inspection rechecks every input source grant.
+The server runs asynchronously; the shared request supports waiting for completion
+for one-shot CLI use. Tag scheduling must use this same declaration/runner and
+limits, not an independent privileged execution path.
+
+Tag triggers are optional instance declarations (`tag`, `recipe`), limited to
+eight. Matching recipes, revision, model and destination are part of the signed
+annotation preview and declaration. Appending queues those jobs through the same
+preview-bound runner; deterministic nonces prevent duplicate inference on save
+or scheduling retries. An encrypted append-only receipt records scheduled job IDs
+or scheduling failure. Explicit retry retains the earlier receipt and refuses a
+changed trigger plan. At most sixteen jobs are queued/live and one dispatches at
+a time. The worker rereads every input and compares its hash immediately before
+sending; revoked, erased or changed inputs fail before dispatch. A restarted
+scheduler marks previously queued/running work interrupted rather than replaying.
+
+A user may draft an annotation from a model result, edit it, preview it and append
+it. `derived_from` references the original jobs. The server requires their retained
+results, inherits their evidence citations, and carries both through corrections.
+Promotion is therefore an explicit authored interpretation with inspectable model
+provenance, never an automatic conversion of model text into an original claim.
+
+### Attributed subjects, relations and day declarations
+
+Annotations may declare up to sixteen typed relations using kan's existing
+`RelationKind` vocabulary. The subject graph is a pure authorized view of those
+signed annotations: outgoing direction, author, source citations and correction
+history remain visible. It does not merge identities or discard an earlier
+assertion when a correction appears. Subject counts and edges include only
+currently authorized declarations, and a referenced target never implies access
+to its evidence.
+
+Graph browsing pages the declaration stream (1–100 entries, default 100) before
+applying subject or Day filters. Its opaque continuation survives reconnects;
+empty filtered pages retain continuation, and page-local counts never claim
+lifetime totals. Freshly authorized incoming corrections and withdrawals are
+resolved across pages. Related-metadata discovery streams the workspace with a
+120-second work budget and 8 MiB retained-metadata budget; exhaustion refuses the
+page rather than inventing an uncorrected assertion. This is an execution limit,
+not an annotation retention quota. UI, API, CLI and MCP share the same request.
+
+The day view selects `telos/`, `atom/`, `bridge/` and `thread/` subjects. Explicit
+fenced day JSON is shown as declared data beside the original text, including
+malformed-declaration notices. A human can follow relations, inspect a subject's
+history, and send its cited evidence through the configured day-assessment recipe.
+Imported native v1 files and individually signed claims now have their own source-cited browser. Applying repository membership and the richer native trust/fold queries remains a separate requirement.
+
+### Owner maintenance boundary
+
+Owner jobs have a separate bearer credential and encrypted signed journal from
+the evidence reader and operations observer. Private instance configuration names
+allowed archive/collection targets and output directories; browser requests may
+select names and operation enums, never arbitrary paths, commands or key material.
+A preview binds target configuration, operation, retry parent and nonce; submit
+must repeat its digest. Backup/recovery outputs use new nonce-named files and are
+never overwritten or activated. Retried jobs retain earlier results and outputs.
+
+Backup, derived-data recovery and retained-history rotation call their existing
+owner APIs directly. One maintenance job runs at a time. Once a synchronous
+maintenance operation starts it is allowed to reach its existing safe boundary;
+closing the browser does not pretend to cancel or roll it back. Restart reports
+unfinished journal entries as interrupted. Credentials and source keys never
+appear in the browser. Provisioning this API does not grant authority to reader
+or model-generated actions. Migration now uses a fixed source/spool/recipient target
+and a preview-pinned source inventory; jobs queue bounded encrypted batches with
+exact retries and linked continuation. Import recovery uses a fixed plan, key,
+archive binding and output root, previews its plaintext effect, and records the
+new output/report location. Proof metadata audit and restoration share a pinned
+transaction. Access changes, key lifecycle, reconciliation/cutover and explicit
+erasure require further owner contracts and remain build work.
+
+### Reconstructed search
+
+The raw encrypted index remains page-addressed. Search responses additionally
+expose authorized capture membership so the browser can reconstruct explicit
+attempts after completing the selected archive scan. The shared `search-attempt`
+API uses the existing Content assembler/interpreter, current access checks and
+limits. It searches supported message text across capture chunks, retaining all
+enclosing source ranges and reporting unavailable streams. Message boundaries
+are preserved; separate SSE delta items are not implicitly concatenated. No
+normalized text is written to blind storage. Browser work windows bound retained
+members and interpretation calls, and cancellation keeps completed results only.
+
+### Portable provenance and annotation recovery
+
+Portable references bind archive identity, sequence and manifest/attestation/receipt
+identities. Resolution obtains a fresh authorized snapshot and verifies membership
+through the existing proof service; it never imports another reader's authority.
+Signed historical citation tokens can likewise be rebound through current service
+verification. Their original pin is retained as source data, not treated as a new
+reader capability. Analysis previews bind immutable record metadata and original
+citations, excluding newly minted local continuation signatures.
+
+Explicit annotation recovery reads a publication under current grants, verifies
+its writer and original declaration hash, and previews installation in the encrypted
+workspace. One immutable annotation value retains the original declaration plus
+its recovery origin, making attribution and disclosure dependencies atomic.
+Recovered records require current access to the publication and all cited archives.
+No trigger or publication is invoked. Exact retries preserve prior entries;
+foreign-authored records cannot be republished under the restoring reader's name.
+
+### Imported repository membership and native v1 views
+
+The imported-file reader now pairs a CAR only with its sibling `HEAD` from the
+same verified import plan. It verifies both file hashes, the entire CAR scan,
+HEAD's commit, static did:key commit signatures, and bounded ordered MST
+reachability before marking records current members. It never chooses a newer
+commit or the CAR header root when HEAD is unavailable. Historical/unreferenced
+blocks retain their individual signature display and exact byte citations.
+Other commit identity methods explicitly require resolution; graph reachability
+alone is not identity authentication, scope admission or user trust.
+
+The shared `proof-import` API accepts `view.trust` as exact v1 author identities
+(including agent qualifiers) and `view.subjects_after` for pagination. No authors
+are included implicitly. The existing pure v1 identity, retraction, rejection
+and state folds interpret verified reachable `tools.kan.claim` / `dev.kan.claim`
+records; author exclusion counts, SameAs witnesses, live status claims and
+contested states remain inspectable. Every folded claim links back to its CAR
+block and retained source ranges. Local subjects stay inside this imported
+repository; no cross-import identity merge is inferred. Current identity-governed
+and unsupported codecs remain visible outside this legacy fold. Git ancestry is
+not reconstructed from an import that did not include that evidence.
+
+Presentation bounds are 4,096 reachable records, 8,192 tree nodes, depth 32,
+128 authors, and 100 subject groups / 2 MiB per fold page. Larger or incomplete
+views report their limit and keep the raw file browser available. These are
+query limits, not ingestion or retention caps. No persistent derived authority
+or mutation surface is added.
+
+### Live access policy administration
+
+Proof ingest and proof-read servers may opt into one owner-pinned signed policy
+journal, in place of a static grants file. The policy has the exact archive,
+scope and issuer binding, explicit full grant set, ordered revision, previous
+record digest and nonce. Append and inventory are independent capabilities;
+policy membership supplies no decryption key, provider-forwarding privilege or
+administrative authority. Owner previews bind the prior tip and complete next
+grant set. Applying a stale preview fails; retrying the exact signed declaration
+is idempotent. Prior policies remain immutable and readable.
+
+The same private journal directory can be mounted in separate local services.
+Every request reads and verifies current policy under a shared lease held through
+its authorization/operation; policy changes take the exclusive lease. An
+unreadable, inconsistent or incomplete policy fails closed. A revoked reader's
+next operation cannot reuse an earlier snapshot as authority. In-flight work that
+acquired the earlier policy completes before the change commits. Reader API
+credentials cannot use owner controls. Existing static-grant mode remains explicit
+and does not acquire a fictitious live-update guarantee.
+
+The default policy metadata is signed plaintext (principals, capabilities and
+change times), consistent with the personal instance's rich-metadata profile;
+raw evidence remains encrypted. Deployment must keep the policy directory private
+and back it up with the archive and an independently held current policy digest.
+An optional minimum policy digest detects rollback before that checkpoint.
+Signatures alone cannot detect a whole-directory rollback to an otherwise valid
+prefix when no external checkpoint survives. Key custody/rotation and payload
+erasure are separate contracts, not effects of grant removal.
+
+### Encryption epochs and independent recovery (2026-10-20 implementation contract)
+
+The owner chooses a pinned key-history directory, exact proof binding, signing
+identity and separate X25519 recovery public key. Epoch changes are immutable,
+owner-signed, previous-digest-linked records. Each new random recipient private
+key is HPKE-wrapped to the recovery recipient with a separate wrapping-domain
+context bound to the full archive/profile/scope/issuer identity; neither
+blind storage, capture nor browser responses receive unwrapped private keys.
+An owner preview shows the new public recipient, previous checkpoint and effect;
+apply uses an exact digest and compare-and-swap. Old epochs remain retained.
+This is rotation, not erasure, and cannot recall previously distributed keys.
+
+Epoch-aware capture verifies the current history once per new attempt and holds
+that public recipient through completion. In-flight and spooled requests never
+get re-encrypted on retry. A runtime history failure produces the normal visible
+recording gap while inference continues. Proof readers explicitly configure the
+wrapped history and a separately held recovery credential, reload epochs when
+reading, and continue to check current storage grants. Existing single-key scopes
+remain supported; historical explicit keys provide a migration path. A missing
+matching epoch is `key-unavailable`, retaining provenance and ciphertext
+availability separately from missing/corrupt source material. Import validation
+binds to the actual recipient of the selected frames, not whichever epoch is new.
+
+The human owner surface shares inspect, preview/apply rotation, wrapped package
+export and preview/restore with the owner CLI/API. Packages include the complete
+signed wrapped-key chain and tip, never the recovery private credential. Restore
+accepts only an identical existing prefix in a separately configured initialized
+private directory and never activates service configurations. A separately kept
+minimum digest detects rollback; absent such a witness, valid-prefix truncation
+cannot be detected. The current format admits at most 64 epochs / 128 KiB of key
+history, with explicit capacity failure and no automatic deletion. Increasing
+that format limit is separate from evidence retention/capture capacity.
+
+Archive ciphertext, access-policy history, encrypted reader/owner workspaces and
+independent credentials are separate backup dependencies. A key-package export
+alone is not a complete instance backup. Recovery credential rotation, delegated
+per-reader wrapping, selective payload erasure and the full clean-host drill
+remain separately required; this first epoch format does not claim them.
+
+
+### Imported current-codec claims and control evidence
+
+Repository membership continues to come only from the exact selected HEAD/MST.
+The current-codec view separately invokes the existing identity, governance,
+capability, mixed-claim and status-fold implementations. Humans explicitly select
+public control files across authorized imported snapshots, then select trusted
+current principals independently from legacy composite authors. Control references
+are reader-verified source selections; their exact byte ranges and current access
+are rechecked when used. Lock clears the browser's control selection.
+
+Every displayed current claim separates cryptographic validity, exact identity
+state, scope admission and view trust. Missing authority never becomes admission
+because a signature verifies. Genesis/recovery checkpoints and methods without
+capability-invocation purpose cannot exercise scope reach. Unsupported selected
+control evidence makes authority unresolved. Inception-only did:kan authority is
+limited to the existing native verifier; unsupported later governance is not
+inferred. A delegated claim requires the named head to delegate to that principal,
+and the native path evaluator handles coverage, revocation and time requirements.
+Author-recorded time is never used as trusted time.
+
+Resolver conclusions are relative to the explicitly selected evidence set, not
+a promise of globally complete/current control history. No implicit network
+resolution, Git ancestry, legacy subject remapping or cross-repository identity
+collapse occurs. Unknown/retired identity versions remain raw inspectable evidence
+if the current native verifier cannot authenticate them. These limitations are
+shown beside the human trust selectors and control provenance.
+
+### Recovery replacement and explicit epoch sharing
+
+The owner previews an exact current history tip, destination X25519 public key,
+and ordered epoch record IDs. Replacement requires every current epoch; sharing
+requires an explicit nonempty subset. The preview returns metadata only. Apply
+holds a source-history lease, checks the exact preview and tip, unlocks only the
+selected epochs, and returns an owner-signed recovery package wrapped to the new
+recipient. Each resulting record retains a signed origin reference to the old
+record, history tip, recovery recipient and transfer purpose. Original histories
+and their independent backup packages remain retained as provenance.
+
+The recipient restores into a separately initialized private directory using the
+existing API/CLI/UI. It must independently pin the archive, owner, new recipient
+and returned checkpoint; a package does not choose those trust anchors. No live
+reader or gateway config changes automatically. For replacement, stop capture,
+export/restore/verify the new complete history, update both configurations and
+rotate to a fresh epoch before resuming. An intervening rotation invalidates the
+preview. Old credentials still decrypt previously wrapped epochs and backups;
+replacement protects future epochs only after activation and a fresh rotation.
+Shared packages confer decryption custody of selected epochs, not storage grants,
+owner signing authority or future epoch keys. Keys already distributed cannot be
+recalled. Retain the returned wrapped package independently from its private key.
+
+### Search by attributed annotations
+
+Raw and reconstructed search accept conjunctive `annotation_subject` and
+`annotation_tag` filters. The human Search form and saved filters expose both.
+They select occurrences through the current authorized annotation history,
+including retained corrections; they do not treat captured text as a tag, collapse
+subjects or infer project membership. Every matching annotation must retain access
+to every cited source and publication origin. Its signed citation coordinate is
+matched to an already verified result; normalized messages match when at least
+one contributing occurrence is cited. This coordinate check confers no read grant.
+
+Filtering runs after current source verification and uses a bounded worker for
+citation checks. Full attempt membership remains available for reconstruction;
+tags must not truncate message chunks. Corpus facets, unavailable-source counts
+and reconstruction coverage stay separately labeled as unfiltered. Saved views
+retain the explicit filter and raw snapshot, while annotation membership is
+reevaluated against currently visible history and is not a historical trust pin.
+
+### Saved imported evidence and trust frames
+
+A saved import view records the exact archive binding/pin, selected occurrences,
+import plan/file, legacy author set, current principal set and selected control
+citations. Save verifies the selected import and controls with current grants;
+reopening reruns those same inputs rather than adopting the tab's newer control
+selection or newer archive records. Every referenced source must still be currently
+authorized before its saved name or inputs are listed. Loss remains explicit on
+reopen. Trust changes produce a new content-addressed declaration, retaining the
+old view. The encrypted workspace's existing view bounds apply (200 declarations,
+256 KiB each). Saving a view does not make its relative authority globally current.
+
+### Native file delivery
+
+The browser's Blob/data-URL export path failed an isolated control while an HTTP
+attachment produced the exact downloaded bytes. Source export therefore uses an
+origin-checked native `POST /api/library/download`, with one `text/plain` form
+field containing JSON `{token, request}`. The credential remains in the request
+body, never a URL or cookie. Only existing source-range queries are accepted; the
+server repeats current grant, signature, membership and availability checks and
+returns bounded bytes as an attachment. The UI performs its ordinary source check
+first to show normal failure states. A race-time failure on the native POST shows
+the server's refusal and emits no attachment. Missing Origin and foreign Origin
+are refused, even with a valid token. CSP permits forms only to the same origin.
+
+`POST /api/owner/download` separately requires the owner credential and a bounded,
+typed wrapped recovery package previously exported by the UI. It only delivers
+that package as a file, without restoring, activating, unwrapping or granting
+custody. Both forms are removed and cleared immediately after submission; responses
+remain no-store. These routes add no persistent cache or ticket authority.
+
+### Agent MCP adapter
+
+`kan-v2 library --mcp` runs the existing configured Reader/API over stdio instead
+of HTTP. `kan_v2_read` is the default tool; it accepts the same typed JSON requests
+and refuses mutations. `--mcp-writes` explicitly advertises `kan_v2_write` for
+annotations, indexing, saved views and analysis actions. `--mcp-owner` separately
+requires owner configuration and advertises `kan_v2_owner`; supplying owner config
+alone does not expose that authority to MCP. Read/write classification is exhaustive
+across the request enum, including retry/cancel/restore variants. Existing previews,
+idempotency, grants and bounded work remain authoritative. No new persistence path,
+automatic policy action, credential creation or extra server is introduced.
+
+Results retain the API's JSON as structured MCP content. Adapter failures preserve
+access-limited, missing, corrupt, conflict, unavailable, busy and content-limit
+states; none becomes an empty collection. Input lines are bounded before JSON
+parsing; four concurrent tool executions share the Reader's own worker limits.
+Stdio startup/shutdown creates no listener and writes no diagnostics to stdout.
+
+### Owner erasure contract — accepted 2026-10-20, implementation pending
+
+The owner accepted logical-capture selection, managed removal and enforced
+no-resurrection on restore, with backup purge reported independently. The
+authoritative policy is §10 of `kan-v2-server-first.md`; stronger cryptographic
+irrecoverability from historical backups/keys is outside this guarantee.
+
+The owner workflow must resolve a capture or explicit bulk selection into an exact
+preview of raw records, chunks/attachments, affected derived material and managed
+destinations. Ordinary browsing never acquires erasure authority. Partial discovery
+or incomplete dependency enumeration must remain visible in the preview. After
+explicit authorization, a durable signed record fences access and replay while a
+restartable cleanup job reports each destination. An “erased by owner” source row
+retains minimal provenance; it does not mean the subject/assertion was retracted.
+Backups outside the active service remain visibly pending or outside Kan's control,
+and must not be counted as purged without evidence.
+
+Current storage verification requires every retained payload and its signed
+request; simply deleting an object would make the archive fail its audit. The
+implementation must introduce authenticated erased-evidence handling across
+verification, availability, admission/retry, copying/backup/recovery and derived
+workspaces together. A missing object without valid erasure authority remains
+damage. Cold restore must apply independently retained current erasure history
+before activation; replaying only the older checkpoint's history is insufficient.
+These are outstanding implementation/qualification requirements, not shipped
+behavior or authorization to erase existing data.
+
+### Storage erasure implementation in progress
+
+The proof storage API now prepares exact signed erasure plans at a pinned archive
+frontier and commits authorization plus payload removal atomically. The optional
+`erasures` table holds canonical issuer-signed records, chained independently from
+the immutable admission proofs. Erased object rows retain only a one-byte marker
+so immutable slot bindings and content identities survive; that marker is never
+returned as evidence. Verifiers accept it only with valid signed erasure authority
+and matching retained metadata. A missing marker, forged record, altered source
+coordinate or restored payload under an erasure marker remains corruption.
+
+The inventory, wire reader, Library Source, Content, discovery and search propagate
+an explicit `erased` state. Native downloads and analysis input acquisition refuse
+it. Exact signed-request replay is fenced before staging. Backup and derived-index
+rebuild preserve the signed history. Reconciliation of an older archive requires
+an independently supplied history and explicit expected tip, rejecting forks and
+rollback; erased objects absent from the old checkpoint remain fenced. A restored
+prefix behind that history cannot admit new records until its missing metadata is
+recovered. SQLite reclamation is a separate operation and never a guarantee about
+filesystem snapshots or backup copies.
+
+A bounded complete-archive scan resolves a closed capture by archive, writer,
+observer and attempt, using caller-supplied historical decryption keys. It refuses
+active captures, unknown capture framing, missing keys and exhausted bounds.
+Observed recording gaps are disclosed. The current limits are 100,000 inspected
+occurrences, 256 MiB signed-request scan bytes, 120 seconds, 4,096 selected objects,
+1 MiB per signed erasure record, and 16 MiB / 1,024 records / 32,768 distinct objects
+of erasure history. These are explicit capacity refusals, not incomplete success.
+
+This is a storage primitive, not the complete owner workflow. Independently durable
+history publication before acknowledgement, current-history service enrollment,
+spool/replica/derived-workspace cleanup and publication fencing, owner job/API/CLI/UI
+preview/apply/status, and managed restore activation gating remain required. Do not
+present the low-level API as completed managed erasure. Qualification is pending
+remote CI; local Library checks cover the erased source state and disabled export.
+
+Derived read safeguards now recheck each cited occurrence's current erasure state
+using verified metadata, without needing its plaintext or historical key. Notes
+and analysis jobs with erased inputs return only minimal `erased-source` IDs;
+annotation bodies, graph edges, result text and publication controls are withheld.
+Those markers explicitly say coordinated physical cleanup is pending. Annotation
+restoration, new previews, publication preparation and analysis result access also
+refuse erased inputs. A worker rechecks inputs after inference and discards the
+provider response if access or availability changed. Already dispatched provider
+inputs cannot be recalled. These read/publication checks do not substitute for
+workspace/outbox purge or fencing a publication already queued; those remain part
+of the coordinated owner workflow. Whole-list metadata checks have a 20-second
+bound and fail visibly rather than returning partial data as complete.
+
+Remote all-target compilation passed at 3ad781e; the default test gate found three
+surface-registration omissions (rule registration, independently enumerated values,
+and mutation-facade digest). Those inventories are corrected with the existing
+facade-call controls retained. Runtime storage/reader qualification is still pending.
+
+Independent owner custody now has a separate append-only signed history, with an
+explicit empty genesis and an owner key distinct from the storage issuer. Each
+subsequent owner record authorizes one exact issuer-signed storage erasure plan.
+Storage issuer attestations alone do not prove human authorization. The UI therefore
+says “Payload erased”; the coordinated owner workflow must establish the stronger
+claim. Custody is published before storage reconciliation: an interrupted transition
+leaves enrolled reads and ingestion blocked, rather than serving stale content.
+
+Both services can enroll using an owner-pinned history configuration. They hold a
+shared custody lease throughout each operation and require exact agreement between
+current owner-authorized and local storage history. Owner publication takes an
+exclusive lease. Startup and ongoing requests refuse missing custody, lagging
+restores or extra issuer-only erasures. A current owner checkpoint can reconcile an
+older archive before it is enrolled. Genesis and history must live outside the
+archive backup lifecycle; an independently retained minimum checkpoint detects
+rollback below that checkpoint, but cannot detect rollback of both custody and
+its pin together. This trusts the configured owner-controlled custody service/file
+system as the current source; it is not a cryptographic freshness oracle.
+
+Enrollment remains explicit for existing experimental configurations. Starting a
+legacy service without `--erasure-history` does not acquire these managed restore
+guarantees. The full owner coordinator must enroll every managed read/ingest/restore
+path and keep custody current before it reports managed erasure complete. Coordinated
+spool, outbox, workspace, replica and backup cleanup and owner job/UI still remain.
+
+Workspace cleanup now has an exact bounded owner-side plan and atomic ciphertext
+removal plus encrypted, signed per-entry tombstones. A plan may fence an absent
+analysis output so a delayed completion cannot recreate it. It pins the workspace
+identity, owner authorization record ID, selected kinds/IDs and existing ciphertext
+digests. Stale previews fail atomically; exact retries scrub the same identities
+again. Minimal tombstones contain plan/authorization IDs and entry coordinates,
+never removed content. Reads and writes check them; recovery refuses reintroduced
+payload rows. Ordinary workspace writes cannot mint erasure records.
+
+This cleanup requires an exclusive maintenance handle with all workspace users
+stopped. First erasure changes the workspace profile to 2; earlier binaries refuse
+it, preventing an old writer from silently bypassing the new fences after restart.
+The unchanged encrypted entry schema preserves tombstones through recovery. SQLite
+secure deletion clears removed managed cells; page reclamation and old backup purge
+remain separate. The plan is bounded to 4,096 selected keys and 64 MiB of inspected
+ciphertexts. This is the physical cleanup primitive: the owner coordinator still
+must resolve the complete capture/derivative/outbox/replica dependency set, bind its
+independently signed authorization and reconcile old workspace backups before use.
+
+### Resumable owner evidence erasure
+
+The configured `capture-erasure` target pins one archive, independent owner custody,
+issuer/owner signing files, capture decryption files and registered cleanup targets.
+The Library now previews a closed capture, an explicit list of closed captures, or
+every retained payload in the current archive prefix. The archive option explicitly
+includes opaque/imported data and active captures; it does not infer completeness
+from a session label. The multi-capture UI accepts one attempt ID per line for the
+chosen writer/observer; the shared API also accepts distinct writers/observers.
+
+`preview-erasure-selection` accepts `target` and a tagged `selection`: `capture`
+with `capture`, `captures` with `captures`, or `archive-prefix`. Capture discovery
+returns `discovering` until every selected capture is closed and fully scanned;
+repeat the same request to continue. Discovery checkpoints retain small headers
+and linked membership deltas, including compatibility with older inline checkpoints.
+A completed preview retains content-addressed coordinate pages and returns a compact
+`plan: {selection: <digest>}`, contract digest and summary: archive frontier, custody,
+object/byte totals, gaps, destinations and cleanup limits. `inspect-erasure-selection`
+accepts `target`, `selection` and zero-based `page`; it returns exact object/manifest
+coordinates and `next`. Missing, reordered or inconsistent pages fail closed.
+
+`apply-erasure` takes the returned plan and preview digest. It rechecks all coordinates,
+current custody and the exact preview frontier before retaining owner-signed consent.
+The worker journals each bounded native issuer/owner authorization before publishing
+independent custody. Default root work is 512 objects per attempt; optional target
+`root_batch_records` (1–512) lowers that operational batch size. The signed complete
+selection never changes. `resume-erasure` repairs accepted but incompletely applied
+batches and may rebase chain coordinates after legitimate intervening custody changes.
+It accepts already-erased objects only under verified exact current custody. Later
+archive appends stay outside consent. Legacy inline previews/jobs remain accepted.
+
+The UI exposes selected/fenced/remaining counts, coordinate-page inspection and
+resume controls. After all root objects are fenced, publication cleanup uses the
+whole approved coordinate union. It resolves and retains annotation/correction/
+withdrawal lineage before workspace cleanup can remove local declarations. Registered
+replicas, admitted and unpublished queues, derived workspaces and publication archives
+report their own reconciliation/reclamation state. `configured-cleanup-complete` covers
+only that configuration; deployment enrollment verification and backup purge remain
+separate. Old backups and keys are not promised cryptographically irrecoverable.
+
+Configured erasure workspaces use an exclusive maintenance lease and retain only
+structural metadata during dependency discovery. Cleanup processes at most 4,096
+entries / 64 MiB per source batch, retaining parent jobs until dependent outputs are
+fenced. The reverse graph still has a 65,536-edge execution budget. Search pages are
+removed as disposable pages; unrelated entries and snapshot-only scopes remain.
+Absent outputs receive no-recreation tombstones. Missing lineage, busy/offline stores
+and incomplete publication discovery remain pending. Every retry checks current
+independent custody before reclamation. Large-selection API/runtime qualification
+is pending CI; the current frontend tests pass.
+
+Managed reader workspaces may be enrolled through independently configured owner
+custody histories. Every workspace read/write/declaration operation holds current
+custody leases and verifies actual dependencies against all current non-genesis
+records. Successful audits may be reused only for the same custody heads and
+SQLite data_version, after establishing the operation's read transaction. Local
+writes invalidate this cache and must pass a prospective dependency audit before
+commit. Restored, externally changed, missing-history or rolled-back stores fail
+closed; a backup cannot choose its own acceptable history or assert that cleanup
+finished. Enrollment is explicit in independent Library configuration; unenrolled
+legacy API clients remain outside this guarantee. No new durable checkpoint or
+workspace schema is required for the freshness gate.
+
+### Spool retirement of admitted erased records
+
+An erased admitted request can leave raw ciphertext in the sender's last ACK or
+lost-ACK head. Spool profile 3 retains normalized owner authorizations and exact
+canonical append manifests: their CIDs are bound by the issuer's signed erasure
+plan, and the manifests preserve writer/scope/operation/position/previous and
+object commitment without payload bytes. Historical operation markers may omit
+the manifest body when a later verified ACK already covers their position; they
+cannot advance a cursor. Only fully verified manifest retirements or normal
+signed ACKs anchor the sender cursor. Pending erasure may remove only a contiguous
+head prefix; other selected pending requests remain explicitly deferred until
+preceding operations are resolved. A request with no safe progress refuses. Operations and the queued writer frontier remain immutable.
+
+All erasure metadata and raw-row removals commit atomically; exact retries retain
+one authorization and refuse replay of retired operations. The new exact schema
+refuses older reopens. Current-code handles opened before cleanup refuse late ACKs
+and duplicate enqueue of retired operations; legacy binaries are not qualified. SQLite reclamation is separate and reports busy
+readers. This mechanism covers actually admitted evidence only: unpublished
+annotation cancellation and transitive publication cleanup remain distinct work.
+
+Managed senders accept independently configured current custody, including after
+restoring a profile-2 spool. Head export, exact replay, generated enqueue and ACK
+check the current selection. Delivery holds the custody lease through the network
+request and ACK, and first retires any selected admitted head/last-ACK payload.
+An unaffected predecessor remains deliverable when a later operation is selected;
+its successor is retired before sending. Missing custody fails closed. Selection
+checks do not treat metadata or a restored queue as a freshness authority.
+
+The API, `spool-head/status/drain/watch`, `queue-input` and import commands accept
+this enrollment; annotation outbox configuration can carry the same Access object.
+Use `--erasure-history` with an independently maintained pinned configuration file.
+Enabling it is a deployment requirement, not a property inferred from a backup.
+Automatic delivery cleanup concerns admitted requests only; unpublished derived
+cancellation and published derivative selection remain required.
+
+### Cancelling an unpublished request without rewriting its writer chain
+
+An owner-selected unpublished request can be admitted **already erased**. The
+archive validates its original signed request in memory, commits the exact append
+manifest, receipt and issuer attestation, and writes only an erasure marker for
+the object. It never stages the request payload through this admission path.
+This is actual commitment-only admission, distinguished by `initial_erasure` in
+the signed erasure plan, rather than a fabricated acknowledgment or a skipped
+writer position. Later requests keep their original previous-manifest links.
+An orphan payload staged by an earlier failed ordinary admission is scrubbed in
+the same transaction; its historical backups still require separate purge.
+
+The plan pins the next archive sequence, exact request commitment, original
+manifest, preceding archive tip, storage-erasure predecessor and receipt time.
+The owner coordinator must establish derivative membership, retain the signed
+job and publish independent owner consent before calling this storage primitive.
+Normal service requests cannot choose this path. A stale archive/writer frontier,
+wrong request or ordinary already-retained admission refuses. A completed exact
+retry reuses the original proof. Current erasure history installed on an older
+restore can precede its missing metadata; only the matching commitment admission
+can fill that missing next position, while ordinary staging remains blocked.
+
+Metadata, object marker, erasure record and attestation commit together. A rollback
+leaves no staged request from this path. Existing spool retirement then uses the
+actual issuer-bound commitment to remove its pending payload. The storage API and
+fault/recovery tests implement this primitive; coordinated selection of queued
+and published derivatives, owner job integration and whole-instance completion
+are still required.
+
+The sender treats an `initial_erasure` record as prospective intent. It must also
+receive a signed post-commit `erased-committed` service acknowledgment for the exact
+archive ID, erasure-record ID, request hash, manifest and archive sequence before retiring that operation. It retains that
+minimal acknowledgment instead of raw request bytes; restart audits its signature
+and binding. Missing, forged or mismatched acknowledgments leave the queue intact
+and visibly blocked. The owner-side completion API signs only after the atomic
+archive commit and checks independently current custody plus the writer grant.
+
+Library annotation drain also revalidates the queued declaration's current source
+access before sending, and keeps enrolled workspace/source custody leased through
+the network operation. A declaration removed by cleanup or a head that cannot be
+resolved to an authored annotation refuses publication. Source-custody leases also
+cover the local queueing transaction. This closes the Library action's race;
+standalone generic senders and complete cascade enrollment remain separate work.
+
+Source authorization is bound to the exact checked queue head. If another drainer
+advances that head, delivery refuses instead of applying the previous annotation's
+source checks to its successor. An ordinary admission acknowledgment, or a valid
+cancellation completion from another archive with the same issuer/scope/request,
+cannot retire an initial-erasure operation.
+
+
+### Integrated-review corrections: disposable search and annotation filtering
+
+The raw-text/4 cache keys one encrypted document by immutable archive occurrence,
+not by signed snapshot or cursor envelopes. A freshly verified inventory supplies
+current selection tokens. Growing/renewing a snapshot reuses old documents; current
+source access and bytes remain required for a returned snippet. Search continues
+bounded requests automatically until completion, explicit stop or the 1,000-hit
+window. Explicit `prune-search-cache` removes at most 128 disposable entries per
+request, including old snapshot-based entries, with a continuation indication.
+Only the search projection can be replaced/pruned; append-only annotations, views,
+source evidence and custody histories retain their existing authority and lifecycle.
+
+Annotation search first restricts candidates to the result page's signed occurrence
+coordinates, then applies subject/tag and current-source checks in bounded batches.
+An authenticated, disposable in-memory inverse lookup stores hashes/entry IDs only;
+external commits and local annotation appends invalidate it. Beyond its 262,144-link
+budget, bounded scans preserve completeness. Metadata-page batches verify every
+citation token and membership/erasure against one fresh snapshot per source, with
+current grants checked again before returning. Corrections and withdrawals remain
+retained history rather than silently removing their original associations.

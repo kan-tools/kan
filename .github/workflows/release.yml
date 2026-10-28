@@ -28,9 +28,13 @@ jobs:
       # Re-verify before publishing rather than trusting a separate CI run
       # (the tag push also triggers ci.yml, but a publish workflow should
       # be self-contained, not depend on cross-workflow status).
-      - run: cargo build --workspace --all-targets
-      - run: cargo test --workspace
-      - run: cargo clippy --workspace --all-targets -- -D warnings
+      - run: cargo package --list --locked > /dev/null
+      - run: cargo build --workspace --all-targets --all-features
+      - run: cargo test --workspace --no-default-features --features kan-v1
+      - run: python3 -m pip install cryptography==46.0.3
+      - run: cargo test --workspace --all-features
+      - run: cargo clippy --workspace --all-targets --no-default-features --features kan-v1 -- -D warnings
+      - run: cargo clippy --workspace --all-targets --all-features -- -D warnings
       - run: cargo fmt --all -- --check
 
       - name: Verify tag matches Cargo.toml version
@@ -42,4 +46,9 @@ jobs:
             exit 1
           fi
 
+      # Verify the actual packaged source, including embedded Library/Operations
+      # assets and the optional v2 binary, before the registry write.
+      - run: cargo package --locked --features v2-crypto
+      - run: cargo package --locked --no-default-features --features kan-v1
+      - run: python3 scripts/check_cli_install.py
       - run: cargo publish --token "${{ secrets.CARGO_REGISTRY_TOKEN }}"

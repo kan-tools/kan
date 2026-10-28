@@ -169,7 +169,7 @@ pub enum Error {
     #[error(
         "the log header at {path} is unreadable (empty or corrupt at the start of the \
          file). kan will not modify it. Move the file aside and restore from the \
-         published .claims/ tree (`kan restore`) or a backup; any claims after the \
+         published .claims/ tree (`kan-v1 restore`) or a backup; any claims after the \
          damaged header are still in the file"
     )]
     UnreadableCar { path: String },
@@ -591,7 +591,7 @@ impl Log {
     /// identity** — the read path (`.design/identity-surface.md` REQ-2).
     ///
     /// A directory that does not exist yields an empty log rather than an
-    /// error, and creates no directory. That is AC-3: `kan status` in a git
+    /// error, and creates no directory. That is AC-3: `kan-v1 status` in a git
     /// repo with no `.kan/` reports no subjects and leaves the repo exactly
     /// as it found it. A read that vivifies a workspace is the defect (#149);
     /// "read it if it is there" is the whole behaviour.
@@ -789,7 +789,7 @@ impl Log {
             // (`.design/v0.7-milestone.md` REQ-4).
             //
             // **Nothing is written here.** This runs on every open, including
-            // `kan show`, and a read command must not modify the log — the
+            // `kan-v1 show`, and a read command must not modify the log — the
             // previous version rewrote `HEAD` with a plain `fs::write`, off
             // the lock and non-atomically, which turned a transient torn read
             // into a permanent rollback. The recovered root is held in memory
@@ -1043,6 +1043,23 @@ impl Log {
         let file = tokio::task::spawn_blocking(move || -> std::io::Result<std::fs::File> {
             let file = surface.open_lock(&lock_path)?;
             fs4::FileExt::lock(&file)?;
+            let directory = lock_path
+                .parent()
+                .ok_or_else(|| std::io::Error::other("missing log directory"))?;
+            let workspace_fence = directory
+                .parent()
+                .filter(|p| p.file_name().is_some_and(|n| n == ".kan"))
+                .map(|p| p.join("V2_FENCE"));
+            if directory.join("V2_FENCE").try_exists()?
+                || workspace_fence
+                    .map(|p| p.try_exists())
+                    .transpose()?
+                    .unwrap_or(false)
+            {
+                return Err(std::io::Error::other(
+                    "v1 writes fenced for Kan v2 migration; use owner rollback to resume",
+                ));
+            }
             Ok(file)
         })
         .await
@@ -1137,7 +1154,7 @@ impl Log {
         //
         // Without this, each process opened the CAR into an in-memory MST,
         // appended to *its* copy, and last-writer-wins overwrote HEAD: five
-        // concurrent `kan observe` calls returned five distinct CIDs and five
+        // concurrent `kan-v1 observe` calls returned five distinct CIDs and five
         // exit-0 successes while two claims survived, the losers' blocks
         // reaching the CAR but unreachable from the winning root. ADR-15's
         // "reopens from disk every call ... avoids any question of
@@ -1547,28 +1564,9 @@ impl Log {
     ) -> Result<Option<crate::claim::codec::DecodedRecord>, Error> {
         let key = RecordPath::new(COLLECTION, claim_cid.to_string()).to_mst_key();
         if let Some(record_cid) = self.mst.get(&key).await? {
-            let Some(bytes) = self.mst.storage().get(&record_cid).await? else {
-                return Ok(None);
-            };
-            let decoded = match crate::claim::codec::decode_record(&bytes, verification) {
-                Ok(decoded) => decoded,
-                Err(codec_error) if legacy_at_claim_candidate(&bytes) => {
-                    let record: crate::at_claim::Record =
-                        atproto_dasl::from_slice(&bytes).map_err(|_| codec_error)?;
-                    let rev = record.rev.clone();
-                    crate::claim::codec::DecodedRecord {
-                        claim: crate::claim::codec::DecodedClaim::Supported(
-                            crate::claim::codec::SupportedClaim::V1(record.verify()?),
-                        ),
-                        rev,
-                    }
-                }
-                Err(codec_error) => return Err(codec_error.into()),
-            };
-            if decoded_claim_id(&decoded.claim)? != claim_cid {
-                return Err(Error::BadSignature);
-            }
-            return Ok(Some(decoded));
+            return self
+                .decode_collection_record(&claim_cid, &record_cid, verification)
+                .await;
         }
 
         let legacy_key = RecordPath::new(LEGACY_COLLECTION, claim_cid.to_string()).to_mst_key();
@@ -1599,6 +1597,38 @@ impl Log {
             ),
             rev: stored.rev,
         }))
+    }
+
+    // Shared by point reads and enumeration: bypassing a redundant tree lookup
+    // must never bypass envelope, authorship or path-to-content verification.
+    async fn decode_collection_record(
+        &self,
+        claim_cid: &Cid,
+        record_cid: &Cid,
+        verification: crate::claim::codec::VerificationContext<'_>,
+    ) -> Result<Option<crate::claim::codec::DecodedRecord>, Error> {
+        let Some(bytes) = self.mst.storage().get(record_cid).await? else {
+            return Ok(None);
+        };
+        let decoded = match crate::claim::codec::decode_record(&bytes, verification) {
+            Ok(decoded) => decoded,
+            Err(codec_error) if legacy_at_claim_candidate(&bytes) => {
+                let record: crate::at_claim::Record =
+                    atproto_dasl::from_slice(&bytes).map_err(|_| codec_error)?;
+                let rev = record.rev.clone();
+                crate::claim::codec::DecodedRecord {
+                    claim: crate::claim::codec::DecodedClaim::Supported(
+                        crate::claim::codec::SupportedClaim::V1(record.verify()?),
+                    ),
+                    rev,
+                }
+            }
+            Err(codec_error) => return Err(codec_error.into()),
+        };
+        if decoded_claim_id(&decoded.claim)? != *claim_cid {
+            return Err(Error::BadSignature);
+        }
+        Ok(Some(decoded))
     }
 
     /// Like `get`, but also returns the log-revision TID captured at append
@@ -1675,9 +1705,14 @@ impl Log {
     ) -> Result<Vec<(Cid, crate::claim::codec::DecodedRecord)>, Error> {
         let entries = self.mst.entries().await?;
         self.warn_once_if_claims_are_unreachable(&entries).await?;
+        // The walk already resolved each record CID. Re-searching from the
+        // root for every modern record decodes the same tree nodes N times.
+        // Retain ordered lookup for damaged pre-fix trees and legacy paths
+        // (which must still prefer a modern record with the same claim ID).
+        let ordered = entries.windows(2).all(|pair| pair[0].0 < pair[1].0);
         let mut out = Vec::with_capacity(entries.len());
         let mut seen = HashSet::new();
-        for (key, _) in entries {
+        for (key, record_cid) in entries {
             let path = RecordPath::from_mst_key(&key)?;
             if path.collection != COLLECTION && path.collection != LEGACY_COLLECTION {
                 continue;
@@ -1686,7 +1721,13 @@ impl Log {
             if !seen.insert(claim_cid.clone()) {
                 continue;
             }
-            if let Some(record) = self.get_decoded(claim_cid.clone(), verification).await? {
+            let record = if ordered && path.collection == COLLECTION {
+                self.decode_collection_record(&claim_cid, &record_cid, verification)
+                    .await?
+            } else {
+                self.get_decoded(claim_cid.clone(), verification).await?
+            };
+            if let Some(record) = record {
                 out.push((claim_cid, record));
             }
         }
@@ -1875,6 +1916,42 @@ mod claim_collection_migration_tests {
         log.commit_cid = Some(root.clone());
         log.persist_new_blocks(&root).await.unwrap();
         record_cid
+    }
+
+    #[tokio::test]
+    async fn ordered_enumeration_still_rejects_forged_records_and_wrong_claim_paths() {
+        use crate::claim::codec::VerificationContext;
+        for forged_signature in [false, true] {
+            let dir = tempfile::tempdir().unwrap();
+            let identity = Identity::generate();
+            let mut log = Log::open_or_create(dir.path(), &identity).await.unwrap();
+            let (cid, stored) = signed(&identity, "authentic", "3jzfcijpj2z2a");
+            let mut record = crate::at_claim::Record::from_claim(stored.claim, stored.rev).unwrap();
+            let path_id = if forged_signature {
+                record.signature[0] ^= 1;
+                cid
+            } else {
+                signed(&identity, "different", "3jzfcijpj2z2a").0
+            };
+            let bytes = atproto_dasl::to_vec(&record).unwrap();
+            let record_cid = Cid::from(compute_cid(&bytes));
+            log.mst.storage_mut().put(&record_cid, bytes).await.unwrap();
+            log.mst
+                .insert(
+                    &RecordPath::new(COLLECTION, path_id.to_string()).to_mst_key(),
+                    record_cid,
+                )
+                .await
+                .unwrap();
+            assert!(log
+                .get_decoded(path_id, VerificationContext::StaticDidKey)
+                .await
+                .is_err());
+            assert!(log
+                .iter_decoded(VerificationContext::StaticDidKey)
+                .await
+                .is_err());
+        }
     }
 
     #[tokio::test]

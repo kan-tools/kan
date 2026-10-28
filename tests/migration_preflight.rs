@@ -54,7 +54,7 @@ fn workspace(root: &Path) {
     .unwrap();
 }
 fn run(args: &[&str]) -> std::process::Output {
-    Command::new(env!("CARGO_BIN_EXE_kan-v2"))
+    Command::new(env!("CARGO_BIN_EXE_kan"))
         .args(args)
         .env("PATH", "/no-legacy-kan-binary-here")
         .output()

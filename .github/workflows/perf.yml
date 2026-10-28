@@ -56,13 +56,13 @@ jobs:
         run: python3 scripts/test_perf_failure_evidence.py
 
       - name: Build the binary being measured
-        run: cargo build --release --locked
+        run: cargo build --release --locked --no-default-features --features kan-v1 --bin kan-v1
 
       - name: Measure the grid
         env:
           KAN_PERF_FAILURE_DIR: ${{ github.workspace }}/perf-failure
         run: |
-          scripts/run-perf-grid.sh measure target/release/kan > perf-results.tsv
+          scripts/run-perf-grid.sh measure target/release/kan-v1 > perf-results.tsv
           echo "## Perf grid (raw, ms)" >> "$GITHUB_STEP_SUMMARY"
           echo '```' >> "$GITHUB_STEP_SUMMARY"
           column -t -s$'\t' perf-results.tsv >> "$GITHUB_STEP_SUMMARY"

@@ -905,7 +905,7 @@ pub enum Error {
     AlreadyInitialized(String),
     #[error("default identity profile is missing: {0}")]
     DefaultProfileMissing(String),
-    #[error("system identity has no default actor; run `kan identity init` first")]
+    #[error("system identity has no default actor; run `kan-v1 identity init` first")]
     NoDefaultProfile,
     #[error("system identity profile does not exist: {0}")]
     ProfileMissing(String),

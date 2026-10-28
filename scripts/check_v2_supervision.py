@@ -17,7 +17,7 @@ with (root / 'examples/supervision/ventures.kan.drain.plist').open('rb') as f:
 if len(commands) != 2:
     raise SystemExit('expected both supervisor command examples')
 for argv in commands:
-    if argv[1] != 'spool-watch':
+    if argv[0] != '/usr/local/bin/kan' or argv[1] != 'spool-watch':
         raise SystemExit('unexpected supervisor action')
     result = subprocess.run([str(binary), *argv[1:], '--help'], capture_output=True,
                             text=True, timeout=5, check=True)

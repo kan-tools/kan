@@ -8,7 +8,11 @@ fn current_writer_seed_and_identity_file_reach_reader_and_preserve_authorship() 
     for mode in ["seed", "identity-file"] {
         let output = Command::new("bash")
             .arg("scripts/run-migration-cell.sh")
-            .args([env!("CARGO_BIN_EXE_kan"), env!("CARGO_BIN_EXE_kan"), mode])
+            .args([
+                env!("CARGO_BIN_EXE_kan-v1"),
+                env!("CARGO_BIN_EXE_kan-v1"),
+                mode,
+            ])
             .env("KAN_CONFIG_DIR", outside.path())
             .env("KAN_NO_KEYCHAIN", "1")
             .env("GIT_CONFIG_COUNT", "1")

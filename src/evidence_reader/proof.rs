@@ -22,6 +22,8 @@ pub struct Access {
 pub struct Reader {
     signer: Identity,
     access: Access,
+    historical_keys: Vec<[u8; 32]>,
+    epochs: Option<crate::evidence_keys::ReaderAccess>,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -52,16 +54,67 @@ pub struct Token {
     body: TokenBody,
     signature: String,
 }
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Occurrence {
     pub sequence: String,
     pub manifest: String,
     pub receipt: String,
     pub attestation: String,
     pub purpose: String,
+    pub issued_at: String,
     pub receipt_issuer: String,
     pub availability: wire::Availability,
     pub selection: Token,
+}
+/// Portable evidence identity, not a read capability or reader-local token.
+/// Resolving it checks current authorization and current archive membership.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Reference {
+    pub version: u8,
+    pub binding: wire::Binding,
+    pub coordinate: wire::Coordinate,
+    pub receipt: String,
+}
+impl Reference {
+    /// Versioned capture occurrence URI. The encoded reference is public identity,
+    /// never a capability; resolution still rechecks current grants and membership.
+    pub fn canonical_uri(&self) -> Result<String> {
+        if self.version != 1 {
+            return Err(Failure::Invalid);
+        }
+        let uri = format!("kan+capture://v1/occurrence/{}", service::hex(&json(self)?));
+        if uri.len() > 32768 {
+            return Err(Failure::Invalid);
+        }
+        Ok(uri)
+    }
+    pub fn from_uri(uri: &str) -> Result<Self> {
+        if uri.len() > 32768 {
+            return Err(Failure::Invalid);
+        }
+        let encoded = uri
+            .strip_prefix("kan+capture://v1/occurrence/")
+            .ok_or(Failure::Invalid)?;
+        let bytes = service::unhex(encoded, 16384)?;
+        let reference: Self = serde_json::from_slice(&bytes).map_err(|_| Failure::Invalid)?;
+        if reference.canonical_uri()? != uri {
+            return Err(Failure::Invalid);
+        }
+        Ok(reference)
+    }
+    pub fn new(binding: &wire::Binding, record: &Occurrence) -> Self {
+        Self {
+            version: 1,
+            binding: binding.clone(),
+            coordinate: wire::Coordinate {
+                through: record.sequence.clone(),
+                manifest: Some(record.manifest.clone()),
+                attestation: Some(record.attestation.clone()),
+            },
+            receipt: record.receipt.clone(),
+        }
+    }
 }
 #[derive(Debug, Serialize)]
 pub struct Page {
@@ -69,10 +122,20 @@ pub struct Page {
     pub next: Option<Token>,
 }
 pub enum Source {
+    Erased {
+        record: Occurrence,
+    },
+    KeyUnavailable {
+        record: Occurrence,
+        writer: String,
+        recipient: String,
+    },
     Available {
         record: Occurrence,
         writer: String,
         plaintext: Vec<u8>,
+        operation: String,
+        recipient: String,
     },
     Missing {
         record: Occurrence,
@@ -94,13 +157,67 @@ fn token_preimage(body: &TokenBody) -> Result<Vec<u8>> {
     bytes.extend_from_slice(&Sha256::digest(json(body)?));
     Ok(bytes)
 }
+impl Token {
+    /// Offline attribution only, for owner-directed dependency cleanup. This
+    /// neither authenticates current membership nor grants access to evidence.
+    pub(crate) fn attributed_source(&self) -> Result<(&wire::Binding, &wire::Coordinate)> {
+        if self.body.purpose != TokenPurpose::Source {
+            return Err(Failure::Invalid);
+        }
+        let signature = service::unhex(&self.signature, 64)?;
+        if signature.len() != 64
+            || !sign::verify(
+                &self.body.principal,
+                &token_preimage(&self.body)?,
+                &signature,
+            )
+            || self.body.coordinate.frontier(&self.body.binding)?.through == 0
+        {
+            return Err(Failure::Invalid);
+        }
+        Ok((&self.body.binding, &self.body.coordinate))
+    }
+}
 impl Reader {
+    /// Add explicitly held historical recipient keys; never replaces current grants.
+    pub fn with_historical_keys(mut self, keys: Vec<[u8; 32]>) -> Result<Self> {
+        if keys.len() > 64 {
+            return Err(Failure::Invalid);
+        }
+        self.historical_keys = keys;
+        Ok(self)
+    }
+    /// Read independently wrapped epochs afresh, so rotation requires no restart.
+    pub fn with_epochs(mut self, epochs: crate::evidence_keys::ReaderAccess) -> Result<Self> {
+        if epochs.history.binding != self.access.binding {
+            return Err(Failure::Invalid);
+        }
+        epochs.keys()?;
+        self.epochs = Some(epochs);
+        Ok(self)
+    }
+    fn keys(&self) -> Result<Vec<[u8; 32]>> {
+        let mut keys = vec![self.access.private_key];
+        keys.extend_from_slice(&self.historical_keys);
+        if let Some(epochs) = &self.epochs {
+            keys.extend(epochs.keys()?);
+        }
+        Ok(keys)
+    }
+    pub fn binding(&self) -> &wire::Binding {
+        &self.access.binding
+    }
     pub fn new(signer: Identity, access: Access) -> Result<Self> {
         access.binding.owner_binding()?;
         if signer.did().as_str() == access.binding.issuer {
             return Err(Failure::Invalid);
         }
-        Ok(Self { signer, access })
+        Ok(Self {
+            signer,
+            access,
+            historical_keys: Vec::new(),
+            epochs: None,
+        })
     }
     async fn call(&self, command: wire::Command) -> Result<(Vec<u8>, wire::SignedReply)> {
         let bytes = wire::SignedRequest::sign(
@@ -130,6 +247,57 @@ impl Reader {
             .map_err(|_| Failure::Corrupt)?;
         Ok((bytes, reply))
     }
+    fn compatible_operations(operations: &[String]) -> bool {
+        operations == ["capabilities", "snapshot", "page", "read"]
+            || operations == ["capabilities", "snapshot", "page", "read", "read-batch"]
+    }
+    /// Returns a nonempty ordered prefix (at most READ_BATCH_LIMIT inputs).
+    /// Batch support is negotiated, never assumed from an old pin. Each call
+    /// checks current authorization; older services use the single-read path.
+    pub async fn sources_prefix(&self, pin: &Pin, selections: &[Token]) -> Result<Vec<Source>> {
+        if selections.is_empty() || selections.len() > wire::READ_BATCH_LIMIT {
+            return Err(Failure::Invalid);
+        }
+        let checked = self.check_pin(pin)?;
+        let expected = selections
+            .iter()
+            .map(|selection| self.check_token(&checked, selection, TokenPurpose::Source))
+            .collect::<Result<Vec<_>>>()?;
+        let (_, capabilities) = self.call(wire::Command::Capabilities).await?;
+        let wire::Output::Capabilities {
+            protocol,
+            operations,
+        } = capabilities.reply.result?
+        else {
+            return Err(Failure::Corrupt);
+        };
+        if protocol != wire::PROTOCOL || !Self::compatible_operations(&operations) {
+            return Err(Failure::Corrupt);
+        }
+        if !operations.iter().any(|operation| operation == "read-batch") {
+            return Ok(vec![self.source(pin, &selections[0]).await?]);
+        }
+        let (_, reply) = self
+            .call(wire::Command::ReadBatch {
+                pin: wire::Coordinate::from_frontier(&checked.frontier),
+                selections: expected
+                    .iter()
+                    .map(wire::Coordinate::from_frontier)
+                    .collect(),
+            })
+            .await?;
+        let wire::Output::EvidenceBatch { records } = reply.reply.result? else {
+            return Err(Failure::Corrupt);
+        };
+        if records.is_empty() || records.len() > selections.len() {
+            return Err(Failure::Corrupt);
+        }
+        records
+            .into_iter()
+            .zip(&expected)
+            .map(|(row, expected)| self.decode_source(&checked, expected, row.record, row.source))
+            .collect()
+    }
     pub async fn snapshot(&self) -> Result<Pin> {
         let (_, capability) = self.call(wire::Command::Capabilities).await?;
         let wire::Output::Capabilities {
@@ -139,8 +307,7 @@ impl Reader {
         else {
             return Err(Failure::Corrupt);
         };
-        if protocol != wire::PROTOCOL || operations != ["capabilities", "snapshot", "page", "read"]
-        {
+        if protocol != wire::PROTOCOL || !Self::compatible_operations(&operations) {
             return Err(Failure::Corrupt);
         }
         let (request, reply) = self.call(wire::Command::Snapshot).await?;
@@ -357,6 +524,7 @@ impl Reader {
                 .ok_or(Failure::Corrupt)?
                 .to_string(),
             purpose: proof.purpose().as_str().into(),
+            issued_at: proof.issued_at().to_string(),
             receipt_issuer,
             availability,
             selection: self.token(pin, proof.frontier(), TokenPurpose::Source)?,
@@ -405,6 +573,174 @@ impl Reader {
             next,
         })
     }
+    /// Rebind a portable reference under this reader's fresh snapshot. The
+    /// service proves that the supplied coordinate belongs to that snapshot;
+    /// local verification checks the exact metadata and payload commitment.
+    pub async fn resolve_reference(&self, reference: &Reference) -> Result<(Pin, Occurrence)> {
+        if reference.version != 1
+            || reference.binding != self.access.binding
+            || reference.receipt.len() > 128
+        {
+            return Err(Failure::Invalid);
+        }
+        let receipt: atproto_dasl::Cid = reference.receipt.parse().map_err(|_| Failure::Invalid)?;
+        if receipt.to_string() != reference.receipt {
+            return Err(Failure::Invalid);
+        }
+        let expected = reference.coordinate.frontier(&reference.binding)?;
+        if expected.through == 0 {
+            return Err(Failure::Invalid);
+        }
+        let pin = self.snapshot().await?;
+        let checked = self.check_pin(&pin)?;
+        if expected.through > checked.frontier.through {
+            return Err(Failure::Missing);
+        }
+        let (_, reply) = self
+            .call(wire::Command::Read {
+                pin: wire::Coordinate::from_frontier(&checked.frontier),
+                selected: reference.coordinate.clone(),
+            })
+            .await?;
+        let wire::Output::Evidence {
+            record: row,
+            source,
+        } = reply.reply.result?
+        else {
+            return Err(Failure::Corrupt);
+        };
+        let value = self.decode_source(&checked, &expected, row, source)?;
+        let record = match value {
+            Source::Available { record, .. }
+            | Source::Erased { record }
+            | Source::Missing { record }
+            | Source::Corrupt { record }
+            | Source::KeyUnavailable { record, .. } => record,
+        };
+        if record.receipt != reference.receipt {
+            return Err(Failure::Corrupt);
+        }
+        self.page(&pin, None, 1).await?;
+        Ok((pin, record))
+    }
+    /// An authored citation may carry another reader's signed selection. Its
+    /// signature binds intent; current service membership and grants authorize
+    /// the new read. Never treat the foreign reader's token as a capability.
+    /// Verify only the attributed citation coordinate. This is not membership,
+    /// availability or authorization; callers must check a current source record.
+    pub(crate) fn citation_coordinate(&self, selection: &Token) -> Result<wire::Coordinate> {
+        let (binding, coordinate) = selection.attributed_source()?;
+        if binding != &self.access.binding {
+            return Err(Failure::Invalid);
+        }
+        Ok(coordinate.clone())
+    }
+    pub async fn rebind_citation(&self, selection: &Token) -> Result<(Pin, Source)> {
+        let coordinate = self.citation_coordinate(selection)?;
+        let expected = coordinate.frontier(&self.access.binding)?;
+        let pin = self.snapshot().await?;
+        let checked = self.check_pin(&pin)?;
+        if expected.through > checked.frontier.through {
+            return Err(Failure::Missing);
+        }
+        let (_, reply) = self
+            .call(wire::Command::Read {
+                pin: wire::Coordinate::from_frontier(&checked.frontier),
+                selected: selection.body.coordinate.clone(),
+            })
+            .await?;
+        let wire::Output::Evidence { record, source } = reply.reply.result? else {
+            return Err(Failure::Corrupt);
+        };
+        let value = self.decode_source(&checked, &expected, record, source)?;
+        self.page(&pin, None, 1).await?;
+        Ok((pin, value))
+    }
+    pub(crate) async fn cited_source(&self, pin: &Pin, selection: &Token) -> Result<Source> {
+        if selection.body.principal == self.signer.did() {
+            self.source(pin, selection).await
+        } else {
+            Ok(self.rebind_citation(selection).await?.1)
+        }
+    }
+    /// Fresh metadata-only membership/erasure check. Captured bytes and keys are
+    /// not required, and a foreign selection remains attribution rather than a grant.
+    pub(crate) async fn citation_erased(&self, selection: &Token) -> Result<bool> {
+        Ok(self
+            .citations_erased(std::slice::from_ref(selection))
+            .await?[0])
+    }
+    /// Verify every attributed token, then check nearby citations together with
+    /// metadata pages under one fresh snapshot. No captured plaintext is read.
+    pub(crate) async fn citations_erased(&self, selections: &[Token]) -> Result<Vec<bool>> {
+        if selections.is_empty() || selections.len() > 800 {
+            return Err(Failure::Invalid);
+        }
+        let mut pending = std::collections::BTreeMap::new();
+        for (i, selection) in selections.iter().enumerate() {
+            let coordinate = self.citation_coordinate(selection)?;
+            let frontier = coordinate.frontier(&self.access.binding)?;
+            let entry = pending
+                .entry(frontier.through)
+                .or_insert_with(|| (coordinate.clone(), Vec::new()));
+            if entry.0 != coordinate {
+                return Err(Failure::Corrupt);
+            }
+            entry.1.push(i);
+        }
+        let pin = self.snapshot().await?;
+        let checked = self.check_pin(&pin)?;
+        let mut output = vec![false; selections.len()];
+        while let Some((&through, (coordinate, _))) = pending.last_key_value() {
+            if through > checked.frontier.through {
+                return Err(Failure::Missing);
+            }
+            let low = through.saturating_sub(wire::PAGE_LIMIT as u64 - 1);
+            let last = *pending
+                .range(low..=through)
+                .next()
+                .ok_or(Failure::Corrupt)?
+                .0;
+            let limit = (through - last + 1) as usize;
+            let mut expected = coordinate.frontier(&self.access.binding)?;
+            let (_, reply) = self
+                .call(wire::Command::Page {
+                    pin: wire::Coordinate::from_frontier(&checked.frontier),
+                    next: coordinate.clone(),
+                    limit,
+                })
+                .await?;
+            let wire::Output::Page { records, next } = reply.reply.result? else {
+                return Err(Failure::Corrupt);
+            };
+            if records.len() != limit {
+                return Err(Failure::Missing);
+            }
+            for row in records {
+                let (_, proof) = self.verify_row(&checked, &expected, &row)?;
+                if let Some((coordinate, indices)) = pending.remove(&expected.through) {
+                    if coordinate != wire::Coordinate::from_frontier(&expected) {
+                        return Err(Failure::Corrupt);
+                    }
+                    for i in indices {
+                        output[i] = row.availability == wire::Availability::Erased;
+                    }
+                }
+                expected = proof.previous().clone();
+            }
+            if next != (expected.through > 0).then(|| wire::Coordinate::from_frontier(&expected)) {
+                return Err(Failure::Corrupt);
+            }
+        }
+        self.page(&pin, None, 1).await?;
+        Ok(output)
+    }
+    pub(crate) async fn check_citation_access(&self, _pin: &Pin, selection: &Token) -> Result<()> {
+        if self.citation_erased(selection).await? {
+            return Err(Failure::AccessLimited);
+        }
+        Ok(())
+    }
     pub async fn source(&self, pin: &Pin, selection: &Token) -> Result<Source> {
         let checked = self.check_pin(pin)?;
         let expected = self.check_token(&checked, selection, TokenPurpose::Source)?;
@@ -421,9 +757,21 @@ impl Reader {
         else {
             return Err(Failure::Corrupt);
         };
-        let (record, proof) = self.verify_row(&checked, &expected, &row)?;
-        let occurrence = self.occurrence(&checked, &record, &proof, row.availability)?;
+        self.decode_source(&checked, &expected, row, source)
+    }
+    fn decode_source(
+        &self,
+        checked: &CheckedPin,
+        expected: &Frontier,
+        row: wire::RecordView,
+        source: wire::Source,
+    ) -> Result<Source> {
+        let (record, proof) = self.verify_row(checked, expected, &row)?;
+        let occurrence = self.occurrence(checked, &record, &proof, row.availability)?;
         match source {
+            wire::Source::Erased if row.availability == wire::Availability::Erased => {
+                Ok(Source::Erased { record: occurrence })
+            }
             wire::Source::Missing if row.availability == wire::Availability::Missing => {
                 Ok(Source::Missing { record: occurrence })
             }
@@ -442,18 +790,36 @@ impl Reader {
                 {
                     return Err(Failure::Corrupt);
                 }
-                let service::Command::Append { ciphertext, .. } = signed.request.command else {
+                let service::Command::Append { ciphertext, id, .. } = signed.request.command else {
                     return Err(Failure::Corrupt);
                 };
                 let ciphertext = service::unhex(&ciphertext, service::MAX_PAYLOAD)?;
                 let binding = self.access.binding.owner_binding()?;
-                let plaintext =
-                    evidence_crypto::open(&self.access.private_key, &binding.scope, &ciphertext)
-                        .map_err(|_| Failure::Corrupt)?;
+                let recipient_id =
+                    evidence_crypto::recipient_id(&ciphertext).map_err(|_| Failure::Corrupt)?;
+                let mut selected = None;
+                for key in self.keys()? {
+                    let public = evidence_crypto::public_key(&key).map_err(|_| Failure::Corrupt)?;
+                    if Sha256::digest(public).as_slice() == recipient_id {
+                        selected = Some((key, public));
+                        break;
+                    }
+                }
+                let Some((key, public)) = selected else {
+                    return Ok(Source::KeyUnavailable {
+                        record: occurrence,
+                        writer,
+                        recipient: service::hex(recipient_id),
+                    });
+                };
+                let plaintext = evidence_crypto::open(&key, &binding.scope, &ciphertext)
+                    .map_err(|_| Failure::Corrupt)?;
                 Ok(Source::Available {
                     record: occurrence,
                     writer,
                     plaintext,
+                    operation: id,
+                    recipient: service::hex(&public),
                 })
             }
             _ => Err(Failure::Corrupt),

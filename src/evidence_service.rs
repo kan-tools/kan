@@ -37,6 +37,7 @@ impl From<evidence_store::Error> for Failure {
         match value {
             evidence_store::Error::Invalid(_) | evidence_store::Error::Record(_) => Self::Invalid,
             evidence_store::Error::Conflict(_) => Self::Conflict,
+            evidence_store::Error::Erased(_) => Self::AccessLimited,
             evidence_store::Error::Missing(_) | evidence_store::Error::MissingCommit(_) => {
                 Self::Missing
             }
@@ -93,6 +94,14 @@ pub struct RecordView {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
 pub enum Output {
+    /// Owner-side post-commit completion of one exact initial erasure, including
+    /// its archive binding. Ordinary RPC admission cannot produce this variant.
+    ErasedCommitted {
+        record: RecordView,
+        duplicate: bool,
+        archive: String,
+        erasure: String,
+    },
     Committed {
         record: RecordView,
         duplicate: bool,
@@ -310,10 +319,10 @@ impl SignedReply {
         json(self)
     }
     pub fn verify(&self, request: &[u8], issuer: &str) -> Result<&Reply> {
-        if self.reply.version != 1
-            || self.reply.issuer != issuer
-            || self.reply.request != hex(&Sha256::digest(request))
-        {
+        self.verify_digest(&hex(&Sha256::digest(request)), issuer)
+    }
+    fn verify_digest(&self, digest: &str, issuer: &str) -> Result<&Reply> {
+        if self.reply.version != 1 || self.reply.issuer != issuer || self.reply.request != digest {
             return Err(Failure::Invalid);
         }
         if !sign::verify(
@@ -374,6 +383,65 @@ pub fn admitted_manifest(request: &[u8], reply: &SignedReply, issuer: &str) -> R
         return Err(Failure::Corrupt);
     }
     Ok(expected)
+}
+
+/// Verify a post-commit acknowledgment without retaining its erased request.
+/// The independent erasure target binds the same raw SHA256 object commitment.
+pub(crate) fn admitted_erased_manifest(
+    reply: &SignedReply,
+    erasure: &evidence_store::erasure::Record,
+    issuer: &str,
+) -> Result<Record> {
+    let target = erasure.plan.targets.first().ok_or(Failure::Invalid)?;
+    if erasure.plan.initial_erasure.is_none() || erasure.plan.targets.len() != 1 {
+        return Err(Failure::Invalid);
+    }
+    let digest = exact(&reply.reply.request, 32)?;
+    let mut object = vec![1, 0x55, 0x12, 0x20];
+    object.extend(digest);
+    if Cid::from_bytes(&object)
+        .map_err(|_| Failure::Invalid)?
+        .to_string()
+        != target.object
+    {
+        return Err(Failure::Invalid);
+    }
+    let verified = reply.verify_digest(&reply.reply.request, issuer)?;
+    let Output::ErasedCommitted {
+        record,
+        archive,
+        erasure: authorization,
+        ..
+    } = verified.result.as_ref().map_err(Clone::clone)?
+    else {
+        return Err(Failure::Invalid);
+    };
+    if *archive != erasure.plan.archive || *authorization != erasure.id()? {
+        return Err(Failure::Invalid);
+    }
+    if record.sequence != target.sequence {
+        return Err(Failure::Invalid);
+    }
+    let Decoded::Known(manifest) =
+        evidence::decode(&unhex(&record.manifest, evidence::MAX_RECORD_BYTES)?)
+            .map_err(|_| Failure::Invalid)?
+    else {
+        return Err(Failure::Invalid);
+    };
+    let Decoded::Known(receipt) =
+        evidence::decode(&unhex(&record.receipt, evidence::MAX_RECORD_BYTES)?)
+            .map_err(|_| Failure::Invalid)?
+    else {
+        return Err(Failure::Invalid);
+    };
+    if manifest.kind() != evidence::Kind::Manifest
+        || manifest.cid().to_string() != target.manifest
+        || !evidence::binds(&receipt, &manifest)
+        || receipt.body()["issuer"] != author(issuer)?
+    {
+        return Err(Failure::Invalid);
+    }
+    Ok(manifest)
 }
 
 fn manifest(request: &SignedRequest, bytes: &[u8]) -> Result<Record> {
@@ -442,6 +510,238 @@ fn view(record: &Committed) -> RecordView {
         sequence: record.sequence,
         manifest: hex(record.manifest.bytes()),
         receipt: hex(record.receipt.bytes()),
+    }
+}
+
+/// Explicit profile-2 ingest. Read operations use the separate proof endpoint;
+/// the durable delivery request/reply format remains compatible with the spool.
+pub struct AdmittingService {
+    indexed: bool,
+    erasure_history: Option<crate::evidence_erasure_history::Access>,
+    policy: Option<crate::evidence_policy::Access>,
+    archive: crate::evidence_store::attested::Archive,
+    signer: Identity,
+    grants: BTreeMap<String, Grant>,
+}
+impl AdmittingService {
+    pub fn new(
+        archive: crate::evidence_store::attested::Archive,
+        signer: Identity,
+        grants: Vec<Grant>,
+    ) -> Result<Self> {
+        if archive.binding().issuer != signer.did().as_str() {
+            return Err(Failure::AccessLimited);
+        }
+        archive.verify()?;
+        Self::configured(archive, signer, grants, false)
+    }
+    /// Use an explicitly initialized index for archive metadata/append work.
+    /// External policy/custody are still checked under their existing leases.
+    pub fn new_indexed(
+        archive: crate::evidence_store::attested::Archive,
+        signer: Identity,
+        grants: Vec<Grant>,
+        current_erasure_tip: Option<&str>,
+    ) -> Result<Self> {
+        if archive.binding().issuer != signer.did().as_str() {
+            return Err(Failure::AccessLimited);
+        }
+        archive.indexed_frontier(current_erasure_tip)?;
+        Self::configured(archive, signer, grants, true)
+    }
+    fn configured(
+        archive: crate::evidence_store::attested::Archive,
+        signer: Identity,
+        grants: Vec<Grant>,
+        indexed: bool,
+    ) -> Result<Self> {
+        let mut service = Self {
+            indexed,
+            erasure_history: None,
+            policy: None,
+            archive,
+            signer,
+            grants: BTreeMap::new(),
+        };
+        service.replace_grants(grants)?;
+        Ok(service)
+    }
+    pub fn with_erasure_history(
+        mut self,
+        history: crate::evidence_erasure_history::Access,
+    ) -> Result<Self> {
+        if history.binding.profile != crate::evidence_proof_service::Profile::Admitted
+            || history.binding.owner_binding()? != *self.archive.binding()
+        {
+            return Err(Failure::Invalid);
+        }
+        let current = history.serving(self.indexed)?;
+        if self.indexed {
+            self.archive
+                .indexed_frontier(current.storage_tip()?.as_deref())?;
+        } else {
+            current.check_package(&self.archive.erasure_history()?)?;
+        }
+        drop(current);
+        self.erasure_history = Some(history);
+        Ok(self)
+    }
+    pub fn with_policy(mut self, policy: crate::evidence_policy::Access) -> Result<Self> {
+        let binding = self.archive.binding();
+        if policy.binding.profile != crate::evidence_proof_service::Profile::Admitted
+            || policy.binding.owner_binding()? != *binding
+        {
+            return Err(Failure::Invalid);
+        }
+        self.replace_grants(policy.current()?.grants()?)?;
+        self.policy = Some(policy);
+        Ok(self)
+    }
+    pub fn issuer(&self) -> String {
+        self.signer.did().to_string()
+    }
+    pub fn replace_grants(&mut self, grants: Vec<Grant>) -> Result<()> {
+        let mut selected = BTreeMap::new();
+        for grant in grants {
+            author(&grant.principal)?;
+            if selected.insert(grant.principal.clone(), grant).is_some() {
+                return Err(Failure::Invalid);
+            }
+        }
+        self.grants = selected;
+        Ok(())
+    }
+    pub fn dispatch(&mut self, bytes: &[u8], now: u64) -> Result<SignedReply> {
+        if bytes.len() > MAX_REQUEST {
+            return Err(Failure::Invalid);
+        }
+        let custody = self
+            .erasure_history
+            .as_ref()
+            .map(|history| history.serving(self.indexed))
+            .transpose()?;
+        let storage_tip = custody
+            .as_ref()
+            .map(|current| current.storage_tip())
+            .transpose()?
+            .flatten();
+        if let Some(current) = &custody {
+            if self.indexed {
+                self.archive.indexed_frontier(storage_tip.as_deref())?;
+            } else {
+                current.check_package(&self.archive.erasure_history()?)?;
+            }
+        }
+        // Keep the shared policy lease through admission, so revocation commits
+        // after earlier authorized work and before later work can authorize.
+        let policy = self
+            .policy
+            .as_ref()
+            .map(crate::evidence_policy::Access::current)
+            .transpose()?;
+        if let Some(snapshot) = &policy {
+            self.replace_grants(snapshot.grants()?)?;
+        }
+        let result = self.append(bytes, now, storage_tip.as_deref());
+        let reply = Reply {
+            version: 1,
+            request: hex(&Sha256::digest(bytes)),
+            issuer: self.issuer(),
+            result,
+        };
+        let signature = hex(&self
+            .signer
+            .sign(&preimage(REPLY_DOMAIN, &reply)?)
+            .map_err(|_| Failure::Unavailable)?);
+        Ok(SignedReply { reply, signature })
+    }
+    /// Owner-side cancellation completion, never exposed as an ordinary RPC.
+    /// Independent custody must already contain this exact initial erasure.
+    /// The signed acknowledgment is created only after the atomic archive commit.
+    pub fn admit_erased(
+        &mut self,
+        bytes: &[u8],
+        erasure: &evidence_store::erasure::Record,
+        history: &crate::evidence_erasure_history::Access,
+    ) -> Result<SignedReply> {
+        if history.binding.profile != crate::evidence_proof_service::Profile::Admitted
+            || history.binding.owner_binding()? != *self.archive.binding()
+            || erasure.plan.initial_erasure.is_none()
+        {
+            return Err(Failure::Invalid);
+        }
+        let current = history.current()?;
+        let id = erasure.id()?;
+        if !current
+            .history
+            .iter()
+            .filter_map(|r| r.change.erasure.as_ref())
+            .any(|r| r.id().ok().as_ref() == Some(&id))
+        {
+            return Err(Failure::AccessLimited);
+        }
+        let policy = self
+            .policy
+            .as_ref()
+            .map(crate::evidence_policy::Access::current)
+            .transpose()?;
+        if let Some(snapshot) = &policy {
+            self.replace_grants(snapshot.grants()?)?;
+        }
+        let request = SignedRequest::decode(bytes)?;
+        let grant = self
+            .grants
+            .get(&request.request.principal)
+            .ok_or(Failure::AccessLimited)?;
+        let admitted = self
+            .archive
+            .admit_erased(bytes, &self.signer, grant, erasure)?;
+        let reply = Reply {
+            version: 1,
+            request: hex(&Sha256::digest(bytes)),
+            issuer: self.issuer(),
+            result: Ok(Output::ErasedCommitted {
+                archive: erasure.plan.archive.clone(),
+                erasure: erasure.id()?,
+                record: view(&admitted.record),
+                duplicate: admitted.record.duplicate,
+            }),
+        };
+        let signature = hex(&self
+            .signer
+            .sign(&preimage(REPLY_DOMAIN, &reply)?)
+            .map_err(|_| Failure::Unavailable)?);
+        Ok(SignedReply { reply, signature })
+    }
+    fn append(
+        &mut self,
+        bytes: &[u8],
+        now: u64,
+        current_erasure_tip: Option<&str>,
+    ) -> Result<Output> {
+        let signed = SignedRequest::decode(bytes)?;
+        let request = &signed.request;
+        let grant = self
+            .grants
+            .get(&request.principal)
+            .ok_or(Failure::AccessLimited)?;
+        if !grant.append
+            || !matches!(request.command, Command::Append { .. })
+            || request.scope != hex(&self.archive.binding().scope)
+            || request.audience != self.issuer()
+        {
+            return Err(Failure::AccessLimited);
+        }
+        let admitted = if self.indexed {
+            self.archive
+                .admit_indexed(bytes, &self.signer, grant, now, current_erasure_tip)?
+        } else {
+            self.archive.admit(bytes, &self.signer, grant, now)?
+        };
+        Ok(Output::Committed {
+            record: view(&admitted.record),
+            duplicate: admitted.record.duplicate,
+        })
     }
 }
 
@@ -745,6 +1045,140 @@ mod audit_tests {
         service.ledger.stage(&bytes).unwrap();
         let committed = service.ledger.commit(m.bytes(), r.bytes()).unwrap();
         (bytes, committed)
+    }
+
+    #[test]
+    fn owner_preparation_fences_admission_and_selects_unpublished_or_existing_requests() {
+        use crate::{
+            evidence_erasure_history as custody,
+            evidence_store::{attested, erasure},
+        };
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("archive");
+        #[cfg(unix)]
+        let custody_directory = {
+            use std::os::unix::fs::PermissionsExt;
+            tempfile::Builder::new()
+                .permissions(std::fs::Permissions::from_mode(0o700))
+                .tempdir_in(temp.path())
+                .unwrap()
+        };
+        #[cfg(not(unix))]
+        let custody_directory = tempfile::tempdir_in(temp.path()).unwrap();
+        let directory = custody_directory.path().to_path_buf();
+        let owner = Identity::generate();
+        let issuer = Identity::generate();
+        let writer = Identity::generate();
+        let binding = attested::Binding {
+            archive: [2; 32],
+            scope: [1; 32],
+            issuer: issuer.did().to_string(),
+        };
+        let archive = attested::Archive::create(&root, binding.clone()).unwrap();
+        let mut history = custody::Access {
+            directory,
+            binding: crate::evidence_proof_service::Binding {
+                profile: crate::evidence_proof_service::Profile::Admitted,
+                archive: hex(&binding.archive),
+                scope: hex(&binding.scope),
+                issuer: binding.issuer.clone(),
+            },
+            owner: owner.did().to_string(),
+            minimum: None,
+        };
+        history.initialize().unwrap();
+        let genesis =
+            custody::Record::sign(history.preview(None, "a".repeat(64)).unwrap(), &owner).unwrap();
+        let minimum = genesis.id().unwrap();
+        history.append(genesis).unwrap();
+        history.minimum = Some(minimum);
+        let mut service = AdmittingService::new(
+            archive,
+            issuer,
+            vec![Grant {
+                principal: writer.did().to_string(),
+                append: true,
+                inventory: true,
+            }],
+        )
+        .unwrap()
+        .with_erasure_history(history.clone())
+        .unwrap();
+        let mut previous = None;
+        for n in 0..2u8 {
+            let raw = SignedRequest::sign(
+                Request {
+                    version: 1,
+                    scope: hex(&binding.scope),
+                    audience: binding.issuer.clone(),
+                    principal: writer.did().to_string(),
+                    expires: None,
+                    command: Command::Append {
+                        id: hex(&[n + 1; 16]),
+                        position: n as u64,
+                        previous,
+                        ciphertext: hex(b"synthetic ciphertext"),
+                    },
+                },
+                &writer,
+            )
+            .unwrap()
+            .bytes()
+            .unwrap();
+            if n == 1 {
+                assert!(service.dispatch(&raw, 100).unwrap().reply.result.is_ok());
+            }
+            let record = history
+                .append_prepared(|snapshot| {
+                    let plan = attested::Archive::open(&root, binding.clone())
+                        .unwrap()
+                        .preview_request_erasure(&raw, hex(&[n + 2; 32]), 101)
+                        .unwrap();
+                    assert_eq!(plan.initial_erasure.is_some(), n == 0);
+                    assert!(
+                        matches!(service.dispatch(&raw, 100), Err(Failure::Unavailable)),
+                        "managed ingest cannot run during owner preparation"
+                    );
+                    let erasure = erasure::Record::sign(plan, &service.signer).unwrap();
+                    custody::Record::sign(
+                        custody::Change {
+                            version: 1,
+                            binding: history.binding.clone(),
+                            owner: history.owner.clone(),
+                            sequence: snapshot.history.len().to_string(),
+                            previous: snapshot.tip.clone(),
+                            nonce: hex(&[n + 4; 32]),
+                            recorded_at: "101".into(),
+                            erasure: Some(erasure),
+                        },
+                        &owner,
+                    )
+                })
+                .unwrap();
+            assert!(
+                service.dispatch(&raw, 100).is_err(),
+                "published custody fences old ordinary admission before cleanup"
+            );
+            if n == 0 {
+                assert!(matches!(
+                    service
+                        .admit_erased(&raw, record.change.erasure.as_ref().unwrap(), &history)
+                        .unwrap()
+                        .reply
+                        .result,
+                    Ok(Output::ErasedCommitted { .. })
+                ));
+            } else {
+                history.reconcile_archive(&root).unwrap();
+            }
+            previous = Some(append_manifest(&raw).unwrap().cid().to_string());
+        }
+        assert_eq!(
+            attested::Archive::verify_file(&root.join("archive.sqlite"), binding)
+                .unwrap()
+                .erased_objects,
+            2
+        );
     }
 
     #[test]

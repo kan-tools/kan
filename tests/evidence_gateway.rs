@@ -97,6 +97,7 @@ fn config(
             spool,
             signer,
             recipient: crypto::public_key(&PRIVATE).unwrap(),
+            key_history: None,
             io_budget: Duration::from_secs(5),
             report: Arc::new(move |s| h.lock().unwrap().push(s.clone())),
         },
@@ -523,6 +524,9 @@ fn sse() -> Vec<u8> {
 }
 type Requests = Arc<Mutex<Vec<(String, Vec<u8>)>>>;
 async fn anthropic_provider() -> (String, Requests, Task) {
+    structured_provider(false).await
+}
+async fn structured_provider(system_one: bool) -> (String, Requests, Task) {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let origin = format!("http://{}/", listener.local_addr().unwrap());
     let requests: Requests = Arc::new(Mutex::new(Vec::new()));
@@ -552,7 +556,9 @@ async fn anthropic_provider() -> (String, Requests, Task) {
             }
             let count = head.starts_with("POST /v1/messages/count_tokens");
             r.lock().unwrap().push((head, body));
-            let (body, kind) = if count {
+            let (body, kind) = if system_one {
+                (br#"{"model":"synthetic-jev-fixture","answers":{"decision":{"type":"noul","noul":0.7}}}"#.to_vec(), "application/json")
+            } else if count {
                 (b"{\"input_tokens\":42}".to_vec(), "application/json")
             } else {
                 (sse(), "text/event-stream")
@@ -644,6 +650,9 @@ async fn anthropic_profile_preserves_sse_open_headers_and_separates_credentials(
     }
     let r = client
         .post(format!("{origin}v1/messages/count_tokens"))
+        .header("x-kan-session", "a".repeat(64))
+        .header("x-kan-parent-attempt", "b".repeat(64))
+        .header("x-kan-transition", "branch")
         .bearer_auth(TOKEN)
         .body("{}")
         .send()
@@ -682,6 +691,11 @@ async fn anthropic_profile_preserves_sse_open_headers_and_separates_credentials(
         401
     );
     assert_eq!(requests.lock().unwrap().len(), 2);
+    assert!(!requests.lock().unwrap()[1]
+        .0
+        .to_ascii_lowercase()
+        .contains("x-kan-session"));
+    let mut session_observers = std::collections::BTreeSet::new();
     let mut saw_omission = false;
     let mut outgoing_provider_omission = false;
     for (dir, did) in [(gd.path(), gdid.clone()), (cd.path(), cdid.clone())] {
@@ -695,6 +709,13 @@ async fn anthropic_profile_preserves_sse_open_headers_and_separates_credentials(
                 if h.observer == Observer::Gateway && direction == "request-outgoing" {
                     outgoing_provider_omission |= omitted.iter().any(|s| s == "x-api-key");
                 }
+                if direction == "request"
+                    && headers
+                        .iter()
+                        .any(|(k, v)| k == "x-kan-session" && v == &hex("a".repeat(64).as_bytes()))
+                {
+                    session_observers.insert(format!("{:?}", h.observer));
+                }
                 let text = serde_json::to_string(&headers).unwrap();
                 assert!(!text.contains(&hex(TOKEN.as_bytes())));
                 assert!(!text.contains(&hex(b"synthetic-provider-secret")));
@@ -704,6 +725,11 @@ async fn anthropic_profile_preserves_sse_open_headers_and_separates_credentials(
             }
         }
     }
+    assert_eq!(
+        session_observers.len(),
+        2,
+        "session link reaches both collectors but not the provider"
+    );
     assert!(saw_omission);
     independent_evidence(
         gd.path(),
@@ -802,7 +828,9 @@ struct CliProcess {
 }
 async fn proxy_cli(args: &[String]) -> (String, CliProcess) {
     use tokio::io::AsyncBufReadExt;
-    let mut child = tokio::process::Command::new(env!("CARGO_BIN_EXE_kan-v2"))
+    let mut child = tokio::process::Command::new(env!("CARGO_BIN_EXE_kan"))
+        // Startup stderr is parsed as JSON by this machine caller.
+        .arg("--no-migration-notice")
         .args(args)
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())
@@ -1512,4 +1540,245 @@ async fn distinct_peer_can_authenticate_while_other_peer_saturates_pending_slots
         .expect("another peer retains handshake capacity");
     assert_eq!(r.bytes().await.unwrap(), "ok");
     assert_eq!(calls.load(Ordering::SeqCst), 1);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn epoch_rotation_changes_new_capture_and_history_failure_forwards_with_visible_gap() {
+    use kan::{
+        evidence_keys::{Access, Record},
+        evidence_proof_service::{Binding, Profile},
+    };
+    let (p, calls, _provider) =
+        provider(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok".to_vec())
+            .await;
+    let dir = tempfile::tempdir().unwrap();
+    let key_dir = tempfile::tempdir().unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(key_dir.path(), std::fs::Permissions::from_mode(0o700)).unwrap();
+    }
+    let owner = Identity::generate();
+    let history = Access {
+        directory: key_dir.path().to_owned(),
+        binding: Binding {
+            profile: Profile::Admitted,
+            archive: hex(&[1; 32]),
+            scope: hex(&SCOPE),
+            issuer: owner.did().to_string(),
+        },
+        owner: owner.did().to_string(),
+        recovery_recipient: hex(&crypto::public_key(&[92; 32]).unwrap()),
+        minimum: None,
+    };
+    history.initialize().unwrap();
+    let first = history.preview(hex(&[1; 32])).unwrap();
+    history
+        .append(Record::sign(first.clone(), &owner).unwrap())
+        .unwrap();
+    let (mut cfg, health, writer) =
+        config(Route::new(&p).unwrap(), Observer::Gateway, dir.path(), true);
+    cfg.key_history = Some(history.clone());
+    let (url, _gateway) = start(tls(), cfg).await;
+    let client = client(CA, true);
+    assert_eq!(
+        client
+            .post(&url)
+            .bearer_auth(TOKEN)
+            .header("x-kan-exchange", hex(&[7; 32]))
+            .body("before rotation")
+            .send()
+            .await
+            .unwrap()
+            .text()
+            .await
+            .unwrap(),
+        "ok"
+    );
+    let second = history.preview(hex(&[2; 32])).unwrap();
+    history
+        .append(Record::sign(second.clone(), &owner).unwrap())
+        .unwrap();
+    assert_eq!(
+        client
+            .post(&url)
+            .bearer_auth(TOKEN)
+            .header("x-kan-exchange", hex(&[8; 32]))
+            .body("after rotation")
+            .send()
+            .await
+            .unwrap()
+            .text()
+            .await
+            .unwrap(),
+        "ok"
+    );
+    tokio::time::timeout(Duration::from_secs(2), async {
+        loop {
+            if health
+                .lock()
+                .unwrap()
+                .iter()
+                .filter(|h| h.outcome == Some(Outcome::Completed))
+                .count()
+                >= 2
+            {
+                break;
+            }
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
+    let count = {
+        let c = rusqlite::Connection::open(dir.path().join("spool")).unwrap();
+        let mut st = c
+            .prepare("SELECT request FROM pending ORDER BY position")
+            .unwrap();
+        let rows = st
+            .query_map([], |r| r.get::<_, Vec<u8>>(0))
+            .unwrap()
+            .map(Result::unwrap)
+            .collect::<Vec<_>>();
+        let first_key = first.unlock(&[92; 32]).unwrap();
+        let second_key = second.unlock(&[92; 32]).unwrap();
+        let mut before = 0;
+        let mut after = 0;
+        for raw in &rows {
+            let a = kan::evidence_delivery::decrypt_request(raw, &first_key, &SCOPE, &writer);
+            let b = kan::evidence_delivery::decrypt_request(raw, &second_key, &SCOPE, &writer);
+            assert_ne!(a.is_ok(), b.is_ok());
+            before += usize::from(a.is_ok());
+            after += usize::from(b.is_ok());
+        }
+        assert!(before > 0 && after > 0);
+        rows.len()
+    };
+    // A published but invalid generation is never replaced by the old recipient.
+    std::fs::write(key_dir.path().join("unexpected"), b"damaged history").unwrap();
+    assert_eq!(
+        client
+            .post(&url)
+            .bearer_auth(TOKEN)
+            .header("x-kan-exchange", hex(&[9; 32]))
+            .body("capture gap")
+            .send()
+            .await
+            .unwrap()
+            .text()
+            .await
+            .unwrap(),
+        "ok"
+    );
+    assert_eq!(calls.load(Ordering::SeqCst), 3);
+    tokio::time::timeout(Duration::from_secs(2), async {
+        loop {
+            if health
+                .lock()
+                .unwrap()
+                .last()
+                .is_some_and(|h| h.recording_gap && h.outcome == Some(Outcome::Completed))
+            {
+                break;
+            }
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
+    let c = rusqlite::Connection::open(dir.path().join("spool")).unwrap();
+    assert_eq!(
+        c.query_row("SELECT count(*) FROM pending", [], |r| r.get::<_, i64>(0))
+            .unwrap(),
+        count as i64
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn typesafe_profile_captures_exact_two_hop_decisions_without_forwarding_local_credentials() {
+    let gd = tempfile::tempdir().unwrap();
+    let cd = tempfile::tempdir().unwrap();
+    let (origin, requests, _provider) = structured_provider(true).await;
+    let (mut gateway_config, _, gateway_did) = config(
+        Route::new(&origin).unwrap(),
+        Observer::Gateway,
+        gd.path(),
+        true,
+    );
+    gateway_config.profile = gateway::Profile::Typesafe;
+    gateway_config.provider_key = Some(reqwest::header::HeaderValue::from_static(
+        "synthetic-typesafe-provider-key",
+    ));
+    let (remote, _gateway) = start(tls(), gateway_config).await;
+    let (mut collector_config, _, collector_did) = config(
+        Route::mutual_tls(remote.trim_end_matches("v1/forward"), CA, ID).unwrap(),
+        Observer::Collector,
+        cd.path(),
+        true,
+    );
+    collector_config.profile = gateway::Profile::Typesafe;
+    let (local, _collector) =
+        start(ListenerAuth::LoopbackToken(TOKEN.into()), collector_config).await;
+    let origin = local.trim_end_matches("v1/forward");
+    let client = reqwest::Client::builder().no_proxy().build().unwrap();
+    let body = br#"{ "model":"synthetic-jev-fixture", "state":"Untrusted decision input", "questions":{"decision":{"type":"noul","instructions":"Is a decision present?"}} }"#;
+    let response = client
+        .post(format!("{origin}v1/systemone"))
+        .bearer_auth(TOKEN)
+        .header("content-type", "application/json")
+        .header("anthropic-version", "must-not-forward")
+        .body(body.to_vec())
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), 200);
+    assert_eq!(response.headers()["content-type"], "application/json");
+    let response = response.bytes().await.unwrap();
+    assert_eq!(
+        serde_json::from_slice::<serde_json::Value>(&response).unwrap()["answers"]["decision"]
+            ["noul"],
+        0.7
+    );
+    {
+        let seen = requests.lock().unwrap();
+        assert_eq!(seen.len(), 1);
+        assert!(seen[0].0.starts_with("POST /v1/systemone "));
+        assert_eq!(seen[0].1, body);
+        let head = seen[0].0.to_ascii_lowercase();
+        assert!(head.contains("authorization: bearer synthetic-typesafe-provider-key\r\n"));
+        assert!(!head.contains(TOKEN));
+        assert!(!head.contains("anthropic-version:"));
+        assert!(!head.contains("x-api-key:"));
+    }
+    for path in ["v1/messages", "v1/systemone?url=elsewhere", "v1/forward"] {
+        assert_eq!(
+            client
+                .post(format!("{origin}{path}"))
+                .bearer_auth(TOKEN)
+                .body("{}")
+                .send()
+                .await
+                .unwrap()
+                .status(),
+            404
+        );
+    }
+    assert_eq!(requests.lock().unwrap().len(), 1);
+    for (dir, did) in [(gd.path(), gateway_did), (cd.path(), collector_did)] {
+        let frames = frames(&dir.join("spool"), &did);
+        let mut request_body = Vec::new();
+        let mut response_body = Vec::new();
+        for (header, bytes) in frames {
+            let metadata = serde_json::to_string(&header).unwrap();
+            assert!(!metadata.contains("synthetic-typesafe-provider-key"));
+            assert!(!metadata.contains(TOKEN));
+            match header.event {
+                capture::Event::RequestChunk { .. } => request_body.extend(bytes),
+                capture::Event::ResponseChunk { .. } => response_body.extend(bytes),
+                _ => (),
+            }
+        }
+        assert_eq!(request_body, body);
+        assert_eq!(response_body, response);
+    }
 }

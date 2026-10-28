@@ -112,12 +112,12 @@ async fn retract_rejects_another_authors_claim_at_write_time() {
         ),
     }
 
-    // REQ-5: the cross-author error message now points at `kan reject` by
+    // REQ-5: the cross-author error message now points at `kan-v1 reject` by
     // name.
     match actions::retract(&mut ws, &other_cid.to_string(), None).await {
         Err(e) => assert!(
-            e.to_string().contains("kan reject"),
-            "expected the NotYourClaim error to mention `kan reject`, got: {e}"
+            e.to_string().contains("kan-v1 reject"),
+            "expected the NotYourClaim error to mention `kan-v1 reject`, got: {e}"
         ),
         Ok(_) => panic!("expected an error"),
     }
@@ -127,7 +127,7 @@ async fn retract_rejects_another_authors_claim_at_write_time() {
     assert_eq!(claims.len(), 1);
 }
 
-/// AC-3: `kan reject <cid>` on another author's claim writes a live
+/// AC-3: `kan-v1 reject <cid>` on another author's claim writes a live
 /// `Rejects{claim}` claim. Needs a genuinely different signing identity, the
 /// same reason `retract_rejects_another_authors_claim_at_write_time` does.
 #[tokio::test]
@@ -190,7 +190,7 @@ async fn reject_writes_a_rejects_claim_against_another_authors_claim() {
 }
 
 /// AC-3 (second half, library-level counterpart to the CLI test): rejecting
-/// your own claim errors, mentioning `kan retract`.
+/// your own claim errors, mentioning `kan-v1 retract`.
 #[tokio::test]
 async fn reject_refuses_the_callers_own_claim() {
     let dir = git_repo();
@@ -245,7 +245,7 @@ async fn reject_refuses_the_callers_own_claim() {
 
     match actions::reject(&mut ws, &cid.to_string(), None).await {
         Err(e @ actions::Error::CantRejectOwnClaim(_)) => {
-            assert!(e.to_string().contains("kan retract"));
+            assert!(e.to_string().contains("kan-v1 retract"));
         }
         other => panic!(
             "expected CantRejectOwnClaim, got {}",

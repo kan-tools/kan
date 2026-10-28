@@ -17,19 +17,19 @@ health with gaps and does not stop inference. An exchange ID joins observations;
 it does not certify shared clocks, remote admission or exactly-once inference.
 A harness retry creates another exchange and may invoke the provider again.
 
-Build with `cargo build --features v2-crypto --bin kan-v2`. All certificate, key
+Build with `cargo build --features v2-crypto --bin kan`. All certificate, key
 and token files supplied to these commands must be owner-only regular files
 (maximum 64 KiB); parent directories must be trusted. Client identity is PEM
 containing its certificate chain and private key. The archive signer is the
 existing kan signing key, separate from TLS credentials.
 
 ```sh
-kan-v2 gateway --listen 0.0.0.0:8443 \
+kan gateway --listen 0.0.0.0:8443 \
   --certificate server.pem --tls-key server.key --client-ca clients-ca.pem \
   --provider https://provider.example/fixed \
   --spool gateway.spool --key gateway-signing.key --recipient ARCHIVE_PUBLIC_HEX
 
-kan-v2 collector --listen 127.0.0.1:8181 \
+kan collector --listen 127.0.0.1:8181 \
   --gateway https://gateway.example:8443/v1/forward \
   --server-ca server-ca.pem --identity collector-identity.pem --token-file local.token \
   --spool collector.spool --key collector-signing.key --recipient ARCHIVE_PUBLIC_HEX
@@ -53,7 +53,11 @@ private/source-restricted ingress until deployment-specific capacity is qualifie
 TLS/header reception is limited to
 15 seconds, request bodies to 30 seconds, connections to 24 hours. The ordinary
 I/O budget is cumulative awaited send/read/write/flush time. Synchronous audit,
-crypto, fsync and health callbacks are not hard-latency bounded. Without `--health-journal`, CLI stderr
+crypto, fsync and health callbacks are not hard-latency bounded. In a legacy-marked
+project, stderr can first contain a migration advisory; every advisory line is
+prefixed `[kan:legacy-workspace]`. Launchers parsing startup or health JSON on
+stderr must pass `--no-migration-notice`. This does not suppress health records or
+authorize migration. Without `--health-journal`, CLI stderr
 reporting can block; supervise it with a continuously consumed private log pipe.
 The optional durable reporter and operator dashboard are described in
 [V2-OPERATIONS.md](V2-OPERATIONS.md).
@@ -148,3 +152,34 @@ is not a production archive reader or independent outer-signature verifier.
 The older body-only witness scripts remain scoped to their original fixtures.
 Rust `Header`/`Event` are closed typed views: an unknown variant is an explicit
 decode failure, never permission to discard the original archived bytes.
+
+## Explicit session relationships
+
+The Anthropic collector profile captures optional `x-kan-session`,
+`x-kan-parent-attempt` and `x-kan-transition` headers and forwards them to the
+configured gateway. The gateway records them and strips them before the inference
+provider. They do not change authentication, routing or inference retries. The
+Library interprets these as observer-recorded claims with source citations; see
+[V2-LIBRARY.md](V2-LIBRARY.md). Existing `x-claude-code-session-id` capture can
+provide session membership without inventing parent/branch relationships. Session
+metadata is not proof of the claimed human/assistant identity.
+
+## TypeSafe decision profile
+
+`--profile typesafe` on both collector and gateway exposes only
+`POST /v1/systemone`, with no query string or arbitrary destination. Configure the
+gateway's `--provider` as an explicit HTTPS origin (for TypeSafe,
+`https://api.typesafe.ai/`) and supply its raw API key through the owner-only
+`--provider-key-file`. The collector keeps its separate local token and mutual
+TLS identity; it never receives the provider key. The gateway creates the provider
+Bearer header after stripping incoming credentials. The same credential omissions,
+encrypted request/response capture, gap reporting, stream bounds and shutdown
+behavior apply. Request bodies and response bytes pass through unchanged; this
+profile does not classify or execute the returned decisions.
+
+The Library's `typesafe-system-one` analysis adapter calls the local collector
+using its local token. Provider configuration is not supplied by the browser or
+extracted from source text. See [typed analysis](V2-LIBRARY.md#background-extraction-and-day-assessment)
+for recipe questions, answer validation and exact run history. This profile's
+protocol contract comes from the [TypeSafe HTTP documentation](https://docs.typesafe.ai/introduction/quickstart#call-it-the-api);
+no live provider request or installation is part of the synthetic qualification.

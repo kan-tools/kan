@@ -1,15 +1,15 @@
 # Continuous delivery and the operator dashboard
 
-Build `kan-v2` with `--features v2-crypto`. These commands extend the experimental
+Build `kan` with `--features v2-crypto`. These commands extend the experimental
 collector/gateway; they do not install a service or migrate a live v1 store.
 Use an existing provisioned spool, archive grants and endpoint from
 [V2-DELIVERY.md](V2-DELIVERY.md). Create one operations journal per observer spool:
 
 ```sh
-kan-v2 ops-init "$HEALTH" --spool "$QUEUE"
-kan-v2 spool-watch "$QUEUE" --journal "$HEALTH" --endpoint "$ENDPOINT"
-kan-v2 ops-status "$HEALTH"
-kan-v2 dashboard "$HEALTH" --listen 127.0.0.1:7283 --token-file "$DASHBOARD_TOKEN_FILE"
+kan ops-init "$HEALTH" --spool "$QUEUE"
+kan spool-watch "$QUEUE" --journal "$HEALTH" --endpoint "$ENDPOINT"
+kan ops-status "$HEALTH"
+kan dashboard "$HEALTH" --listen 127.0.0.1:7283 --token-file "$DASHBOARD_TOKEN_FILE"
 ```
 
 Add `--health-journal "$HEALTH"` to the corresponding `collector` or `gateway`
@@ -108,11 +108,11 @@ Older binaries do not participate in these locks and **must be stopped explicitl
 No command below deletes the original journal or an old generation.
 
 ```sh
-kan-v2 ops-adopt "$HEALTH" "$HEALTH_COLLECTION"
-kan-v2 ops-status "$HEALTH_COLLECTION"
-kan-v2 ops-generations "$HEALTH_COLLECTION" --limit 50
-kan-v2 ops-rotate "$HEALTH_COLLECTION"
-kan-v2 ops-history "$HEALTH_COLLECTION" --generation "$GENERATION_ID"
+kan ops-adopt "$HEALTH" "$HEALTH_COLLECTION"
+kan ops-status "$HEALTH_COLLECTION"
+kan ops-generations "$HEALTH_COLLECTION" --limit 50
+kan ops-rotate "$HEALTH_COLLECTION"
+kan ops-history "$HEALTH_COLLECTION" --generation "$GENERATION_ID"
 ```
 
 Adoption requires a new private destination. This journal profile accepts only SQLite rollback-journal format; WAL-mode headers are refused before SQLite access, without changing the source or creating WAL/SHM sidecars. It copies and verifies the standalone
@@ -143,8 +143,8 @@ rotation belongs to the forthcoming separate owner admin API.
 ## Sampled collection overview
 
 ```sh
-kan-v2 ops-overview "$HEALTH_COLLECTION"
-kan-v2 dashboard "$HEALTH_COLLECTION" --listen 127.0.0.1:7283 --token-file "$DASHBOARD_TOKEN_FILE"
+kan ops-overview "$HEALTH_COLLECTION"
+kan dashboard "$HEALTH_COLLECTION" --listen 127.0.0.1:7283 --token-file "$DASHBOARD_TOKEN_FILE"
 ```
 
 In Operations, choose **Build overview** for a new sample, **Load last sample**

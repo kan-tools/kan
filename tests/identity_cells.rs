@@ -8,9 +8,9 @@
 //! (`.design/identity-resolution.md` Consequence 3), so a cell has two
 //! answers and the interesting ones are where they differ:
 //!
-//! - the **read** probe is `kan show <subject> --trust me --json`, which
+//! - the **read** probe is `kan-v1 show <subject> --trust me --json`, which
 //!   calls `sign::workspace_identity` (via `Selection::Primary`);
-//! - the **write** probe is `kan observe`, which first classifies the workspace
+//! - the **write** probe is `kan-v1 observe`, which first classifies the workspace
 //!   writer and resolves signing material only for an explicit v1 selection.
 //!
 //! Both probes therefore share **one** precedence order (REQ-1/REQ-4), which
@@ -19,7 +19,7 @@
 //! two implementations of question 1, which is exactly how they came to
 //! disagree.
 //!
-//! `kan identity did` is a *write*-path command (`src/cli/mod.rs:846`), which
+//! `kan-v1 identity did` is a *write*-path command (`src/cli/mod.rs:846`), which
 //! is why #170 reads as "`identity did` resolves fine but `--trust me` does
 //! not". Using it as a read probe would assert nothing about the read path.
 //!
@@ -68,7 +68,7 @@ fn git_repo() -> tempfile::TempDir {
 }
 
 fn kan(dir: &Path, env: Option<&Path>, args: &[&str]) -> (String, String, bool) {
-    let mut cmd = Command::new(env!("CARGO_BIN_EXE_kan"));
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_kan-v1"));
     cmd.args(args).current_dir(dir).env("KAN_NO_KEYCHAIN", "1");
     match env {
         Some(p) => {
@@ -154,7 +154,7 @@ enum Env {
     /// The dimension is kept rather than dropped precisely because the outcome
     /// converged: it is now the assertion that a `.kan/roles` left on disk
     /// after the migration changes nothing about how kan resolves an identity.
-    /// That is a property `kan identity role import` depends on — it neither
+    /// That is a property `kan-v1 identity role import` depends on — it neither
     /// rewrites nor deletes the file — and nothing else in the suite pins it.
     MissingDeclared,
 }
@@ -480,7 +480,10 @@ fn run_write(row: u32) {
         }
         Expect::InitRequired => {
             assert!(!ok, "row {row}: an uninitialized write succeeded: {stdout}");
-            assert!(stderr.contains("kan identity init"), "row {row}: {stderr}");
+            assert!(
+                stderr.contains("kan-v1 identity init"),
+                "row {row}: {stderr}"
+            );
             for name in ["identity", "seed", "log", "scope", "transport"] {
                 assert!(
                     !kan_dir.join(name).exists(),
@@ -585,7 +588,7 @@ fn the_two_resolvers_disagree_in_exactly_these_cells() {
 ///
 /// This test was written INVERTED, pinning the defect: before REQ-1,
 /// `existing_identity`'s `KAN_IDENTITY_FILE` branch called
-/// `Identity::load_or_create`, so `kan show --trust me` would `create_dir_all`
+/// `Identity::load_or_create`, so `kan-v1 show --trust me` would `create_dir_all`
 /// a `.kan/` and tighten the named key's permissions to `0600`. It was the
 /// only test in the whole suite that noticed.
 ///

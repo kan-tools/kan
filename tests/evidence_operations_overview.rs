@@ -624,7 +624,7 @@ fn published_polling_is_memory_only_and_cancel_preserves_prior_sample() {
 #[test]
 fn real_cli_returns_same_typed_totals() {
     let f = Fixture::new();
-    let output = std::process::Command::new(env!("CARGO_BIN_EXE_kan-v2"))
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_kan"))
         .arg("ops-overview")
         .arg(&f.root)
         .output()

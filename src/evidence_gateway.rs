@@ -33,6 +33,7 @@ pub type HealthReporter = Arc<dyn Fn(&capture::Health) + Send + Sync>;
 pub enum Profile {
     Opaque,
     Anthropic,
+    Typesafe,
 }
 pub struct Config {
     pub profile: Profile,
@@ -42,12 +43,30 @@ pub struct Config {
     pub spool: PathBuf,
     pub signer: Identity,
     pub recipient: [u8; 32],
+    pub key_history: Option<crate::evidence_keys::Access>,
     pub io_budget: Duration,
     pub report: HealthReporter,
 }
 impl Config {
+    pub fn recipient_for_attempt(&self) -> io::Result<[u8; 32]> {
+        match &self.key_history {
+            None => Ok(self.recipient),
+            Some(history) => crate::evidence_service::unhex(
+                &history
+                    .read()
+                    .map_err(|_| invalid())?
+                    .current()
+                    .map_err(|_| invalid())?,
+                32,
+            )
+            .map_err(|_| invalid())?
+            .try_into()
+            .map_err(|_| invalid()),
+        }
+    }
     pub fn validate(&self) -> io::Result<()> {
-        if self.profile == Profile::Anthropic
+        self.recipient_for_attempt()?;
+        if self.profile != Profile::Opaque
             && (!self.route.is_origin()
                 || self.observer == capture::Observer::Gateway
                     && self
@@ -58,7 +77,7 @@ impl Config {
             return Err(invalid());
         }
         if self.provider_key.is_some()
-            && (self.observer != capture::Observer::Gateway || self.profile != Profile::Anthropic)
+            && (self.observer != capture::Observer::Gateway || self.profile == Profile::Opaque)
         {
             return Err(invalid());
         }
@@ -70,7 +89,12 @@ impl Config {
         }
         if let Ok(mut spool) = Spool::open_for_capture(&self.spool) {
             if let Ok(status) = spool.status() {
-                if status.writer != self.signer.did().as_str() {
+                if status.writer != self.signer.did().as_str()
+                    || self
+                        .key_history
+                        .as_ref()
+                        .is_some_and(|h| h.binding.scope != status.scope)
+                {
                     return Err(invalid());
                 }
             }
@@ -304,19 +328,32 @@ async fn handle(
             Ok(r) => Some(r),
             Err(_) => return Ok(error(StatusCode::NOT_FOUND)),
         },
+        Profile::Typesafe => match config.route.typesafe_path(path) {
+            Ok(r) => Some(r),
+            Err(_) => return Ok(error(StatusCode::NOT_FOUND)),
+        },
         _ => return Ok(error(StatusCode::NOT_FOUND)),
     };
-    let metadata = if config.profile == Profile::Anthropic {
+    let metadata = if config.profile != Profile::Opaque {
         Some(request.headers().clone())
     } else {
         None
     };
     let mut outgoing = reqwest::header::HeaderMap::new();
-    if config.profile == Profile::Anthropic {
-        let clean = end_to_end(request.headers());
+    if config.profile != Profile::Opaque {
+        let clean = end_to_end(
+            request.headers(),
+            config.observer == capture::Observer::Collector,
+        );
         for (name, value) in &clean {
-            if name.as_str().starts_with("anthropic-")
-                || name.as_str().starts_with("x-claude-code-")
+            if (config.profile == Profile::Anthropic
+                && (name.as_str().starts_with("anthropic-")
+                    || name.as_str().starts_with("x-claude-code-")))
+                || (config.observer == capture::Observer::Collector
+                    && matches!(
+                        name.as_str(),
+                        "x-kan-session" | "x-kan-parent-attempt" | "x-kan-transition"
+                    ))
                 || matches!(
                     name.as_str(),
                     "content-type"
@@ -331,7 +368,17 @@ async fn handle(
             }
         }
         if let Some(key) = &config.provider_key {
-            outgoing.insert("x-api-key", key.clone());
+            if config.profile == Profile::Typesafe {
+                let Ok(mut bearer) = reqwest::header::HeaderValue::from_bytes(
+                    &[b"Bearer ".as_slice(), key.as_bytes()].concat(),
+                ) else {
+                    return Ok(error(StatusCode::SERVICE_UNAVAILABLE));
+                };
+                bearer.set_sensitive(true);
+                outgoing.insert("authorization", bearer);
+            } else {
+                outgoing.insert("x-api-key", key.clone());
+            }
         }
     }
     let exchange = if config.observer == capture::Observer::Collector {
@@ -376,10 +423,27 @@ async fn handle(
             head: Some(tx),
         };
         let mut spool = Spool::open_for_capture(&config.spool).ok();
+        // Resolve once per attempt. A damaged/contended epoch history disables
+        // capture for this attempt, producing the normal visible recording gap.
+        let mut recipient = config.recipient_for_attempt().ok();
+        if let Some(history) = &config.key_history {
+            if spool.as_mut().is_none_or(|s| {
+                s.status().map_or(true, |status| {
+                    status.scope != history.binding.scope
+                        || status.writer != config.signer.did().as_str()
+                })
+            }) {
+                recipient = None;
+            }
+        }
         let mut sink = capture::EncryptedSpool {
-            spool: spool.as_mut(),
+            spool: if recipient.is_some() {
+                spool.as_mut()
+            } else {
+                None
+            },
             signer: &config.signer,
-            recipient: config.recipient,
+            recipient: recipient.unwrap_or([0; 32]),
         };
         let mut headers = outgoing;
         if config.observer == capture::Observer::Collector {
@@ -421,8 +485,8 @@ async fn handle(
         .boxed_unsync(),
     );
     *response.status_mut() = StatusCode::from_u16(status).unwrap_or(StatusCode::BAD_GATEWAY);
-    if profile == Profile::Anthropic {
-        *response.headers_mut() = end_to_end(&headers);
+    if profile != Profile::Opaque {
+        *response.headers_mut() = end_to_end(&headers, false);
     } else {
         response.headers_mut().insert(
             "content-type",
@@ -542,7 +606,10 @@ async fn connection<T: AsyncRead + AsyncWrite + Unpin + Send + 'static>(
     .await;
 }
 
-fn end_to_end(input: &reqwest::header::HeaderMap) -> reqwest::header::HeaderMap {
+fn end_to_end(
+    input: &reqwest::header::HeaderMap,
+    session_headers: bool,
+) -> reqwest::header::HeaderMap {
     let nominated: Vec<String> = input
         .get_all("connection")
         .iter()
@@ -566,7 +633,12 @@ fn end_to_end(input: &reqwest::header::HeaderMap) -> reqwest::header::HeaderMap 
                 | "x-api-key"
                 | "cookie"
                 | "set-cookie"
-        ) || name.as_str().starts_with("x-kan-")
+        ) || (name.as_str().starts_with("x-kan-")
+            && !(session_headers
+                && matches!(
+                    name.as_str(),
+                    "x-kan-session" | "x-kan-parent-attempt" | "x-kan-transition"
+                )))
             || nominated.iter().any(|n| n == name.as_str())
         {
             continue;

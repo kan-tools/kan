@@ -102,6 +102,71 @@ async fn handle(
         _ => denied(StatusCode::NOT_FOUND),
     })
 }
+/// Operations mounted under Library with a separate credential and worker budget.
+pub struct Embedded {
+    journal: PathBuf,
+    token: Arc<String>,
+    overview: Arc<Manager>,
+    slots: Arc<Semaphore>,
+}
+impl Embedded {
+    pub fn new(journal: PathBuf, token: String) -> io::Result<Self> {
+        if token.len() < 32 || token.len() > 4096 || !token.bytes().all(|b| b.is_ascii_graphic()) {
+            return Err(io::Error::other("invalid operations credential"));
+        }
+        Ok(Self {
+            journal,
+            token: Arc::new(token),
+            overview: Arc::new(Manager::new()),
+            slots: Arc::new(Semaphore::new(2)),
+        })
+    }
+    pub(crate) async fn handle(
+        &self,
+        mut request: Request<Incoming>,
+        host: String,
+    ) -> Result<Response<Full<Bytes>>, Infallible> {
+        let path = request
+            .uri()
+            .path_and_query()
+            .map(|p| p.as_str())
+            .unwrap_or("");
+        if path == "/operations" && request.method() == hyper::Method::GET {
+            let mut r = response(StatusCode::SEE_OTHER, "text/plain", "Open operations");
+            r.headers_mut().insert(
+                "location",
+                hyper::header::HeaderValue::from_static("/operations/"),
+            );
+            return Ok(r);
+        }
+        if path == "/operations/" && request.method() == hyper::Method::GET {
+            let html = HTML
+                .replace("src=\"/", "src=\"/operations/")
+                .replace("href=\"/style.css\"", "href=\"/operations/style.css\"");
+            return Ok(response(StatusCode::OK, "text/html; charset=utf-8", html));
+        }
+        let Some(path) = path.strip_prefix("/operations") else {
+            return Ok(denied(StatusCode::NOT_FOUND));
+        };
+        let Ok(uri) = path.parse() else {
+            return Ok(denied(StatusCode::BAD_REQUEST));
+        };
+        *request.uri_mut() = uri;
+        let Ok(permit) = self.slots.clone().try_acquire_owned() else {
+            return Ok(denied(StatusCode::TOO_MANY_REQUESTS));
+        };
+        handle(
+            request,
+            host,
+            self.token.clone(),
+            self.journal.clone(),
+            Arc::new(permit),
+            self.overview.clone(),
+        )
+        .await
+    }
+}
+
 /// A single request per connection; bounded clients and slow-header deadline.
 pub async fn serve(listener: TcpListener, token: String, journal: PathBuf) -> io::Result<()> {
     let addr = listener.local_addr()?;

@@ -10,7 +10,7 @@ scope and original signing writer. The archive's observed frontier is not an
 externally authenticated completeness certificate.
 
 ```sh
-kan-v2 restore-import /backup/archive.sqlite /private/recovered-snapshot \
+kan restore-import /backup/archive.sqlite /private/recovered-snapshot \
   --expected-plan ORIGINAL_64_HEX_PLAN \
   --scope ORIGINAL_64_HEX_SCOPE \
   --writer ORIGINAL_DID_KEY \

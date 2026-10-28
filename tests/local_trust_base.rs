@@ -170,7 +170,7 @@ fn git_repo() -> tempfile::TempDir {
 }
 
 fn kan(dir: &std::path::Path, args: &[&str]) -> (String, String, bool) {
-    let output = Command::new(env!("CARGO_BIN_EXE_kan"))
+    let output = Command::new(env!("CARGO_BIN_EXE_kan-v1"))
         .args(args)
         .current_dir(dir)
         .env("KAN_NO_KEYCHAIN", "1")

@@ -2,8 +2,10 @@
   "mcpServers": {
     "kan": {
       "type": "stdio",
-      "command": "kan",
-      "args": ["mcp"]
+      "command": "kan-v1",
+      "args": [
+        "mcp"
+      ]
     }
   }
 }

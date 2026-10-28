@@ -2,7 +2,7 @@
 //! [Commit(<current HEAD sha>)]` with no flag needed; `--file` attaches
 //! `FileAt`/`LineRangeAt` on top when given. Asserted at the library level
 //! (inspecting `ClaimContent::artifacts` directly) rather than through the
-//! CLI subprocess harness `tests/cli.rs` uses elsewhere, since `kan show`
+//! CLI subprocess harness `tests/cli.rs` uses elsewhere, since `kan-v1 show`
 //! doesn't render artifacts today — this is the most direct way to check
 //! them without adding unrelated display surface.
 
@@ -210,7 +210,7 @@ async fn file_flag_with_an_unparseable_range_falls_back_to_the_whole_path() {
     );
 }
 
-/// `kan resolve`'s pair-write: `--file` applies to the narrative
+/// `kan-v1 resolve`'s pair-write: `--file` applies to the narrative
 /// (`Resolution`) claim only — the paired `Status` claim gets just the
 /// automatic commit anchor, since it isn't "about" the file the way the
 /// narrative claim is.

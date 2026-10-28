@@ -1,0 +1,130 @@
+{
+  "version": 1,
+  "status": "independently-inspected",
+  "revision": "5968aaf403ae6ae244adaa44910b34f622d548ed",
+  "run_id": "0ae892a3faf74e1daca47fa1c4f73e79",
+  "fixture_volume": "kan-v2-probe-5968aaf403ae-0ae892a3faf74e1daca47fa1c4f73e79",
+  "results_volume": "kan-v2-capacity-results",
+  "result_directory": "kan-v2-probe-5968aaf403ae-0ae892a3faf74e1daca47fa1c4f73e79",
+  "binary_sha256": "21ac9ae651629a4100895205bd5ba5c550a71e78da0d3562ad55949f10b76ec3",
+  "binary_validation": "Runner hashes executable after build and checks the same hash in the separate remount worker; status agrees with prior observation. Worker was not downloaded locally.",
+  "seeded_records": 10240,
+  "seed_batches_verified": 40,
+  "append_phases": [
+    {
+      "append": 1,
+      "prior_records": 10240,
+      "open_us": 11188399,
+      "prepare_after_open_us": 44611,
+      "admission_only_us": 4938974,
+      "close_after_admission_us": 1002120,
+      "total_through_close_us": 17174104
+    },
+    {
+      "append": 2,
+      "prior_records": 10241,
+      "open_us": 67921,
+      "prepare_after_open_us": 39594,
+      "admission_only_us": 1189480,
+      "close_after_admission_us": 708331,
+      "total_through_close_us": 2005326
+    }
+  ],
+  "syscalls": [
+    {
+      "fcntl": {
+        "calls": 46,
+        "summed_duration_us": 2962,
+        "maximum_duration_us": 269
+      },
+      "pwrite64": {
+        "calls": 1886,
+        "summed_duration_us": 108385,
+        "maximum_duration_us": 947
+      },
+      "fsync": {
+        "calls": 6,
+        "summed_duration_us": 71065,
+        "maximum_duration_us": 56763
+      }
+    },
+    {
+      "fcntl": {
+        "calls": 46,
+        "summed_duration_us": 2565,
+        "maximum_duration_us": 199
+      },
+      "pwrite64": {
+        "calls": 1811,
+        "summed_duration_us": 106331,
+        "maximum_duration_us": 888
+      },
+      "fsync": {
+        "calls": 6,
+        "summed_duration_us": 125845,
+        "maximum_duration_us": 120048
+      }
+    }
+  ],
+  "raw_result_sha256": "35875955a6356d1b4f6d07002cf1eef4267f875038e9d8345abad5967b9fa471",
+  "evidence_sha256": {
+    "append-1.log": "df5886212003e4a0643b6d4decf094637bec4213084946ad40f20b15165c3640",
+    "append-1.strace": "197721cccfa11b94f3d1531a0bf8063a487effe7148ede2f5be604b2defabd5b",
+    "append-2.log": "29525fd44469fe65044f05aa79c8832b3b97d5d295a214c203c1a2a94e086a66",
+    "append-2.strace": "d189b68e77203e2674a55120d23e1e6d5e3429eae6387c42e819dc8708279618",
+    "build.jsonl": "43e9088dc8179c6319e5297126f9e5a30d1f056718d79fd20f25cccf757064f1",
+    "git-0.log": "6aa24462ea4edea3814dcafe91471eeb71240b8843c3f0bf716fa5a956c9d32e",
+    "git-1.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "git-2.log": "0e4e3cc32405cbdb8c9b1f8fd254017b6fa3fef8694f145f4b0554a9b0f4511f",
+    "git-3.log": "f81ff23fd2f291e8372f51f355a600d2d9e18fbbcba9e102e42c27caa974a0f9",
+    "run.json": "35875955a6356d1b4f6d07002cf1eef4267f875038e9d8345abad5967b9fa471",
+    "seed-00.log": "26ae9543b2f5f0f2c79a333082745e446f6d1a3897a5bcb23bd9aaaaceb63a0e",
+    "seed-01.log": "9e29c7799d87b1438b785eeae3fcc6ef4aa15a7aca61f0e5f80c3feb0adb72ac",
+    "seed-02.log": "e39b6e68b6847c40d76be7aba085c60afaab5c57418a152ae8548456521bd8dd",
+    "seed-03.log": "d7283c778b18c1d4b284f4511ae6224447235f46d9ce4b00753f09572ac9a576",
+    "seed-04.log": "339d02a6e41884d85e6e6f7c509a96733e46e51a9c0187e8862a8efc611b1ab7",
+    "seed-05.log": "e8324de690aa8e338eda1601c67677ce4990f3deee29c9d164e5b4037e820978",
+    "seed-06.log": "75aa1f40f3cfaa81617aa0cebfdb600095277bf163f59bf1c1b4c350f87fc97d",
+    "seed-07.log": "c982795839c0c0c66ffbd9c9572827748f9b03679deec4765756f6e4557cebdd",
+    "seed-08.log": "3dc7bd2255e933a56e1e41fd1afa96d3ef2f5905c6d8a442064d0278889e1bb1",
+    "seed-09.log": "a94e08744ccd02e10b961327e6f6b02f8686a7905fe207bfc9755fb8b87b85bd",
+    "seed-10.log": "b79b315b0b30f3af71f22dc2b006cdbb27a599d46abfca0c35571d6475a12aa2",
+    "seed-11.log": "4f4c54c54669ec7fd170c7d383e0feb687c177c529ba77287fd33bbe6b7a8ba4",
+    "seed-12.log": "f90a2453404893888296871ecb8606111f05848d82ed818b7dc96dfb1dcecd4b",
+    "seed-13.log": "8712df9aef271c5966a28e4e5568a2e98854c37f51839742e97bab4b87a036b3",
+    "seed-14.log": "f5ad3f7a6e9ab5fb465c9d0caecee3125a4b7f6514aadf2e0a82525973b823d1",
+    "seed-15.log": "dd38e90304d121f2d6203c705671723ccf9751c086eba94a3435547ec874519e",
+    "seed-16.log": "4a997f14857128cc6c4f30ea3db6eed3c70e0cdde4a9f3e8afb81a3898026996",
+    "seed-17.log": "eea283e43e57208e59867a19a79f6642c81fb56ae60b70780181e03a33cf32ae",
+    "seed-18.log": "1619ea6bdebabc5b7436f55fc963e7304cc167e400a1a918b43584bada4c8658",
+    "seed-19.log": "369273c09dda317b54d486c651afc84d36bdc5e7baf71d34b61c7f8784e831bb",
+    "seed-20.log": "29fa2a581dec3286db82c3ffb1977f5dbc282087d4d6d0ffac7a92ae45b7b3cc",
+    "seed-21.log": "90d2d79a6c9c7b5a5ea60f2b0eb8710dab304c1c48ad0ce3cf857917e0c212c2",
+    "seed-22.log": "4e2f5efdf35a92833a666173ff913f25d6edf855feb923e520724e5bf01542e1",
+    "seed-23.log": "45f652f250e357d5c723f5409e455bcb4bce506fc78b5542ec9ca32917921203",
+    "seed-24.log": "670f9673c543635ef7ea5ed4ad95cbed5092c18554ea82da75aa03c8da706b70",
+    "seed-25.log": "0b9086ea2305b47b9f6b57ad2f769df79cc8cfdb895c09b1cc5b412128cd48e6",
+    "seed-26.log": "e3e6e40f6579713711d8f45b48d7b7cb9ca7bb3b7476b0b0be1fbf0666ef0073",
+    "seed-27.log": "e4987157e3560f009b5db1b6c4afc14842d2f0ab75670884e0e180a3b9141c23",
+    "seed-28.log": "47a6272f3c9daec6ee5672c8557676f57916a6f6a183d2e911bf3a8da16b4984",
+    "seed-29.log": "30bc268c76ddaa1a9a744b81b9c4d39aea131ab8f40eedb037760ea1b3680c62",
+    "seed-30.log": "1d69fd5f32c9518727a1271ecdce25fb71e31669363c53db2f09361d23372717",
+    "seed-31.log": "61b1b9ed26dbcb15715e3e9b494d0a5d2dad4c0c18d556e4407f48c95c8842f4",
+    "seed-32.log": "396afa91304f5f56fd158abc3eb7acc83c187dfb8948d8061cb60ff62705cace",
+    "seed-33.log": "47d7d070337c50bf1dd54830d5dea7413ae8094dfdf4f24244d8a6d368f11273",
+    "seed-34.log": "3ee158fc306041e8c05d6bd37a79abefe26e5d794a01eb542b8ac39a5e9d0ad4",
+    "seed-35.log": "0e619f7cbdf5e4d11e2cd10d895cffdde8496fc229ac402737a04674d0771fd2",
+    "seed-36.log": "28e39162f9e93726bd2692c7c7820fdfbd9d129d0e33938c1a79d3986bf01ad7",
+    "seed-37.log": "52107a010cfb46498dc4ca897b3524b0453d8b1c748488d802c5a864001bf77d",
+    "seed-38.log": "518dff595b3acf858b0da67e1285c009699d14caa717c051ed92945a2985567c",
+    "seed-39.log": "4d61086f854780e6a1d39cd654286a17fecca12aca1413cd902198b274adab22"
+  },
+  "findings": [
+    "First remounted open11.188399s versus second0.067921s; admission-only4.938974s versus1.189480s.",
+    "Observed first/second asymmetry under strace. This does not reproduce or explain the prior100GiB79.770901s admission-only outlier.",
+    "Observed fsync durations sum0.071065s and0.125845s; write durations sum0.108385s and0.106331s. They do not explain multi-second wall-clock intervals.",
+    "Trace excludes read syscalls and scheduler/volume internals, includes tracing overhead, and does not evict cache. No causal, cold-cache, untraced-performance or localSSD claim."
+  ],
+  "fixture_retained": true,
+  "full_remount_hash_validation": "Not part of this focused two-append diagnostic; prior100GiB verification remains separate."
+}

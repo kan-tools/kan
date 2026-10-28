@@ -318,6 +318,18 @@ impl Route {
             mutual_tls: self.mutual_tls,
         })
     }
+    pub(crate) fn typesafe_path(&self, path: &str) -> Result<Self, Error> {
+        if !self.is_origin() || path != "/v1/systemone" {
+            return Err(Error::Invalid);
+        }
+        let mut url = self.url.clone();
+        url.set_path(path);
+        Ok(Self {
+            url,
+            client: self.client.clone(),
+            mutual_tls: self.mutual_tls,
+        })
+    }
     pub fn new(endpoint: &str) -> Result<Self, Error> {
         Self::build(endpoint, None)
     }

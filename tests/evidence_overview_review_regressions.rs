@@ -198,7 +198,7 @@ fn po2_build_changes_no_collection_file_or_metadata() {
         std::thread::sleep(Duration::from_millis(5));
     }
     assert_eq!(m.status().state, "completed");
-    let out = std::process::Command::new(env!("CARGO_BIN_EXE_kan-v2"))
+    let out = std::process::Command::new(env!("CARGO_BIN_EXE_kan"))
         .arg("ops-overview")
         .arg(&f.root)
         .output()

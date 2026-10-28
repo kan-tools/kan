@@ -1,6 +1,6 @@
 //! AC-9 (`.design/agent-ax-and-tool-boundary.md`): the repo's Claude Code
 //! plugin manifest and bundled MCP server declaration are present and
-//! well-formed — the second of `kan mcp install`'s two registration paths.
+//! well-formed — the second of `kan-v1 mcp install`'s two registration paths.
 
 use std::path::Path;
 
@@ -29,6 +29,6 @@ fn mcp_json_declares_the_kan_server() {
         serde_json::from_str(&contents).expect(".mcp.json should be valid JSON");
 
     let kan = &json["mcpServers"]["kan"];
-    assert_eq!(kan["command"].as_str(), Some("kan"));
+    assert_eq!(kan["command"].as_str(), Some("kan-v1"));
     assert_eq!(kan["args"], serde_json::json!(["mcp"]));
 }

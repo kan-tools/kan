@@ -69,7 +69,7 @@ pub enum Error {
     ScopeIdentity(#[from] crate::identity::scope_store::Error),
     #[error(
         "this workspace has not selected a claim format yet. Initialize the system actor with \
-         `kan identity init`, then initialize this scope with `kan init`; nothing was written"
+         `kan-v1 identity init`, then initialize this scope with `kan-v1 init`; nothing was written"
     )]
     ClaimInitializationRequired,
     #[error("this workspace cannot select a claim writer: {0}")]
@@ -91,8 +91,8 @@ pub enum Error {
          underneath an overlay built against an earlier state.\n\n\
          First claim in both: {first}\n\
          Active identity: {did}\n\n\
-         Check `kan identity did` against the authors in `.claims/`. If the identity is \
-         wrong, recover it with `kan identity adopt` rather than writing anything further; \
+         Check `kan-v1 identity did` against the authors in `.claims/`. If the identity is \
+         wrong, recover it with `kan-v1 identity adopt` rather than writing anything further; \
          the overlay is disposable, so `rm -rf .kan/overlay .kan/index.sqlite` is safe once \
          the identity is right."
     )]
@@ -115,7 +115,7 @@ pub enum Error {
          means this workspace's key is not where kan looks: KAN_IDENTITY_FILE unset with \
          the key held elsewhere, pointed at a path that does not exist, or a keychain \
          entry this binary cannot read (#96).\n\n\
-         Name the author you meant with `--trust did:key:...`, or `kan identity adopt \
+         Name the author you meant with `--trust did:key:...`, or `kan-v1 identity adopt \
          --key <path>` to point this workspace back at its key. Reading never creates an \
          identity, by design (#149)."
     )]
@@ -124,7 +124,7 @@ pub enum Error {
 
 pub struct Workspace {
     /// Repo root — the directory `.kan/` sits beside. Needed by anything
-    /// that writes outside the private store, such as `kan publish`.
+    /// that writes outside the private store, such as `kan-v1 publish`.
     pub root: std::path::PathBuf,
     /// `None` for a workspace opened read-only.
     ///
@@ -271,7 +271,7 @@ fn format_initialization_diagnostics(diagnostics: &[InitializationDiagnostic]) -
 /// The content CIDs present in the published tree, per subject.
 ///
 /// **Why the *set of CIDs* and not the `Publication` claim's timestamp.**
-/// `kan publish --all` refreshes a subject's file without appending a new
+/// `kan-v1 publish --all` refreshes a subject's file without appending a new
 /// `Publication` claim, so a subject brought fully up to date would still
 /// look stale under a timestamp comparison — the column would report a gap
 /// that the operator had just closed, which is the fastest way to teach
@@ -457,7 +457,7 @@ impl Workspace {
     }
 
     /// Reopens from disk every call, by design: the CLI is one process per
-    /// invocation, and `kan mcp` (one long-lived process) mirrors that by
+    /// invocation, and `kan-v1 mcp` (one long-lived process) mirrors that by
     /// calling `open` fresh per tool call rather than holding one `Workspace`
     /// across calls — cheap at today's scale, and avoids any question of
     /// staleness or concurrent-mutation safety (`docs/DECISIONS.md` ADR-15).
@@ -901,7 +901,7 @@ impl Workspace {
     /// a claim signed by a key nothing on disk holds, after which the ADR-77
     /// guard fires and the log is unreadable *and* the key unrecoverable.
     /// Failing the other way round leaves an identity with an empty log,
-    /// which is exactly what `kan identity did` produces and costs nothing.
+    /// which is exactly what `kan-v1 identity did` produces and costs nothing.
     /// The property REQ-3 is for is its second sentence -- a refused write
     /// leaves nothing behind -- and this order delivers it with no hazard.
     ///
@@ -1033,7 +1033,7 @@ impl Workspace {
         self.identity = Some(identity);
         // Deliberately does NOT reproject. Every caller either appends
         // immediately (and `append` reprojects over the new log) or does not
-        // read the index at all (`kan identity did`). Reprojecting here meant
+        // read the index at all (`kan-v1 identity did`). Reprojecting here meant
         // every write rebuilt the projection twice.
         Ok(())
     }
@@ -1313,7 +1313,7 @@ impl Workspace {
     /// This workspace's signing identity, or an error naming what needs one.
     ///
     /// Every caller is a write, or a command whose subject *is* the identity
-    /// (`kan identity did`). A read reaching this is a routing bug, and the
+    /// (`kan-v1 identity did`). A read reaching this is a routing bug, and the
     /// message says so rather than silently resolving one.
     pub fn identity(&self) -> Result<&Identity, Error> {
         self.identity.as_ref().ok_or(Error::NoIdentity)
@@ -1395,7 +1395,7 @@ impl Workspace {
     /// frames is two reads rather than a sequence of mutations
     /// (`.design/kan-read-contract.md` REQ-2).
     /// `--trust roles` expands to every identity this workspace declared
-    /// (`kan identity role add`), all at full weight — and to **nothing
+    /// (`kan-v1 identity role add`), all at full weight — and to **nothing
     /// else**. The active identity is *not* injected on top.
     ///
     /// *This paragraph said the opposite until v0.12, and was wrong from the
@@ -1836,7 +1836,7 @@ async fn read_published(
 /// skipped entirely: they are already in the log if they were written here,
 /// and pulling them back out of `.claims/` is *restore*, a separate operation
 /// with its own identity check (`.design/durability-log-recovery.md`
-/// REQ-2/REQ-3, deferred to v0.9 with the `kan restore` command).
+/// REQ-2/REQ-3, deferred to v0.9 with the `kan-v1 restore` command).
 ///
 /// **It does not take the write lock unless something is new.** Membership is
 /// checked against the already-open overlay first, so the overwhelmingly

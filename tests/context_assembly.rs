@@ -1,4 +1,4 @@
-//! AC-7 (`.design/kan-spine.md`): `kan context --budget N` returns a claim
+//! AC-7 (`.design/kan-spine.md`): `kan-v1 context --budget N` returns a claim
 //! set whose total token estimate is ≤ N and is deterministic for a fixed
 //! claim set + budget.
 

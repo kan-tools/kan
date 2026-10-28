@@ -15,6 +15,38 @@ use sha2::{Digest, Sha256};
 const CATALOG: &str = include_str!("fixtures/read-write-surface.tsv");
 const RULE_EVIDENCE: &[(&str, &str)] = &[
     (
+        "authenticated-control-checkpoint",
+        "src/evidence_control_index.rs",
+    ),
+    ("seekable-evidence-payload", "tests/evidence_inventory.rs"),
+    (
+        "authenticated-serving-index",
+        "tests/evidence_attested_store.rs",
+    ),
+    ("backup-checkpoint", "tests/support/proof_library_tests.rs"),
+    ("migration-cutover", "tests/support/proof_library_tests.rs"),
+    ("owner-backup-purge", "tests/support/proof_library_tests.rs"),
+    (
+        "authenticated-publication-binding",
+        "tests/support/proof_library_tests.rs",
+    ),
+    ("workspace-erasure", "tests/evidence_workspace.rs"),
+    ("signed-erasure-custody", "tests/evidence_attested_store.rs"),
+    ("wrapped-key-epochs", "tests/evidence_keys.rs"),
+    (
+        "signed-owner-policy",
+        "tests/support/proof_service_tests.rs",
+    ),
+    // Owner migration/recovery reuse the typed spool and restore capabilities;
+    // their integration witnesses cover exact retry, retained originals and proof pins.
+    ("owner-maintenance", "tests/support/proof_library_tests.rs"),
+    ("analysis-lineage", "tests/support/proof_library_tests.rs"),
+    (
+        "annotation-publication",
+        "tests/support/proof_library_tests.rs",
+    ),
+    ("encrypted-reader-workspace", "tests/evidence_workspace.rs"),
+    (
         "checkpointed-bundle-copy",
         "tests/support/bundle_copy_tests.rs",
     ),
@@ -30,6 +62,7 @@ const RULE_EVIDENCE: &[(&str, &str)] = &[
         "owner-pinned-knb1-inspection",
         "tests/evidence_recovery_bundle.rs",
     ),
+    ("signed-erasure-plan", "tests/evidence_attested_store.rs"),
     ("recipe-bound-copy", "tests/evidence_copy_destination.rs"),
     (
         "profile-selected-evidence-lifecycle",
@@ -58,7 +91,10 @@ const RULE_EVIDENCE: &[(&str, &str)] = &[
     ("verified-import-restore", "tests/evidence_restore.rs"),
     ("encrypted-import-frame", "tests/evidence_import.rs"),
     ("delivery-configuration", "tests/evidence_delivery.rs"),
-    ("durable-exact-request-spool", "tests/evidence_spool.rs"),
+    (
+        "durable-exact-request-spool-and-signed-erasure-cursor",
+        "tests/evidence_spool.rs",
+    ),
     ("recipient-encrypted-chunk", "tests/evidence_crypto.rs"),
     ("signed-service-request", "tests/evidence_service.rs"),
     ("service-configuration", "tests/evidence_http.rs"),
@@ -103,6 +139,65 @@ const RULE_EVIDENCE: &[(&str, &str)] = &[
     ("connection-config", ".design/medium-architecture.md"),
 ];
 const PERSISTENCE_PATH_EXPRESSIONS: &[(&str, &str, &str)] = &[
+    (
+        "src/store/log.rs",
+        "\"V2_FENCE\"",
+        "evidence-migration:control",
+    ),
+    (
+        "src/evidence_library/owner/erasure.rs",
+        "\"archive.sqlite\"",
+        "configured-erasure-archive",
+    ),
+    (
+        "src/evidence_erasure_history.rs",
+        "\"archive.sqlite\"",
+        "owner-selected-archive-reconciliation",
+    ),
+    ("src/evidence_keys.rs", "\"LOCK\"", "wrapped-epoch-path"),
+    ("src/evidence_keys.rs", "&name", "wrapped-epoch-path"),
+    (
+        "src/evidence_keys.rs",
+        "format!( \".pending-{}\", service::hex(&rand::random::<[u8; 32]>()) )",
+        "wrapped-epoch-path",
+    ),
+    (
+        "src/evidence_keys.rs",
+        "format!(\"epoch-{:020}-{id}.json\", snapshot.history.len())",
+        "wrapped-epoch-path",
+    ),
+    ("src/evidence_policy.rs", "\"LOCK\"", "signed-policy-path"),
+    ("src/evidence_policy.rs", "&name", "signed-policy-path"),
+    (
+        "src/evidence_policy.rs",
+        "format!( \".pending-{}\", service::hex(&rand::random::<[u8; 32]>()) )",
+        "signed-policy-path",
+    ),
+    (
+        "src/evidence_policy.rs",
+        "format!(\"policy-{:020}-{id}.json\", snapshot.history.len())",
+        "signed-policy-path",
+    ),
+    (
+        "src/evidence_erasure_history.rs",
+        "\"LOCK\"",
+        "signed-erasure-custody-path",
+    ),
+    (
+        "src/evidence_erasure_history.rs",
+        "&name",
+        "signed-erasure-custody-path",
+    ),
+    (
+        "src/evidence_erasure_history.rs",
+        "format!( \".pending-{}\", service::hex(&rand::random::<[u8; 32]>()) )",
+        "signed-erasure-custody-path",
+    ),
+    (
+        "src/evidence_erasure_history.rs",
+        "format!(\"erasure-{:020}-{id}.json\", snapshot.history.len())",
+        "signed-erasure-custody-path",
+    ),
     (
         "src/evidence_operations_collection.rs",
         "MANIFEST",
@@ -442,6 +537,10 @@ const PERSISTENCE_PATH_EXPRESSIONS: &[(&str, &str, &str)] = &[
     ("src/workspace.rs", "\"; \"", "not a path"),
 ];
 const PERSISTENCE_MODULES: &[&str] = &[
+    "src/evidence_control_index.rs",
+    "src/evidence_keys.rs",
+    "src/evidence_policy.rs",
+    "src/evidence_workspace.rs",
     "src/evidence_operations_collection.rs",
     "src/evidence_operations.rs",
     "src/evidence_restore.rs",
@@ -460,6 +559,236 @@ const PERSISTENCE_MODULES: &[&str] = &[
     "src/workspace.rs",
 ];
 const PERSISTENCE_MUTATION_SITES: &[(&str, &str, &str, usize)] = &[
+    (
+        "src/evidence_library/owner/migration.rs",
+        "write_new_owner_only",
+        "EvidenceMigration",
+        1,
+    ),
+    (
+        "src/evidence_library/owner/migration.rs",
+        "open_lock_file",
+        "EvidenceMigration",
+        1,
+    ),
+    (
+        "src/evidence_library/owner/migration.rs",
+        "rename",
+        "EvidenceMigration",
+        2,
+    ),
+    (
+        "src/evidence_library/owner/migration.rs",
+        "remove_file",
+        "EvidenceMigration",
+        1,
+    ),
+    (
+        "src/evidence_control_index.rs",
+        "create_dir_owner_only",
+        "Container",
+        1,
+    ),
+    (
+        "src/evidence_control_index.rs",
+        "write",
+        "EvidencePolicy",
+        1,
+    ),
+    (
+        "src/evidence_control_index.rs",
+        "write_new_owner_only",
+        "EvidencePolicy",
+        1,
+    ),
+    (
+        "src/evidence_control_index.rs",
+        "write",
+        "EvidenceControlIndex",
+        1,
+    ),
+    (
+        "src/evidence_control_index.rs",
+        "write_new_owner_only",
+        "EvidenceControlIndex",
+        3,
+    ),
+    (
+        "src/evidence_control_index.rs",
+        "rename",
+        "EvidenceControlIndex",
+        2,
+    ),
+    (
+        "src/evidence_control_index.rs",
+        "remove_file",
+        "EvidenceControlIndex",
+        2,
+    ),
+    (
+        "src/evidence_control_index.rs",
+        "initialize_serving_index",
+        "EvidenceControlIndex",
+        1,
+    ),
+    (
+        "src/evidence_control_index.rs",
+        "insert_serving_node",
+        "EvidenceControlIndex",
+        1,
+    ),
+    (
+        "src/evidence_control_index.rs",
+        "publish_serving_checkpoint",
+        "EvidenceControlIndex",
+        1,
+    ),
+    (
+        "src/evidence_store/serving.rs",
+        "initialize_serving_index",
+        "EvidenceServingIndex",
+        1,
+    ),
+    (
+        "src/evidence_store/serving.rs",
+        "insert_serving_node",
+        "EvidenceServingIndex",
+        1,
+    ),
+    (
+        "src/evidence_store/serving.rs",
+        "reset_serving_nodes",
+        "EvidenceServingIndex",
+        1,
+    ),
+    (
+        "src/evidence_store/serving.rs",
+        "publish_serving_checkpoint",
+        "EvidenceServingIndex",
+        1,
+    ),
+    (
+        "src/evidence_store/erasure/initial.rs",
+        "insert_erased_evidence_object",
+        "EvidenceErasure",
+        1,
+    ),
+    (
+        "src/evidence_spool/erasure.rs",
+        "initialize_spool_erasure",
+        "EvidenceSpool",
+        1,
+    ),
+    (
+        "src/evidence_spool/erasure.rs",
+        "insert_spool_erasure_authorization",
+        "EvidenceSpool",
+        1,
+    ),
+    (
+        "src/evidence_spool/erasure.rs",
+        "insert_spool_erasure_operation",
+        "EvidenceSpool",
+        1,
+    ),
+    (
+        "src/evidence_spool/erasure.rs",
+        "erase_spool_payload",
+        "EvidenceSpool",
+        1,
+    ),
+    (
+        "src/evidence_workspace/erasure.rs",
+        "initialize_workspace_erasure",
+        "EvidenceWorkspaceErasure",
+        1,
+    ),
+    (
+        "src/evidence_workspace/erasure.rs",
+        "insert_workspace_erasure",
+        "EvidenceWorkspaceErasure",
+        1,
+    ),
+    (
+        "src/evidence_workspace/erasure.rs",
+        "delete_workspace_erased_entry",
+        "EvidenceWorkspaceErasure",
+        1,
+    ),
+    (
+        "src/evidence_store/erasure.rs",
+        "initialize_evidence_erasure",
+        "EvidenceErasure",
+        2,
+    ),
+    (
+        "src/evidence_store/erasure.rs",
+        "insert_evidence_erasure",
+        "EvidenceErasure",
+        2,
+    ),
+    (
+        "src/evidence_store/erasure.rs",
+        "redact_evidence_object",
+        "EvidenceErasure",
+        1,
+    ),
+    (
+        "src/evidence_keys.rs",
+        "write_new_owner_only",
+        "EvidenceKeys",
+        2,
+    ),
+    ("src/evidence_keys.rs", "rename", "EvidenceKeys", 1),
+    (
+        "src/evidence_policy.rs",
+        "write_new_owner_only",
+        "EvidencePolicy",
+        2,
+    ),
+    ("src/evidence_policy.rs", "rename", "EvidencePolicy", 1),
+    (
+        "src/evidence_erasure_history.rs",
+        "write_new_owner_only",
+        "EvidenceErasureHistory",
+        2,
+    ),
+    (
+        "src/evidence_erasure_history.rs",
+        "rename",
+        "EvidenceErasureHistory",
+        1,
+    ),
+    (
+        "src/evidence_library/owner/backup.rs",
+        "write_new_owner_only",
+        "EvidenceBackupCheckpoint",
+        1,
+    ),
+    (
+        "src/evidence_workspace.rs",
+        "write_new_owner_only",
+        "EvidenceWorkspace",
+        3,
+    ),
+    (
+        "src/evidence_workspace.rs",
+        "set_permissions",
+        "Container",
+        1,
+    ),
+    (
+        "src/evidence_workspace.rs",
+        "open_new_owner_only",
+        "EvidenceWorkspaceRecovery",
+        1,
+    ),
+    (
+        "src/evidence_workspace.rs",
+        "remove_file",
+        "EvidenceWorkspaceRecovery",
+        1,
+    ),
     (
         "src/evidence_store/copy_upgrade.rs",
         "write_new_owner_only",
@@ -632,6 +961,24 @@ const PERSISTENCE_MUTATION_SITES: &[(&str, &str, &str, usize)] = &[
         "src/evidence_store.rs",
         "write_new_owner_only",
         "EvidenceBackup",
+        1,
+    ),
+    (
+        "src/evidence_library/owner/backup_purge.rs",
+        "create_dir_owner_only",
+        "EvidenceBackupPurge",
+        1,
+    ),
+    (
+        "src/evidence_library/owner/backup_purge.rs",
+        "rename",
+        "EvidenceBackupPurge",
+        1,
+    ),
+    (
+        "src/evidence_library/owner/backup_purge.rs",
+        "remove_file",
+        "EvidenceBackupPurge",
         1,
     ),
     ("src/actions.rs", "create_dir_all", "Container", 1),
@@ -1347,7 +1694,7 @@ fn every_persistence_facade_call_is_independently_inventoried() {
         if module == "src/persistence.rs" {
             assert_eq!(
                 format!("{:x}", Sha256::digest(source.as_bytes())),
-                "1eaf7ae01c4462658f7c5201268f12cffd9da0aa85e6a2da11379c5113821e37",
+                "6dac89c692b3fbe46205528538e3598aabc5f5eb1427fbec5fcf56655e0b8e45",
                 "the raw-mutation facade changed; review and update its committed implementation digest together with facade-call negative controls"
             );
             assert!(
@@ -1678,7 +2025,7 @@ fn seed_released_workspace(path: &std::path::Path) {
 }
 
 fn run_kan(path: &std::path::Path, args: &[&str]) -> std::process::Output {
-    std::process::Command::new(env!("CARGO_BIN_EXE_kan"))
+    std::process::Command::new(env!("CARGO_BIN_EXE_kan-v1"))
         .args(args)
         .current_dir(path)
         .env("KAN_NO_KEYCHAIN", "1")
@@ -2217,4 +2564,68 @@ async fn overlay_is_recomputed_from_authoritative_git_tree_claims() {
         kan::actions::show_all_json(&workspace, &trust, None).unwrap()
     );
     assert_eq!(before_origins, origins(), "medium provenance changed");
+}
+
+#[cfg(feature = "v2-storage")]
+#[test]
+fn serving_and_payload_catalogs_match_real_initialized_schema_columns() {
+    use kan::evidence_store::attested::{Archive, Binding};
+    let temp = tempfile::tempdir().unwrap();
+    let signer = Identity::generate();
+    let archive = Archive::create(
+        temp.path(),
+        Binding {
+            archive: [1; 32],
+            scope: [2; 32],
+            issuer: signer.did().to_string(),
+        },
+    )
+    .unwrap();
+    archive.rebuild_serving_index(&signer).unwrap();
+    let conn = rusqlite::Connection::open(temp.path().join("archive.sqlite")).unwrap();
+    let mut actual = BTreeSet::new();
+    for (table, artifact) in [
+        ("serving_nodes", "evidence-serving-sqlite:serving_nodes"),
+        (
+            "serving_checkpoint",
+            "evidence-serving-sqlite:serving_checkpoint",
+        ),
+        ("objects", "evidence-sqlite:objects"),
+    ] {
+        let mut stmt = conn
+            .prepare(&format!("PRAGMA table_info({table})"))
+            .unwrap();
+        for column in stmt.query_map([], |r| r.get::<_, String>(1)).unwrap() {
+            actual.insert((artifact.to_string(), column.unwrap()));
+        }
+    }
+    let declared: BTreeSet<_> = rows()
+        .into_iter()
+        .filter(|r| {
+            r.artifact.starts_with("evidence-serving-sqlite:")
+                || r.artifact == "evidence-sqlite:objects"
+        })
+        .map(|r| (r.artifact.to_owned(), r.value.to_owned()))
+        .collect();
+    assert_eq!(actual, declared);
+}
+
+#[test]
+fn disposable_search_cache_has_no_authored_history_authority() {
+    let catalog = rows();
+    let cache = catalog
+        .iter()
+        .find(|row| row.artifact == "evidence-workspace:search-page")
+        .unwrap();
+    assert_eq!(cache.authority, "derived");
+    assert_eq!(
+        cache.lifecycle,
+        "encrypted-disposable-occurrence-projection-explicit-bounded-prune"
+    );
+    let view = catalog
+        .iter()
+        .find(|row| row.artifact == "evidence-workspace:view")
+        .unwrap();
+    assert_eq!(view.authority, "authoritative-kan");
+    assert_eq!(view.lifecycle, "immutable-owner-declaration");
 }

@@ -1,6 +1,6 @@
 //! The CLI (`docs/HANDOFF.md`'s vocabulary table): argument parsing and
 //! printing only — every command dispatches straight to `crate::actions`,
-//! the one action layer this surface shares with `kan mcp`
+//! the one action layer this surface shares with `kan-v1 mcp`
 //! (`CLAUDE.md`'s "one surface: CLI + MCP").
 
 use clap::{Parser, Subcommand};
@@ -29,7 +29,7 @@ pub enum Error {
     ScopeInception(#[from] crate::identity::scope_inception::Error),
     #[error(transparent)]
     LocalResolution(#[from] crate::uri::local::Error),
-    #[error("pre-release repository identity state exists at {0}; kan will not reinterpret it as a scope—move it aside and run `kan init` again")]
+    #[error("pre-release repository identity state exists at {0}; kan will not reinterpret it as a scope—move it aside and run `kan-v1 init` again")]
     PreReleaseRepositoryIdentity(std::path::PathBuf),
     #[error(transparent)]
     Io(#[from] std::io::Error),
@@ -40,7 +40,10 @@ pub enum Error {
 }
 
 #[derive(Debug, Parser)]
-#[command(name = "kan", about = "Local reasoning, global coherence.")]
+#[command(
+    name = "kan-v1",
+    about = "Legacy repository-based knowledge and claim operations."
+)]
 // `--version` from Cargo.toml. Absent until now (#100), which quietly left
 // ADR-50's contract half-built: the `--json` payload carries a schema
 // version, and the binary producing it carried none, so a consumer could
@@ -145,7 +148,7 @@ pub enum Command {
         #[arg(long)]
         file: Option<String>,
         /// Pairs a `Status { value }` claim citing this one — the same
-        /// pairing `kan resolve`/`kan block` hardcode, generalized.
+        /// pairing `kan-v1 resolve`/`kan-v1 block` hardcode, generalized.
         #[arg(long)]
         status: Option<StatusValueArg>,
         /// Declares the subject (ClaimBody::Subject) alongside this claim —
@@ -179,7 +182,7 @@ pub enum Command {
     },
     /// Assert a domain-semantic edge between `a` and `b` (Relation::{Blocks,
     /// About, ManifestsAt, DependsOn, Accepts, InTensionWith, Supersedes,
-    /// Refutes}). Not for identity — use `kan same` for `SameAs`.
+    /// Refutes}). Not for identity — use `kan-v1 same` for `SameAs`.
     Relate {
         a: String,
         kind: RelationKindArg,
@@ -223,7 +226,7 @@ pub enum Command {
     },
     /// Reject another author's claim (ClaimBody::Rejects) — a local
     /// suppression honored only by folds that trust you. Errors, pointing to
-    /// `kan retract`, if the target is your own claim.
+    /// `kan-v1 retract`, if the target is your own claim.
     Reject {
         cid: String,
         /// A more specific artifact than the automatic HEAD-commit anchor:
@@ -243,7 +246,7 @@ pub enum Command {
         /// Exact visible subject names to hydrate. Repeat for several.
         ///
         /// This flag selects the bulk JSON envelope; the existing positional
-        /// `kan show <subject> --json` keeps its single-subject shape.
+        /// `kan-v1 show <subject> --json` keeps its single-subject shape.
         #[arg(
             long = "subject",
             value_name = "SUBJECT",
@@ -291,7 +294,7 @@ pub enum Command {
         subject: Option<String>,
         #[arg(long)]
         json: bool,
-        /// See `kan show --help`.
+        /// See `kan-v1 show --help`.
         #[arg(long = "trust", value_name = "AUTHOR[=WEIGHT]")]
         trust: Vec<String>,
     },
@@ -299,7 +302,7 @@ pub enum Command {
     Issues {
         #[arg(long)]
         json: bool,
-        /// See `kan show --help`.
+        /// See `kan-v1 show --help`.
         #[arg(long = "trust", value_name = "AUTHOR[=WEIGHT]")]
         trust: Vec<String>,
     },
@@ -309,7 +312,7 @@ pub enum Command {
         budget: Option<usize>,
         #[arg(long)]
         json: bool,
-        /// See `kan show --help`.
+        /// See `kan-v1 show --help`.
         #[arg(long = "trust", value_name = "AUTHOR[=WEIGHT]")]
         trust: Vec<String>,
     },
@@ -335,7 +338,7 @@ pub enum Command {
     /// Restores only claims signed by *this* identity — another actor's are
     /// read from the overlay and never enter your log. If nothing in the
     /// tree is yours, this refuses and writes nothing, because that is what
-    /// a lost signing key looks like from the inside: run `kan identity
+    /// a lost signing key looks like from the inside: run `kan-v1 identity
     /// restore` first.
     Restore,
 
@@ -399,7 +402,7 @@ fn read_secret_line(prompt: &str) -> Result<String, Error> {
 ///
 /// Sibling of [`read_secret_line`], and gated the same way: this codebase
 /// already treats an interactive terminal as the signal that a human is
-/// present to answer for a sensitive irreversible act (`kan identity phrase`).
+/// present to answer for a sensitive irreversible act (`kan-v1 identity phrase`).
 /// Anything other than an explicit yes is a no -- a bare Enter must not delete
 /// a secret.
 pub fn confirm(question: &str) -> Result<bool, actions::Error> {
@@ -587,7 +590,7 @@ impl From<StatusValueArg> for crate::claim::v1::StatusValue {
     }
 }
 
-/// Mirrors `claim::RelationKind`, minus `SameAs` (REQ-2 — `kan same` is the
+/// Mirrors `claim::RelationKind`, minus `SameAs` (REQ-2 — `kan-v1 same` is the
 /// only way to write a `SameAs` edge, so `same-as` is deliberately not a
 /// valid value here; rejected at argument parsing, not a runtime check).
 /// Kept as a separate CLI-layer type for the same reason `StatusValueArg` is.
@@ -642,10 +645,10 @@ impl From<SubjectKindArg> for crate::claim::v1::SubjectKind {
 /// Every claim-writing verb now accepts **both**:
 ///
 /// ```text
-/// kan observe <SUBJECT> <TEXT>
-/// kan observe <TEXT> --subject <SUBJECT>
-/// kan result  <SUBJECT> <TEXT>
-/// kan result  <TEXT> --subject <SUBJECT>
+/// kan-v1 observe <SUBJECT> <TEXT>
+/// kan-v1 observe <TEXT> --subject <SUBJECT>
+/// kan-v1 result  <SUBJECT> <TEXT>
+/// kan-v1 result  <TEXT> --subject <SUBJECT>
 /// ```
 ///
 /// Before this, `observe`/`plan`/`decide` took `--subject` and
@@ -685,7 +688,7 @@ fn subject_and_text(
     match (second, flag) {
         // Both forms at once: refuse rather than silently pick one.
         (Some(_), Some(_)) => Err(actions::Error::Usage(
-            "give the subject once -- either positionally (`kan <verb> <subject> <text>`) \
+            "give the subject once -- either positionally (`kan-v1 <verb> <subject> <text>`) \
              or with --subject, not both"
                 .to_string(),
         )
@@ -707,8 +710,8 @@ fn subject_and_text(
                 defaulted: true,
             }),
             None => Err(actions::Error::Usage(format!(
-                "this verb needs a subject: `kan <verb> <subject> \"{}\"`, or \
-                 `kan <verb> \"{}\" --subject <subject>`",
+                "this verb needs a subject: `kan-v1 <verb> <subject> \"{}\"`, or \
+                 `kan-v1 <verb> \"{}\" --subject <subject>`",
                 elide(&first),
                 elide(&first)
             ))
@@ -717,7 +720,7 @@ fn subject_and_text(
     }
 }
 
-/// Refuse a bare `kan observe <existing-subject>` where the single
+/// Refuse a bare `kan-v1 observe <existing-subject>` where the single
 /// positional is text on `general` but names an existing subject — almost
 /// always a forgotten text argument, and otherwise expressible without
 /// ambiguity via `--subject` (F8). Only fires for the defaulted single
@@ -728,10 +731,10 @@ fn guard_positional_is_not_a_subject(ws: &Workspace, r: &Resolved) -> Result<(),
         // full name, since a truncated `...` command would not run (cold
         // review NOTE).
         return Err(actions::Error::Usage(format!(
-            "\"{}\" is already a subject, so `kan <verb> {}` would record its name as a \
+            "\"{}\" is already a subject, so `kan-v1 <verb> {}` would record its name as a \
              note on `general` -- which is almost always a forgotten text argument. \
-             Write about it with `kan <verb> {} \"<text>\"`, or force the note with \
-             `kan <verb> \"{}\" --subject general`.",
+             Write about it with `kan-v1 <verb> {} \"<text>\"`, or force the note with \
+             `kan-v1 <verb> \"{}\" --subject general`.",
             elide(&r.text),
             r.text,
             r.text,
@@ -756,8 +759,8 @@ fn elide(text: &str) -> String {
 #[derive(Debug, clap::Args)]
 pub struct NarrativeArgs {
     /// Either the subject (when a second positional follows) or the claim
-    /// text. `kan <verb> <subject> <text>` and `kan <verb> <text> --subject
-    /// <s>` both work; a bare `kan <verb> <text>` records the note on
+    /// text. `kan-v1 <verb> <subject> <text>` and `kan-v1 <verb> <text> --subject
+    /// <s>` both work; a bare `kan-v1 <verb> <text>` records the note on
     /// `general`.
     pub first: String,
     /// The claim text, when the subject was given positionally.
@@ -773,7 +776,7 @@ pub struct NarrativeArgs {
     #[arg(long)]
     pub file: Option<String>,
     /// Pairs a `Status { value }` claim citing this one — the same pairing
-    /// `kan resolve`/`kan block` hardcode, generalized to any status value.
+    /// `kan-v1 resolve`/`kan-v1 block` hardcode, generalized to any status value.
     #[arg(long)]
     pub status: Option<StatusValueArg>,
     /// Declares the subject (ClaimBody::Subject) alongside this claim —
@@ -957,7 +960,7 @@ pub async fn run(cli: Cli) -> Result<(), Error> {
 
     let cwd = crate::workspace::cwd()?;
 
-    // `kan mcp` doesn't open a single `Workspace` up front — it's a
+    // `kan-v1 mcp` doesn't open a single `Workspace` up front — it's a
     // long-lived process serving many tool calls, each of which opens its
     // own (`crate::workspace::Workspace::open`'s doc comment).
     if let Command::Mcp { action } = &cli.command {
@@ -1212,7 +1215,7 @@ pub async fn run(cli: Cli) -> Result<(), Error> {
             (None, true) => println!("{}", actions::publish_all(&mut ws).await?),
             (None, false) => {
                 return Err(actions::Error::Usage(
-                    "give a subject to publish (`kan publish <subject>`), or `--all` to \
+                    "give a subject to publish (`kan-v1 publish <subject>`), or `--all` to \
                      refresh every already-published subject"
                         .to_string(),
                 )
@@ -1238,7 +1241,7 @@ pub async fn run(cli: Cli) -> Result<(), Error> {
             unreachable!("read verbs are dispatched by `is_read_only`")
         }
         Command::Identity { action } => {
-            // `kan identity ...` is a command ABOUT the identity, so asking
+            // `kan-v1 identity ...` is a command ABOUT the identity, so asking
             // for it is the point rather than a side effect of asking for
             // something else. The read-only actions are routed away above.
             ws.commit_identity().await?;
@@ -1262,7 +1265,7 @@ pub async fn run(cli: Cli) -> Result<(), Error> {
                     use std::io::IsTerminal;
                     if !std::io::stdout().is_terminal() || !std::io::stdin().is_terminal() {
                         eprintln!(
-                            "refusing: `kan identity phrase` only runs in an interactive \
+                            "refusing: `kan-v1 identity phrase` only runs in an interactive \
                          terminal.\n\nstdout or stdin is not a TTY here, which means this \
                          output is being captured -- a pipe, a CI job, an MCP server, or an \
                          AI agent's shell. The phrase is your private signing key; kan will \
@@ -1290,7 +1293,7 @@ pub async fn run(cli: Cli) -> Result<(), Error> {
                     // Shell history keeps it indefinitely, `ps` exposes it to
                     // every other process for the life of the command, and it
                     // lands in terminal scrollback and any agent transcript.
-                    // `kan identity phrase` is gated twice so the phrase never
+                    // `kan-v1 identity phrase` is gated twice so the phrase never
                     // reaches somewhere permanent; accepting it here on the
                     // command line undid that entirely. Rejected rather than
                     // deprecated: using it once is already a leak, so accepting
@@ -1300,9 +1303,9 @@ pub async fn run(cli: Cli) -> Result<(), Error> {
                             "the recovery phrase must not be passed on the command line -- it \
                          is your private signing key, and argv is visible in shell history, \
                          in `ps` output to other processes, and in terminal scrollback.\n\n\
-                         Run `kan identity restore` with no arguments and enter it at the \
+                         Run `kan-v1 identity restore` with no arguments and enter it at the \
                          prompt, or pipe it in:\n    \
-                         cat phrase.txt | kan identity restore\n\n\
+                         cat phrase.txt | kan-v1 identity restore\n\n\
                          If you already ran it with the words as arguments, clear them from \
                          your shell history."
                                 .to_string(),
@@ -1379,10 +1382,10 @@ pub async fn run(cli: Cli) -> Result<(), Error> {
                         println!("declared role `{}`: {}", role.name, role.did);
                         println!("key: {}", role.key_path.display());
                         println!(
-                        "\nWrite as this role:\n    KAN_IDENTITY_FILE={} kan observe <subject> \
+                        "\nWrite as this role:\n    KAN_IDENTITY_FILE={} kan-v1 observe <subject> \
                          <text>\n\nEvery role's claims are in the default view already -- it \
                          trusts every author in this log. `--trust roles` NARROWS to just the \
-                         declared ones:\n    kan show <subject> --trust roles",
+                         declared ones:\n    kan-v1 show <subject> --trust roles",
                         role.key_path.display()
                     );
                     }
@@ -1391,7 +1394,7 @@ pub async fn run(cli: Cli) -> Result<(), Error> {
                         if !roles_file.exists() {
                             println!(
                                 "nothing to import: this workspace has no `.kan/{}` file. \
-                                 Roles are declared with `kan identity role add <name>`.",
+                                 Roles are declared with `kan-v1 identity role add <name>`.",
                                 crate::sign::ROLES_FILE
                             );
                             return Ok(());
@@ -1496,7 +1499,7 @@ fn print_paired_result(result: &actions::PairedAppendResult, verbose: bool) {
     }
 }
 
-/// `kan identity role list`, on the **read** path.
+/// `kan-v1 identity role list`, on the **read** path.
 ///
 /// Reads the declared set out of the log and resolves the active identity
 /// without creating one: `active_did` answers question 2 ("who would sign
@@ -1698,7 +1701,7 @@ async fn run_read(
             ) {
                 (true, _, _) if !json => {
                     return Err(actions::Error::Usage(
-                        "`kan show --all` needs `--json`. It exists for programs reading the \
+                        "`kan-v1 show --all` needs `--json`. It exists for programs reading the \
                          whole claim graph in one invocation; the rendered form is for \
                          people, and forty subjects' full claim histories is not something \
                          anyone reads at a terminal."
@@ -1737,7 +1740,7 @@ async fn run_read(
                 ),
                 (false, None, true) => {
                     return Err(actions::Error::Usage(
-                        "give a subject to show (`kan show <subject>`), or `--all --json` for \
+                        "give a subject to show (`kan-v1 show <subject>`), or `--all --json` for \
                          every subject at once"
                             .to_string(),
                     )
@@ -1885,8 +1888,8 @@ fn declared_subjects(command: &Command) -> Vec<String> {
     // the one the claim is about -- so the second went unchecked, and #144's
     // reported symptom came back verbatim on the CLI:
     //
-    //     $ kan same good $'bad\nname'      # accepted
-    //     $ kan status --json | jq '[.subjects[].subject]'
+    //     $ kan-v1 same good $'bad\nname'      # accepted
+    //     $ kan-v1 status --json | jq '[.subjects[].subject]'
     //     ["bad\nname"]
     //
     // Worse than the original: the merge class then DISPLAYS under the bad

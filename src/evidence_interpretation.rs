@@ -23,6 +23,7 @@ pub enum Format {
     Request,
     Response,
     Sse,
+    HarnessJsonl,
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Kind {
@@ -280,6 +281,64 @@ fn content(
         }
     } else {
         block(value, pointer.into(), role, region, out, w)?;
+    }
+    Ok(())
+}
+fn harness_jsonl(bytes: &[u8], doc: &mut Document, w: &mut Work) -> Result<()> {
+    let mut offset = 0;
+    for line in bytes.split_inclusive(|b| *b == b'\n') {
+        let region = offset..offset + line.len();
+        offset += line.len();
+        if line.iter().all(u8::is_ascii_whitespace) {
+            continue;
+        }
+        let Some(value) = strict(line, w)? else {
+            push(&mut doc.items, item(Kind::Malformed, region), w)?;
+            continue;
+        };
+        let kind = match value["type"].as_str().or_else(|| value["kind"].as_str()) {
+            Some("user" | "assistant" | "message" | "text") => Kind::Text,
+            Some("tool-use" | "tool_use") => Kind::ToolUse,
+            Some("tool-result" | "tool_result") => Kind::ToolResult,
+            Some("thinking" | "reasoning") => Kind::Thinking,
+            Some("summary" | "compact_boundary" | "session" | "branch") => Kind::Context,
+            Some(_) => Kind::Protocol,
+            None => Kind::Unsupported,
+        };
+        let mut row = item(kind, region.clone());
+        row.text = value["text"]
+            .as_str()
+            .or_else(|| value["summary"].as_str())
+            .map(|s| w.string(s))
+            .transpose()?;
+        row.role = value["message"]["role"]
+            .as_str()
+            .or_else(|| value["role"].as_str())
+            .map(|s| w.string(s))
+            .transpose()?;
+        w.output(
+            serde_json::to_vec(&value)
+                .map_err(|_| Error::Mapping)?
+                .len(),
+        )?;
+        row.event = Some(value.clone());
+        push(&mut doc.items, row, w)?;
+        if let Some(body) = value["message"].get("content") {
+            let start = doc.items.len();
+            content(
+                body,
+                "/message/content",
+                value["message"]["role"].as_str(),
+                region,
+                &mut doc.items,
+                w,
+            )?;
+            // JSONL pointers belong to one line, not the complete body. Preserve
+            // line citations without advertising a body-relative export pointer.
+            for row in &mut doc.items[start..] {
+                row.pointer = None;
+            }
+        }
     }
     Ok(())
 }
@@ -737,7 +796,9 @@ fn interpret_observed(
         scanned_bytes: 0,
         output_bytes: 0,
     };
-    if format == Format::Sse {
+    if format == Format::HarnessJsonl {
+        harness_jsonl(bytes, &mut doc, &mut w)?;
+    } else if format == Format::Sse {
         sse(bytes, &mut doc, &mut w, &mut after_item)?;
     } else {
         json_body(bytes, format, &mut doc, &mut w)?;

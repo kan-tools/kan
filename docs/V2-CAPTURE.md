@@ -1,6 +1,6 @@
 # Experimental capture forwarding
 
-`kan-v2 capture-post` forwards one opaque POST to an explicitly configured URL.
+`kan capture-post` forwards one opaque POST to an explicitly configured URL.
 It records gateway observations as encrypted, signed local-spool entries. This
 is the first P6 transport witness, not a complete harness proxy or a production
 provider adapter. No real provider or credential profile has been selected.
@@ -10,7 +10,7 @@ Build with `--features v2-crypto`. Initialize a spool as in
 archive recipient's public key. Then, against your own fixture endpoint:
 
 ```sh
-kan-v2 capture-post --endpoint http://127.0.0.1:9000/fixed \
+kan --no-migration-notice capture-post --endpoint http://127.0.0.1:9000/fixed \
   --spool /private/archive/capture-spool --key /private/keys/writer.json \
   --recipient "$ARCHIVE_RECIPIENT_HEX" --deadline-seconds 300 \
   < request.bin > response.bin 2> capture-health.jsonl
@@ -27,7 +27,11 @@ One invocation means one attempt. **Re-running this command is a new inference
 attempt**, even when the previous outcome was unknown. To retry only storage,
 use `spool-drain`; it sends existing archive events, never provider requests.
 
-Stdout contains only the response body, including non-2xx bodies. Stderr emits
+Stdout contains only the response body, including non-2xx bodies. In a legacy
+project, the default stderr stream first includes a migration advisory, with
+every line prefixed `[kan:legacy-workspace]`. Callers parsing stderr as JSON must
+pass `--no-migration-notice`, as above; this suppresses only the advisory and does
+not declare migration complete or bypass safeguards. Stderr then emits
 JSON health after each observation: attempt identity, observer, counts of
 observed/locally queued/unconfirmed events, recording-gap state, response status
 and terminal outcome. It contains no prompt, response bytes, URL or underlying
@@ -82,16 +86,17 @@ bytes. Operation ID is the first 16 bytes of SHA-256 over
 `tools.kan.capture.operation.v1\0`, raw attempt bytes, observer byte (collector 0,
 gateway 1), and ordinal as unsigned big-endian u64. The outer signed request
 binds scope/writer; an event does not establish another observer's behavior.
-KANC2 IDs do not extend the accepted kan URI grammar.
+KANC2 attempt/session IDs do not extend the accepted claim URI grammar. Portable occurrence links use the separate, explicitly versioned `kan+capture://v1/occurrence/<reference-hex>` extension in [RFC 2](../rfcs/2-kan-uri-scheme.md). Resolving one rechecks current grants and membership; it carries no reader credential.
 
 Only body bytes and the explicit lifecycle fields are covered here. TLS packets,
 HTTP transfer framing, arbitrary headers/trailers, expanded attachments, tool hooks
 and hidden harness events are not captured. The reusable recorder can be used by
 collector adapters, but `capture-post` produces gateway observations only. The
-remaining P6 work includes authenticated encrypted collector/gateway transport,
-request streaming, the chosen real provider/harness profile, persistent health and
-control reserves. Production key custody, independent-host backup drills and
-explicit cutover remain required before using v2 as the primary archive.
+[gateway runbook](V2-GATEWAY.md) covers authenticated collector/gateway transport,
+request streaming and the supported harness profile; [Operations](V2-OPERATIONS.md)
+covers persistent health and delivery supervision. Qualify the actual deployment's
+key custody and independent backups, then explicitly approve cutover before using
+v2 as the primary archive.
 
 
 Capture opens its spool with a 100 ms SQLite busy timeout to tolerate brief WAL

@@ -52,11 +52,13 @@ impl Budget {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Availability {
     Available,
+    Erased,
     Missing,
     Corrupt,
 }
 #[derive(Clone, Debug)]
 pub struct Selection {
+    index_custody: Option<Option<String>>,
     profile: Profile,
     binding: attested::Binding,
     snapshot: Frontier,
@@ -115,11 +117,13 @@ fn configure_read(conn: &Connection, budget: &Budget, deadline: Instant) -> Resu
 }
 fn schema(conn: &Connection, profile: Profile) -> Result<()> {
     let expected = Connection::open_in_memory()?;
-    expected.execute_batch(SCHEMA)?;
+    expected_base_schema(conn, &expected)?;
     expected.execute_batch(attested::SCHEMA)?;
     if profile == Profile::Copied {
         expected.execute_batch(copied::SCHEMA)?;
     }
+    erasure::extend_schema(conn, &expected)?;
+    serving::extend_schema(conn, &expected)?;
     // Bound every variable schema field; the SQLite allocation limit is separate.
     let query="SELECT substr(type,1,32),length(type),substr(name,1,256),length(name),substr(tbl_name,1,256),length(tbl_name),substr(sql,1,65536),length(sql) FROM sqlite_schema ORDER BY type,name";
     let mut a = conn.prepare(query)?;
@@ -198,6 +202,8 @@ fn add_spent(spent: &mut u64, amount: u64, maximum: u64) -> Result<()> {
 }
 
 pub struct Inventory {
+    indexed: Option<serving::Checkpoint>,
+    erasures: erasure::History,
     reader: RecoveryReader,
     binding: attested::Binding,
     profile: Profile,
@@ -229,6 +235,69 @@ impl Inventory {
     ) -> Result<Self> {
         Self::open_selected(path, profile, binding, Some(selected), budget)
     }
+    /// Bounded selected metadata opening. Requires explicit index initialization
+    /// and the seekable payload layout; never silently performs a lifetime scan.
+    pub fn open_indexed(
+        path: &Path,
+        profile: Profile,
+        binding: attested::Binding,
+        selected: Option<&Frontier>,
+        current_erasure_tip: Option<&str>,
+        budget: Budget,
+    ) -> Result<Self> {
+        binding.validate()?;
+        let deadline = budget.deadline()?;
+        budget.check(deadline)?;
+        let reader = RecoveryReader::open_profile_configured(path, profile.number(), |conn| {
+            configure_read(conn, &budget, deadline)
+        })?;
+        let conn = &reader.ledger.conn;
+        let plan = plan(&reader, profile, &binding)?;
+        if !rowid_objects(conn)? {
+            return Err(Error::Invalid(
+                "indexed reads require seekable payload layout; recover to a new archive",
+            ));
+        }
+        let checkpoint = serving::checkpoint(conn, &binding, current_erasure_tip)?;
+        let current = checkpoint.validate(&binding)?;
+        let frontier = selected.unwrap_or(&current).clone();
+        if frontier.through > current.through
+            || (frontier.through == 0 && frontier != Frontier::default())
+        {
+            return Err(Error::Invalid("indexed prefix outside archive"));
+        }
+        if frontier.through > 0 {
+            if budget.items == 0 {
+                return Err(Error::Invalid("inventory audit budget exhausted"));
+            }
+            let metadata =
+                serving::selected_metadata(conn, &binding, &checkpoint, frontier.through)?;
+            if metadata.proof.frontier() != &frontier {
+                return Err(corrupt("indexed prefix mismatch"));
+            }
+            if cost(&metadata.record, metadata.proof.bytes()) > budget.metadata_bytes {
+                return Err(Error::Invalid("inventory audit budget exhausted"));
+            }
+        }
+        budget.check(deadline)?;
+        conn.progress_handler(0, None::<fn() -> bool>)?;
+        let recipe_metadata_match = checkpoint.recipe_metadata_match().map(|matches| {
+            matches
+                && plan
+                    .as_ref()
+                    .is_some_and(|p| frontier.through >= p.source().through)
+        });
+        Ok(Self {
+            indexed: Some(checkpoint),
+            erasures: Default::default(),
+            reader,
+            binding,
+            profile,
+            plan,
+            frontier,
+            recipe_metadata_match,
+        })
+    }
     fn open_selected(
         path: &Path,
         profile: Profile,
@@ -243,6 +312,7 @@ impl Inventory {
             configure_read(conn, &budget, deadline)
         })?;
         let plan = plan(&reader, profile, &binding)?;
+        let erasures = erasure::load(&reader.ledger.conn)?;
         let mut query = reader
             .ledger
             .conn
@@ -374,6 +444,8 @@ impl Inventory {
             .conn
             .progress_handler(0, None::<fn() -> bool>)?;
         Ok(Self {
+            indexed: None,
+            erasures,
             reader,
             binding,
             profile,
@@ -384,6 +456,11 @@ impl Inventory {
     }
     pub fn frontier(&self) -> &Frontier {
         &self.frontier
+    }
+    /// Transfer the same pinned, metadata-audited transaction to offline restore.
+    /// This is not payload verification or permission to modify its source.
+    pub(crate) fn into_recovery(self) -> RecoveryReader {
+        self.reader
     }
     /// Metadata/inventory commitment only; not payload completeness or admission readiness.
     pub fn recipe_metadata_match(&self) -> Option<bool> {
@@ -445,18 +522,32 @@ impl Inventory {
         while expected.through > 0 && records.len() < limit.rows {
             work.check(deadline)?;
             add_spent(&mut consumed, 1, work.items)?;
-            let record = attested::record(&self.reader.ledger.conn, expected.through)?;
-            let envelope = attested::envelope(&self.reader.ledger.conn, expected.through)?;
-            let verified = proof::verify_at(
-                &envelope,
-                &self.binding.context(),
-                &record.manifest,
-                &record.receipt,
-                &expected,
-            )
-            .map_err(|_| corrupt("invalid inventory page proof"))?;
+            let (record, verified) = if let Some(checkpoint) = &self.indexed {
+                let metadata = serving::selected_metadata(
+                    &self.reader.ledger.conn,
+                    &self.binding,
+                    checkpoint,
+                    expected.through,
+                )?;
+                if metadata.proof.frontier() != &expected {
+                    return Err(corrupt("indexed page coordinate mismatch"));
+                }
+                (metadata.record, metadata.proof)
+            } else {
+                let record = attested::record(&self.reader.ledger.conn, expected.through)?;
+                let envelope = attested::envelope(&self.reader.ledger.conn, expected.through)?;
+                let verified = proof::verify_at(
+                    &envelope,
+                    &self.binding.context(),
+                    &record.manifest,
+                    &record.receipt,
+                    &expected,
+                )
+                .map_err(|_| corrupt("invalid inventory page proof"))?;
+                (record, verified)
+            };
             purpose(&record, &verified, self.plan.as_ref())?;
-            let size = cost(&record, &envelope) as usize;
+            let size = cost(&record, verified.bytes()) as usize;
             let (id, length) = request_coordinate(&record)?;
             if size > limit.record_bytes - record_bytes
                 || (record_bytes as u64 + size as u64) > work.metadata_bytes
@@ -467,10 +558,19 @@ impl Inventory {
                 }
                 break;
             }
-            let (availability, _) = payload(&self.reader.ledger.conn, &id, length)?;
+            let erased = if let Some(checkpoint) = &self.indexed {
+                serving::erased(&self.reader.ledger.conn, checkpoint, &id)?
+            } else {
+                self.erasures.objects.contains_key(&id.to_string())
+            };
+            let (availability, _) = payload(&self.reader.ledger.conn, &id, length, erased)?;
             sampled_bytes += length;
             record_bytes += size;
             let selection = Selection {
+                index_custody: self
+                    .indexed
+                    .as_ref()
+                    .map(|c| c.erasure_tip().map(str::to_owned)),
                 profile: self.profile,
                 binding: self.binding.clone(),
                 snapshot: self.frontier.clone(),
@@ -517,20 +617,25 @@ fn payload(
     conn: &Connection,
     id: &Cid,
     expected: usize,
+    erased: bool,
 ) -> Result<(Availability, Option<Vec<u8>>)> {
-    // A WITHOUT ROWID index seek can materialize the entire key record before
-    // SQLite's value limit applies. Scan by the bounded CID field instead;
-    // per-call VM cancellation bounds checked SQL work. This costs a linear
-    // object scan per sample and makes no large-archive latency promise.
+    if erased {
+        return Ok((Availability::Erased, None));
+    }
+    // New rowid archives seek through a separate CID index. Historical WITHOUT
+    // ROWID rows require the old safe scan: a key seek can materialize an entire
+    // oversized corrupt payload before SQLite's value limit applies.
     // Check the stored SQLite type before computing length: TEXT length can
     // materialize an oversized corrupt cell and counts characters, not bytes.
     // A wrong payload storage class is local payload corruption, not a page error.
+    let indexed = rowid_objects(conn)?;
+    let length_query = if indexed {
+        "SELECT CASE WHEN typeof(bytes)='blob' THEN length(bytes) ELSE -1 END FROM objects WHERE cid=?"
+    } else {
+        "SELECT CASE WHEN typeof(bytes)='blob' THEN length(bytes) ELSE -1 END FROM objects NOT INDEXED WHERE +cid=?"
+    };
     let length: Option<i64> = conn
-        .query_row(
-            "SELECT CASE WHEN typeof(bytes)='blob' THEN length(bytes) ELSE -1 END FROM objects NOT INDEXED WHERE +cid=?",
-            [id.to_string()],
-            |r| r.get(0),
-        )
+        .query_row(length_query, [id.to_string()], |r| r.get(0))
         .optional()?;
     let Some(length) = length else {
         return Ok((Availability::Missing, None));
@@ -543,7 +648,11 @@ fn payload(
         RECOVERY_SQLITE_LENGTH_LIMIT,
     )?;
     let result = conn.query_row(
-        "SELECT substr(bytes,1,?2) FROM objects NOT INDEXED WHERE +cid=?1",
+        if indexed {
+            "SELECT substr(bytes,1,?2) FROM objects WHERE cid=?1"
+        } else {
+            "SELECT substr(bytes,1,?2) FROM objects NOT INDEXED WHERE +cid=?1"
+        },
         params![id.to_string(), service::MAX_REQUEST as i64],
         |r| r.get::<_, Vec<u8>>(0),
     );
@@ -577,9 +686,42 @@ pub fn source(
         configure_read(conn, &budget, deadline)
     })?;
     let plan = plan(&reader, profile, &binding)?;
+    let mut pin_cost = 0;
+    let mut pin_items = 0;
+    let indexed = if let Some(custody) = &selection.index_custody {
+        if !rowid_objects(&reader.ledger.conn)? {
+            return Err(Error::Invalid("indexed source layout changed"));
+        }
+        let checkpoint = serving::checkpoint(&reader.ledger.conn, &binding, custody.as_deref())?;
+        if selection.snapshot.through != selection.frontier.through {
+            let pin = serving::selected_metadata(
+                &reader.ledger.conn,
+                &binding,
+                &checkpoint,
+                selection.snapshot.through,
+            )?;
+            if pin.proof.frontier() != &selection.snapshot {
+                return Err(corrupt("indexed source prefix changed"));
+            }
+            pin_cost = cost(&pin.record, pin.proof.bytes());
+            pin_items = 1;
+        }
+        let metadata = serving::selected_metadata(
+            &reader.ledger.conn,
+            &binding,
+            &checkpoint,
+            selection.frontier.through,
+        )?;
+        if metadata.proof.frontier() != &selection.frontier {
+            return Err(corrupt("indexed source coordinate changed"));
+        }
+        Some(checkpoint)
+    } else {
+        None
+    };
     let record = attested::record(&reader.ledger.conn, selection.frontier.through)?;
     let envelope = attested::envelope(&reader.ledger.conn, record.sequence)?;
-    if budget.items < 1 || cost(&record, &envelope) > budget.metadata_bytes {
+    if budget.items < 1 + pin_items || cost(&record, &envelope) + pin_cost > budget.metadata_bytes {
         return Err(Error::Invalid("inventory audit budget exhausted"));
     }
     let verified = proof::verify_at(
@@ -595,7 +737,14 @@ pub fn source(
     if length > max_payload_bytes {
         return Err(Error::Invalid("selected payload exceeds source budget"));
     }
-    let (availability, bytes) = payload(&reader.ledger.conn, &id, length)?;
+    let erased = if let Some(checkpoint) = &indexed {
+        serving::erased(&reader.ledger.conn, checkpoint, &id)?
+    } else {
+        erasure::load(&reader.ledger.conn)?
+            .objects
+            .contains_key(&id.to_string())
+    };
+    let (availability, bytes) = payload(&reader.ledger.conn, &id, length, erased)?;
     budget.check(deadline)?;
     let Some(bytes) = bytes else {
         return Ok(Source::Unavailable(availability));

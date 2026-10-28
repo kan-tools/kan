@@ -17,12 +17,14 @@ use tokio::{net::TcpListener, sync::Semaphore};
 
 const MAX_REPLY: usize = 32 * 1024 * 1024;
 enum Hosted {
-    Legacy(Service),
-    Proof(proof::Service),
+    Legacy(Box<Service>),
+    Admitted(Box<crate::evidence_service::AdmittingService>),
+    Proof(Box<proof::Service>),
 }
 impl Hosted {
     fn dispatch(&mut self, bytes: &[u8], now: u64) -> Result<Vec<u8>, Failure> {
         match self {
+            Self::Admitted(service) => service.dispatch(bytes, now)?.bytes(),
             Self::Legacy(service) => service.dispatch(bytes, now)?.bytes(),
             Self::Proof(service) => service.dispatch(bytes, now)?.bytes(),
         }
@@ -115,11 +117,18 @@ pub async fn bind(address: SocketAddr) -> std::io::Result<TcpListener> {
 /// One bounded request per connection. Aborting this accept loop stops new work;
 /// already accepted commits may finish, so clients retry original request bytes.
 pub async fn serve(listener: TcpListener, service: Service) -> std::io::Result<()> {
-    serve_inner(listener, Hosted::Legacy(service), LEGACY).await
+    serve_inner(listener, Hosted::Legacy(Box::new(service)), LEGACY).await
+}
+/// Owner-selected profile-2 ingest using existing signed append requests.
+pub async fn serve_admitted(
+    listener: TcpListener,
+    service: crate::evidence_service::AdmittingService,
+) -> std::io::Result<()> {
+    serve_inner(listener, Hosted::Admitted(Box::new(service)), LEGACY).await
 }
 /// Explicit proof-reader endpoint. No legacy fallback or write command.
 pub async fn serve_proof(listener: TcpListener, service: proof::Service) -> std::io::Result<()> {
-    serve_inner(listener, Hosted::Proof(service), PROOF).await
+    serve_inner(listener, Hosted::Proof(Box::new(service)), PROOF).await
 }
 async fn serve_inner(listener: TcpListener, service: Hosted, route: Route) -> std::io::Result<()> {
     if !listener.local_addr()?.ip().is_loopback() {

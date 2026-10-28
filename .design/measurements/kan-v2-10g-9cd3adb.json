@@ -1,0 +1,1039 @@
+{
+  "version": 1,
+  "status": "complete",
+  "opaque_payload_gib": 10,
+  "chunk_bytes": 1048576,
+  "concurrency": 1,
+  "page_rows": 1,
+  "memory_limit_bytes": 536870912,
+  "samples_per_operation": 32,
+  "binary": "/home/runner/work/kan/kan/target/release/deps/evidence_inventory-cce258b7c87ca7f9",
+  "binary_sha256": "a2577a2133663a131cc4c5c9229e5bb407ca1c8277a4a3ced72905bb40a82664",
+  "platform": "Linux-7.0.0-1017-azure-x86_64-with-glibc2.39",
+  "cache_policy": "OS cache retained; each operation uses a fresh process",
+  "read_accounting": "Linux rchar includes small harness reads; read_bytes is physical I/O",
+  "scope": "indexed admitted storage; excludes HTTP, encryption and control history",
+  "samples": [
+    {
+      "latency_us": 3580,
+      "operation": "open",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 11720,
+      "syscall_read_bytes": 184568
+    },
+    {
+      "latency_us": 47367,
+      "operation": "append",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 24532,
+      "syscall_read_bytes": 1925227
+    },
+    {
+      "latency_us": 6357,
+      "operation": "page",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 17768,
+      "syscall_read_bytes": 2244714
+    },
+    {
+      "latency_us": 23014,
+      "operation": "source",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 20328,
+      "syscall_read_bytes": 2429138
+    },
+    {
+      "latency_us": 3589,
+      "operation": "open",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 11952,
+      "syscall_read_bytes": 184565
+    },
+    {
+      "latency_us": 46398,
+      "operation": "append",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 24644,
+      "syscall_read_bytes": 2023531
+    },
+    {
+      "latency_us": 6332,
+      "operation": "page",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 17772,
+      "syscall_read_bytes": 2297962
+    },
+    {
+      "latency_us": 23274,
+      "operation": "source",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 20396,
+      "syscall_read_bytes": 2482386
+    },
+    {
+      "latency_us": 3574,
+      "operation": "open",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 11688,
+      "syscall_read_bytes": 184565
+    },
+    {
+      "latency_us": 47095,
+      "operation": "append",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 24564,
+      "syscall_read_bytes": 2084971
+    },
+    {
+      "latency_us": 6374,
+      "operation": "page",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 17764,
+      "syscall_read_bytes": 2273386
+    },
+    {
+      "latency_us": 23224,
+      "operation": "source",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 20288,
+      "syscall_read_bytes": 2457810
+    },
+    {
+      "latency_us": 3628,
+      "operation": "open",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 11780,
+      "syscall_read_bytes": 184565
+    },
+    {
+      "latency_us": 46775,
+      "operation": "append",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 24492,
+      "syscall_read_bytes": 1953899
+    },
+    {
+      "latency_us": 6239,
+      "operation": "page",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 17892,
+      "syscall_read_bytes": 2273386
+    },
+    {
+      "latency_us": 23365,
+      "operation": "source",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 20356,
+      "syscall_read_bytes": 2457810
+    },
+    {
+      "latency_us": 3566,
+      "operation": "open",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 11012,
+      "syscall_read_bytes": 184565
+    },
+    {
+      "latency_us": 47290,
+      "operation": "append",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 24384,
+      "syscall_read_bytes": 2048107
+    },
+    {
+      "latency_us": 6296,
+      "operation": "page",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 17764,
+      "syscall_read_bytes": 2265194
+    },
+    {
+      "latency_us": 23294,
+      "operation": "source",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 20204,
+      "syscall_read_bytes": 2457810
+    },
+    {
+      "latency_us": 3684,
+      "operation": "open",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 11648,
+      "syscall_read_bytes": 192757
+    },
+    {
+      "latency_us": 46837,
+      "operation": "append",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 24480,
+      "syscall_read_bytes": 1929323
+    },
+    {
+      "latency_us": 6252,
+      "operation": "page",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 17752,
+      "syscall_read_bytes": 2224234
+    },
+    {
+      "latency_us": 23297,
+      "operation": "source",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 20372,
+      "syscall_read_bytes": 2425042
+    },
+    {
+      "latency_us": 3592,
+      "operation": "open",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 11512,
+      "syscall_read_bytes": 200949
+    },
+    {
+      "latency_us": 46645,
+      "operation": "append",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 24468,
+      "syscall_read_bytes": 1929323
+    },
+    {
+      "latency_us": 6330,
+      "operation": "page",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 17564,
+      "syscall_read_bytes": 2228330
+    },
+    {
+      "latency_us": 23344,
+      "operation": "source",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 20312,
+      "syscall_read_bytes": 2416850
+    },
+    {
+      "latency_us": 3562,
+      "operation": "open",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 11568,
+      "syscall_read_bytes": 188661
+    },
+    {
+      "latency_us": 46591,
+      "operation": "append",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 24384,
+      "syscall_read_bytes": 1925227
+    },
+    {
+      "latency_us": 6249,
+      "operation": "page",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 17660,
+      "syscall_read_bytes": 2236522
+    },
+    {
+      "latency_us": 23163,
+      "operation": "source",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 20172,
+      "syscall_read_bytes": 2425042
+    },
+    {
+      "latency_us": 3642,
+      "operation": "open",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 11512,
+      "syscall_read_bytes": 188661
+    },
+    {
+      "latency_us": 47068,
+      "operation": "append",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 24320,
+      "syscall_read_bytes": 1933419
+    },
+    {
+      "latency_us": 6121,
+      "operation": "page",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 17860,
+      "syscall_read_bytes": 2252906
+    },
+    {
+      "latency_us": 23186,
+      "operation": "source",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 20384,
+      "syscall_read_bytes": 2433234
+    },
+    {
+      "latency_us": 3598,
+      "operation": "open",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 11800,
+      "syscall_read_bytes": 180469
+    },
+    {
+      "latency_us": 46931,
+      "operation": "append",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 24540,
+      "syscall_read_bytes": 2027627
+    },
+    {
+      "latency_us": 6325,
+      "operation": "page",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 17780,
+      "syscall_read_bytes": 2265194
+    },
+    {
+      "latency_us": 23122,
+      "operation": "source",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 20328,
+      "syscall_read_bytes": 2466002
+    },
+    {
+      "latency_us": 3631,
+      "operation": "open",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 11860,
+      "syscall_read_bytes": 200949
+    },
+    {
+      "latency_us": 46870,
+      "operation": "append",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 23916,
+      "syscall_read_bytes": 2068587
+    },
+    {
+      "latency_us": 6294,
+      "operation": "page",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 17704,
+      "syscall_read_bytes": 2265194
+    },
+    {
+      "latency_us": 23118,
+      "operation": "source",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 19776,
+      "syscall_read_bytes": 2470098
+    },
+    {
+      "latency_us": 3626,
+      "operation": "open",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 11928,
+      "syscall_read_bytes": 205045
+    },
+    {
+      "latency_us": 46942,
+      "operation": "append",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 24392,
+      "syscall_read_bytes": 1978475
+    },
+    {
+      "latency_us": 6341,
+      "operation": "page",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 17944,
+      "syscall_read_bytes": 2269290
+    },
+    {
+      "latency_us": 23306,
+      "operation": "source",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 20548,
+      "syscall_read_bytes": 2457810
+    },
+    {
+      "latency_us": 3649,
+      "operation": "open",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 11572,
+      "syscall_read_bytes": 188661
+    },
+    {
+      "latency_us": 46558,
+      "operation": "append",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 24448,
+      "syscall_read_bytes": 1953899
+    },
+    {
+      "latency_us": 5998,
+      "operation": "page",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 17516,
+      "syscall_read_bytes": 2248810
+    },
+    {
+      "latency_us": 23169,
+      "operation": "source",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 20500,
+      "syscall_read_bytes": 2437330
+    },
+    {
+      "latency_us": 3720,
+      "operation": "open",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 11780,
+      "syscall_read_bytes": 188661
+    },
+    {
+      "latency_us": 49072,
+      "operation": "append",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 23936,
+      "syscall_read_bytes": 1970283
+    },
+    {
+      "latency_us": 6271,
+      "operation": "page",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 17960,
+      "syscall_read_bytes": 2252906
+    },
+    {
+      "latency_us": 23105,
+      "operation": "source",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 19740,
+      "syscall_read_bytes": 2437330
+    },
+    {
+      "latency_us": 3659,
+      "operation": "open",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 11828,
+      "syscall_read_bytes": 184565
+    },
+    {
+      "latency_us": 46926,
+      "operation": "append",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 24664,
+      "syscall_read_bytes": 1990763
+    },
+    {
+      "latency_us": 6145,
+      "operation": "page",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 17616,
+      "syscall_read_bytes": 2220138
+    },
+    {
+      "latency_us": 23389,
+      "operation": "source",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 20560,
+      "syscall_read_bytes": 2416850
+    },
+    {
+      "latency_us": 3588,
+      "operation": "open",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 11708,
+      "syscall_read_bytes": 196853
+    },
+    {
+      "latency_us": 46513,
+      "operation": "append",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 24452,
+      "syscall_read_bytes": 2003051
+    },
+    {
+      "latency_us": 6203,
+      "operation": "page",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 17476,
+      "syscall_read_bytes": 2273386
+    },
+    {
+      "latency_us": 23538,
+      "operation": "source",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 20280,
+      "syscall_read_bytes": 2470098
+    },
+    {
+      "latency_us": 3724,
+      "operation": "open",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 11628,
+      "syscall_read_bytes": 196853
+    },
+    {
+      "latency_us": 48670,
+      "operation": "append",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 24532,
+      "syscall_read_bytes": 2019435
+    },
+    {
+      "latency_us": 6256,
+      "operation": "page",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 17728,
+      "syscall_read_bytes": 2252906
+    },
+    {
+      "latency_us": 23476,
+      "operation": "source",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 20476,
+      "syscall_read_bytes": 2453714
+    },
+    {
+      "latency_us": 3751,
+      "operation": "open",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 11704,
+      "syscall_read_bytes": 200949
+    },
+    {
+      "latency_us": 46827,
+      "operation": "append",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 24556,
+      "syscall_read_bytes": 2019435
+    },
+    {
+      "latency_us": 6147,
+      "operation": "page",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 17800,
+      "syscall_read_bytes": 2252906
+    },
+    {
+      "latency_us": 23759,
+      "operation": "source",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 19756,
+      "syscall_read_bytes": 2457810
+    },
+    {
+      "latency_us": 3653,
+      "operation": "open",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 11632,
+      "syscall_read_bytes": 205045
+    },
+    {
+      "latency_us": 47884,
+      "operation": "append",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 23932,
+      "syscall_read_bytes": 2023531
+    },
+    {
+      "latency_us": 6116,
+      "operation": "page",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 17680,
+      "syscall_read_bytes": 2211946
+    },
+    {
+      "latency_us": 25860,
+      "operation": "source",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 20428,
+      "syscall_read_bytes": 2420946
+    },
+    {
+      "latency_us": 3699,
+      "operation": "open",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 11572,
+      "syscall_read_bytes": 209141
+    },
+    {
+      "latency_us": 50373,
+      "operation": "append",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 24464,
+      "syscall_read_bytes": 1966187
+    },
+    {
+      "latency_us": 6320,
+      "operation": "page",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 17628,
+      "syscall_read_bytes": 2269290
+    },
+    {
+      "latency_us": 23246,
+      "operation": "source",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 20492,
+      "syscall_read_bytes": 2474194
+    },
+    {
+      "latency_us": 3624,
+      "operation": "open",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 11632,
+      "syscall_read_bytes": 205045
+    },
+    {
+      "latency_us": 47498,
+      "operation": "append",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 24652,
+      "syscall_read_bytes": 2044011
+    },
+    {
+      "latency_us": 6223,
+      "operation": "page",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 17812,
+      "syscall_read_bytes": 2244714
+    },
+    {
+      "latency_us": 23060,
+      "operation": "source",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 19736,
+      "syscall_read_bytes": 2441426
+    },
+    {
+      "latency_us": 3646,
+      "operation": "open",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 11820,
+      "syscall_read_bytes": 196853
+    },
+    {
+      "latency_us": 46852,
+      "operation": "append",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 24276,
+      "syscall_read_bytes": 2015339
+    },
+    {
+      "latency_us": 6141,
+      "operation": "page",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 17576,
+      "syscall_read_bytes": 2257002
+    },
+    {
+      "latency_us": 23152,
+      "operation": "source",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 20112,
+      "syscall_read_bytes": 2441426
+    },
+    {
+      "latency_us": 3588,
+      "operation": "open",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 11696,
+      "syscall_read_bytes": 184565
+    },
+    {
+      "latency_us": 46870,
+      "operation": "append",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 24540,
+      "syscall_read_bytes": 1970283
+    },
+    {
+      "latency_us": 6222,
+      "operation": "page",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 17952,
+      "syscall_read_bytes": 2265194
+    },
+    {
+      "latency_us": 23321,
+      "operation": "source",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 20432,
+      "syscall_read_bytes": 2461906
+    },
+    {
+      "latency_us": 3637,
+      "operation": "open",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 11776,
+      "syscall_read_bytes": 196853
+    },
+    {
+      "latency_us": 46952,
+      "operation": "append",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 24668,
+      "syscall_read_bytes": 1941611
+    },
+    {
+      "latency_us": 6279,
+      "operation": "page",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 17944,
+      "syscall_read_bytes": 2216042
+    },
+    {
+      "latency_us": 23235,
+      "operation": "source",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 20344,
+      "syscall_read_bytes": 2420946
+    },
+    {
+      "latency_us": 3658,
+      "operation": "open",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 11708,
+      "syscall_read_bytes": 205045
+    },
+    {
+      "latency_us": 46797,
+      "operation": "append",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 24484,
+      "syscall_read_bytes": 1941611
+    },
+    {
+      "latency_us": 6137,
+      "operation": "page",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 17880,
+      "syscall_read_bytes": 2236522
+    },
+    {
+      "latency_us": 23163,
+      "operation": "source",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 20464,
+      "syscall_read_bytes": 2429138
+    },
+    {
+      "latency_us": 3630,
+      "operation": "open",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 11532,
+      "syscall_read_bytes": 192757
+    },
+    {
+      "latency_us": 46877,
+      "operation": "append",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 24456,
+      "syscall_read_bytes": 2072683
+    },
+    {
+      "latency_us": 6201,
+      "operation": "page",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 17752,
+      "syscall_read_bytes": 2281578
+    },
+    {
+      "latency_us": 23122,
+      "operation": "source",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 20556,
+      "syscall_read_bytes": 2466002
+    },
+    {
+      "latency_us": 3591,
+      "operation": "open",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 11792,
+      "syscall_read_bytes": 184565
+    },
+    {
+      "latency_us": 47038,
+      "operation": "append",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 24248,
+      "syscall_read_bytes": 2039915
+    },
+    {
+      "latency_us": 6248,
+      "operation": "page",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 17784,
+      "syscall_read_bytes": 2281578
+    },
+    {
+      "latency_us": 23305,
+      "operation": "source",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 20428,
+      "syscall_read_bytes": 2474194
+    },
+    {
+      "latency_us": 3640,
+      "operation": "open",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 11712,
+      "syscall_read_bytes": 192757
+    },
+    {
+      "latency_us": 50418,
+      "operation": "append",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 24296,
+      "syscall_read_bytes": 1904747
+    },
+    {
+      "latency_us": 6164,
+      "operation": "page",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 17496,
+      "syscall_read_bytes": 2269290
+    },
+    {
+      "latency_us": 23316,
+      "operation": "source",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 20212,
+      "syscall_read_bytes": 2470098
+    },
+    {
+      "latency_us": 3634,
+      "operation": "open",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 11512,
+      "syscall_read_bytes": 200949
+    },
+    {
+      "latency_us": 46832,
+      "operation": "append",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 24468,
+      "syscall_read_bytes": 1896555
+    },
+    {
+      "latency_us": 6165,
+      "operation": "page",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 17088,
+      "syscall_read_bytes": 2236522
+    },
+    {
+      "latency_us": 23295,
+      "operation": "source",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 20168,
+      "syscall_read_bytes": 2425042
+    },
+    {
+      "latency_us": 3605,
+      "operation": "open",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 11696,
+      "syscall_read_bytes": 188661
+    },
+    {
+      "latency_us": 47061,
+      "operation": "append",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 24432,
+      "syscall_read_bytes": 2117739
+    },
+    {
+      "latency_us": 6190,
+      "operation": "page",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 17812,
+      "syscall_read_bytes": 2257002
+    },
+    {
+      "latency_us": 23067,
+      "operation": "source",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 20316,
+      "syscall_read_bytes": 2441426
+    },
+    {
+      "latency_us": 3734,
+      "operation": "open",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 11772,
+      "syscall_read_bytes": 184565
+    },
+    {
+      "latency_us": 49018,
+      "operation": "append",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 23936,
+      "syscall_read_bytes": 2039915
+    },
+    {
+      "latency_us": 6199,
+      "operation": "page",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 17836,
+      "syscall_read_bytes": 2244714
+    },
+    {
+      "latency_us": 23230,
+      "operation": "source",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 20296,
+      "syscall_read_bytes": 2445522
+    },
+    {
+      "latency_us": 3797,
+      "operation": "open",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 11700,
+      "syscall_read_bytes": 200949
+    },
+    {
+      "latency_us": 47393,
+      "operation": "append",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 24400,
+      "syscall_read_bytes": 2105451
+    },
+    {
+      "latency_us": 6241,
+      "operation": "page",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 17828,
+      "syscall_read_bytes": 2240618
+    },
+    {
+      "latency_us": 23311,
+      "operation": "source",
+      "physical_read_bytes": 0,
+      "process_peak_rss_kib": 20256,
+      "syscall_read_bytes": 2433234
+    }
+  ],
+  "fixture_seconds": 614.441216046,
+  "fixture_file_bytes": 21661548544,
+  "fixture_allocated_bytes": 21661548544,
+  "distributions": {
+    "open": {
+      "latency_us": {
+        "count": 32,
+        "p50": 3631,
+        "p95": 3751,
+        "p99": 3797,
+        "max": 3797
+      },
+      "syscall_read_bytes": {
+        "count": 32,
+        "p50": 192757,
+        "p95": 205045,
+        "p99": 209141,
+        "max": 209141
+      },
+      "physical_read_bytes": {
+        "count": 32,
+        "p50": 0,
+        "p95": 0,
+        "p99": 0,
+        "max": 0
+      },
+      "process_peak_rss_kib": {
+        "count": 32,
+        "p50": 11700,
+        "p95": 11928,
+        "p99": 11952,
+        "max": 11952
+      }
+    },
+    "append": {
+      "latency_us": {
+        "count": 32,
+        "p50": 46931,
+        "p95": 50373,
+        "p99": 50418,
+        "max": 50418
+      },
+      "syscall_read_bytes": {
+        "count": 32,
+        "p50": 1990763,
+        "p95": 2105451,
+        "p99": 2117739,
+        "max": 2117739
+      },
+      "physical_read_bytes": {
+        "count": 32,
+        "p50": 0,
+        "p95": 0,
+        "p99": 0,
+        "max": 0
+      },
+      "process_peak_rss_kib": {
+        "count": 32,
+        "p50": 24456,
+        "p95": 24664,
+        "p99": 24668,
+        "max": 24668
+      }
+    },
+    "page": {
+      "latency_us": {
+        "count": 32,
+        "p50": 6239,
+        "p95": 6357,
+        "p99": 6374,
+        "max": 6374
+      },
+      "syscall_read_bytes": {
+        "count": 32,
+        "p50": 2252906,
+        "p95": 2281578,
+        "p99": 2297962,
+        "max": 2297962
+      },
+      "physical_read_bytes": {
+        "count": 32,
+        "p50": 0,
+        "p95": 0,
+        "p99": 0,
+        "max": 0
+      },
+      "process_peak_rss_kib": {
+        "count": 32,
+        "p50": 17764,
+        "p95": 17952,
+        "p99": 17960,
+        "max": 17960
+      }
+    },
+    "source": {
+      "latency_us": {
+        "count": 32,
+        "p50": 23246,
+        "p95": 23759,
+        "p99": 25860,
+        "max": 25860
+      },
+      "syscall_read_bytes": {
+        "count": 32,
+        "p50": 2441426,
+        "p95": 2474194,
+        "p99": 2482386,
+        "max": 2482386
+      },
+      "physical_read_bytes": {
+        "count": 32,
+        "p50": 0,
+        "p95": 0,
+        "p99": 0,
+        "max": 0
+      },
+      "process_peak_rss_kib": {
+        "count": 32,
+        "p50": 20328,
+        "p95": 20556,
+        "p99": 20560,
+        "max": 20560
+      }
+    }
+  }
+}

@@ -578,6 +578,9 @@ async fn route_and_request_limits_refuse_before_provider() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn cli_missing_spool_reports_gap_separately_from_binary_stdout() {
     let dir = tempfile::tempdir().unwrap();
+    // This caller consumes every stderr line as health JSON. Exercise explicit
+    // advisory suppression in a legacy-marked project, keeping strict parsing.
+    std::fs::create_dir(dir.path().join(".claims")).unwrap();
     let signer = Identity::generate();
     let key = dir.path().join("key");
     signer.save(&key).unwrap();
@@ -589,7 +592,9 @@ async fn cli_missing_spool_reports_gap_separately_from_binary_stdout() {
         Duration::ZERO,
     )
     .await;
-    let result = tokio::process::Command::new(env!("CARGO_BIN_EXE_kan-v2"))
+    let result = tokio::process::Command::new(env!("CARGO_BIN_EXE_kan"))
+        .current_dir(dir.path())
+        .arg("--no-migration-notice")
         .args([
             "capture-post",
             "--endpoint",
@@ -699,7 +704,7 @@ async fn killed_cli_retains_intent_without_fabricating_terminal_completion() {
         Duration::from_secs(10),
     )
     .await;
-    let mut child = tokio::process::Command::new(env!("CARGO_BIN_EXE_kan-v2"))
+    let mut child = tokio::process::Command::new(env!("CARGO_BIN_EXE_kan"))
         .args([
             "capture-post",
             "--endpoint",
@@ -765,7 +770,7 @@ async fn cli_deadline_exits_even_when_stdout_pipe_is_not_consumed() {
         Duration::ZERO,
     )
     .await;
-    let mut child = tokio::process::Command::new(env!("CARGO_BIN_EXE_kan-v2"))
+    let mut child = tokio::process::Command::new(env!("CARGO_BIN_EXE_kan"))
         .args([
             "capture-post",
             "--endpoint",
@@ -965,4 +970,55 @@ fn capture_wait_allowance_exhaustion_does_not_disable_recovery() {
         .unwrap();
     assert_eq!(recorder.health().locally_queued, 1);
     assert!(recorder.health().recording_gap);
+}
+
+#[test]
+fn harness_snapshot_preserves_raw_bytes_context_and_visible_gaps() {
+    let raw = format!("{{\"type\":\"user\",\"message\":{{\"role\":\"user\",\"content\":\"{}\"}}}}\n{{\"type\":\"summary\",\"summary\":\"compacted\"}}\n", "x".repeat(CHUNK * 2));
+    for reject in [vec![], vec![3]] {
+        let mut sink = Memory {
+            reject: reject.clone(),
+            ..Memory::default()
+        };
+        let mut observed = Vec::new();
+        let report =
+            kan::evidence_harness::capture(raw.as_bytes(), "session-1", &mut sink, &mut |h| {
+                observed.push(h.recording_gap)
+            })
+            .unwrap();
+        assert_eq!(report.bytes, raw.len().to_string());
+        assert_eq!(report.health.recording_gap, !reject.is_empty());
+        assert!(report.coverage.contains("hidden events are not certified"));
+        let headers: Vec<_> = sink.frames.iter().map(|(_, f)| decode(f).0).collect();
+        assert!(headers.iter().any(
+            |h| matches!(&h.event,Event::Started{route,..} if route=="/kan/harness-jsonl/v1")
+        ));
+        assert!(headers.iter().any(|h|matches!(&h.event,Event::HttpMetadata{headers,..} if headers.iter().any(|(k,_)| k=="x-kan-session"))));
+        for h in &headers {
+            if let Event::HttpMetadata { headers, .. } = &h.event {
+                for (_, value) in headers {
+                    assert!(
+                        String::from_utf8(kan::evidence_service::unhex(value, 4096).unwrap())
+                            .is_ok()
+                    );
+                }
+                let session = headers
+                    .iter()
+                    .find(|(name, _)| name == "x-kan-session")
+                    .unwrap();
+                assert_eq!(
+                    kan::evidence_service::unhex(&session.1, 4096)
+                        .unwrap()
+                        .len(),
+                    64
+                );
+            }
+        }
+        if reject.is_empty() {
+            assert_eq!(bodies(&sink.frames).0, raw.as_bytes());
+        } else {
+            assert!(observed.contains(&true));
+            assert!(headers.iter().any(|h| h.unconfirmed_before > 0));
+        }
+    }
 }

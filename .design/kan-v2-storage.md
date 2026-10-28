@@ -74,3 +74,23 @@ or historical completeness beyond the structurally consistent source snapshot.
 ## Lifecycle and writer admission extensions
 
 `.design/kan-v2-storage-lifecycle.md` adds explicit initialization resume, backup namespace isolation and complete backup sidecar inventory. `.design/kan-v2-schema-admission.md` requires canonical schema admission before the content audit and journal-mode configuration. Extra triggers, tables/views/indexes and missing constraints cannot enter through ordinary writer open or initialized-archive resume. Raw recovery remains available when derived tables are damaged. These extensions do not close the normal-startup full-scan or capacity qualification work.
+
+### Profile-2 admission verification reuse
+
+The integrated writer keeps a bounded process-local cache of successful proof and
+retained-request cryptographic checks. Its key binds the owner-pinned archive,
+scope and issuer plus exact canonical manifest, receipt and proof bytes. Before
+lookup, every retained request is read and its actual bytes are hashed against
+the manifest's ciphertext CID. A hit must still have the current chain predecessor;
+purpose, audience, copied-prefix bounds, row/cardinality checks and the immediate
+commit fence still run. The full ledger content audit is unchanged. Modified,
+missing or corrupt bytes cannot use a previous verification result.
+
+This avoids repeatedly decoding and verifying unchanged signed requests without
+assuming filesystem timestamps, SQLite data versions or exclusive historical
+custody. It is not an incremental membership cache. Standalone verification,
+backup and recovery do not use it. The cache holds no plaintext and persists
+nothing; 4,096 entries / an 8 MiB accounting budget bound its growth. Reaching
+that bound causes ordinary verification, not admission refusal or record loss.
+The existing 11 MiB / 179-record qualification remains the performance witness;
+new timing must come from its run rather than be inferred from the optimization.

@@ -1,8 +1,10 @@
 [package]
 name = "kan"
-version = "1.0.0-beta.1"
+version = "2.0.0-beta.1"
 edition = "2021"
 default-run = "kan"
+# Only the explicitly named public entry points are installed.
+autobins = false
 # Verified, not inferred: CI's `msrv` job reads this value and builds with
 # exactly it, so the declaration cannot drift from the truth. The floor is set
 # by libsqlite3-sys's use of `cfg_select!`, which is unstable before 1.95 --
@@ -18,8 +20,16 @@ documentation = "https://docs.rs/kan"
 readme = "README.md"
 keywords = ["agents", "provenance", "append-only", "content-addressed", "mcp"]
 categories = ["command-line-utilities", "development-tools"]
+# Historical review logs and mutation snapshots remain in Git. They are not
+# runtime inputs, and some archived filenames are not portable Cargo paths.
+# Keep .design/tools: independent conformance oracles use those packaged files.
+exclude = [".design/reviews/**"]
 
 [features]
+# The default product is the complete encrypted service and Library CLI.
+default = ["v2-crypto"]
+# Opt-in legacy repository CLI, installed only as kan-v1.
+kan-v1 = []
 # Draft RFC 4 reference API. No production caller or stable wire promise.
 evidence-contract = []
 v2-storage = ["evidence-contract", "rusqlite/backup", "rusqlite/limits", "rusqlite/hooks"]
@@ -70,6 +80,150 @@ tokio = { version = "1.52.4", features = ["process", "test-util"] }
 disallowed_methods = "allow"
 
 [[bin]]
-name = "kan-v2"
+name = "kan"
 path = "src/bin/kan-v2.rs"
-required-features = ["v2-storage"]
+required-features = ["v2-crypto"]
+
+[[bin]]
+name = "kan-v1"
+path = "src/main.rs"
+required-features = ["kan-v1"]
+
+# These integration suites execute the optional legacy CLI. CI explicitly
+# enables kan-v1; default installs and v2-only tests do not build it.
+
+[[test]]
+name = "at_rest_guards"
+required-features = ["kan-v1"]
+
+[[test]]
+name = "bulk_read"
+required-features = ["kan-v1"]
+
+[[test]]
+name = "cli"
+required-features = ["kan-v1"]
+
+[[test]]
+name = "derived_cells"
+required-features = ["kan-v1"]
+
+[[test]]
+name = "durability_column"
+required-features = ["kan-v1"]
+
+[[test]]
+name = "encryption_key"
+required-features = ["kan-v1"]
+
+[[test]]
+name = "golden_reads"
+required-features = ["kan-v1"]
+
+[[test]]
+name = "golden_trust_and_identity"
+required-features = ["kan-v1"]
+
+[[test]]
+name = "guard_every_minting_path"
+required-features = ["kan-v1"]
+
+[[test]]
+name = "identity_adopt"
+required-features = ["kan-v1"]
+
+[[test]]
+name = "identity_cells"
+required-features = ["kan-v1"]
+
+[[test]]
+name = "keychain_identity"
+required-features = ["kan-v1"]
+
+[[test]]
+name = "local_trust_base"
+required-features = ["kan-v1"]
+
+[[test]]
+name = "log_recovery"
+required-features = ["kan-v1"]
+
+[[test]]
+name = "mcp_server"
+required-features = ["kan-v1"]
+
+[[test]]
+name = "migration_harness"
+required-features = ["kan-v1"]
+
+[[test]]
+name = "multi_role"
+required-features = ["kan-v1"]
+
+[[test]]
+name = "overlay_recovery"
+required-features = ["kan-v1"]
+
+[[test]]
+name = "reader"
+required-features = ["kan-v1"]
+
+[[test]]
+name = "restore"
+required-features = ["kan-v1"]
+
+[[test]]
+name = "review_fixes"
+required-features = ["kan-v1"]
+
+[[test]]
+name = "role_declaration_lifecycle"
+required-features = ["kan-v1"]
+
+[[test]]
+name = "role_declarations"
+required-features = ["kan-v1"]
+
+[[test]]
+name = "role_registry_invariants"
+required-features = ["kan-v1"]
+
+[[test]]
+name = "role_review_fixes"
+required-features = ["kan-v1"]
+
+[[test]]
+name = "seed_identity"
+required-features = ["kan-v1"]
+
+[[test]]
+name = "show_computes_only_what_it_uses"
+required-features = ["kan-v1"]
+
+[[test]]
+name = "status_ancestry_demand"
+required-features = ["kan-v1"]
+
+[[test]]
+name = "surface_conformance"
+required-features = ["kan-v1"]
+
+[[test]]
+name = "trust_surface"
+required-features = ["kan-v1"]
+
+[[test]]
+name = "trust_vocabulary"
+required-features = ["kan-v1"]
+
+[[test]]
+name = "workspace_claim_mode"
+required-features = ["kan-v1"]
+
+[[test]]
+name = "write_guards"
+required-features = ["kan-v1"]
+
+[[test]]
+name = "cli_argument_forms"
+required-features = ["kan-v1"]

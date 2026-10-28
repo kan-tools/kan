@@ -1,22 +1,22 @@
-$ kan identity did
+$ kan-v1 identity did
 exit: ok
 --- stdout ---
 <DID-0>
 --- stderr ---
 =====================================================
-$ kan identity did
+$ kan-v1 identity did
 exit: ok
 --- stdout ---
 <DID-1>
 --- stderr ---
 =====================================================
-$ kan identity role list
+$ kan-v1 identity role list
 exit: ok
 --- stdout ---
 no declared roles. This workspace signs as one identity: <DID-0>
 --- stderr ---
 =====================================================
-$ kan show shared
+$ kan-v1 show shared
 exit: ok
 --- stdout ---
 shared (4 live claim(s)):
@@ -38,7 +38,7 @@ shared (4 live claim(s)):
       artifact: Commit("<GENESIS>")
 --- stderr ---
 =====================================================
-$ kan show shared --json
+$ kan-v1 show shared --json
 exit: ok
 --- stdout ---
 {
@@ -111,7 +111,7 @@ exit: ok
 }
 --- stderr ---
 =====================================================
-$ kan show foreign --json
+$ kan-v1 show foreign --json
 exit: ok
 --- stdout ---
 {
@@ -140,7 +140,7 @@ exit: ok
 }
 --- stderr ---
 =====================================================
-$ kan show overlap --json
+$ kan-v1 show overlap --json
 exit: ok
 --- stdout ---
 {
@@ -188,7 +188,7 @@ exit: ok
 }
 --- stderr ---
 =====================================================
-$ kan show --all --json
+$ kan-v1 show --all --json
 exit: ok
 --- stdout ---
 {
@@ -321,7 +321,7 @@ exit: ok
 }
 --- stderr ---
 =====================================================
-$ kan status --json
+$ kan-v1 status --json
 exit: ok
 --- stdout ---
 {
@@ -388,14 +388,14 @@ exit: ok
 }
 --- stderr ---
 =====================================================
-$ kan issues
+$ kan-v1 issues
 exit: ok
 --- stdout ---
 shared: Publication — Publication { layer: GitTree }  (<CID-3>)  [published]
   note: 1 live claim(s) here are excluded by this view's trust base (Local) -- pass --trust <did>[=<weight>] (or --trust me) to widen it
 --- stderr ---
 =====================================================
-$ kan context --budget 400 --json
+$ kan-v1 context --budget 400 --json
 exit: ok
 --- stdout ---
 {
@@ -485,7 +485,7 @@ exit: ok
 }
 --- stderr ---
 =====================================================
-$ kan show shared --trust me --json
+$ kan-v1 show shared --trust me --json
 exit: ok
 --- stdout ---
 {
@@ -543,7 +543,7 @@ exit: ok
 }
 --- stderr ---
 =====================================================
-$ kan show overlap --trust me --json
+$ kan-v1 show overlap --trust me --json
 exit: ok
 --- stdout ---
 {
@@ -587,7 +587,7 @@ exit: ok
 }
 --- stderr ---
 =====================================================
-$ kan show shared --trust roles --json
+$ kan-v1 show shared --trust roles --json
 exit: ok
 --- stdout ---
 {
@@ -608,14 +608,14 @@ exit: ok
 }
 --- stderr ---
 =====================================================
-$ kan show shared --trust role:primary --json
+$ kan-v1 show shared --trust role:primary --json
 exit: FAILED
 --- stdout ---
 
 --- stderr ---
 error: `role:primary` names no role. Declared roles: none declared
 =====================================================
-$ kan show shared --trust <DID-0> --json
+$ kan-v1 show shared --trust <DID-0> --json
 exit: ok
 --- stdout ---
 {
@@ -673,7 +673,7 @@ exit: ok
 }
 --- stderr ---
 =====================================================
-$ kan show shared --trust <DID-1> --json
+$ kan-v1 show shared --trust <DID-1> --json
 exit: ok
 --- stdout ---
 {
@@ -710,7 +710,7 @@ exit: ok
 }
 --- stderr ---
 =====================================================
-$ kan show overlap --trust <DID-0> --json
+$ kan-v1 show overlap --trust <DID-0> --json
 exit: ok
 --- stdout ---
 {
@@ -754,7 +754,7 @@ exit: ok
 }
 --- stderr ---
 =====================================================
-$ kan show shared --trust <DID-0>=0.5 --json
+$ kan-v1 show shared --trust <DID-0>=0.5 --json
 exit: ok
 --- stdout ---
 {
@@ -813,7 +813,7 @@ exit: ok
 --- stderr ---
 warning: trust weights below 1.0 are not yet folded -- an author is either included or not, so this view is the same as naming them at full weight. (weighted folding is a future enrichment)
 =====================================================
-$ kan show shared --trust me --json
+$ kan-v1 show shared --trust me --json
 exit: FAILED
 --- stdout ---
 
@@ -822,26 +822,26 @@ error: no signing identity is reachable here, so there is nothing for `me` to na
 
 This says nothing about whether the log has claims in it -- it usually does. It means this workspace's key is not where kan looks: KAN_IDENTITY_FILE unset with the key held elsewhere, pointed at a path that does not exist, or a keychain entry this binary cannot read (#96).
 
-Name the author you meant with `--trust did:key:...`, or `kan identity adopt --key <path>` to point this workspace back at its key. Reading never creates an identity, by design (#149).
+Name the author you meant with `--trust did:key:...`, or `kan-v1 identity adopt --key <path>` to point this workspace back at its key. Reading never creates an identity, by design (#149).
 =====================================================
-$ kan identity role add reviewer
+$ kan-v1 identity role add reviewer
 exit: FAILED
 --- stdout ---
 
 --- stderr ---
 error: identity error: this workspace has no identity of its own, so a role declared here could never be honoured.
 
-Only the identity a workspace RESOLVES TO may declare a role, and this one resolves to none -- kan is signing as <DID-0>, selected with KAN_IDENTITY_FILE. Writing the declaration would succeed and grant nothing: it would appear in `kan show` and never in `--trust roles`.
+Only the identity a workspace RESOLVES TO may declare a role, and this one resolves to none -- kan is signing as <DID-0>, selected with KAN_IDENTITY_FILE. Writing the declaration would succeed and grant nothing: it would appear in `kan-v1 show` and never in `--trust roles`.
 
-Give the workspace an identity of its own first (`kan identity adopt --key <path>` names a key it already has claims from), then declare the role.
+Give the workspace an identity of its own first (`kan-v1 identity adopt --key <path>` names a key it already has claims from), then declare the role.
 =====================================================
-$ kan identity role list
+$ kan-v1 identity role list
 exit: ok
 --- stdout ---
 no declared roles. This workspace signs as one identity: <DID-0>
 --- stderr ---
 =====================================================
-$ kan identity role list --json
+$ kan-v1 identity role list --json
 exit: ok
 --- stdout ---
 {

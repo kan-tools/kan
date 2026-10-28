@@ -408,7 +408,7 @@ fn rebuild_process_death_never_publishes_partial_profile() {
 #[test]
 fn owner_cli_requires_all_pins_and_reports_exact_proof_lifecycle() {
     fn run(args: &[&str]) -> std::process::Output {
-        Command::new(env!("CARGO_BIN_EXE_kan-v2"))
+        Command::new(env!("CARGO_BIN_EXE_kan"))
             .args(args)
             .output()
             .unwrap()

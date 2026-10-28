@@ -24,7 +24,7 @@ struct Run {
 }
 
 fn kan(dir: &Path, key: Option<&Path>, args: &[&str]) -> Run {
-    let mut cmd = Command::new(env!("CARGO_BIN_EXE_kan"));
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_kan-v1"));
     cmd.args(args).current_dir(dir).env("KAN_NO_KEYCHAIN", "1");
     match key {
         Some(k) => {

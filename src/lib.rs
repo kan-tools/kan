@@ -82,10 +82,35 @@ pub mod evidence_reader;
 pub mod evidence_assembly;
 #[cfg(feature = "v2-crypto")]
 pub mod evidence_content;
+
 #[cfg(feature = "v2-crypto")]
 pub mod evidence_interpretation;
 #[cfg(feature = "v2-crypto")]
 pub mod evidence_reconstruction;
+#[cfg(feature = "v2-crypto")]
+mod evidence_session;
 
 #[cfg(feature = "v2-crypto")]
 pub mod evidence_library;
+
+#[cfg(feature = "v2-crypto")]
+pub mod evidence_backup;
+#[cfg(feature = "v2-crypto")]
+pub mod evidence_harness;
+#[cfg(feature = "v2-crypto")]
+pub mod evidence_workspace;
+
+#[cfg(feature = "v2-storage")]
+pub mod evidence_policy;
+
+#[cfg(feature = "v2-storage")]
+pub mod evidence_erasure_history;
+
+#[cfg(feature = "v2-storage")]
+pub mod evidence_index;
+
+#[cfg(feature = "v2-storage")]
+mod evidence_control_index;
+
+#[cfg(feature = "v2-crypto")]
+pub mod evidence_keys;

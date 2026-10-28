@@ -1,4 +1,4 @@
-$ kan show alpha
+$ kan-v1 show alpha
 exit: ok
 --- stdout ---
 alpha (7 live claim(s)):
@@ -36,7 +36,7 @@ alpha (7 live claim(s)):
     beta Blocks this
 --- stderr ---
 =====================================================
-$ kan show beta
+$ kan-v1 show beta
 exit: ok
 --- stdout ---
 beta (5 live claim(s)):
@@ -63,7 +63,7 @@ beta (5 live claim(s)):
       artifact: Commit("<GENESIS>")
 --- stderr ---
 =====================================================
-$ kan show alpha --json
+$ kan-v1 show alpha --json
 exit: ok
 --- stdout ---
 {
@@ -178,7 +178,7 @@ exit: ok
 }
 --- stderr ---
 =====================================================
-$ kan show --all --json
+$ kan-v1 show --all --json
 exit: ok
 --- stdout ---
 {
@@ -386,20 +386,20 @@ exit: ok
 }
 --- stderr ---
 =====================================================
-$ kan status
+$ kan-v1 status
 exit: ok
 --- stdout ---
 alpha: Settled(Open)  (<CID-5>)  [published]
 beta: Settled(Resolved)  (<CID-10>)  [unpublished]
 --- stderr ---
 =====================================================
-$ kan status alpha
+$ kan-v1 status alpha
 exit: ok
 --- stdout ---
 alpha: Settled(Open)  (<CID-5>)  [published]
 --- stderr ---
 =====================================================
-$ kan status --json
+$ kan-v1 status --json
 exit: ok
 --- stdout ---
 {
@@ -473,13 +473,13 @@ exit: ok
 }
 --- stderr ---
 =====================================================
-$ kan issues
+$ kan-v1 issues
 exit: ok
 --- stdout ---
 alpha: Settled(Open)  (<CID-5>)  [published]
 --- stderr ---
 =====================================================
-$ kan issues --json
+$ kan-v1 issues --json
 exit: ok
 --- stdout ---
 {
@@ -527,7 +527,7 @@ exit: ok
 }
 --- stderr ---
 =====================================================
-$ kan context --budget 400
+$ kan-v1 context --budget 400
 exit: ok
 --- stdout ---
 <CID-5>  [Local("alpha")] Status: Open
@@ -545,7 +545,7 @@ exit: ok
 -- 12 claim(s), ~<TOKENS>/400 tokens --
 --- stderr ---
 =====================================================
-$ kan context --budget 400 --json
+$ kan-v1 context --budget 400 --json
 exit: ok
 --- stdout ---
 {

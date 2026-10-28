@@ -1,7 +1,7 @@
-//! `.design/v0.9-milestone.md` REQ-3/AC-3 — `kan status` says which subjects
+//! `.design/v0.9-milestone.md` REQ-3/AC-3 — `kan-v1 status` says which subjects
 //! would survive losing `.kan/`.
 //!
-//! This is the half of durability that acts *before* the loss. `kan restore`
+//! This is the half of durability that acts *before* the loss. `kan-v1 restore`
 //! (REQ-1) answers "what comes back"; this answers "what wouldn't", while
 //! there is still time to do something about it. The kan-native move is to
 //! make the gap **data** — a column, not a nag or a hook.
@@ -15,7 +15,7 @@ struct Run {
 }
 
 fn kan(dir: &std::path::Path, key: &std::path::Path, args: &[&str]) -> Run {
-    let output = Command::new(env!("CARGO_BIN_EXE_kan"))
+    let output = Command::new(env!("CARGO_BIN_EXE_kan-v1"))
         .args(args)
         .current_dir(dir)
         .env("KAN_IDENTITY_FILE", key)
@@ -158,7 +158,7 @@ fn the_rendered_status_carries_the_column_for_every_subject() {
 /// Publishing again clears `stale` — the column tracks the actual gap, not
 /// a timestamp.
 ///
-/// This is the case that decided the implementation. `kan publish --all`
+/// This is the case that decided the implementation. `kan-v1 publish --all`
 /// refreshes a subject's file **without** appending a new `Publication`
 /// claim, so a staleness check comparing against that claim's timestamp
 /// would keep reporting a gap the operator had just closed. Nothing teaches
@@ -213,7 +213,7 @@ fn a_repo_that_never_published_reports_every_subject_unpublished() {
 }
 
 /// The column survives losing the log and coming back: after `rm -rf .kan`
-/// and `kan restore`, restored subjects read as `published` — they are, by
+/// and `kan-v1 restore`, restored subjects read as `published` — they are, by
 /// construction, exactly the ones that were in the tree.
 ///
 /// Ties the two halves of the milestone together: the column's promise is

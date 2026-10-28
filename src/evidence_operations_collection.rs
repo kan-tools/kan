@@ -48,7 +48,16 @@ fn private(path: &Path, directory: bool, max: u64) -> Result<()> {
     }
     Ok(())
 }
-fn lock(root: &Path, exclusive: bool) -> Result<File> {
+// A concurrent fork can briefly inherit the same open file description even
+// with CLOEXEC. Closing only our descriptor then leaves flock held until the
+// child execs. Release explicitly when the owner's critical section ends.
+pub(crate) struct CollectionLock(File);
+impl Drop for CollectionLock {
+    fn drop(&mut self) {
+        let _ = fs4::FileExt::unlock(&self.0);
+    }
+}
+fn lock(root: &Path, exclusive: bool) -> Result<CollectionLock> {
     private(root, true, 0)?;
     let path = root.join(LOCK);
     private(&path, false, 0)?;
@@ -58,7 +67,7 @@ fn lock(root: &Path, exclusive: bool) -> Result<File> {
     } else {
         fs4::FileExt::try_lock_shared(&file)?;
     }
-    Ok(file)
+    Ok(CollectionLock(file))
 }
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
@@ -367,4 +376,32 @@ pub fn history(root: &Path, generation: &str) -> Result<Snapshot> {
     }
     journal.scope = format!("sealed generation {generation} only; not a collection total");
     journal.snapshot()
+}
+
+#[cfg(all(test, unix))]
+mod lock_tests {
+    use super::*;
+
+    #[test]
+    fn collection_lock_releases_even_while_a_duplicate_descriptor_survives() {
+        let path = tempfile::NamedTempFile::new().unwrap();
+        for exclusive in [true, false] {
+            let file = File::open(path.path()).unwrap();
+            if exclusive {
+                fs4::FileExt::try_lock(&file).unwrap();
+            } else {
+                fs4::FileExt::try_lock_shared(&file).unwrap();
+            }
+            let held = CollectionLock(file);
+            // dup shares the open file description, just as a descriptor
+            // inherited between fork and exec does, without a timing race.
+            let inherited = held.0.try_clone().unwrap();
+            let contender = File::open(path.path()).unwrap();
+            assert!(fs4::FileExt::try_lock(&contender).is_err());
+            drop(held);
+            fs4::FileExt::try_lock(&contender).unwrap();
+            fs4::FileExt::unlock(&contender).unwrap();
+            drop(inherited);
+        }
+    }
 }

@@ -260,7 +260,7 @@ fn workspace() -> (tempfile::TempDir, String) {
     Identity::generate()
         .save(&kan_dir.join("identity"))
         .unwrap();
-    let kan = env!("CARGO_BIN_EXE_kan").to_string();
+    let kan = env!("CARGO_BIN_EXE_kan-v1").to_string();
     assert!(std::process::Command::new(&kan)
         .args(["observe", "x", "--subject", "s"])
         .current_dir(dir.path())

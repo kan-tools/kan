@@ -15,9 +15,44 @@ decision was made is `docs/DECISIONS.md`; the ADR numbers below point into it.
 
 The format is loosely based on [Keep a Changelog](https://keepachangelog.com).
 
-## [Unreleased]
+## [2.0.0-beta.1] — Unpublished
 
-Nothing yet.
+**Qualified candidate, not published.** Publication date remains unset. Release gates are tracked
+in [the release checklist](docs/RELEASE-2.0.0-beta.1.md).
+
+### Added
+
+- Centralized encrypted capture, durable spool/retry and visible gaps, explicit
+  import/reconciliation of preserved v1 sources, and independently verifiable
+  backup/restore and recovery workflows.
+- Library and Operations interfaces for authorized browsing, search, retained
+  source/provenance, annotations, analysis jobs, policy/key management and
+  previewable owner operations. Unsupported inputs and missing evidence remain
+  visible; a live deployment or extractor trust grant is not part of installation.
+- Read-only legacy-workspace migration notices for humans and agents, with
+  `kan preview .` as the first step. Notices do not grant migration authority.
+- Published 100 GiB capacity/remount evidence and a separate 10 GiB append probe.
+  The original 79.770901-second first-append outlier remains unexplained; these
+  results are not a local-SSD comparison or a 100 GiB encrypted HTTP benchmark.
+
+### Breaking CLI change
+
+- Default `kan` is the v2 CLI. The optional `kan-v1` Cargo feature installs the
+  legacy repository CLI as `kan-v1`. There is no `kan-v2` alias and neither command
+  dispatches to the other. Existing v1 automation, including external day callers,
+  must explicitly select `kan-v1` before upgrading.
+- Migration notices go to stderr, including help/version/errors. Machine callers
+  that parse stderr must pass `--no-migration-notice`; JSON/MCP stdout stays clean.
+- The crate name and signed artifact/storage identities remain stable. Installation
+  does not automatically migrate a workspace or change an existing service.
+
+### Qualification tooling
+
+- Actual default, combined and legacy-only installs, plus both packaged-source
+  builds, are exercised in CI. Historical migration selects its writer from Cargo
+  metadata and distinguishes helper failures from historical compiler failures.
+- See the candidate checklist for retained qualification, review limits, known
+  follow-ups and the required final candidate checks.
 
 ## [v1.0.0-beta.1] — 2026-08-22
 

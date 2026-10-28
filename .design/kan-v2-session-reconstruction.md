@@ -1,5 +1,11 @@
 # Feature: evidence-backed conversation reconstruction
 
+## Current implementation flow
+
+The owner-approved SOP in `kan-v2-next-build-status.md` supersedes the historical
+per-slice review requirements below. Complete integrated implementation first,
+then one thorough independent review campaign.
+
 ## Summary
 A human can open an authorized retained attempt, read its available request and
 response, inspect normalized items against captured bytes, and see gaps and
@@ -269,3 +275,88 @@ open. The new actual IAB recheck confirms browser access but the download event
 still timed out; delivery remains unverified.
 
 Follow-through qualification at 2906902 passes 84 integrations, four units, strict Clippy/fmt and five selected semantic controls with restored 17 assembly tests. Evidence: `.design/reviews/kan-v2-assembly-followup-author/`.
+
+## Resumable attempt discovery
+
+The proof Library adds `proof-discover`: one explicit signed-inventory page of
+1–20 occurrences, each freshly read and verified, with a final authorization
+check. It returns existing source-selection tokens and bounded capture header
+interpretations, never request/response bodies. Missing, corrupt, opaque,
+unsupported and malformed evidence remain unassigned and inspectable. The work
+shares the Content worker limit and has an 8 MiB input / 20 second batch budget.
+Failure returns no partial batch; the caller may retry its unchanged cursor.
+
+The UI groups only by configured archive, scope, verified writer, observer and
+attempt. It retains at most 500 occurrence descriptions in memory; the explicit
+next-window action continues from the signed cursor and discards the prior
+window. Scope/snapshot changes and lock clear discovery. Coverage distinguishes
+scanned windows, the end of pinned inventory, and unknown traffic completeness.
+Content remains explicit selections of at most 40 occurrences, including selection
+across inventory pages. This is attempt navigation, not a persistent search index
+or a claim to reconstruct linked sessions or assemble arbitrarily large attempts.
+Those remain required work in the full frontend checklist.
+
+## Larger attempts and explicit session links
+
+The next integration adds a distinct `proof-attempt` action rather than changing
+legacy selection limits. It accepts up to 1,024 verified selections, 40 MiB raw
+input, 96 MiB output and a 512 MiB scan-work allowance, with a 120-second
+attempt deadline and cancellation checks. The Library connection deadline is
+150 seconds; small Content remains at 20 seconds. It exclusively takes the two shared Content
+permits. Available inputs must all be recognized captures for the same verified
+writer/observer/attempt; unavailable inputs remain unplaced evidence. Mapping,
+assembly and citation limits scale together. Browser long text is paged without
+altering source coordinates or truncating the underlying derived result.
+
+Discovery now retains 1,000 descriptions per explicit window and can advance
+batches until the window ends or the user stops it. Session relationships come
+only from strict incoming HTTP metadata: the Kan session/parent/transition headers
+or a separately namespaced Claude Code session-membership header. Duplicate,
+malformed and conflicting claims remain visible. Parent links are not used for
+recursive identity collapse, rewriting source history or asserting causal order.
+The collector forwards Kan headers only to the gateway, which records then strips
+them before the provider. No new capture-wire variant or persistent store is added.
+Cross-archive sessions, fragmented-header relationship extraction and persistent
+indexing remain explicit required follow-ups, not implied by this windowed view.
+
+### Bounded proof reads (2026-10-19)
+
+Attempt acquisition uses an additive `read-batch` proof operation: at most eight
+explicit coordinates per request, with a reply containing a nonempty ordered
+prefix bounded to 4 MiB of retained request bytes. One current metadata audit
+covers that batch; each selection and fresh payload is still checked separately.
+There is no audit cache across requests or persistent plaintext cache. The reader
+verifies every returned coordinate, proof, writer signature and encryption binding;
+it resumes only the unreturned suffix. Current grants are checked on every batch
+and again before publishing derived Content. Legacy single reads remain supported.
+Batch capability is optional for older services. This addresses repeated read
+audits; admission's full payload audits require separate integrity-preserving work.
+
+### Cross-archive session workspace (2026-10-19)
+
+An explicit human scan visits authorized proof archives at their separate catalog
+pins, round-robin, retaining at most 1,000 descriptions in tab memory per window.
+It displays per-archive cursors/coverage and unavailable sources. Equal explicit
+session IDs are grouped only within the same verified writer, observer and scheme;
+archives and their occurrences remain separate. Parent lookup uses that same
+identity boundary and reports every observed archive match rather than silently
+choosing or deduplicating a copy. Link evidence and attempt Content reopen through
+the chosen archive's original pin and current access checks. A stopped or bounded
+scan remains partial; a new window retains continuation but discards prior window
+descriptions. Lock and catalog refresh clear the workspace. This is navigation over
+verified observations, not a persistent search index or authoritative session merge.
+
+### Fragmented request metadata (2026-10-19)
+
+Content reconstructs request HttpMetadataChunk documents within one verified
+writer/observer/attempt group, in ordinal order. Only consecutive ordinals with
+matching totals, exact offsets and a complete bounded document yield a link.
+Duplicate occurrences retain every source citation; conflicting ordinals, missing
+fragments, inconsistent extents/directions and malformed documents never yield a
+claimed link. Each document is limited to 2 MiB; larger documents remain Source-
+inspectable with a visible limit state. Inline metadata keeps its header citations.
+Discovery exposes chunk direction/offset/total and offers explicit resolution over
+an observed attempt window through the existing freshly authorized Content API.
+This also spans discovery pages without persisting plaintext fragments or granting
+a cursor authority. Resolution is a derived window result and clears with its
+window, refresh or lock. No missing fragment is reconstructed by inference.

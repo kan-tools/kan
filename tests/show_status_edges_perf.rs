@@ -1,6 +1,6 @@
 //! Cold review of the F1/F2 branch, performance regression guard.
 //!
-//! The F9 fix routed `kan show`/`kan context` through `superseded_status_cids`,
+//! The F9 fix routed `kan-v1 show`/`kan-v1 context` through `superseded_status_cids`,
 //! which classified a subject under computed edges. Its first cut ran the
 //! default provider union over EVERY claim in the class, spawning `O(k²)`
 //! `git merge-base` subprocesses in `k` = distinct commit anchors — ~12 s on
@@ -127,7 +127,7 @@ async fn show_of_a_many_commit_subject_stays_fast() {
     // O(k²) fan-out this guards against measured ~12 s at this commit count.
     assert!(
         elapsed.as_secs() < 6,
-        "kan show of a {N}-commit subject took {elapsed:?} -- the status \
+        "kan-v1 show of a {N}-commit subject took {elapsed:?} -- the status \
          classification is fanning out git subprocesses before it knows \
          ancestry is needed"
     );

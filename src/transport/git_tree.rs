@@ -1189,7 +1189,7 @@ fn subject_digest(raw: &str) -> String {
 /// Writes every live claim of `subject` into its file under `root`,
 /// replacing it.
 ///
-/// A free function rather than a method: `kan publish` already holds an open
+/// A free function rather than a method: `kan-v1 publish` already holds an open
 /// `Log` through its `Workspace`, and constructing a `GitTree` just to write
 /// a file would mean a second `Log` handle over the same files.
 ///

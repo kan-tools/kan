@@ -181,7 +181,7 @@ fn cli(f: &Fixture, database: &Path, destination: &Path) -> std::process::Output
         use std::os::unix::fs::PermissionsExt;
         fs::set_permissions(&key, fs::Permissions::from_mode(0o600)).unwrap();
     }
-    Command::new(env!("CARGO_BIN_EXE_kan-v2"))
+    Command::new(env!("CARGO_BIN_EXE_kan"))
         .arg("restore-import")
         .arg(database)
         .arg(destination)
@@ -487,4 +487,70 @@ fn raw_frontier_and_records_remain_pinned_across_concurrent_owner_writes() {
             .through,
         before.through + 1
     );
+}
+
+#[test]
+fn reconciliation_checks_recovered_bytes_and_current_source_without_promoting_or_trusting_reports()
+{
+    let f = imported(false);
+    restore::restore(&f.database(), &f.output(), &f.pins()).unwrap();
+    let mut spool = Spool::open(&f.root.path().join("spool.sqlite")).unwrap();
+    let plan = Plan::build(
+        &f.root.path().join("source"),
+        Selection::Store,
+        [44; 32],
+        crypto::public_key(&PRIVATE).unwrap(),
+        &mut spool,
+    )
+    .unwrap();
+    assert_eq!(plan.id(), f.plan);
+    // A forged report cannot promote recovery to cutover readiness.
+    fs::write(
+        f.output().join("report.json"),
+        br#"{"ready_for_cutover":true}"#,
+    )
+    .unwrap();
+    let report = plan.reconcile(&f.output(), &mut spool).unwrap();
+    assert_eq!(report["verified_files"], 2);
+    assert_eq!(report["recovered_selected_bytes_match"], true);
+    assert_eq!(report["ready_for_cutover"], false);
+    assert_eq!(report["source_writers_fenced"], false);
+    let args = std::process::Command::new(env!("CARGO_BIN_EXE_kan"))
+        .arg("reconcile-import")
+        .arg(f.root.path().join("source"))
+        .arg("--spool")
+        .arg(f.root.path().join("spool.sqlite"))
+        .args([
+            "--source-id",
+            &hex(&[44; 32]),
+            "--recipient",
+            &hex(&crypto::public_key(&PRIVATE).unwrap()),
+            "--selection",
+            "store",
+            "--recovered",
+        ])
+        .arg(f.output())
+        .output()
+        .unwrap();
+    assert!(
+        args.status.success(),
+        "{}",
+        String::from_utf8_lossy(&args.stderr)
+    );
+    fs::write(f.output().join("files/repo.car"), b"damaged copy").unwrap();
+    assert!(plan.reconcile(&f.output(), &mut spool).is_err());
+    fs::write(f.output().join("files/repo.car"), b"malformed raw CAR").unwrap();
+    fs::write(
+        f.root.path().join("source/repo.car"),
+        b"later source generation",
+    )
+    .unwrap();
+    assert!(plan.reconcile(&f.output(), &mut spool).is_err());
+    assert_eq!(
+        fs::read(f.output().join("files/repo.car")).unwrap(),
+        b"malformed raw CAR"
+    );
+    fs::write(f.root.path().join("source/repo.car"), b"malformed raw CAR").unwrap();
+    fs::write(f.output().join("plan.json"), b"{}").unwrap();
+    assert!(plan.reconcile(&f.output(), &mut spool).is_err());
 }

@@ -1,4 +1,4 @@
-//! `kan mcp`: one `rmcp` tool per CLI verb (ADR-10, closing Open Question
+//! `kan-v1 mcp`: one `rmcp` tool per CLI verb (ADR-10, closing Open Question
 //! Q3), mirroring `docs/HANDOFF.md`'s CLI vocabulary 1:1. Every tool call
 //! dispatches to the exact same `crate::actions` functions the CLI calls —
 //! this module is presentation (typed params in, text out) only.
@@ -46,17 +46,19 @@ pub async fn serve(cwd: PathBuf) -> Result<(), Error> {
     Ok(())
 }
 
-/// `kan mcp install` — prints, never mutates, both current/documented
+/// `kan-v1 mcp install` — prints, never mutates, both current/documented
 /// Claude Code registration mechanisms (confirmed via research, not
 /// guessed): a bare `claude mcp add` command, and (once this repo's
 /// `.claude-plugin/plugin.json` + `.mcp.json` exist) the plugin path.
 pub fn install_instructions() -> String {
     let exe = std::env::current_exe()
         .map(|p| p.display().to_string())
-        .unwrap_or_else(|_| "kan".to_string());
+        .unwrap_or_else(|_| "kan-v1".to_string());
 
     let mut out = String::new();
-    out.push_str("Register kan as an MCP server -- either path works:\n\n");
+    out.push_str(
+        "Register the legacy kan-v1 executable as an MCP server -- either path works:\n\n",
+    );
     out.push_str("1. Directly:\n");
     out.push_str(&format!("     claude mcp add kan -- {exe} mcp\n\n"));
     out.push_str("2. As a Claude Code plugin (this repo ships .claude-plugin/plugin.json\n");
@@ -419,7 +421,7 @@ struct SubjectParams {
     /// "role:<name>". Omit to see only your own claims. An author you do
     /// not name is invisible, not down-weighted. A "did:key:...=<weight>"
     /// form is accepted but the weight is not yet folded -- only presence
-    /// or absence changes the view (issue on weighted trust; see kan show
+    /// or absence changes the view (issue on weighted trust; see kan-v1 show
     /// --help).
     #[serde(default)]
     trust: Vec<String>,
@@ -507,7 +509,7 @@ impl KanServer {
     ///
     /// This matters more here than on the CLI. An MCP server is a long-lived
     /// process with no terminal, so a keychain prompt raised by a read is one
-    /// nobody can answer (#96) -- `kan status` over MCP failed exactly that
+    /// nobody can answer (#96) -- `kan-v1 status` over MCP failed exactly that
     /// way while this milestone was being built. A read that needs no
     /// identity cannot raise it.
     async fn reader(&self) -> Result<Workspace, ErrorData> {

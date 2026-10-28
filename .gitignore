@@ -38,3 +38,6 @@ target
 
 # Private local review evidence and migration inventories
 .local-state/
+# Python conformance/checker bytecode is not source or package input.
+__pycache__/
+*.py[cod]

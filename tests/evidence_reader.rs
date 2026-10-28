@@ -204,7 +204,7 @@ async fn library_http_authority_is_separate_and_denial_does_not_reveal_scope_exi
         .post(&endpoint)
         .header("content-type", "application/json")
         .bearer_auth("synthetic-library-token-32-characters")
-        .body("x".repeat(16385))
+        .body("x".repeat(262145))
         .send()
         .await
         .unwrap();
@@ -310,7 +310,7 @@ fn reader_cli_refuses_public_configuration_and_relative_private_key_paths() {
     let dir = tempfile::tempdir().unwrap();
     let config = dir.path().join("reader.json");
     let command = || {
-        let mut cmd = std::process::Command::new(env!("CARGO_BIN_EXE_kan-v2"));
+        let mut cmd = std::process::Command::new(env!("CARGO_BIN_EXE_kan"));
         cmd.args([
             "library",
             "--config",

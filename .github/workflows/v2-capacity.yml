@@ -1,0 +1,72 @@
+name: V2 real-byte capacity
+
+on:
+  workflow_dispatch:
+  # Bootstrap the measurement on the existing integration branch. Ordinary
+  # source/doc pushes do not automatically regenerate a multi-GiB fixture.
+  push:
+    branches: [feat/kan-v2-proof-library]
+    paths: [.github/workflows/v2-capacity.yml]
+
+permissions:
+  contents: read
+
+jobs:
+  capacity-10g:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      CARGO_BUILD_JOBS: 4
+      CARGO_INCREMENTAL: 0
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check remote disk before compiling or seeding
+        shell: bash
+        run: |
+          df -h "$RUNNER_TEMP"
+          python3 - <<'PY'
+          import os, shutil
+          free = shutil.disk_usage(os.environ['RUNNER_TEMP']).free
+          minimum = 38 * 1024 ** 3
+          if free < minimum:
+              raise SystemExit(f'Need 38 GiB free before compilation; found {free / 1024**3:.1f} GiB. No fixture created.')
+          PY
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Compile the release measurement executable
+        shell: bash
+        run: |
+          cargo test --release --locked --features v2-crypto --test evidence_inventory --no-run --message-format=json > "$RUNNER_TEMP/kan-capacity-build.jsonl"
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          executable = []
+          for line in (Path(os.environ['RUNNER_TEMP']) / 'kan-capacity-build.jsonl').read_text().splitlines():
+              event = json.loads(line)
+              if event.get('reason') == 'compiler-artifact' and event['target']['name'] == 'evidence_inventory' and event.get('executable'):
+                  executable.append(event['executable'])
+          if len(executable) != 1:
+              raise SystemExit('Expected one compiled evidence_inventory test executable')
+          with open(os.environ['GITHUB_ENV'], 'a') as env:
+              env.write(f'CAPACITY_BINARY={executable[0]}\n')
+          PY
+      - name: Measure actual 10 GiB payloads
+        shell: bash
+        run: |
+          python3 scripts/measure-v2-capacity.py --binary "$CAPACITY_BINARY" --directory "$RUNNER_TEMP/kan-v2-10g" --gib 10
+      - name: Record the exact checkout and compiler
+        if: always()
+        shell: bash
+        run: |
+          git rev-parse HEAD > "$RUNNER_TEMP/kan-capacity-revision.txt"
+          rustc --version >> "$RUNNER_TEMP/kan-capacity-revision.txt"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: v2-capacity-10g-${{ github.sha }}
+          # Retain measurements/failure logs, not the ~20 GiB synthetic DB.
+          path: |
+            ${{ runner.temp }}/kan-v2-10g/*.json
+            ${{ runner.temp }}/kan-v2-10g/*.log
+            ${{ runner.temp }}/kan-capacity-revision.txt
+            ${{ runner.temp }}/kan-capacity-build.jsonl
+          retention-days: 30

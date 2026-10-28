@@ -1,0 +1,101 @@
+{
+  "revision": "5968aaf403ae6ae244adaa44910b34f622d548ed",
+  "run_id": "0ae892a3faf74e1daca47fa1c4f73e79",
+  "fixture_volume": "kan-v2-probe-5968aaf403ae-0ae892a3faf74e1daca47fa1c4f73e79",
+  "status": "complete",
+  "phase": "two-appends-observed",
+  "gib": 10,
+  "started_unix": 1793042916.1011903,
+  "scope": "first two remounted appends; opaque indexed storage; no latency comparison with local SSD",
+  "binary_sha256": "21ac9ae651629a4100895205bd5ba5c550a71e78da0d3562ad55949f10b76ec3",
+  "seeded_records": 10240,
+  "strace_supported": true,
+  "strace_diagnostic": "",
+  "appends": [
+    {
+      "admitted_us": 16171984,
+      "boundaries": [
+        {
+          "boundary": "ObjectInserted",
+          "elapsed_us": 14448434
+        },
+        {
+          "boundary": "ObjectDurable",
+          "elapsed_us": 15131305
+        },
+        {
+          "boundary": "ManifestInserted",
+          "elapsed_us": 15254361
+        },
+        {
+          "boundary": "BindingsInserted",
+          "elapsed_us": 15254457
+        },
+        {
+          "boundary": "AttestationSigned",
+          "elapsed_us": 15935996
+        },
+        {
+          "boundary": "AttestationInserted",
+          "elapsed_us": 15936048
+        },
+        {
+          "boundary": "BeforeCommit",
+          "elapsed_us": 16026729
+        },
+        {
+          "boundary": "AfterCommit",
+          "elapsed_us": 16171949
+        }
+      ],
+      "closed_us": 17174104,
+      "open_us": 11188399,
+      "operation": "append-phases",
+      "prepared_us": 11233010,
+      "prior_records": 10240
+    },
+    {
+      "admitted_us": 1296995,
+      "boundaries": [
+        {
+          "boundary": "ObjectInserted",
+          "elapsed_us": 402915
+        },
+        {
+          "boundary": "ObjectDurable",
+          "elapsed_us": 1041143
+        },
+        {
+          "boundary": "ManifestInserted",
+          "elapsed_us": 1061063
+        },
+        {
+          "boundary": "BindingsInserted",
+          "elapsed_us": 1061134
+        },
+        {
+          "boundary": "AttestationSigned",
+          "elapsed_us": 1085205
+        },
+        {
+          "boundary": "AttestationInserted",
+          "elapsed_us": 1085254
+        },
+        {
+          "boundary": "BeforeCommit",
+          "elapsed_us": 1159639
+        },
+        {
+          "boundary": "AfterCommit",
+          "elapsed_us": 1296961
+        }
+      ],
+      "closed_us": 2005326,
+      "open_us": 67921,
+      "operation": "append-phases",
+      "prepared_us": 107515,
+      "prior_records": 10241
+    }
+  ],
+  "finished_unix": 1793047180.2860804
+}
