@@ -211,3 +211,9 @@ same audience to the original receipt issuer. This prevents a signed request
 from being redirected to another service identity even if its routing scope and
 grants were copied. Restores that must drain old spools retain the service key;
 key rotation and audience transition are not implemented by this profile.
+
+## Experimental recipient-encrypted chunk profile
+
+The optional `v2-crypto` implementation uses RFC 9180 base-mode DHKEM(X25519, HKDF-SHA256), HKDF-SHA256 and ChaCha20Poly1305 through `hpke` 0.14.1. Its KANE v1 framing authenticates the header and routing scope. Recipient public encodings must be canonical field elements; noncanonical equivalents are refused before encryption because HPKE binds the encoded recipient key. Chunks fit the service's 1 MiB payload boundary; this is not a total archive cap.
+
+See `.design/kan-v2-payload-encryption.md` and `src/evidence_crypto.rs` for exact framing, limits and key-compromise implications. This experimental explicit-key profile settles an interoperability slice of P4 only. It does not choose production custody, implement grant history, key rotation or erasure, or enable forwarding/capture. The service stores opaque objects and cannot attest that clients encrypted them. The public-key hash in the header permits cross-scope recipient linkage; metadata obfuscation remains a separate non-default profile.

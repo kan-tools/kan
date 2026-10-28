@@ -14,6 +14,7 @@ use sha2::{Digest, Sha256};
 
 const CATALOG: &str = include_str!("fixtures/read-write-surface.tsv");
 const RULE_EVIDENCE: &[(&str, &str)] = &[
+    ("recipient-encrypted-chunk", "tests/evidence_crypto.rs"),
     ("signed-service-request", "tests/evidence_service.rs"),
     ("service-configuration", "tests/evidence_http.rs"),
     ("opaque-evidence-store", "tests/evidence_store.rs"),
@@ -1108,7 +1109,7 @@ fn every_persistence_facade_call_is_independently_inventoried() {
         if module == "src/persistence.rs" {
             assert_eq!(
                 format!("{:x}", Sha256::digest(source.as_bytes())),
-                "2fe23e14d62808fad2b1153836eea075ed77ba633745379a15e704987c889e33",
+                "6d215eca3284cdf3c810d77e9bcd6f59060354c3ae6bc3178423d0fe8b910d33",
                 "the raw-mutation facade changed; review and update its committed implementation digest together with facade-call negative controls"
             );
             assert!(
