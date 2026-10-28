@@ -1,0 +1,22 @@
+
+running 1 test
+test evidence_operations::projection::tests::copy_deadline_applies_to_contention_after_successful_source_open ... FAILED
+
+failures:
+
+---- evidence_operations::projection::tests::copy_deadline_applies_to_contention_after_successful_source_open stdout ----
+
+thread 'evidence_operations::projection::tests::copy_deadline_applies_to_contention_after_successful_source_open' (9675488) panicked at src/evidence_operations/projection.rs:234:9:
+wrong refusal: test watchdog: copy deadline did not fire
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    evidence_operations::projection::tests::copy_deadline_applies_to_contention_after_successful_source_open
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 76 filtered out; finished in 12.19s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-copy-destination/.local-state/reviews/purpose-gate)
+    Finished `test` profile [unoptimized] target(s) in 5.92s
+     Running unittests src/lib.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/kan-7f955e5e00633d5f)
+error: test failed, to rerun pass `--lib`

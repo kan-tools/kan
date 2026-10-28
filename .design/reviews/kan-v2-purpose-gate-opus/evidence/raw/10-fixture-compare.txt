@@ -1,0 +1,42 @@
+positives equal: True 5
+old negatives 33 new 37
+old hex unchanged: True
+added: ['duplicate-map-key', 'nonminimal-map-length', 'nonminimal-recipe', 'reversed-map-keys']
+Counter({'schema': 28, 'canonical': 9})
+missing-recipe               schema    missing or unknown field
+missing-sourceProfile        schema    missing or unknown field
+missing-targetProfile        schema    missing or unknown field
+missing-sourceThrough        schema    missing or unknown field
+missing-sourceTip            schema    missing or unknown field
+missing-sourceDigest         schema    missing or unknown field
+missing-historicalIssuer     schema    missing or unknown field
+missing-scopeToken           schema    missing or unknown field
+missing-issuer               schema    missing or unknown field
+missing-nonce                schema    missing or unknown field
+unknown-field                schema    missing or unknown field
+recipe                       schema    unsupported copy-plan profile or recipe
+source-profile               schema    unsupported copy-plan profile or recipe
+target-profile               schema    unsupported copy-plan profile or recipe
+negative-through             canonical unsupported scalar or tag
+unsafe-through               canonical integer outside safe unsigned range
+boolean-through              schema    expected unsigned safe integer
+empty-with-tip               schema    copy-plan empty source frontier
+nonempty-no-tip              schema    wrong CID profile
+tip-as-bytes                 schema    wrong CID profile
+tip-as-string                schema    wrong CID profile
+wrong-tip-codec              schema    wrong CID profile
+short-digest                 schema    wrong byte string length
+long-scope                   schema    wrong byte string length
+nonce-string                 schema    wrong byte string length
+short-current-key            schema    copy-plan issuer encoding
+short-historical-key         schema    copy-plan issuer encoding
+dynamic-issuer               schema    copy-plan issuer encoding
+issuer-as-map                schema    wrong string length or type
+current-k256                 schema    copy-plan current issuer must use P-256
+trailing-byte                canonical trailing bytes
+truncated                    canonical declared length exceeds remaining input
+over-bound                   canonical value exceeds byte limit
+reversed-map-keys            canonical duplicate or unordered map key
+nonminimal-map-length        canonical nonminimal header
+nonminimal-recipe            canonical nonminimal header
+duplicate-map-key            canonical duplicate or unordered map key

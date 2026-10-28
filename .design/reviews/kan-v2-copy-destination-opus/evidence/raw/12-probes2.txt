@@ -1,0 +1,16 @@
+$ cargo test --features v2-crypto --test zz_review_destination2 -- --nocapture
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-copy-destination/.local-state/reviews/destination)
+    Finished `test` profile [unoptimized] target(s) in 0.90s
+     Running tests/zz_review_destination2.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/zz_review_destination2-1611c43df27ebfcf)
+
+running 1 test
+PROBE L copy-plan PLAN=<dest>/archive.sqlite: exit=Some(0) stdout={"archive":"c3355be76fb7041776b92a7989ee5b7c3dfa2bff4ba31e3189a3b60b83c8656d","plan":"/var/folders/dr/fk0t7xz16x9b3980ch9qcdr40000gp/T/.tmpJ0mmXy/dest/archive.sqlite","profile":3,"promoted":false,"source_through":1} stderr=
+PROBE L copy-batch DEST=<plan dir> []: exit=Some(1) stdout= stderr=error: File exists (os error 17)
+PROBE L plan bytes unchanged: true; sidecars: ["archive.sqlite"]
+PROBE L copy-batch DEST=<plan dir> ["--resume"]: exit=Some(1) stdout= stderr=error: file is not a database
+PROBE L plan bytes unchanged: true; sidecars: ["archive.sqlite"]
+test probe_l_plan_artifact_named_as_destination_database ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.67s
+
+exit=0

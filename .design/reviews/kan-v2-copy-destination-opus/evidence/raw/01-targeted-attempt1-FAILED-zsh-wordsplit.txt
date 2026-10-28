@@ -1,0 +1,9 @@
+$ cargo test --features v2-crypto --test evidence_copy_destination --test evidence_attested_followups --test evidence_attested_lifecycle --test evidence_attested_store --test evidence_copy_plan --test evidence_copy_source --test recovery_cli --test surface_conformance --test evidence_store --test evidence_service
+error: unexpected argument '--test evidence_copy_destination --test evidence_attested_followups --test evidence_attested_lifecycle --test evidence_attested_store --test evidence_copy_plan --test evidence_copy_source --test recovery_cli --test surface_conformance --test evidence_store --test evidence_service' found
+
+  tip: to pass '--test evidence_copy_destination --test evidence_attested_followups --test evidence_attested_lifecycle --test evidence_attested_store --test evidence_copy_plan --test evidence_copy_source --test recovery_cli --test surface_conformance --test evidence_store --test evidence_service' as a value, use '-- --test evidence_copy_destination --test evidence_attested_followups --test evidence_attested_lifecycle --test evidence_attested_store --test evidence_copy_plan --test evidence_copy_source --test recovery_cli --test surface_conformance --test evidence_store --test evidence_service'
+
+Usage: cargo test --features <FEATURES> [TESTNAME] [-- [ARGS]...]
+
+For more information, try '--help'.
+exit=1

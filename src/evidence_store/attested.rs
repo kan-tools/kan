@@ -28,14 +28,14 @@ pub struct Binding {
     pub issuer: String,
 }
 impl Binding {
-    fn context(&self) -> Context<'_> {
+    pub(super) fn context(&self) -> Context<'_> {
         Context {
             archive: self.archive,
             scope: self.scope,
             issuer: &self.issuer,
         }
     }
-    fn validate(&self) -> Result<()> {
+    pub(super) fn validate(&self) -> Result<()> {
         // The service author codec rejects unsupported/noncanonical keys. The
         // attestation codec further checks the exact static P-256 spelling.
         if !(56..=80).contains(&self.issuer.len())
@@ -73,8 +73,9 @@ pub(super) fn initialize(tx: &rusqlite::Transaction<'_>, binding: &Binding) -> R
 }
 
 pub struct Archive {
-    ledger: Ledger,
-    binding: Binding,
+    pub(super) ledger: Ledger,
+    pub(super) binding: Binding,
+    pub(super) copy: Option<crate::evidence_copy_plan::Plan>,
 }
 #[derive(Debug)]
 pub struct Admission {
@@ -85,7 +86,7 @@ pub struct Admission {
 fn corrupt(message: &str) -> Error {
     Error::Corrupt(message.into())
 }
-fn check_binding(conn: &Connection, binding: &Binding) -> Result<()> {
+pub(super) fn check_binding(conn: &Connection, binding: &Binding) -> Result<()> {
     let count: i64 = conn.query_row("SELECT count(*) FROM archive_identity", [], |r| r.get(0))?;
     let actual: (Vec<u8>, Vec<u8>, String) = conn.query_row(
         "SELECT archive,scope,issuer FROM archive_identity WHERE singleton=1",
@@ -103,7 +104,7 @@ fn check_binding(conn: &Connection, binding: &Binding) -> Result<()> {
     }
     Ok(())
 }
-fn envelope(conn: &Connection, sequence: u64) -> Result<Vec<u8>> {
+pub(super) fn envelope(conn: &Connection, sequence: u64) -> Result<Vec<u8>> {
     let row: Option<(i64, Vec<u8>)> = conn
         .query_row(
             "SELECT length(envelope),substr(envelope,1,16384) FROM attestations WHERE sequence=?",
@@ -117,7 +118,7 @@ fn envelope(conn: &Connection, sequence: u64) -> Result<Vec<u8>> {
     }
     Ok(bytes)
 }
-fn record(conn: &Connection, sequence: u64) -> Result<Committed> {
+pub(super) fn record(conn: &Connection, sequence: u64) -> Result<Committed> {
     let mut stmt = conn.prepare(&format!("{RAW_COMMITS} WHERE sequence=?"))?;
     let mut rows =
         stmt.query([i64::try_from(sequence).map_err(|_| Error::Invalid("sequence overflow"))?])?;
@@ -153,11 +154,12 @@ fn retained(conn: &Connection, record: &Committed, binding: &Binding) -> Result<
 
 // Caller owns a transaction. Constant working memory; currently a full scan.
 // `through` excludes a new, not-yet-attested row inside admission's transaction.
-fn audit_prefix(
+pub(super) fn audit_prefix(
     conn: &Connection,
     binding: &Binding,
     through: u64,
     target: Option<&Cid>,
+    copy: Option<&crate::evidence_copy_plan::Plan>,
 ) -> Result<(Frontier, Option<Verified>)> {
     check_binding(conn, binding)?;
     let count: i64 = conn.query_row("SELECT count(*) FROM attestations", [], |r| r.get(0))?;
@@ -166,8 +168,6 @@ fn audit_prefix(
     }
     let mut frontier = Frontier::default();
     let mut selected = None;
-    let mut historical_issuer: Option<String> = None;
-    let mut admitted = false;
     let mut stmt = conn.prepare(&format!(
         "{RAW_COMMITS} WHERE sequence<=? ORDER BY sequence"
     ))?;
@@ -189,20 +189,24 @@ fn audit_prefix(
         let signed = retained(conn, &record, binding)?;
         match verified.purpose() {
             Purpose::Admitted => {
-                admitted = true;
+                if copy.is_some_and(|p| record.sequence <= p.source().through) {
+                    return Err(corrupt("admission inside planned retained prefix"));
+                }
                 if signed.request.audience != binding.issuer {
                     return Err(corrupt("admitted request audience"));
                 }
             }
             Purpose::RetainedVerified => {
-                if admitted
-                    || historical_issuer
-                        .as_ref()
-                        .is_some_and(|h| h != &signed.request.audience)
-                {
-                    return Err(corrupt("retained-verified prefix"));
+                let plan =
+                    copy.ok_or_else(|| corrupt("retained-verified prefix requires copy profile"))?;
+                if record.sequence > plan.source().through {
+                    return Err(corrupt("retained-verified row after planned prefix"));
                 }
-                historical_issuer = Some(signed.request.audience);
+                if signed.request.audience != plan.source().historical_issuer {
+                    return Err(corrupt(
+                        "retained-verified historical issuer differs from copy plan",
+                    ));
+                }
             }
         }
         frontier = verified.frontier().clone();
@@ -231,7 +235,11 @@ impl Archive {
             rusqlite::limits::Limit::SQLITE_LIMIT_LENGTH,
             RECOVERY_SQLITE_LENGTH_LIMIT,
         )?;
-        Ok(Self { ledger, binding })
+        Ok(Self {
+            ledger,
+            binding,
+            copy: None,
+        })
     }
     pub fn open(root: &Path, binding: Binding) -> Result<Self> {
         binding.validate()?;
@@ -246,6 +254,7 @@ impl Archive {
         let archive = Self {
             ledger: Ledger { conn },
             binding,
+            copy: None,
         };
         archive.ledger.check_profile(2)?;
         archive.ledger.check_write_profile(true)?;
@@ -271,7 +280,11 @@ impl Archive {
                 rusqlite::limits::Limit::SQLITE_LIMIT_LENGTH,
                 RECOVERY_SQLITE_LENGTH_LIMIT,
             )?;
-            Self { ledger, binding }
+            Self {
+                ledger,
+                binding,
+                copy: None,
+            }
         };
         std::fs::File::open(root)?.sync_all()?;
         std::fs::File::open(parent_directory(root))?.sync_all()?;
@@ -308,7 +321,19 @@ impl Archive {
     fn verify_for(&self, target: Option<&Cid>) -> Result<(Frontier, Option<Verified>)> {
         let tx = self.ledger.conn.unchecked_transaction()?;
         let base = self.ledger.verify_contents()?;
-        let (frontier, selected) = audit_prefix(&tx, &self.binding, base.snapshot.through, target)?;
+        if let Some(plan) = &self.copy {
+            let status = copied::audit(&self.ledger, &self.binding, plan, &base)?;
+            if target.is_some() && !status.source_copy_complete {
+                return Err(Error::Conflict("copy is incomplete"));
+            }
+        }
+        let (frontier, selected) = audit_prefix(
+            &tx,
+            &self.binding,
+            base.snapshot.through,
+            target,
+            self.copy.as_ref(),
+        )?;
         if frontier.manifest != base.snapshot.tip {
             return Err(corrupt("attestation tip"));
         }
@@ -353,6 +378,7 @@ impl Archive {
             tip: previous.manifest.clone(),
         };
         let binding = &self.binding;
+        let copy = self.copy.as_ref();
         let mut result = None;
         let mut hook = |tx: &rusqlite::Transaction<'_>,
                         row: &Committed,
@@ -362,6 +388,9 @@ impl Archive {
             // and proof cardinality under the immediate writer transaction; a
             // raw append or same-height replacement cannot cross this fence.
             check_binding(tx, binding)?;
+            if let Some(plan) = copy {
+                copied::admission_ready(tx, binding, plan, previous.through)?;
+            }
             let count: i64 = tx.query_row("SELECT count(*) FROM attestations", [], |r| r.get(0))?;
             if u64::try_from(count).ok() != Some(previous.through) {
                 return Err(Error::Conflict("attestation audit frontier"));
@@ -498,7 +527,7 @@ pub(super) fn verify_contents(
     binding: &Binding,
     base: &Verification,
 ) -> Result<()> {
-    let (frontier, _) = audit_prefix(&ledger.conn, binding, base.snapshot.through, None)?;
+    let (frontier, _) = audit_prefix(&ledger.conn, binding, base.snapshot.through, None, None)?;
     if frontier.manifest != base.snapshot.tip {
         return Err(corrupt("attestation tip"));
     }

@@ -1,0 +1,22 @@
+
+running 1 test
+test p5a_single_historical_issuer_prefix_requires_copy_profile ... FAILED
+
+failures:
+
+---- p5a_single_historical_issuer_prefix_requires_copy_profile stdout ----
+
+thread 'p5a_single_historical_issuer_prefix_requires_copy_profile' (9652452) panicked at tests/evidence_attested_followups.rs:306:5:
+assertion failed: Archive::open(target.path(), binding()).is_err()
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    p5a_single_historical_issuer_prefix_requires_copy_profile
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 8 filtered out; finished in 0.22s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-copy-destination)
+    Finished `test` profile [unoptimized] target(s) in 0.39s
+     Running tests/evidence_attested_followups.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_attested_followups-a0c68bfd07b1cb59)
+error: test failed, to rerun pass `--test evidence_attested_followups`

@@ -1,0 +1,8 @@
+MC1-revalidation-error-labelled-busy: KILLED
+  lib/evidence_operations::projection::tests::copy_revalidates_schema_and_capacity_control_after_source_open: rc=101 compile_error=False failed=['evidence_operations::projection::tests::copy_revalidates_schema_and_capacity_control_after_source_open'] test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 76 filtered out; finished in 0.20s (6.6s)
+MC2-wrapper-reports-zero-on-diagnostic-channel: KILLED
+  evidence_capture_contention/coordinated_sink_returns_inner_wait_to_its_caller: rc=101 compile_error=False failed=['coordinated_sink_returns_inner_wait_to_its_caller'] test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 6 filtered out; finished in 0.00s (7.2s)
+MC3-wrapper-uses-non-wait-admit: KILLED
+  evidence_capture_contention/coordinated_sink_returns_inner_wait_to_its_caller: rc=101 compile_error=False failed=['coordinated_sink_returns_inner_wait_to_its_caller'] test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 6 filtered out; finished in 0.00s (1.0s)
+MC4-deadline-30s: KILLED
+  lib/evidence_operations::projection::tests::copy_deadline_applies_to_contention_after_successful_source_open: rc=101 compile_error=False failed=['evidence_operations::projection::tests::copy_deadline_applies_to_contention_after_successful_source_open'] test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 76 filtered out; finished in 12.21s (18.7s)

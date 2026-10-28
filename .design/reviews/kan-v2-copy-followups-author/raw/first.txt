@@ -1,0 +1,23 @@
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-copy-destination)
+error[E0277]: the trait bound `usize: ToSql` is not satisfied
+    --> tests/evidence_copy_destination.rs:1160:9
+     |
+1160 |         rusqlite::params![cid, foreign.len()],
+     |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ the trait `ToSql` is not implemented for `usize`
+     |
+     = help: the following other types implement trait `ToSql`:
+               f32
+               f64
+               i16
+               i32
+               i64
+               i8
+               isize
+               u16
+             and 2 others
+     = note: required for the cast from `&usize` to `&dyn ToSql`
+     = note: this error originates in the macro `rusqlite::params` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+For more information about this error, try `rustc --explain E0277`.
+error: could not compile `kan` (test "evidence_copy_destination") due to 1 previous error
+warning: build failed, waiting for other jobs to finish...

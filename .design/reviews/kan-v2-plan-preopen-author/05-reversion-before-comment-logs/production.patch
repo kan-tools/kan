@@ -1,0 +1,87 @@
+diff --git a/.design/kan-v2-evidence-availability.md b/.design/kan-v2-evidence-availability.md
+index 77322b1..657d121 100644
+--- a/.design/kan-v2-evidence-availability.md
++++ b/.design/kan-v2-evidence-availability.md
+@@ -979,0 +980,12 @@ its own proof contract; no large-archive throughput qualification is claimed.
++
++### Follow-up: plan-output custody before source open
++
++The independent inventory checkpoint review reproduced an additional entry-point
++ordering defect: `copy-plan` opened its source before `retain_plan` could reject
++an already-existing output file under a reserved source sidecar name. A fresh
++SQLite reader can consume that file before returning the eventual refusal.
++`validate_plan_destination` now performs the filesystem-only source-family guard
++before `PlannedCopy::open` in the CLI. The retention-time guard remains defense in
++depth. This preserves owner-selected existing files and does not claim protection
++against concurrent hostile path replacement. Regression evidence and a fresh
++review are required before this correction is accepted.
+diff --git a/src/bin/kan-v2.rs b/src/bin/kan-v2.rs
+index c335e24..75757eb 100644
+--- a/src/bin/kan-v2.rs
++++ b/src/bin/kan-v2.rs
+@@ -885,0 +886 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
++            kan::evidence_store::copy_upgrade::validate_plan_destination(&database, &plan)?;
+diff --git a/src/evidence_store/copy_upgrade.rs b/src/evidence_store/copy_upgrade.rs
+index db1e4ad..db37f8b 100644
+--- a/src/evidence_store/copy_upgrade.rs
++++ b/src/evidence_store/copy_upgrade.rs
+@@ -163,0 +164,8 @@ fn plan_outside_sqlite(database: &Path, plan: &Path) -> Result<()> {
++/// Check an owner-selected plan output before opening the source database.
++/// Opening even a read-only SQLite source may consume a reserved sidecar. This
++/// filesystem-only preflight must precede `PlannedCopy::open`, not just retention.
++/// It shares the trusted-filesystem/no-concurrent-path-replacement boundary.
++pub fn validate_plan_destination(source: &Path, plan: &Path) -> Result<()> {
++    plan_outside_sqlite(&std::fs::canonicalize(source)?, plan)
++}
++
+diff --git a/tests/evidence_copy_destination.rs b/tests/evidence_copy_destination.rs
+index 2e514ee..09e8a0c 100644
+--- a/tests/evidence_copy_destination.rs
++++ b/tests/evidence_copy_destination.rs
+@@ -1542,0 +1543,46 @@ fn unicode_source_sidecar_plan_is_refused_before_a_fresh_sqlite_reader_can_consu
++
++#[test]
++fn copy_plan_cli_refuses_preexisting_sidecar_outputs_before_opening_source() {
++    for name in [
++        "archive.sqlite-shm",
++        "archive.sqlite-ſhm",
++        "archive.sqlite-SHM",
++        "archive.sqlite-WAL",
++        "archive.sqlite-JOURNAL",
++    ] {
++        let t = tempfile::tempdir().unwrap();
++        let db = fixture(t.path(), 2, 0);
++        let source = source(&db);
++        let safe = t.path().join("recipe.cbor");
++        kan::evidence_store::copy_upgrade::retain_plan(&safe, &source).unwrap();
++        drop(source);
++        drop(Ledger::open(db.parent().unwrap()).unwrap());
++        let alias = db.with_file_name(name);
++        assert!(!alias.exists());
++        std::fs::copy(&safe, &alias).unwrap();
++        let original = std::fs::read(&alias).unwrap();
++        let before = std::fs::read(&db).unwrap();
++        let o = cli(&[
++            "copy-plan",
++            db.to_str().unwrap(),
++            alias.to_str().unwrap(),
++            "--scope",
++            &service::hex(&[1; 32]),
++            "--issuer",
++            identity(8).did().as_str(),
++            "--historical-issuer",
++            identity(7).did().as_str(),
++            "--nonce",
++            &service::hex(&[9; 32]),
++        ]);
++        assert!(!o.status.success(), "{name}");
++        assert!(o.stdout.is_empty());
++        assert!(
++            String::from_utf8_lossy(&o.stderr).contains("overlaps source SQLite files"),
++            "{name}: {}",
++            String::from_utf8_lossy(&o.stderr)
++        );
++        assert_eq!(std::fs::read(&alias).unwrap(), original, "{name}");
++        assert_eq!(std::fs::read(&db).unwrap(), before, "{name}");
++    }
++}

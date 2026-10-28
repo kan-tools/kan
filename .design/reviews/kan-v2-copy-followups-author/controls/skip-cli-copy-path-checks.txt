@@ -1,0 +1,22 @@
+
+running 1 test
+test owner_cli_plan_paths_cannot_be_sqlite_files_or_sidecars ... FAILED
+
+failures:
+
+---- owner_cli_plan_paths_cannot_be_sqlite_files_or_sidecars stdout ----
+
+thread 'owner_cli_plan_paths_cannot_be_sqlite_files_or_sidecars' (9764865) panicked at tests/evidence_copy_destination.rs:1412:5:
+assertion failed: String::from_utf8_lossy(&o.stderr).contains("overlaps source SQLite files")
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    owner_cli_plan_paths_cannot_be_sqlite_files_or_sidecars
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 27 filtered out; finished in 0.62s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-copy-destination)
+    Finished `test` profile [unoptimized] target(s) in 6.85s
+     Running tests/evidence_copy_destination.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_copy_destination-e9770359e29db79f)
+error: test failed, to rerun pass `--test evidence_copy_destination`

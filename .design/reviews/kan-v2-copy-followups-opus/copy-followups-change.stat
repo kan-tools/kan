@@ -1,0 +1,23 @@
+ .design/kan-v2-evidence-availability.md            |  37 ++
+ .design/kan-v2-followup-status.md                  |  29 ++
+ .../reviews/kan-v2-copy-followups-author/REPORT.md |  40 +++
+ .../controls/omit-cli-explicit-profile.txt         |  22 ++
+ .../controls/omit-profile3-full-audit-schema.txt   |  22 ++
+ .../controls/remove-plan-custody-guards.txt        |  37 ++
+ .../controls/restored.txt                          |  77 ++++
+ .../controls/skip-cli-copy-path-checks.txt         |  22 ++
+ .../controls/skip-object-prefix-comparison.txt     |  24 ++
+ .../controls/skip-record-prefix-comparison.txt     |  22 ++
+ .../kan-v2-copy-followups-author/raw/clippy.txt    |   2 +
+ .../raw/controls-attempt1.txt                      |   8 +
+ .../kan-v2-copy-followups-author/raw/controls.txt  |   7 +
+ .../kan-v2-copy-followups-author/raw/first.txt     |  23 ++
+ .../kan-v2-copy-followups-author/raw/fmt.txt       |   0
+ .../kan-v2-copy-followups-author/raw/second.txt    |  61 ++++
+ scripts/copy_destination_followup_controls.py      |  50 +++
+ src/bin/kan-v2.rs                                  |   9 +-
+ src/evidence_store/copied.rs                       |   5 +
+ src/evidence_store/copy_upgrade.rs                 |  50 ++-
+ tests/evidence_copy_destination.rs                 | 388 ++++++++++++++++++++-
+ tests/fixtures/read-write-surface.tsv              |   2 +-
+ 22 files changed, 928 insertions(+), 9 deletions(-)

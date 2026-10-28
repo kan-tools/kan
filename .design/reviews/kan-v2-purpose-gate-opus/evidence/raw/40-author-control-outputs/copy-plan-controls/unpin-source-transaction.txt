@@ -1,0 +1,24 @@
+
+running 1 test
+test source_plan_is_pinned_and_reconfirmation_detects_later_admission ... FAILED
+
+failures:
+
+---- source_plan_is_pinned_and_reconfirmation_detects_later_admission stdout ----
+
+thread 'source_plan_is_pinned_and_reconfirmation_detects_later_admission' (9668511) panicked at tests/evidence_copy_source.rs:114:5:
+assertion `left == right` failed
+  left: 2
+ right: 1
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    source_plan_is_pinned_and_reconfirmation_detects_later_admission
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 9 filtered out; finished in 0.14s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-copy-destination/.local-state/reviews/purpose-gate)
+    Finished `test` profile [unoptimized] target(s) in 6.85s
+     Running tests/evidence_copy_source.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_copy_source-b92f66d790c08427)
+error: test failed, to rerun pass `--test evidence_copy_source`

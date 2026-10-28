@@ -1,0 +1,14 @@
+[
+ {"name":"MA1-rv-arm-accepts-everything","file":"src/evidence_store/attested.rs",
+  "old":"                return Err(corrupt(\"retained-verified prefix requires copy profile\"));","new":"",
+  "tests":[["evidence_attested_store",null],["evidence_attested_followups",null],["evidence_attested_lifecycle",null]]},
+ {"name":"MA2-drop-precommit-proof-audit-in-rebuild","file":"src/evidence_store.rs",
+  "old":"        if let Some(binding) = binding {\n            attested::verify_contents(&target, binding, &expected)?;\n        }","new":"",
+  "tests":[["evidence_attested_followups","p5c"],["evidence_attested_lifecycle",null]]},
+ {"name":"MA3-open-skips-audit","file":"src/evidence_store/attested.rs",
+  "old":"        archive.ledger.check_write_profile(true)?;\n        archive.verify()?;","new":"        archive.ledger.check_write_profile(true)?;",
+  "tests":[["evidence_attested_followups",null],["evidence_attested_store",null],["evidence_attested_lifecycle",null]]},
+ {"name":"MA4-verify-file-skips-proof-audit","file":"src/evidence_store/attested.rs",
+  "old":"        verify_contents(&reader.reader.ledger, &reader.binding, &base)?;\n        Ok(base)","new":"        Ok(base)",
+  "tests":[["evidence_attested_followups",null],["evidence_attested_store",null],["evidence_attested_lifecycle",null]]}
+]

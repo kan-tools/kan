@@ -1,0 +1,7 @@
+DEMONSTRATED: remove-plan-custody-guards
+DEMONSTRATED: skip-cli-copy-path-checks
+DEMONSTRATED: omit-profile3-full-audit-schema
+DEMONSTRATED: skip-object-prefix-comparison
+DEMONSTRATED: skip-record-prefix-comparison
+DEMONSTRATED: omit-cli-explicit-profile
+6 compiled controls; restored suites passed.

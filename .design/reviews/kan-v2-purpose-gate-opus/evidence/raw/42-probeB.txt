@@ -1,0 +1,24 @@
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-copy-destination/.local-state/reviews/purpose-gate)
+    Finished `test` profile [unoptimized] target(s) in 0.35s
+     Running tests/zz_review_planner.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/zz_review_planner-ff40b81cd077d22f)
+
+running 2 tests
+test pb1_schema_cases_print_exact_reasons ... PB1 CREATE INDEX extra ON commits(writer)                                  -> invalid input: unsupported writable archive schema
+PB1 CREATE TRIGGER extra AFTER INSERT ON objects BEGIN SELECT 1; END       -> invalid input: unsupported writable archive schema
+PB1 CREATE VIEW extra AS SELECT 1                                          -> invalid input: unsupported writable archive schema
+PB1 CREATE TABLE extra(x)                                                  -> invalid input: unsupported writable archive schema
+PB1 PRAGMA user_version=2                                                  -> invalid input: unknown database profile
+PB1 PRAGMA user_version=3                                                  -> invalid input: unknown database profile
+PB1 PRAGMA application_id=7                                                -> invalid input: unknown database profile
+PB1 accepted=[]
+ok
+test pb2_owner_pin_reasons_and_object_count ... PB2 right=ACCEPTED
+PB2 wrong-pin=invalid evidence schema: copy-plan owner archive mismatch
+PB2 sibling-with-other-pin=invalid evidence schema: copy-plan owner archive mismatch
+PB2 sibling-own-pin=ACCEPTED
+PB2 objects=27 all_ascii=true unsorted_scan_differs_from_sorted=false
+ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.72s
+
+exit=0

@@ -1,0 +1,24 @@
+
+running 1 test
+test coordinated_sink_returns_inner_wait_to_its_caller ... FAILED
+
+failures:
+
+---- coordinated_sink_returns_inner_wait_to_its_caller stdout ----
+
+thread 'coordinated_sink_returns_inner_wait_to_its_caller' (9676487) panicked at tests/evidence_capture_contention.rs:296:5:
+assertion `left == right` failed: caller must receive measured wait
+  left: 0ns
+ right: 7ms
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    coordinated_sink_returns_inner_wait_to_its_caller
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 6 filtered out; finished in 0.00s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-copy-destination/.local-state/reviews/purpose-gate)
+    Finished `test` profile [unoptimized] target(s) in 6.82s
+     Running tests/evidence_capture_contention.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_capture_contention-cd3d36ed54c693da)
+error: test failed, to rerun pass `--test evidence_capture_contention`

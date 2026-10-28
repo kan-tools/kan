@@ -1,0 +1,16 @@
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-copy-destination/.local-state/reviews/purpose-gate)
+    Finished `test` profile [unoptimized] target(s) in 0.53s
+     Running tests/evidence_capture_contention.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_capture_contention-cd3d36ed54c693da)
+
+running 7 tests
+test coordinated_sink_returns_inner_wait_to_its_caller ... ok
+test p5_concurrent_capture_opens ... ok
+test p2_admission_restores_callers_busy_timeout ... ok
+test p1_cli_open_does_not_wait_on_exclusive_lock ... ok
+test q2_per_observation_cap_and_allowance ... ok
+test p3_concurrent_captures_share_spool ... ok
+test p4_capture_beside_brief_periodic_writer ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.48s
+
+exit=0

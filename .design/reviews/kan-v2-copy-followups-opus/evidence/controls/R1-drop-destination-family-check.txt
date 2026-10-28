@@ -1,0 +1,67 @@
++ cargo test --features v2-crypto --test evidence_copy_destination
+
+running 28 tests
+test copy_death_child ... ok
+test initialization_death_child ... ok
+test independent_sqlite_inventory_matches_the_copy_surface_catalog ... ok
+test later_admission_can_share_an_original_staged_object_without_changing_membership ... ok
+test admission_rechecks_original_membership_after_staging_under_writer_transaction ... ok
+test incomplete_copy_backup_remains_incomplete_and_resume_rejects_wrong_object_length ... ok
+test empty_record_history_is_incomplete_until_all_staged_objects_are_copied ... ok
+test concurrent_owner_batches_revalidate_under_the_writer_transaction ... ok
+test owner_cli_copy_preconditions_refuse_without_creating_output ... ok
+test owner_cli_plan_paths_cannot_be_sqlite_files_or_sidecars ... FAILED
+test owner_recipe_refusals_happen_before_destination_creation ... ok
+test owner_recipe_signer_and_profile_are_required_before_mutation ... ok
+test bounded_copy_preserves_original_bytes_and_acknowledged_proofs_before_new_admission ... ok
+test rebuild_death_child ... ok
+test pinned_wal_source_copies_its_original_snapshot_and_later_confirmation_refuses ... ok
+test plan_custody_refuses_sqlite_families_before_opening_or_writing ... FAILED
+test profile3_rejects_mixed_historical_issuers_with_a_specific_reason ... ok
+test owner_cli_pins_private_recipe_and_explicit_profile_through_lifecycle ... ok
+test profile3_rejects_retained_after_admission_and_admission_inside_original_prefix ... ok
+test resume_refuses_self_consistent_foreign_object_prefix_before_advancing ... ok
+test resume_refuses_valid_foreign_receipt_prefix_before_signing_more_proofs ... ok
+test interrupted_initialization_requires_explicit_resume_with_retained_recipe ... ok
+test rebuild_repairs_derived_columns_and_keeps_authoritative_copy_bytes ... ok
+test profile3_schema_drift_refuses_open_verify_resume_and_stale_handle_backup ... ok
+test rebuild_refuses_lost_or_replaced_authoritative_evidence_without_publishing_profile ... ok
+test rebuild_process_death_publishes_all_copy_authority_or_no_profile ... ok
+test byte_budget_never_splits_objects_or_admits_before_complete_source ... ok
+test every_copy_transaction_boundary_resumes_without_replacing_acknowledged_bytes ... ok
+
+failures:
+
+---- owner_cli_plan_paths_cannot_be_sqlite_files_or_sidecars stdout ----
+
+thread 'owner_cli_plan_paths_cannot_be_sqlite_files_or_sidecars' (9782628) panicked at tests/evidence_copy_destination.rs:1412:5:
+assertion failed: String::from_utf8_lossy(&o.stderr).contains("overlaps source SQLite files")
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- plan_custody_refuses_sqlite_families_before_opening_or_writing stdout ----
+
+thread 'plan_custody_refuses_sqlite_families_before_opening_or_writing' (9782658) panicked at tests/evidence_copy_destination.rs:1066:18:
+called `Result::unwrap_err()` on an `Ok` value: Plan { bytes: [170, 101, 110, 111, 110, 99, 101, 88, 32, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 102, 105, 115, 115, 117, 101, 114, 120, 57, 100, 105, 100, 58, 107, 101, 121, 58, 122, 68, 110, 97, 101, 109, 100, 50, 85, 97, 99, 118, 103, 117, 109, 101, 115, 86, 76, 117, 56, 111, 99, 83, 85, 106, 107, 120, 74, 118, 114, 69, 104, 69, 85, 107, 54, 75, 84, 66, 57, 104, 119, 72, 69, 83, 57, 67, 85, 102, 114, 101, 99, 105, 112, 101, 1, 105, 115, 111, 117, 114, 99, 101, 84, 105, 112, 216, 42, 88, 37, 0, 1, 113, 18, 32, 98, 47, 222, 128, 158, 23, 170, 45, 82, 200, 78, 181, 81, 255, 32, 112, 213, 91, 80, 97, 110, 3, 153, 145, 230, 156, 44, 200, 4, 230, 209, 187, 106, 115, 99, 111, 112, 101, 84, 111, 107, 101, 110, 88, 32, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 108, 115, 111, 117, 114, 99, 101, 68, 105, 103, 101, 115, 116, 88, 32, 68, 236, 50, 198, 250, 120, 77, 86, 250, 35, 88, 40, 126, 195, 38, 20, 93, 81, 47, 96, 249, 67, 205, 211, 194, 104, 9, 132, 85, 182, 13, 45, 109, 115, 111, 117, 114, 99, 101, 80, 114, 111, 102, 105, 108, 101, 1, 109, 115, 111, 117, 114, 99, 101, 84, 104, 114, 111, 117, 103, 104, 1, 109, 116, 97, 114, 103, 101, 116, 80, 114, 111, 102, 105, 108, 101, 3, 112, 104, 105, 115, 116, 111, 114, 105, 99, 97, 108, 73, 115, 115, 117, 101, 114, 120, 57, 100, 105, 100, 58, 107, 101, 121, 58, 122, 68, 110, 97, 101, 106, 103, 109, 65, 72, 77, 76, 107, 66, 80, 77, 66, 87, 110, 107, 66, 120, 121, 71, 120, 112, 88, 120, 56, 76, 103, 69, 52, 87, 74, 65, 89, 68, 104, 119, 90, 122, 121, 111, 82, 65, 100, 100, 70], source: Source { through: 1, tip: Some(Cid(bafyreidcf7pibhqxviwvfscowvi76idq2vnvayloaomzdzu4fteajzwrxm)), digest: [68, 236, 50, 198, 250, 120, 77, 86, 250, 35, 88, 40, 126, 195, 38, 20, 93, 81, 47, 96, 249, 67, 205, 211, 194, 104, 9, 132, 85, 182, 13, 45], historical_issuer: "did:key:zDnaejgmAHMLkBPMBWnkBxyGxpXx8LgE4WJAYDhwZzyoRAddF" }, target: Target { scope: [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1], issuer: "did:key:zDnaemd2UacvgumesVLu8ocSUjkxJvrEhEUk6KTB9hwHES9CU" }, nonce: [9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9], archive: [195, 53, 91, 231, 111, 183, 4, 23, 118, 185, 42, 121, 137, 238, 91, 124, 61, 250, 43, 255, 75, 163, 30, 49, 137, 163, 182, 11, 131, 200, 101, 109] }
+
+
+failures:
+    owner_cli_plan_paths_cannot_be_sqlite_files_or_sidecars
+    plan_custody_refuses_sqlite_families_before_opening_or_writing
+
+test result: FAILED. 26 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5.28s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-copy-destination/.local-state/reviews/copy-followups)
+warning: unused variable: `root`
+   --> src/evidence_store/copy_upgrade.rs:176:9
+    |
+176 |     let root = if destination_root.exists() {
+    |         ^^^^ help: if this is intentional, prefix it with an underscore: `_root`
+    |
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: `kan` (lib) generated 1 warning (run `cargo fix --lib -p kan` to apply 1 suggestion)
+    Finished `test` profile [unoptimized] target(s) in 7.08s
+     Running tests/evidence_copy_destination.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_copy_destination-e9770359e29db79f)
+error: test failed, to rerun pass `--test evidence_copy_destination`
+
+exit=101

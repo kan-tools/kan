@@ -1,0 +1,269 @@
+FRESH INDEPENDENT ADVERSARIAL REVIEW: owner-copy follow-up correction checkpoint 423054a
+Commit: 423054a7c2a1db31a4cc081b114a0f10bb6aa792 ("Protect retained copy plans from SQLite paths and pin review
+regressions"), parent 2058633. Reviewed scope = ../copy-followups-change.diff (the 8 code/doc files) plus the
+author evidence in .design/reviews/kan-v2-copy-followups-author/.
+Reviewer: Claude Code, Opus 5.5 (claude-opus-5-5), session eec9dc6c-6af0-4f62-a872-42d2e69168f7 (launched by
+run-copy-followups.sh, --no-session-persistence). Fresh, cold, in-session. No delegation, no subagents.
+Independence: I wrote none of this code. Claims marked AUTHOR are the author's. Everything else comes from code I
+read or commands I ran in this export.
+Recording: Git-first (day#168/kan#197). No kan/day reads or writes, so skill Step 7 was skipped. Date 2026-10-19.
+Governing text: .design/kan-v2-evidence-availability.md (C1 plan custody; destination qualification contract;
+new section "Owner-copy review follow-ups (2026-10-19)"). Skill:
+/Users/m/.codex/plugins/cache/kan-tools/day/0.12.0-beta.3/skills/adversarial-review/SKILL.md.
+
+VERDICT: APPROVE WITH FOLLOW-UPS
+  - Scope: the F1-F7 correction only.
+  - Not a storage or frontend parent AC. Not migration or activation acceptance.
+
+==================================================================================================
+0. NORTH STAR
+north-star.json, telos/raw-data-and-projections (Decision bafyreied3rk...): "Raw attested data is retained in full and
+never collapsed in the store ... A field holding a computed value is the failure mode." The telos also declares no
+witnesses, deliberately (bafyreicakl3...). I added no witness and did not reconstruct the 2 trust-excluded claims.
+
+How this correction relates:
+  - The plan artifact is the owner's retained raw recipe (C1). Protecting its custody serves "retained in full".
+  - The new tests pin refusals. Copy completeness is still recomputed on every audit, not stored.
+  - Tension with telos/performance-at-scale: see F-C below. The cost correction is accurate. The residual cost
+    class is still superlinear across a full copy, and that is disclosed.
+
+==================================================================================================
+1. IDENTITY AND HYGIENE
+Before and after the review (raw/identity-before.txt, raw/90-identity-after.txt):
+  - All 2291 manifest sha256 values match.
+  - The manifest file set equals `git ls-tree -r 423054a` exactly, and every git blob hash matches the export
+    bytes.
+  - Extras: north-star.json plus my review-evidence/.
+Frozen diff (raw/diff-identity.txt):
+  - ../copy-followups-change.diff equals `git diff 2058633 423054a` minus .design/reviews/kan-v2-copy-followups-author,
+    byte for byte (cmp). I read the author evidence from the export.
+Prior report is unmodified:
+  - 423054a has no diff under .design/reviews/kan-v2-copy-destination-opus/.
+  - REPORT.txt sha256 is a2e662a9...e021e.
+Cleanup:
+  - `cargo clean -p kan` removed 855 files. Shared target, 4 jobs, one cargo job at a time.
+  - The temporary tests/zz_review_followups.rs was cmp-verified against probes/ and removed. No tests/zz_* remain.
+  - No <export>/.local-state was created.
+  - Every mutated source file was restored and sha256-checked after each case (tools/mutate.py).
+  - No cargo/rustc/kan-v2 processes remain. Only the pre-existing `day mcp` and `kan mcp` (pids 2937, 2943) are
+    running. I killed nothing.
+  - Synthetic tempdir fixtures only. No keys, archives, installs, network, merge, deploy or Git write.
+OBSERVED, NOT REVIEWED, NOT TOUCHED: the parent worktree (outside the export) has uncommitted edits by someone
+else.
+  - Files: src/evidence_store.rs and tests/evidence_copy_destination.rs, mtimes 05:39-05:40 local (155+/19-).
+  - The added comment mentions "long-s in `-ſhm`", so they appear to target F-A below.
+  - Parent HEAD is still 423054a. Those edits are outside this verdict.
+
+==================================================================================================
+2. INDEPENDENTLY EXECUTED RESULTS
+Targeted suites, run twice: on the clean tree (raw/01) and again after mutation and probe removal (raw/40).
+  - evidence_copy_destination 28/28
+  - evidence_copy_source 10/10
+  - surface_conformance 19/19
+  - evidence_copy_plan 3/3
+  - This reproduces AUTHOR's 57 functions (28+10+19). The 28 include 3 subprocess-child helper functions.
+Strict `cargo clippy --features v2-crypto --all-targets -- -D warnings`: exit 0, 0 warnings, kan re-checked
+(raw/30).
+`cargo fmt --all -- --check`: exit 0 (raw/31).
+Not run:
+  - full workspace/CI test list, default-feature clippy, Linux/MSRV, Node/browser
+  - the unchanged compatibility/performance matrices (no new concern in those areas)
+
+==================================================================================================
+3. CONTROLS AND MUTANTS (controls/*.txt, controls/SUMMARY.txt)
+Each case is a compiled single-occurrence replacement. It counts as KILLED only if the named test reports FAILED
+with no compile error.
+
+AUTHOR controls, reproduced with the author's exact patterns: 6/6 KILLED by their named tests.
+  A1 remove plan custody guards  -> plan_custody_refuses_sqlite_families_before_opening_or_writing
+  A2 CLI uses bare read_plan     -> owner_cli_plan_paths_cannot_be_sqlite_files_or_sidecars
+  A3 full_audit omits check_copy_schema -> profile3_schema_drift_refuses_... (closes prior R2/F2)
+  A4 skip object prefix compare  -> resume_refuses_self_consistent_foreign_object_prefix_... (closes R3)
+  A5 skip record prefix compare  -> resume_refuses_valid_foreign_receipt_prefix_... (closes R4)
+  A6 drop --copy-profile requirement -> owner_cli_copy_preconditions_refuse_... (closes R9/F4)
+
+Reviewer mutants, each run against the whole destination suite: 8 KILLED, 1 SURVIVED.
+  R1 drop the destination-family check in read_plan_for_copy       KILLED (custody test + CLI test)
+  R2 drop the source-family check in read_plan_for_copy only       KILLED (custody test)
+  R3 drop retain_plan's check (read side kept)                     KILLED (both)
+  R4 drop the inode "plan aliases a SQLite database" check         KILLED (custody test)
+  R5 no source canonicalize                                        KILLED (macOS /var -> /private/var mismatch)
+  R6 no destination-root canonicalize                              KILLED (both)
+  R7 revert the plan-privacy error wording                         KILLED (CLI preconditions case 6)
+  R8 record-prefix compare ignores the receipt                     KILLED (foreign receipt test)
+  R9 object-prefix compare ignores length                          SURVIVED (INFO, F-D)
+
+==================================================================================================
+4. F1-F7 AUDIT (Step 2)
+F1 plan custody: PARTIALLY CLOSED. The ASCII and inode-alias cases are fixed and pinned; F-A is a demonstrated
+residual.
+  - Code:
+    - copy_upgrade.rs:139-140: retain_plan(path, &PlannedCopy) checks the canonical source path
+      (RecoveryReader::open canonicalizes, evidence_store.rs:180) before write_new_owner_only.
+    - :156-162: plan_outside_sqlite = inode alias check + shared sqlite_destination.
+    - :168-187: read_plan_for_copy canonicalizes the source and the destination root (or the parent of an absent
+      root), then checks both families before read_plan.
+    - kan-v2.rs:916-921: the CLI calls it before PlannedCopy::confirm, the signer check, budget, create and resume.
+  - copy-plan (kan-v2.rs:886-896) necessarily opens the source before retain_plan, because retain_plan needs the
+    verified source. Nothing is written before the check.
+  - Bare decoder: read_plan stays pub, documented as "never opens SQLite ... Executors must use read_plan_for_copy"
+    (:189-192).
+    - grep: the CLI no longer calls it. Internal use is only retain_plan's read-back.
+    - TSV row 151 names both functions.
+  - My attack probes (probes/zz_review_followups.rs test a_*, raw/10). All refused, with no -journal created and
+    source/plan bytes unchanged:
+    - symlinked directory, NFD spelling of an NFC directory, ASCII-case directory, x/../ path
+    - long-s main name + "-journal", upper-case main + "-Journal"
+    - long-s and NFD aliases of the main file at read time ("plan aliases a SQLite database")
+    - destination root passed through a symlink
+    - plan file that is itself a symlink ("expected regular plan file")
+  - My legitimate-path probes (test l_*). All accepted:
+    - neighbours of the source DB named archive.sqlite.plan, archive.sqlite-journal.cbor, archive.sqlite-wal-plan
+      and plan-shm (retain + exact read)
+    - real CLI copy-plan and copy-batch with relative paths from a scratch cwd
+    - resume to source_copy_complete=true, alternating between a non-sidecar plan inside the existing destination
+      directory (copy/recipe.cbor, bytes unchanged) and the original plan
+    - an absent destination whose parent is also absent is refused, and nothing is created
+F2 unsupported schema: CLOSED.
+  - evidence_copy_destination.rs:1096-1141 pins the exact reason for index, trigger, view and table through open,
+    verify_file, resume, existing-handle verify and backup.
+  - Killed by A3.
+F3 resume prefix compares: CLOSED.
+  - Tests :1143-1178 (valid foreign object, local verify passes, exact reason, rows unchanged) and :1180-1257 (valid
+    foreign H receipt + valid C RetainedVerified proof, exact reason, rows unchanged).
+  - Killed by A4, A5 and R8.
+  - The renamed test (:283, "...rejects_wrong_object_length") now names the guard it actually reaches.
+F4 CLI preconditions: CLOSED.
+  - :1259-1349 covers 7 cases: missing --copy-profile, missing pins, wrong key, short byte budget, --resume without
+    output, init --copy-profile and 0644 plan.
+  - Each exits non-zero with empty stdout and a named reason, creates no output, and leaves the plan bytes intact.
+  - :1351-1416 covers copy-plan onto the DB and its -journal, and a copy-batch plan at DEST/archive.sqlite-journal.
+F5 key possession: CLOSED as documentation.
+  - copied.rs:239-241 documents that create does not certify key possession. The CLI checks the key first
+    (kan-v2.rs:927-930), and copy_batch checks the signer (copied.rs:392).
+F6 units: CLOSED as documentation. copied.rs:351 (admit `now` is seconds) and :373 (copy_batch `issued_at` is
+  milliseconds).
+F7 wording: CLOSED.
+  - copy_upgrade.rs:194-200 maps the errors to "plan must be owner-only" and "expected regular plan file".
+  - Both are observed in tests and probes, and R7 is killed.
+  - Residual wording: custody refusals still say "destination overlaps source SQLite files" even for a source-family
+    plan. This is INFO.
+
+Cost correction (author claim): VERIFIED ACCURATE.
+  - copied.rs:401 binds `src = &source.reader().ledger`, so :420 and :451 call Ledger::read_object
+    (evidence_store.rs:813-827, `WHERE cid=?`).
+  - RecoveryReader::read_object (:228-245, NOT INDEXED) is not called from copy_batch.
+  - EXPLAIN QUERY PLAN (raw/query-plans.txt, SQLite 3.51.0 schema copy):
+    - Ledger read: "SEARCH objects USING PRIMARY KEY (cid=?)"
+    - RecoveryReader read: "SCAN objects"
+    - The record prefix lookup (RAW_COMMITS ... NOT INDEXED WHERE sequence=?) is still a rowid seek: "SEARCH commits
+      USING INTEGER PRIMARY KEY (rowid=?)".
+  - The prior report's "per-object NOT INDEXED, a batch is quadratic" is therefore wrong in mechanism. See F-C for
+    what remains.
+
+==================================================================================================
+5. FINDINGS
+F-A [LOW-MEDIUM, demonstrated] The Unicode case-fold alias of the "-shm" suffix bypasses plan custody for both
+    families. This is the residual of F1.
+  - Filesystem: on this host's default case-insensitive APFS, "archive.sqlite-ſhm" (U+017F LONG S, which case-folds
+    to 's') opens the same file as "archive.sqlite-shm". Shown by a scratch check and by P1's "alias visible as ASCII
+    -shm: true".
+  - Code: sqlite_destination (evidence_store.rs:418-455) compares names with eq_ignore_ascii_case, and the suffix
+    alias check matches only ASCII suffixes.
+    - The inode check covers the main file and existing bases, but not a sidecar name that does not exist yet.
+    - The comment at :426 ("also protects case-insensitive volumes") overclaims.
+    - The new design text ("same ... filesystem-alias collision rules") and AUTHOR's "including case/alias sidecars"
+      overclaim to the same extent.
+  - P1, destination family, real CLI (raw/10):
+    - Setup: a legitimate first batch, after which the destination has no -shm. The plan bytes are placed at
+      DEST/archive.sqlite-ſhm with mode 0600.
+    - The ASCII -shm control is refused.
+    - read_plan_for_copy(DEST/archive.sqlite-ſhm) returns Ok(379 bytes).
+    - `copy-batch --resume --plan DEST/archive.sqlite-ſhm` exits 0 and writes a batch.
+    - Afterwards the plan file is gone: SQLite used it as the WAL index and unlinked it on close. Source bytes are
+      unchanged.
+  - P3, source family (raw/11):
+    - Setup: a legacy writer closes cleanly, after which the source has no sidecars. The plan is placed at
+      SRC/archive.sqlite-ſhm.
+    - read_plan_for_copy returns Ok, and PlannedCopy::confirm succeeds.
+    - The plan bytes are rewritten while the source reader is open. The next legacy writer open/close deletes the
+      file.
+  - P2: with a live source reader, retain_plan(SRC/archive.sqlite-ſhm) fails with EEXIST only because the real -shm
+    exists, and the existing -shm is unchanged. That is incidental, not the guard.
+  - Effect: same class as the original F1. The owner's retained recipe is lost, and no evidence byte is altered.
+    Recovery requires re-planning with the same nonce from an unchanged source.
+  - Mitigation: "-journal" and "-wal" contain no letters with non-ASCII case-fold equivalents. Only "s" in "-shm" (and
+    in "sqlite", which the inode check covers) is exposed. The spelling cannot be produced by accident.
+  - Not tested: other filesystems or collations, and backup/recovery outputs that share sqlite_destination (an
+    inherited pre-existing exposure, outside this diff).
+  - Follow-up:
+    - Make the check rely on filesystem identity, not name folding. For example: refuse a plan whose canonical parent
+      directory is the source's or destination's directory (SQLite owns sibling names there), or after creation
+      verify that no SQLite family name resolves to the plan's (dev, ino).
+    - Pin it with a long-s regression on both families and correct the :426 comment.
+    - Concurrent uncommitted parent-worktree edits appear to attempt this. They are unreviewed here and need their
+      own review.
+F-B [INFO] retain_plan routes the plan through sqlite_destination, which also refuses when "<plan>-journal/-wal/-shm"
+    siblings exist, with the error "destination SQLite sidecar already exists". This is harmless over-refusal with
+    destination-flavoured wording.
+F-C [INFO, performance tension] Per-batch cost is linear in the copied prefix, not quadratic.
+  - Each batch runs a full source and destination audit, then re-reads and compares every previously copied object
+    and record on both sides (copied.rs:400-434).
+  - A full copy with a fixed budget is therefore O(n^2/budget) in total I/O.
+  - The design records full audits as an explicit cost with no performance claim. The disclosure would be more
+    precise if it named the prefix re-comparison.
+F-D [INFO] R9: the length half of the object-prefix compare (copied.rs:414) survives. The length mismatch is caught
+    earlier by audit/full_audit, and the wrong-length test asserts only is_err. Redundant defence, not a gap.
+
+No other defect found. Scope-narrowing (Step 4) is legitimate and predeclared:
+  - "they do not fence hostile concurrent filesystem replacement" (design + copy_upgrade.rs:166-167; restates the
+    governing threat model)
+  - "no bounded latency or large-archive performance claim"
+  - "No parent acceptance criterion is closed"
+  - inventory, bundles, RPC, Library sessions and admin remain later required work
+None of these narrows F1. F-A is not a narrowing: it is a gap in a check the text claims is complete.
+
+==================================================================================================
+6. FORBIDDEN-PATTERN CHECK (CLAUDE.md)
+  - No subject or evidence destruction:
+    - every refusal in tests and probes leaves source, destination and plan bytes intact
+    - F-A loses a plan artifact, not evidence
+  - No fabricated provenance: no new proof minting paths. The record-prefix guard is now pinned against a valid
+    foreign proof.
+  - Surface contract: the TSV row was updated for read_plan_for_copy, the surface_conformance suite passes, and
+    there is no new persistence surface.
+  - No new UI surface.
+  - No stored projection.
+
+==================================================================================================
+7. LIMITS
+  - Probes and mutants are hand-chosen, with no fuzzing.
+  - Debug builds on one Apple-silicon macOS host with case-insensitive APFS.
+  - Python 3 from PATH was used only for the query-plan check.
+  - Trusted-filesystem contract; no race testing.
+  - I did not run the author's control script (it writes to <export>/.local-state). Its six patterns were reproduced
+    with my own runner.
+  - AUTHOR's failed attempts (raw/first.txt compile error; raw/controls-attempt1.txt pattern count 2) were read and
+    are consistent with the final runs. I counted neither as evidence.
+
+==================================================================================================
+8. VERDICT
+**APPROVE WITH FOLLOW-UPS**
+
+The correction does what the prior review asked, and I verified it by execution:
+  - 57/57 author-claimed tests (plus copy_plan 3/3), run twice
+  - 6/6 author controls and 8/9 independent mutants killed by named assertions
+  - strict all-target clippy and fmt clean
+  - alias, relative-path and legitimate-placement probes behave correctly, with bytes preserved on refusal
+  - F2-F7 are closed, and the source-scanning cost correction is accurate
+
+F1 is closed for ASCII, case-insensitive, symlink, hard-link and Unicode-normalization aliases. It is not closed for
+a Unicode case-fold of the "-shm" suffix: I demonstrated plan-artifact loss through both the source and destination
+families on default macOS APFS (F-A). No evidence or invariant is harmed, the spelling cannot be produced by
+accident, and the loss is the same recoverable class as the original F1, so the verdict is not BLOCK.
+
+Required follow-ups:
+  - F-A: an identity-based plan-custody check plus a long-s regression for both families, with the overclaiming
+    comment and design text corrected. That fix gets its own review. The concurrent uncommitted parent-worktree edit
+    is not covered by this verdict.
+  - F-B, F-C, F-D: wording, cost-disclosure precision, INFO.

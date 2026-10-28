@@ -1,0 +1,22 @@
+
+running 1 test
+test owner_recipe_signer_and_profile_are_required_before_mutation ... FAILED
+
+failures:
+
+---- owner_recipe_signer_and_profile_are_required_before_mutation stdout ----
+
+thread 'owner_recipe_signer_and_profile_are_required_before_mutation' (9689119) panicked at tests/evidence_copy_destination.rs:236:5:
+assertion failed: Archive::create(&root, &s, wrong).is_err()
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    owner_recipe_signer_and_profile_are_required_before_mutation
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 18 filtered out; finished in 0.16s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-copy-destination)
+    Finished `test` profile [unoptimized] target(s) in 7.05s
+     Running tests/evidence_copy_destination.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_copy_destination-e9770359e29db79f)
+error: test failed, to rerun pass `--test evidence_copy_destination`

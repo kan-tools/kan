@@ -1,0 +1,17 @@
+Mon Oct 19 12:37:40 UTC 2026
++ cargo test --features v2-crypto --test zz_review_followups p3 -- --nocapture
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-copy-destination/.local-state/reviews/copy-followups)
+    Finished `test` profile [unoptimized] target(s) in 0.38s
+     Running tests/zz_review_followups.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/zz_review_followups-0d3824fa657faf2a)
+
+running 1 test
+P3 after clean writer close: listing=["archive.sqlite"]
+P3 read_plan_for_copy(SRC/archive.sqlite-ſhm): Ok(379)
+P3 confirm: ok=true
+P3 alias plan while source reader open: exists=true unchanged=false
+P3 alias plan after next legacy writer open/close: exists=false unchanged=false
+test p3_source_long_s_shm_alias_after_clean_writer_close ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 4 filtered out; finished in 0.15s
+
+exit=0

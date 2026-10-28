@@ -4,7 +4,7 @@ use crate::{
     evidence_copy_plan::{Plan, Source, Target},
     evidence_service as service,
 };
-const SOURCE_DOMAIN: &[u8] = b"tools.kan.archive.copy-source.v1\0";
+pub(super) const SOURCE_DOMAIN: &[u8] = b"tools.kan.archive.copy-source.v1\0";
 
 /// A verified complete legacy snapshot retained by a read-only transaction.
 /// A plan decoded from disk cannot construct this value without re-verification.
@@ -12,7 +12,7 @@ pub struct PlannedCopy {
     reader: RecoveryReader,
     plan: Plan,
 }
-fn frame(hash: &mut Sha256, bytes: &[u8]) {
+pub(super) fn frame(hash: &mut Sha256, bytes: &[u8]) {
     hash.update((bytes.len() as u64).to_be_bytes());
     hash.update(bytes);
 }
@@ -123,10 +123,94 @@ impl PlannedCopy {
         }
         Ok(checked)
     }
+    pub(super) fn reader(&self) -> &RecoveryReader {
+        &self.reader
+    }
     pub fn plan(&self) -> &Plan {
         &self.plan
     }
     pub fn snapshot(&self) -> Result<Snapshot> {
         self.reader.snapshot()
     }
+}
+
+/// Retain a recipe before creating its destination. The new file is private and
+/// durable; errors leave any output for explicit owner inspection.
+pub fn retain_plan(path: &Path, source: &PlannedCopy) -> Result<()> {
+    plan_outside_sqlite(&source.reader.source, path)?;
+    let plan = source.plan();
+    // surface-write: evidence-copy-plan:artifact
+    crate::persistence::write_new_owner_only(
+        crate::persistence::SurfaceWrite::EvidenceCopyPlan,
+        path,
+        plan.bytes(),
+    )?;
+    std::fs::File::open(parent_directory(path))?.sync_all()?;
+    let actual = read_plan(path, &plan.archive_id())?;
+    if actual.bytes() != plan.bytes() {
+        return Err(Error::Conflict("retained recipe changed"));
+    }
+    Ok(())
+}
+// A plan is an ordinary retained file, never a SQLite main file or sidecar.
+fn plan_outside_sqlite(database: &Path, plan: &Path) -> Result<()> {
+    if same_existing_file(database, plan) {
+        return Err(Error::Invalid("plan aliases a SQLite database"));
+    }
+    sqlite_destination(database, plan)?;
+    Ok(())
+}
+
+/// Check an owner-selected plan output before opening the source database.
+/// Opening even a read-only SQLite source may consume a reserved sidecar. This
+/// filesystem-only preflight must precede `PlannedCopy::open`, not just retention.
+/// It shares the trusted-filesystem/no-concurrent-path-replacement boundary.
+pub fn validate_plan_destination(source: &Path, plan: &Path) -> Result<()> {
+    plan_outside_sqlite(&std::fs::canonicalize(source)?, plan)
+}
+
+/// Validate plan custody against both SQLite families before any database opens.
+/// An absent destination root must have an existing parent, as creation requires.
+/// This protects owner-selected paths under the same trusted-filesystem contract
+/// as archive creation; it does not fence concurrent hostile path replacement.
+pub fn read_plan_for_copy(
+    path: &Path,
+    source: &Path,
+    destination_root: &Path,
+    expected_archive: &[u8; 32],
+) -> Result<Plan> {
+    let source = std::fs::canonicalize(source)?;
+    plan_outside_sqlite(&source, path)?;
+    let root = if destination_root.exists() {
+        std::fs::canonicalize(destination_root)?
+    } else {
+        std::fs::canonicalize(parent_directory(destination_root))?.join(
+            destination_root
+                .file_name()
+                .ok_or(Error::Invalid("destination directory"))?,
+        )
+    };
+    plan_outside_sqlite(&root.join("archive.sqlite"), path)?;
+    read_plan(path, expected_archive)
+}
+
+/// Decode bounded private recipe bytes and compare the separately supplied pin.
+/// This decoder never opens SQLite. Executors must use `read_plan_for_copy` to
+/// protect artifact custody before opening either source or destination.
+pub fn read_plan(path: &Path, expected_archive: &[u8; 32]) -> Result<Plan> {
+    use std::io::Read;
+    private_file(path).map_err(|e| match e {
+        Error::Invalid("database must be owner-only") => Error::Invalid("plan must be owner-only"),
+        Error::Invalid("expected regular database file") => {
+            Error::Invalid("expected regular plan file")
+        }
+        other => other,
+    })?;
+    let mut bytes = Vec::new();
+    std::fs::File::open(path)?
+        .take(crate::evidence_copy_plan::MAX_PLAN_BYTES as u64 + 1)
+        .read_to_end(&mut bytes)?;
+    let plan = Plan::decode(&bytes)?;
+    plan.check_archive(expected_archive)?;
+    Ok(plan)
 }

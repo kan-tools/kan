@@ -1,0 +1,13 @@
+Source export and logs: /Users/m/code/kan-tools/kan/.worktrees/kan-v2-copy-destination/.local-state/reversion/b2133935e19f4bfd9c7a9ecc26836a6a
+What would be reverted (worktree):
+  skipped .design/kan-v2-evidence-availability.md (not in --include)
+  reverting src/bin/kan-v2.rs: 1/1 hunk(s)
+  reverting src/evidence_store.rs: 1/1 hunk(s)
+  reverting src/evidence_store/copy_upgrade.rs: 1/1 hunk(s)
+  skipped tests/evidence_copy_destination.rs (not in --include)
+
+DEMONSTRATED — failed under revert: evidence_copy_destination::copy_plan_cli_refuses_preexisting_sidecar_outputs_before_opening_source
+
+Paste into the commit message:
+
+    Demonstrated-by: revert=HEAD tests=evidence_copy_destination::copy_plan_cli_refuses_preexisting_sidecar_outputs_before_opening_source outcome=DEMONSTRATED

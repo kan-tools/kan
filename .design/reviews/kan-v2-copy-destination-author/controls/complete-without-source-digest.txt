@@ -1,0 +1,24 @@
+
+running 1 test
+test empty_record_history_is_incomplete_until_all_staged_objects_are_copied ... FAILED
+
+failures:
+
+---- empty_record_history_is_incomplete_until_all_staged_objects_are_copied stdout ----
+
+thread 'empty_record_history_is_incomplete_until_all_staged_objects_are_copied' (9688303) panicked at tests/evidence_copy_destination.rs:203:9:
+assertion `left == right` failed
+  left: true
+ right: false
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    empty_record_history_is_incomplete_until_all_staged_objects_are_copied
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 18 filtered out; finished in 0.23s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-copy-destination)
+    Finished `test` profile [unoptimized] target(s) in 7.00s
+     Running tests/evidence_copy_destination.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_copy_destination-e9770359e29db79f)
+error: test failed, to rerun pass `--test evidence_copy_destination`
