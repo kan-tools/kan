@@ -1,0 +1,11 @@
+test_blob_storage_classes_and_bounds (__main__.DraftSchema) ... ok
+test_identifier_byte_bounds_ascii_and_embedded_nul (__main__.DraftSchema) ... ok
+test_identity_and_membership_local_shapes (__main__.DraftSchema) ... ok
+test_original_empty_corruption_is_preserved_but_restoration_cannot_be_empty (__main__.DraftSchema) ... ok
+test_outer_tables_are_exact_and_unpublished (__main__.DraftSchema) ... ok
+test_record_coordinates_and_each_blob_field (__main__.DraftSchema) ... ok
+
+----------------------------------------------------------------------
+Ran 6 tests in 0.005s
+
+OK

@@ -1,0 +1,17 @@
+foreign-0-bundle-sign	previous-context	previous-context
+foreign-0-bundle-genesis-under-ours	context-binding	context-binding
+foreign-1-archive-sign	previous-context	previous-context
+foreign-1-archive-genesis-under-ours	context-binding	context-binding
+foreign-2-scope-sign	previous-context	previous-context
+foreign-2-scope-genesis-under-ours	context-binding	context-binding
+foreign-3-profile-sign	previous-context	previous-context
+foreign-3-profile-genesis-under-ours	context-binding	context-binding
+replay-genesis-after-itself	sequence	sequence
+replay-seq2-after-seq2	sequence	sequence
+skip-seq3-after-seq1	sequence	sequence
+context-profile-4	profile	profile
+sign-trailing-byte	statement-canonical	statement-canonical
+sign-oversize	statement-canonical	statement-canonical
+sign-wrong-identity	signer-context	signer-context
+sign-envelope-over-bound	envelope-bound	envelope-bound
+sign-false-member-digest	OK	OK

@@ -1,0 +1,2 @@
+    Checking kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-recovery-bundle-codec)
+    Finished `dev` profile [unoptimized] target(s) in 8.26s

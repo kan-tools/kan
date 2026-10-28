@@ -1,0 +1,18 @@
+python sqlite3 library 3.51.0
+ACCEPTED	identity-profile-text-2	stored=[('int', 1), ('bytes', 'bytes32'), ('str', 'str56'), ('int', 2), ('bytes', 'bytes32'), ('bytes', 'bytes32'), ('str', 'str56')]	INTEGER affinity coerces text before CHECK
+ACCEPTED	identity-profile-real-2.0	stored=[('int', 1), ('bytes', 'bytes32'), ('str', 'str56'), ('int', 2), ('bytes', 'bytes32'), ('bytes', 'bytes32'), ('str', 'str56')]	INTEGER affinity coerces exact real
+ACCEPTED	identity-observer-56-nonascii-chars	stored=[('int', 1), ('bytes', 'bytes32'), ('str', 'str56'), ('int', 2), ('bytes', 'bytes32'), ('bytes', 'bytes32'), ('str', 'str56')]	length() counts characters: 112 UTF-8 bytes accepted
+ACCEPTED	identity-observer-80-nonascii-chars	stored=[('int', 1), ('bytes', 'bytes32'), ('str', 'str80'), ('int', 2), ('bytes', 'bytes32'), ('bytes', 'bytes32'), ('str', 'str56')]	160 bytes accepted though DID column bound is 80
+ACCEPTED	identity-singleton-text-1	stored=[('int', 1), ('bytes', 'bytes32'), ('str', 'str56'), ('int', 2), ('bytes', 'bytes32'), ('bytes', 'bytes32'), ('str', 'str56')]	rowid alias coerces text
+ACCEPTED	membership-length-text	stored=[('str', 'k'), ('int', 5)]	INTEGER affinity coerces text
+ACCEPTED	membership-length-real-5.0	stored=[('str', 'k'), ('int', 5)]	INTEGER affinity coerces exact real
+ACCEPTED	membership-cid-integer	stored=[('str', '12345'), ('int', 5)]	TEXT affinity converts number to text
+REFUSED	objects-cid-blob	IntegrityError: CHECK constraint failed: typeof(cid)='text' AND length(cid) BETWEEN 1 AND 128	typeof check refuses blob key
+ACCEPTED	objects-cid-128-nonascii	stored=[('str', 'str128'), ('bytes', b'')]	characters not bytes
+ACCEPTED	observations-seq-text	stored=[('int', 1), ('bytes', b'x')]	rowid alias coerces text
+ACCEPTED	observations-seq-real	stored=[('int', 1), ('bytes', b'x')]	rowid alias coerces exact real
+ACCEPTED	observations-gap-allowed	stored=[('int', 7), ('bytes', b'x')]	contiguity is verifier-only (expected)
+ACCEPTED	plan-row-for-profile2	stored=[('int', 1), ('bytes', b'x')]	cross-table profile rule is verifier-only (expected)
+STRICT-ACCEPTED strict-profile-text
+STRICT-ACCEPTED strict-membership-real
+STRICT-ACCEPTED strict-cid-int

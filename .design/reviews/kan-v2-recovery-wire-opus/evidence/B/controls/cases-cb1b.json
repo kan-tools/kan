@@ -1,0 +1,3 @@
+[
+ {"name":"CB1b-signature-range-block-removed","file":"src/evidence_recovery_observation.rs","old":"    {\n        return Err(invalid(\"signature-range\"));\n    }","new":"    {\n        let _ = 0;\n    }","tests":["evidence_recovery_observation","zz_review_observation_probes"]}
+]

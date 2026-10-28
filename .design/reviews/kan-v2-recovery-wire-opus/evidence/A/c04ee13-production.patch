@@ -1,0 +1,21 @@
+diff --git a/src/evidence_reconstruction.rs b/src/evidence_reconstruction.rs
+index 58f1fce..2cd45d3 100644
+--- a/src/evidence_reconstruction.rs
++++ b/src/evidence_reconstruction.rs
+@@ -130,6 +130,16 @@ pub fn decode(bytes: &[u8]) -> Result<Decoded<'_>, Error> {
+             return Ok(Decoded::Unsupported(Unsupported::Outcome));
+         }
+     }
++    // An absent clock claim is not the explicit null emitted by the recorder.
++    if !object.contains_key("observed_at_unix_micros") {
++        return Err(Error::Header);
++    }
++    // Serde's internally tagged unit variant accepts extra map entries even
++    // with deny_unknown_fields. Do not silently discard fields from a recognized
++    // forwarding intent; the struct variants retain their derived strict checks.
++    if kind == "forwarding-intent" && event.len() != 1 {
++        return Err(Error::Header);
++    }
+     let header: Header = serde_json::from_value(value).map_err(|_| Error::Header)?;
+     if !identifier(&header.attempt)
+         || matches!(&header.event, Event::TransportLink { exchange } if !identifier(exchange))

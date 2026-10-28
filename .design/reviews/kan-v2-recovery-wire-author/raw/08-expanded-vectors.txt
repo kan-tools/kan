@@ -1,0 +1,10 @@
+Traceback (most recent call last):
+  File "/Users/m/code/kan-tools/kan/.worktrees/kan-v2-recovery-bundle-codec/.design/tools/recovery_observation_vectors.py", line 280, in <module>
+    if __name__=='__main__':main()
+  File "/Users/m/code/kan-tools/kan/.worktrees/kan-v2-recovery-bundle-codec/.design/tools/recovery_observation_vectors.py", line 273, in main
+    generated=vectors();checks(generated)
+  File "/Users/m/code/kan-tools/kan/.worktrees/kan-v2-recovery-bundle-codec/.design/tools/recovery_observation_vectors.py", line 263, in checks
+    require(sign(row['statement'])==raw and result['statementCid']==codec.link(row['statementCid']),'shape vector')
+  File "/Users/m/code/kan-tools/kan/.worktrees/kan-v2-recovery-bundle-codec/.design/tools/recovery_observation_vectors.py", line 42, in require
+    if not ok:raise Rejected(reason)
+__main__.Rejected: shape vector

@@ -1,0 +1,8 @@
+$ patch -p1 -R --dry-run < review-evidence/A/c04ee13-production.patch
+patching file 'src/evidence_reconstruction.rs'
+exit=0
+$ patch -p1 -R < review-evidence/A/c04ee13-production.patch
+patching file 'src/evidence_reconstruction.rs'
+exit=0
+6d7e84074da5782773e20e2756e24700bccde9d138110f8e72e6eee9c63a319c  src/evidence_reconstruction.rs
+6d7e84074da5782773e20e2756e24700bccde9d138110f8e72e6eee9c63a319c  -

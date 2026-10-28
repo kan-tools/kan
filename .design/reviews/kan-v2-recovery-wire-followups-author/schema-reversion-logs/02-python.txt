@@ -1,0 +1,16 @@
+test_identifier_byte_bounds_ascii_and_embedded_nul (__main__.DraftSchema) ... FAIL
+
+======================================================================
+FAIL: test_identifier_byte_bounds_ascii_and_embedded_nul (__main__.DraftSchema)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/m/code/kan-tools/kan/.worktrees/kan-v2-recovery-bundle-codec/.local-state/reversion/ebbd52a9e28647d498b028f5941fc686/.design/tools/recovery_bundle_schema.py", line 71, in test_identifier_byte_bounds_ascii_and_embedded_nul
+    self.reject('INSERT INTO bundle_identity VALUES(?,?,?,?,?,?,?)',row)
+  File "/Users/m/code/kan-tools/kan/.worktrees/kan-v2-recovery-bundle-codec/.local-state/reversion/ebbd52a9e28647d498b028f5941fc686/.design/tools/recovery_bundle_schema.py", line 25, in reject
+    self.db.execute(sql, parameters)
+AssertionError: IntegrityError not raised
+
+----------------------------------------------------------------------
+Ran 1 test in 0.001s
+
+FAILED (failures=1)

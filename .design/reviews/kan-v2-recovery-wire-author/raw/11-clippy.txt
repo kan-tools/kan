@@ -1,0 +1,14 @@
+    Checking kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-recovery-bundle-codec)
+error: this creates an owned instance just for comparison
+   --> src/evidence_recovery_observation.rs:343:9
+    |
+343 |         identity.did().to_string() == context.observer,
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^ help: try: `identity.did()`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#cmp_owned
+    = note: `-D clippy::cmp-owned` implied by `-D warnings`
+    = help: to override `-D warnings` add `#[allow(clippy::cmp_owned)]`
+
+error: could not compile `kan` (lib) due to 1 previous error
+warning: build failed, waiting for other jobs to finish...
+error: could not compile `kan` (lib test) due to 1 previous error

@@ -1,0 +1,42 @@
+$ cargo test --offline --locked --features v2-crypto --test evidence_recovery_observation --test zz_review_observation_probes --no-fail-fast
+
+running 6 tests
+test caller_pins_predecessors_and_signer_are_not_learned_from_envelope ... ok
+test signed_cross_context_chain_and_profile_confusion_refuse ... ok
+test independently_resigned_hostile_vectors_refuse_with_named_error ... ok
+test independent_maximum_shape_vectors_authenticate_without_claiming_semantics ... ok
+test independent_python_bytes_signatures_and_predecessors_match ... ok
+test truncation_and_oversized_envelopes_cannot_authenticate ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.43s
+
+
+running 2 tests
+test review_pb2_predecessor_context_and_private_signer_bounds ... ok
+test review_pb1_python_generated_probes_match_named_rust_outcomes ... FAILED
+
+failures:
+
+---- review_pb1_python_generated_probes_match_named_rust_outcomes stdout ----
+
+thread 'review_pb1_python_generated_probes_match_named_rust_outcomes' (9912621) panicked at tests/zz_review_observation_probes.rs:86:5:
+[
+    "\"C31-envelope-exactly-16384\" expect=statement-fields python=statement-fields rust=envelope-bound",
+]
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    review_pb1_python_generated_probes_match_named_rust_outcomes
+
+test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-recovery-bundle-codec/.local-state/reviews/recovery-wire)
+    Finished `test` profile [unoptimized] target(s) in 7.07s
+     Running tests/evidence_recovery_observation.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_recovery_observation-d6de5ba9a7670a9d)
+     Running tests/zz_review_observation_probes.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/zz_review_observation_probes-158fd7ac9eaa250b)
+error: test failed, to rerun pass `--test zz_review_observation_probes`
+error: 1 target failed:
+    `--test zz_review_observation_probes`
+
+exit=101

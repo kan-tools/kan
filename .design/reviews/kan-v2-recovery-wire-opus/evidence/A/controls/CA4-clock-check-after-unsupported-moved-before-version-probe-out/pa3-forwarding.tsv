@@ -1,0 +1,8 @@
+plain	Capture
+escaped-type-key	Capture
+escaped-value	Capture
+extra-escaped-key	Err(Header)
+dup-type	Err(Header)
+empty-key	Err(Header)
+whitespace	Capture
+body	Err(Body)

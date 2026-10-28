@@ -252,3 +252,10 @@ These are proposed capability/refusal labels, not implemented RPC enum values.
 They complement the already explicit partial-profile-3 limitation. The storage
 writer, owner jobs and full human frontend must implement and test them before
 claiming recovery coverage.
+
+The second codec review clarifies that REQ-1 separates observer and issuer roles
+and signature domains; equal explicitly pinned keys are wire-valid but do not
+provide independent-key isolation. Owner recovery jobs default to distinct keys
+and disclose reuse. The codec appendix records this decision and diagnostic
+precedence limits. `forensic-recovery-required` also covers authenticated expected
+object lengths beyond 4 MiB, whether or not the original object row is present.
