@@ -1,0 +1,14 @@
+$ /opt/homebrew/bin/python3 scripts/revert_v2.py --helper /Users/m/.codex/plugins/cache/kan-tools/day/0.12.0-beta.3/scripts/revert-demo.py --production src/evidence_interpretation.rs --tests evidence_interpretation_followups::empty_chunks_at_covered_offsets_preserve_mapping_and_boundary_lineage,evidence_interpretation_followups::nested_tool_results_render_and_malformed_unknown_shapes_have_reasons,evidence_interpretation_followups::citations_delta_is_not_a_contradiction_and_unknown_types_do_not_guess_block_kind,evidence_interpretation_followups::bom_and_undispatched_framing_keep_source_regions_and_unknown_fields_visible
+Source export and logs: /Users/m/code/kan-tools/kan/.worktrees/kan-v2-conversation-adapter/.local-state/reversion/87ed8c573e8c4f0aaa06831437c4511d
+What would be reverted (worktree):
+  skipped .design/kan-v2-provider-interpretation.md (not in --include)
+  skipped .github/workflows/ci.yml (not in --include)
+  reverting src/evidence_interpretation.rs: 28/29 hunk(s) (1 test-side hunk(s) kept in place)
+
+DEMONSTRATED — failed under revert: evidence_interpretation_followups::empty_chunks_at_covered_offsets_preserve_mapping_and_boundary_lineage, evidence_interpretation_followups::nested_tool_results_render_and_malformed_unknown_shapes_have_reasons, evidence_interpretation_followups::citations_delta_is_not_a_contradiction_and_unknown_types_do_not_guess_block_kind, evidence_interpretation_followups::bom_and_undispatched_framing_keep_source_regions_and_unknown_fields_visible
+
+Paste into the commit message:
+
+    Demonstrated-by: revert=HEAD tests=evidence_interpretation_followups::empty_chunks_at_covered_offsets_preserve_mapping_and_boundary_lineage,evidence_interpretation_followups::nested_tool_results_render_and_malformed_unknown_shapes_have_reasons,evidence_interpretation_followups::citations_delta_is_not_a_contradiction_and_unknown_types_do_not_guess_block_kind,evidence_interpretation_followups::bom_and_undispatched_framing_keep_source_regions_and_unknown_fields_visible outcome=DEMONSTRATED
+
+exit=0

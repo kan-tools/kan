@@ -1,0 +1,17 @@
+R-C1-dup-full-frame-equality: KILLED-BY pass_m2_forged_duplicate_with_different_frame_refuses @ tests/zz_review_interp_probes.rs:509
+R-C2-direction-dropped: KILLED-BY pass_m3_forged_cross_direction_segment_refuses @ tests/zz_review_interp_probes.rs:520
+R-C3-frame-offset: KILLED-BY pass_m4_forged_frame_offset_refuses @ tests/zz_review_interp_probes.rs:530
+R-C4-body-span: KILLED-BY pass_m5_forged_span_into_header_bytes_refuses @ tests/zz_review_interp_probes.rs:543
+R-C5-final-extent: KILLED-BY pass_m6_forged_trailing_contiguous_bytes_refuse @ tests/zz_review_interp_probes.rs:552
+R-C6-block-start-after-message-delta: SURVIVED
+R-C7-delta-after-block-stop: KILLED-BY pass_s4_lifecycle_contradictions_never_cohere @ tests/zz_review_interp_probes.rs:248
+R-C8-stop-without-message-delta: KILLED-BY pass_s4_lifecycle_contradictions_never_cohere @ tests/zz_review_interp_probes.rs:248
+R-C9-message-start-content: KILLED-BY pass_s4_lifecycle_contradictions_never_cohere @ tests/zz_review_interp_probes.rs:248
+R-C10-strict-output-uncharged: SURVIVED
+R-C11-double-block-stop: KILLED-BY pass_s4_lifecycle_contradictions_never_cohere @ tests/zz_review_interp_probes.rs:248
+R-C12-empty-region-boundary: SURVIVED
+B-X1-dup-compare-partial-charge: KILLED-BY scan_accounting_pins_decode_duplicate_comparison_and_copy @ tests/evidence_assembly_review_regressions.rs:57
+B-X2-sort-by-input-only: KILLED-BY shuffled_selection_preserves_exact_binary_spans_and_duplicate_lineage, stream_offset_order_can_differ_from_observer_ordinal_order @ tests/evidence_assembly.rs:82, tests/evidence_assembly_review_regressions.rs:82
+B-X3-extent-dedup-by-value: KILLED-BY duplicate_request_end_retains_every_extent_source @ tests/evidence_assembly_review_regressions.rs:73
+A-X1-empty-text-as-blob: SURVIVED
+A-X2-empty-text-as-blob-both-guards: KILLED-BY physical_empty_text_original_and_empty_candidates_refuse_without_rewrite @ tests/evidence_recovery_bundle.rs:569

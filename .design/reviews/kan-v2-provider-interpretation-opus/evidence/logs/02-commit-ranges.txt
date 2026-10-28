@@ -1,0 +1,446 @@
+### e5ebfed
+e5ebfedf78a7a25c23b800e2ca0ef9969832864b feat(v2): draft source-linked provider interpretation
+
+
+ .design/kan-v2-provider-interpretation.md          |  37 +
+ .../README.md                                      |  11 +
+ .../design-validation.txt                          |   5 +
+ .../initial-format.txt                             | 858 +++++++++++++++++++++
+ .github/workflows/ci.yml                           |   3 +-
+ src/evidence_interpretation.rs                     | 788 +++++++++++++++++++
+ src/evidence_reconstruction.rs                     |   2 +-
+ src/lib.rs                                         |   2 +
+ tests/evidence_interpretation.rs                   | 391 ++++++++++
+ 9 files changed, 2095 insertions(+), 2 deletions(-)
+### 29073f7
+29073f7585b57d6b88e5e074fe5fd3b77aa6e3b8 test(v2): strengthen interpretation source mapping and fix fixture type
+
+
+ .../ci-initial-type-error.txt                      | 1106 ++++++++++++++++++++
+ scripts/interpretation_negative_controls.py        |   35 +
+ src/evidence_interpretation.rs                     |    8 +-
+ tests/evidence_interpretation.rs                   |   37 +-
+ 4 files changed, 1184 insertions(+), 2 deletions(-)
+### ad21efd
+ad21efdfe26d6af755102e9f9821288711962185 design(v2): specify authorized Content integration and source navigation
+
+
+ .design/kan-v2-content-api.md                      | 40 ++++++++++++++++++++++
+ .../content-design-validation.txt                  |  5 +++
+ src/evidence_interpretation.rs                     | 22 ++++++------
+ 3 files changed, 55 insertions(+), 12 deletions(-)
+### 9fe23a3
+9fe23a393475c8ae873dc3066cee5ac954951a8b test(v2): qualify provider interpretation and original-source binding
+
+
+ .design/kan-v2-content-api.md                      |  2 +-
+ .design/kan-v2-provider-interpretation.md          | 16 +++++
+ .../README.md                                      | 23 ++++---
+ .../attempt-1/02-clean.txt                         |  4 ++
+ .../attempt-1/03-tests.txt                         | 72 ++++++++++++++++++++++
+ .../attempt-1/03b-cancellation.txt                 | 12 ++++
+ .../attempt-1/04-clippy.txt                        |  5 ++
+ .../attempt-1/05-format.txt                        |  3 +
+ .../controls-1/cancel.txt                          | 21 +++++++
+ .../controls-1/coarse-citation.txt                 | 21 +++++++
+ .../controls-1/duplicate-lineage.txt               | 23 +++++++
+ .../controls-1/input-budget.txt                    | 21 +++++++
+ .../controls-1/output-budget.txt                   | 21 +++++++
+ .../controls-1/protocol-validity.txt               | 21 +++++++
+ .../controls-1/restored.txt                        | 23 +++++++
+ .../controls-1/source-bytes.txt                    | 21 +++++++
+ .../qualify.py                                     | 10 +++
+ src/evidence_interpretation.rs                     | 29 +++++++--
+ tests/evidence_interpretation.rs                   | 14 +++++
+ 19 files changed, 347 insertions(+), 15 deletions(-)
+### 2efb1fa
+2efb1faab57fa584690e8973eac6b3f0233d4a6f Merge branch 'feat/kan-v2-session-assembly' into feat/kan-v2-conversation-adapter
+# Conflicts:
+#	.github/workflows/ci.yml
+
+
+ .design/kan-v2-next-build-status.md                |   10 +-
+ .design/kan-v2-recovery-bundle-opening.md          |   15 +
+ .design/kan-v2-session-reconstruction.md           |   23 +
+ .../kan-v2-assembly-followup-author/README.md      |    3 +
+ .../kan-v2-assembly-followup-author/controls.json  |   97 +
+ .../controls/B-C12-extent-lineage-first-only.txt   |   26 +
+ .../controls/B-C13-dup-compare-uncharged.txt       |   26 +
+ .../controls/B-C14-copy-not-scanned.txt            |   26 +
+ .../controls/B-C16-decode-uncharged.txt            |   26 +
+ .../controls/B-C21-no-offset-sort.txt              |   26 +
+ .../controls/restored.txt                          |   33 +
+ .../qualification/02-clean.txt                     |    4 +
+ .../qualification/03-tests.txt                     |  137 +
+ .../qualification/03b-cancellation.txt             |   12 +
+ .../qualification/03c-snapshot.txt                 |   13 +
+ .../qualification/04-clippy.txt                    |    5 +
+ .../qualification/05-format.txt                    |    3 +
+ .../run-controls.py                                |   16 +
+ .../assembly-opening-author-custody.txt            |    1 +
+ .../assembly-opening-identity.json                 | 7270 ++++++++++++++++++++
+ .../assembly-opening-prompt.txt                    |    9 +
+ .../assembly-opening.exit                          |    1 +
+ .../assembly-opening.jsonl                         |  614 ++
+ .../assembly-opening.stderr                        |    0
+ .../evidence/REPORT.txt                            |  380 +
+ .../mutations/A-C1-null-guard-without-len.txt      |   60 +
+ .../mutations/A-C2-null-guard-any-class.txt        |   60 +
+ .../evidence/mutations/A-C3-candidate-min-zero.txt |   72 +
+ .../mutations/A-C4-progress-never-interrupts.txt   |   34 +
+ .../mutations/A-C5-progress-deadline-only.txt      |   34 +
+ .../mutations/A-C6-canonical-case-insensitive.txt  |   34 +
+ .../A-C7-writer-pass-omit-candidate-bytes.txt      |   36 +
+ .../mutations/A-C8-length-limit-raised.txt         |   38 +
+ .../mutations/A-REV-1-empty-original-reverted.txt  |   25 +
+ .../A-REV-2-full-bundle-suite-reverted.txt         |   37 +
+ .../evidence/mutations/A-REV-3-restored.txt        |   25 +
+ .../evidence/mutations/A-REV-driver.txt            |   25 +
+ .../mutations/B-C01-identical-length-only.txt      |  105 +
+ .../evidence/mutations/B-C02-no-overlap.txt        |   95 +
+ .../mutations/B-C03-no-chunk-after-end.txt         |  101 +
+ .../evidence/mutations/B-C04-no-beyond-extent.txt  |  101 +
+ .../evidence/mutations/B-C05-no-trailing-gap.txt   |  103 +
+ .../mutations/B-C06-extent-last-write-wins.txt     |   91 +
+ .../mutations/B-C07-no-events-after-terminal.txt   |   93 +
+ .../B-C08-terminal-ignores-ordinal-conflict.txt    |   93 +
+ .../evidence/mutations/B-C09-any-start-counts.txt  |   91 +
+ .../evidence/mutations/B-C10-drop-unconfirmed.txt  |  101 +
+ .../evidence/mutations/B-C11-no-ordinal-gaps.txt   |  125 +
+ .../mutations/B-C12-extent-lineage-first-only.txt  |   98 +
+ .../mutations/B-C13-dup-compare-uncharged.txt      |   95 +
+ .../evidence/mutations/B-C14-copy-not-scanned.txt  |   95 +
+ .../mutations/B-C15-no-occurrence-limit.txt        |   91 +
+ .../evidence/mutations/B-C16-decode-uncharged.txt  |   95 +
+ .../mutations/B-C17-writer-bytes-uncharged.txt     |  104 +
+ .../evidence/mutations/B-C18-wrapping-offset.txt   |  103 +
+### 0d04848
+0d048486c0e7c4e9bd2de76f19489b4d173975d4 test(v2): qualify provider interpreter with reviewed parent follow-through
+
+
+ .design/kan-v2-provider-interpretation.md          |   2 +
+ .../combined/02-clean.txt                          |   4 +
+ .../combined/03-tests.txt                          | 156 +++++++++++++++++++++
+ .../combined/03b-cancellation.txt                  |  12 ++
+ .../combined/03c-assembly.txt                      |  11 ++
+ .../combined/03d-snapshot.txt                      |  13 ++
+ .../combined/04-clippy.txt                         |   5 +
+ .../combined/05-format.txt                         |   3 +
+ 8 files changed, 206 insertions(+)
+### Scope A total: eb4f471..9fe23a3
+ .design/kan-v2-content-api.md                      |   40 +
+ .design/kan-v2-provider-interpretation.md          |   53 +
+ .../README.md                                      |   16 +
+ .../attempt-1/02-clean.txt                         |    4 +
+ .../attempt-1/03-tests.txt                         |   72 ++
+ .../attempt-1/03b-cancellation.txt                 |   12 +
+ .../attempt-1/04-clippy.txt                        |    5 +
+ .../attempt-1/05-format.txt                        |    3 +
+ .../ci-initial-type-error.txt                      | 1106 ++++++++++++++++++++
+ .../content-design-validation.txt                  |    5 +
+ .../controls-1/cancel.txt                          |   21 +
+ .../controls-1/coarse-citation.txt                 |   21 +
+ .../controls-1/duplicate-lineage.txt               |   23 +
+ .../controls-1/input-budget.txt                    |   21 +
+ .../controls-1/output-budget.txt                   |   21 +
+ .../controls-1/protocol-validity.txt               |   21 +
+ .../controls-1/restored.txt                        |   23 +
+ .../controls-1/source-bytes.txt                    |   21 +
+ .../design-validation.txt                          |    5 +
+ .../initial-format.txt                             |  858 +++++++++++++++
+ .../qualify.py                                     |   10 +
+ .github/workflows/ci.yml                           |    3 +-
+ scripts/interpretation_negative_controls.py        |   35 +
+ src/evidence_interpretation.rs                     |  811 ++++++++++++++
+ src/evidence_reconstruction.rs                     |    2 +-
+ src/lib.rs                                         |    2 +
+ tests/evidence_interpretation.rs                   |  440 ++++++++
+ 27 files changed, 3652 insertions(+), 2 deletions(-)
+### Scope B total: eb4f471..a65e2a6
+ .design/kan-v2-next-build-status.md                |   10 +-
+ .design/kan-v2-recovery-bundle-opening.md          |   15 +
+ .design/kan-v2-session-reconstruction.md           |   23 +
+ .../kan-v2-assembly-followup-author/README.md      |    3 +
+ .../kan-v2-assembly-followup-author/controls.json  |   97 +
+ .../controls/B-C12-extent-lineage-first-only.txt   |   26 +
+ .../controls/B-C13-dup-compare-uncharged.txt       |   26 +
+ .../controls/B-C14-copy-not-scanned.txt            |   26 +
+ .../controls/B-C16-decode-uncharged.txt            |   26 +
+ .../controls/B-C21-no-offset-sort.txt              |   26 +
+ .../controls/restored.txt                          |   33 +
+ .../qualification/02-clean.txt                     |    4 +
+ .../qualification/03-tests.txt                     |  137 +
+ .../qualification/03b-cancellation.txt             |   12 +
+ .../qualification/03c-snapshot.txt                 |   13 +
+ .../qualification/04-clippy.txt                    |    5 +
+ .../qualification/05-format.txt                    |    3 +
+ .../run-controls.py                                |   16 +
+ .../assembly-opening-author-custody.txt            |    1 +
+ .../assembly-opening-identity.json                 | 7270 ++++++++++++++++++++
+ .../assembly-opening-prompt.txt                    |    9 +
+ .../assembly-opening.exit                          |    1 +
+ .../assembly-opening.jsonl                         |  614 ++
+ .../assembly-opening.stderr                        |    0
+ .../evidence/REPORT.txt                            |  380 +
+ .../mutations/A-C1-null-guard-without-len.txt      |   60 +
+ .../mutations/A-C2-null-guard-any-class.txt        |   60 +
+ .../evidence/mutations/A-C3-candidate-min-zero.txt |   72 +
+ .../mutations/A-C4-progress-never-interrupts.txt   |   34 +
+ .../mutations/A-C5-progress-deadline-only.txt      |   34 +
+ .../mutations/A-C6-canonical-case-insensitive.txt  |   34 +
+ .../A-C7-writer-pass-omit-candidate-bytes.txt      |   36 +
+ .../mutations/A-C8-length-limit-raised.txt         |   38 +
+ .../mutations/A-REV-1-empty-original-reverted.txt  |   25 +
+ .../A-REV-2-full-bundle-suite-reverted.txt         |   37 +
+ .../evidence/mutations/A-REV-3-restored.txt        |   25 +
+ .../evidence/mutations/A-REV-driver.txt            |   25 +
+ .../mutations/B-C01-identical-length-only.txt      |  105 +
+ .../evidence/mutations/B-C02-no-overlap.txt        |   95 +
+ .../mutations/B-C03-no-chunk-after-end.txt         |  101 +
+ .../evidence/mutations/B-C04-no-beyond-extent.txt  |  101 +
+ .../evidence/mutations/B-C05-no-trailing-gap.txt   |  103 +
+ .../mutations/B-C06-extent-last-write-wins.txt     |   91 +
+ .../mutations/B-C07-no-events-after-terminal.txt   |   93 +
+ .../B-C08-terminal-ignores-ordinal-conflict.txt    |   93 +
+ .../evidence/mutations/B-C09-any-start-counts.txt  |   91 +
+ .../evidence/mutations/B-C10-drop-unconfirmed.txt  |  101 +
+ .../evidence/mutations/B-C11-no-ordinal-gaps.txt   |  125 +
+ .../mutations/B-C12-extent-lineage-first-only.txt  |   98 +
+ .../mutations/B-C13-dup-compare-uncharged.txt      |   95 +
+ .../evidence/mutations/B-C14-copy-not-scanned.txt  |   95 +
+ .../mutations/B-C15-no-occurrence-limit.txt        |   91 +
+ .../evidence/mutations/B-C16-decode-uncharged.txt  |   95 +
+ .../mutations/B-C17-writer-bytes-uncharged.txt     |  104 +
+ .../evidence/mutations/B-C18-wrapping-offset.txt   |  103 +
+ .../evidence/mutations/B-C19-header-span-cited.txt |  111 +
+ .../mutations/B-C20-contiguous-from-nothing.txt    |  104 +
+ .../evidence/mutations/B-C21-no-offset-sort.txt    |   81 +
+ .../mutations/B-C21b-no-offset-sort-vs-BP16.txt    |   37 +
+ .../mutations/B-C22-pre-preflight-skipped.txt      |  106 +
+ .../evidence/mutations/driver-spec-A.txt           |    8 +
+ .../evidence/mutations/driver-spec-B.txt           |   22 +
+ .../evidence/mutations/driver-spec-B21b.txt        |    1 +
+ .../evidence/probes/gen-A.log                      |   10 +
+ .../evidence/probes/gen_A_probes.py                |   90 +
+ ...-p3-complete-empty-original-initial-loss.sqlite |  Bin 0 -> 40960 bytes
+ .../PA2-p3-complete-empty-original-restored.sqlite |  Bin 0 -> 40960 bytes
+ .../PA3-p3-partial-two-empty-one-restored.sqlite   |  Bin 0 -> 32768 bytes
+ .../out-A/PA4-p2-two-empty-both-restored.sqlite    |  Bin 0 -> 32768 bytes
+ .../out-A/PH1-empty-original-stored-as-TEXT.sqlite |  Bin 0 -> 40960 bytes
+ .../probes/out-A/PH2-empty-candidate-blob.sqlite   |  Bin 0 -> 40960 bytes
+ .../probes/out-A/PH3-empty-candidate-TEXT.sqlite   |  Bin 0 -> 40960 bytes
+ ...H4-empty-original-rewritten-as-zeroblob0.sqlite |  Bin 0 -> 40960 bytes
+ ...riginal-truncated-to-empty-after-signing.sqlite |  Bin 0 -> 40960 bytes
+ .../PH6-empty-original-replaced-by-one-byte.sqlite |  Bin 0 -> 40960 bytes
+ .../evidence/probes/out-A/cases.json               |  923 +++
+ .../evidence/probes/zz_review_A_probes.rs          |   87 +
+ .../evidence/probes/zz_review_B2_probes.rs         |   36 +
+ .../evidence/probes/zz_review_B_probes.rs          |  393 ++
+ .../evidence/raw/00-identity-before.txt            |   10 +
+ .../evidence/raw/00-source-status-full-before.txt  |    0
+ .../evidence/raw/01-commit-stats.txt               |  172 +
+ .../evidence/raw/02-clean.txt                      |    5 +
+ .../evidence/raw/03-build.txt                      |    6 +
+ .../evidence/raw/04-baseline-tests.txt             |  126 +
+ .../evidence/raw/05-units.txt                      |    9 +
+ .../evidence/raw/05b-units-assembly.txt            |   12 +
+ .../evidence/raw/05c-units-snapshot.txt            |   14 +
+ .../evidence/raw/06-clippy.txt                     |    6 +
+ .../evidence/raw/07-fmt.txt                        |    4 +
+ ...08-python-recovery_bundle_review_vectors.py.txt |    5 +
+ .../raw/08-python-recovery_bundle_schema.py.txt    |   16 +
+ ...08-python-recovery_replay_review_vectors.py.txt |    5 +
+ .../raw/08-python-recovery_replay_vectors.py.txt   |    5 +
+ .../evidence/raw/10-fixture-independence.txt       |   30 +
+ .../evidence/raw/20-diff-src-stat.txt              |    5 +
+ .../evidence/raw/21-scope-narrowing-grep.txt       |   83 +
+ .../evidence/raw/90-final-tests.txt                |  127 +
+ .../evidence/raw/91-final-units-assembly.txt       |   13 +
+ .../evidence/raw/92-final-units-snapshot.txt       |   14 +
+ .../evidence/raw/93-final-fmt.txt                  |    4 +
+ .../evidence/raw/99-identity-after.txt             |   10 +
+ .../evidence/raw/99-source-git-after.txt           |    2 +
+ .../evidence/raw/99b-identity-final.txt            |    8 +
+ .../evidence/raw/A-probes-run1.txt                 |   23 +
+ .../evidence/raw/B-probes-run1.txt                 |   45 +
+ .../evidence/raw/B2-probe-unmutated.txt            |   14 +
+ .../evidence/tools/mutate.py                       |   49 +
+ .../evidence/tools/revert_bundle.py                |   38 +
+ .../evidence/tools/run.sh                          |   17 +
+ .../evidence/tools/spec-A.json                     |  135 +
+ .../evidence/tools/spec-B.json                     |  420 ++
+ .../evidence/tools/spec-B21b.json                  |   16 +
+ .../evidence/tools/verify_identity.py              |   86 +
+ .../kan-v2-assembly-opening-opus/north-star.json   |   92 +
+ .../binary-sha256.txt                              |    1 +
+ .../kan-v2-library-download-recheck/exit.txt       |    1 +
+ .../fixture-log.txt                                |    7 +
+ .../kan-v2-library-download-recheck/fixture.json   |    1 +
+ .../kan-v2-library-download-recheck/pid.txt        |    1 +
+ .../kan-v2-library-download-recheck/result.txt     |   15 +
+ .../00-failed-method.txt                           |    1 +
+ .../01-clean.txt                                   |    4 +
+ .../02-tests.txt                                   |   26 +
+ .../03-clippy.txt                                  |    5 +
+ .../04-fmt.txt                                     |    3 +
+ .../README.md                                      |   11 +
+ .../kan-v2-session-assembly-author/README.md       |    5 +-
+ .../ci-initial-perf-rerun.txt                      | 1160 ++++
+ .github/workflows/ci.yml                           |    2 +-
+ src/evidence_assembly.rs                           |    4 +-
+ tests/evidence_assembly_review_regressions.rs      |  105 +
+ tests/evidence_recovery_bundle.rs                  |   81 +
+ 133 files changed, 16095 insertions(+), 9 deletions(-)
+### d592b73
+d592b73e0244f2d8f51da1520f1a8abfe5d10b3b review(v2): retain fresh Opus reader and assembly approval with follow-ups
+
+
+ .../assembly-opening-author-custody.txt            |    1 +
+ .../assembly-opening-identity.json                 | 7270 ++++++++++++++++++++
+ .../assembly-opening-prompt.txt                    |    9 +
+ .../assembly-opening.exit                          |    1 +
+ .../assembly-opening.jsonl                         |  614 ++
+ .../assembly-opening.stderr                        |    0
+ .../evidence/REPORT.txt                            |  380 +
+ .../mutations/A-C1-null-guard-without-len.txt      |   60 +
+ .../mutations/A-C2-null-guard-any-class.txt        |   60 +
+ .../evidence/mutations/A-C3-candidate-min-zero.txt |   72 +
+ .../mutations/A-C4-progress-never-interrupts.txt   |   34 +
+ .../mutations/A-C5-progress-deadline-only.txt      |   34 +
+ .../mutations/A-C6-canonical-case-insensitive.txt  |   34 +
+ .../A-C7-writer-pass-omit-candidate-bytes.txt      |   36 +
+ .../mutations/A-C8-length-limit-raised.txt         |   38 +
+ .../mutations/A-REV-1-empty-original-reverted.txt  |   25 +
+ .../A-REV-2-full-bundle-suite-reverted.txt         |   37 +
+ .../evidence/mutations/A-REV-3-restored.txt        |   25 +
+ .../evidence/mutations/A-REV-driver.txt            |   25 +
+ .../mutations/B-C01-identical-length-only.txt      |  105 +
+ .../evidence/mutations/B-C02-no-overlap.txt        |   95 +
+ .../mutations/B-C03-no-chunk-after-end.txt         |  101 +
+ .../evidence/mutations/B-C04-no-beyond-extent.txt  |  101 +
+ .../evidence/mutations/B-C05-no-trailing-gap.txt   |  103 +
+ .../mutations/B-C06-extent-last-write-wins.txt     |   91 +
+ .../mutations/B-C07-no-events-after-terminal.txt   |   93 +
+ .../B-C08-terminal-ignores-ordinal-conflict.txt    |   93 +
+ .../evidence/mutations/B-C09-any-start-counts.txt  |   91 +
+ .../evidence/mutations/B-C10-drop-unconfirmed.txt  |  101 +
+ .../evidence/mutations/B-C11-no-ordinal-gaps.txt   |  125 +
+ .../mutations/B-C12-extent-lineage-first-only.txt  |   98 +
+ .../mutations/B-C13-dup-compare-uncharged.txt      |   95 +
+ .../evidence/mutations/B-C14-copy-not-scanned.txt  |   95 +
+ .../mutations/B-C15-no-occurrence-limit.txt        |   91 +
+ .../evidence/mutations/B-C16-decode-uncharged.txt  |   95 +
+ .../mutations/B-C17-writer-bytes-uncharged.txt     |  104 +
+ .../evidence/mutations/B-C18-wrapping-offset.txt   |  103 +
+ .../evidence/mutations/B-C19-header-span-cited.txt |  111 +
+ .../mutations/B-C20-contiguous-from-nothing.txt    |  104 +
+ .../evidence/mutations/B-C21-no-offset-sort.txt    |   81 +
+ .../mutations/B-C21b-no-offset-sort-vs-BP16.txt    |   37 +
+ .../mutations/B-C22-pre-preflight-skipped.txt      |  106 +
+ .../evidence/mutations/driver-spec-A.txt           |    8 +
+ .../evidence/mutations/driver-spec-B.txt           |   22 +
+ .../evidence/mutations/driver-spec-B21b.txt        |    1 +
+ .../evidence/probes/gen-A.log                      |   10 +
+ .../evidence/probes/gen_A_probes.py                |   90 +
+ ...-p3-complete-empty-original-initial-loss.sqlite |  Bin 0 -> 40960 bytes
+ .../PA2-p3-complete-empty-original-restored.sqlite |  Bin 0 -> 40960 bytes
+ .../PA3-p3-partial-two-empty-one-restored.sqlite   |  Bin 0 -> 32768 bytes
+ .../out-A/PA4-p2-two-empty-both-restored.sqlite    |  Bin 0 -> 32768 bytes
+ .../out-A/PH1-empty-original-stored-as-TEXT.sqlite |  Bin 0 -> 40960 bytes
+ .../probes/out-A/PH2-empty-candidate-blob.sqlite   |  Bin 0 -> 40960 bytes
+ .../probes/out-A/PH3-empty-candidate-TEXT.sqlite   |  Bin 0 -> 40960 bytes
+ ...H4-empty-original-rewritten-as-zeroblob0.sqlite |  Bin 0 -> 40960 bytes
+ ...riginal-truncated-to-empty-after-signing.sqlite |  Bin 0 -> 40960 bytes
+ .../PH6-empty-original-replaced-by-one-byte.sqlite |  Bin 0 -> 40960 bytes
+### 0af32be
+0af32be630fd0ff27e0f350abdf57f4a01be9785 test(v2): promote assembly accounting, ordering and lineage probes
+
+
+ .design/kan-v2-session-reconstruction.md      |  21 ++++++
+ .github/workflows/ci.yml                      |   2 +-
+ src/evidence_assembly.rs                      |   4 +-
+ tests/evidence_assembly_review_regressions.rs | 105 ++++++++++++++++++++++++++
+ 4 files changed, 130 insertions(+), 2 deletions(-)
+### 6bf681a
+6bf681a1949ad05fc5333bb8979e32950aba68b0 test(v2): retain reader re-review and physical empty-value refusals
+
+
+ .design/kan-v2-next-build-status.md                |    4 +-
+ .design/kan-v2-recovery-bundle-opening.md          |   15 +
+ .../assembly-opening-author-custody.txt            |    1 +
+ .../assembly-opening-identity.json                 | 7270 ++++++++++++++++++++
+ .../assembly-opening-prompt.txt                    |    9 +
+ .../assembly-opening.exit                          |    1 +
+ .../assembly-opening.jsonl                         |  614 ++
+ .../assembly-opening.stderr                        |    0
+ .../evidence/REPORT.txt                            |  380 +
+ .../mutations/A-C1-null-guard-without-len.txt      |   60 +
+ .../mutations/A-C2-null-guard-any-class.txt        |   60 +
+ .../evidence/mutations/A-C3-candidate-min-zero.txt |   72 +
+ .../mutations/A-C4-progress-never-interrupts.txt   |   34 +
+ .../mutations/A-C5-progress-deadline-only.txt      |   34 +
+ .../mutations/A-C6-canonical-case-insensitive.txt  |   34 +
+ .../A-C7-writer-pass-omit-candidate-bytes.txt      |   36 +
+ .../mutations/A-C8-length-limit-raised.txt         |   38 +
+ .../mutations/A-REV-1-empty-original-reverted.txt  |   25 +
+ .../A-REV-2-full-bundle-suite-reverted.txt         |   37 +
+ .../evidence/mutations/A-REV-3-restored.txt        |   25 +
+ .../evidence/mutations/A-REV-driver.txt            |   25 +
+ .../mutations/B-C01-identical-length-only.txt      |  105 +
+ .../evidence/mutations/B-C02-no-overlap.txt        |   95 +
+ .../mutations/B-C03-no-chunk-after-end.txt         |  101 +
+ .../evidence/mutations/B-C04-no-beyond-extent.txt  |  101 +
+ .../evidence/mutations/B-C05-no-trailing-gap.txt   |  103 +
+ .../mutations/B-C06-extent-last-write-wins.txt     |   91 +
+ .../mutations/B-C07-no-events-after-terminal.txt   |   93 +
+ .../B-C08-terminal-ignores-ordinal-conflict.txt    |   93 +
+ .../evidence/mutations/B-C09-any-start-counts.txt  |   91 +
+ .../evidence/mutations/B-C10-drop-unconfirmed.txt  |  101 +
+ .../evidence/mutations/B-C11-no-ordinal-gaps.txt   |  125 +
+ .../mutations/B-C12-extent-lineage-first-only.txt  |   98 +
+ .../mutations/B-C13-dup-compare-uncharged.txt      |   95 +
+ .../evidence/mutations/B-C14-copy-not-scanned.txt  |   95 +
+ .../mutations/B-C15-no-occurrence-limit.txt        |   91 +
+ .../evidence/mutations/B-C16-decode-uncharged.txt  |   95 +
+ .../mutations/B-C17-writer-bytes-uncharged.txt     |  104 +
+ .../evidence/mutations/B-C18-wrapping-offset.txt   |  103 +
+ .../evidence/mutations/B-C19-header-span-cited.txt |  111 +
+ .../mutations/B-C20-contiguous-from-nothing.txt    |  104 +
+ .../evidence/mutations/B-C21-no-offset-sort.txt    |   81 +
+ .../mutations/B-C21b-no-offset-sort-vs-BP16.txt    |   37 +
+ .../mutations/B-C22-pre-preflight-skipped.txt      |  106 +
+ .../evidence/mutations/driver-spec-A.txt           |    8 +
+ .../evidence/mutations/driver-spec-B.txt           |   22 +
+ .../evidence/mutations/driver-spec-B21b.txt        |    1 +
+ .../evidence/probes/gen-A.log                      |   10 +
+ .../evidence/probes/gen_A_probes.py                |   90 +
+ ...-p3-complete-empty-original-initial-loss.sqlite |  Bin 0 -> 40960 bytes
+ .../PA2-p3-complete-empty-original-restored.sqlite |  Bin 0 -> 40960 bytes
+ .../PA3-p3-partial-two-empty-one-restored.sqlite   |  Bin 0 -> 32768 bytes
+ .../out-A/PA4-p2-two-empty-both-restored.sqlite    |  Bin 0 -> 32768 bytes
+ .../out-A/PH1-empty-original-stored-as-TEXT.sqlite |  Bin 0 -> 40960 bytes
+ .../probes/out-A/PH2-empty-candidate-blob.sqlite   |  Bin 0 -> 40960 bytes
+ .../probes/out-A/PH3-empty-candidate-TEXT.sqlite   |  Bin 0 -> 40960 bytes
+ ...H4-empty-original-rewritten-as-zeroblob0.sqlite |  Bin 0 -> 40960 bytes
+### a65e2a6
+a65e2a67e89cd945db1a331dc5cd47eeac5295e5 test(v2): qualify fresh-review follow-through for reader and assembly
+
+
+ .design/kan-v2-next-build-status.md                |   2 +-
+ .design/kan-v2-session-reconstruction.md           |   2 +
+ .../kan-v2-assembly-followup-author/README.md      |   3 +
+ .../kan-v2-assembly-followup-author/controls.json  |  97 +++++++++++++++
+ .../controls/B-C12-extent-lineage-first-only.txt   |  26 ++++
+ .../controls/B-C13-dup-compare-uncharged.txt       |  26 ++++
+ .../controls/B-C14-copy-not-scanned.txt            |  26 ++++
+ .../controls/B-C16-decode-uncharged.txt            |  26 ++++
+ .../controls/B-C21-no-offset-sort.txt              |  26 ++++
+ .../controls/restored.txt                          |  33 +++++
+ .../qualification/02-clean.txt                     |   4 +
+ .../qualification/03-tests.txt                     | 137 +++++++++++++++++++++
+ .../qualification/03b-cancellation.txt             |  12 ++
+ .../qualification/03c-snapshot.txt                 |  13 ++
+ .../qualification/04-clippy.txt                    |   5 +
+ .../qualification/05-format.txt                    |   3 +
+ .../run-controls.py                                |  16 +++
+ 17 files changed, 456 insertions(+), 1 deletion(-)

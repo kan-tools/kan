@@ -1,0 +1,23 @@
+
+running 1 test
+test nested_tool_results_render_and_malformed_unknown_shapes_have_reasons ... FAILED
+
+failures:
+
+---- nested_tool_results_render_and_malformed_unknown_shapes_have_reasons stdout ----
+
+thread 'nested_tool_results_render_and_malformed_unknown_shapes_have_reasons' (10437562) panicked at tests/evidence_interpretation_followups.rs:162:5:
+assertion failed: d.items.iter().any(|i|
+        i.text.as_deref() == Some("NESTED-RESULT") &&
+            i.pointer.as_deref() == Some("/messages/0/content/0/content/0"))
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    nested_tool_results_render_and_malformed_unknown_shapes_have_reasons
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 5 filtered out; finished in 0.00s
+
+    Finished `test` profile [unoptimized] target(s) in 0.14s
+     Running tests/evidence_interpretation_followups.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_interpretation_followups-4e80bc39574f69f6)
+error: test failed, to rerun pass `--test evidence_interpretation_followups`

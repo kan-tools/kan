@@ -174,7 +174,7 @@ fn identifier(s: &str) -> bool {
 // Deserialize without JSON map's last-write-wins semantics. Constructing Value
 // only after rejecting each duplicate lets variant detection remain forward
 // compatible without hiding ambiguous fields inside unknown events.
-struct Unique(Value);
+pub(crate) struct Unique(pub(crate) Value);
 impl<'de> Deserialize<'de> for Unique {
     fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
         struct Strict;

@@ -1,0 +1,50 @@
+
+running 13 tests
+test missing_event_and_delta_types_are_malformed_not_future_extensions ... ok
+test empty_sse_and_malformed_message_delta_are_explicit ... ok
+test duplicate_keys_aliases_depth_and_truncation_are_visible ... ok
+test newline_forms_multiline_comments_and_raw_unknown_fields_survive ... ok
+test mapping_refuses_foreign_group_unavailable_source_and_forged_extent ... ok
+test malformed_unknown_error_and_trailing_event_are_visible ... ok
+test exact_budgets_and_cancellation_return_no_partial_document ... ok
+test response_json_and_provider_errors_never_claim_stream_completeness ... ok
+test request_history_and_unknown_fields_remain_source_linked ... ok
+test block_sequence_conflicts_and_sparse_indices_never_complete ... ok
+test mapping_refuses_gaps_overlaps_forged_source_bytes_and_ranges ... ok
+test tool_fragments_are_not_repaired_or_replaced_by_empty_initial_input ... ok
+test every_capture_split_preserves_sse_text_and_exact_duplicate_source_spans ... ok
+
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.14s
+
+
+running 6 tests
+test nested_tool_results_render_and_malformed_unknown_shapes_have_reasons ... ok
+test bom_and_undispatched_framing_keep_source_regions_and_unknown_fields_visible ... ok
+test sequence_issue_is_attached_to_the_block_start_that_follows_message_delta ... ok
+test citations_delta_is_not_a_contradiction_and_unknown_types_do_not_guess_block_kind ... ok
+test absolute_output_accounting_covers_json_strings_and_sse_data ... FAILED
+test empty_chunks_at_covered_offsets_preserve_mapping_and_boundary_lineage ... ok
+
+failures:
+
+---- absolute_output_accounting_covers_json_strings_and_sse_data stdout ----
+
+thread 'absolute_output_accounting_covers_json_strings_and_sse_data' (10435497) panicked at tests/evidence_interpretation_followups.rs:56:5:
+assertion `left == right` failed
+  left: 40
+ right: 85
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    absolute_output_accounting_covers_json_strings_and_sse_data
+
+test result: FAILED. 5 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-conversation-adapter)
+    Finished `test` profile [unoptimized] target(s) in 7.85s
+     Running tests/evidence_interpretation.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_interpretation-13fed510d614cbe3)
+     Running tests/evidence_interpretation_followups.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_interpretation_followups-4e80bc39574f69f6)
+error: test failed, to rerun pass `--test evidence_interpretation_followups`
+
+exit=101

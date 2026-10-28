@@ -1,0 +1,46 @@
+$ git rev-parse --show-toplevel
+/Users/m/code/kan-tools/kan/.worktrees/kan-v2-conversation-adapter
+$ git branch --show-current
+feat/kan-v2-conversation-adapter
+$ git log --oneline -15 --graph
+* 0d04848 test(v2): qualify provider interpreter with reviewed parent follow-through
+*   2efb1fa Merge branch 'feat/kan-v2-session-assembly' into feat/kan-v2-conversation-adapter
+|\  
+| * a65e2a6 test(v2): qualify fresh-review follow-through for reader and assembly
+| *   2906902 Merge branch 'feat/kan-v2-recovery-opening' into feat/kan-v2-session-assembly
+| |\  
+| | * 6bf681a test(v2): retain reader re-review and physical empty-value refusals
+| * | 0af32be test(v2): promote assembly accounting, ordering and lineage probes
+| * | d592b73 review(v2): retain fresh Opus reader and assembly approval with follow-ups
+* | | 9fe23a3 test(v2): qualify provider interpretation and original-source binding
+* | | ad21efd design(v2): specify authorized Content integration and source navigation
+* | | 29073f7 test(v2): strengthen interpretation source mapping and fix fixture type
+* | | e5ebfed feat(v2): draft source-linked provider interpretation
+|/ /  
+* | eb4f471 test(v2): qualify combined reader correction and session assembly
+* | 2b2baa9 Merge branch 'feat/kan-v2-recovery-opening' into feat/kan-v2-session-assembly
+|\| 
+| * b6a4f3f fix(v2): retain empty original payloads during bundle inspection
+| * db1bb06 docs(v2): retain independent recovery-reader block and replay review
+* | 568d6c1 test(v2): qualify session assembly isolation and lineage
+* | 1ac0ead feat(v2): draft bounded occurrence assembly with retained source lineage
+|/  
+* 01bc49b test(v2): qualify the physical reader with strict restoration replay
+*   5c2059d Merge branch 'feat/kan-v2-recovery-replay' into feat/kan-v2-recovery-opening
+|\  
+| * c0a7431 fix(v2): authenticate restored requests before accepting recovery history
+| * 7a04798 docs(v2): retain independent replay and member follow-through review
+* | 21c6e8e test(v2): qualify recovery bundle inspection and persistence surfaces
+* | eb1d467 feat(v2): draft bounded read-only recovery bundle inspection
+|/  
+* b52aa48 test(v2): qualify pure recovery replay and retained evidence basis
+*   0e1eac0 Merge branch 'feat/kan-v2-recovery-member' into feat/kan-v2-recovery-replay
+|\  
+$ git merge-base main HEAD
+babebb347381e131c0353f61e2ec8ff10d294c38
+$ git diff --stat main...HEAD | tail -5
+ web/operations/app.js                              |  144 +
+ web/operations/index.html                          |   13 +
+ web/operations/style.css                           |   10 +
+ web/theme.js                                       |   32 +
+ 3603 files changed, 390894 insertions(+), 1034 deletions(-)

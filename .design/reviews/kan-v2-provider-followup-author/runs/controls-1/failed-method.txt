@@ -1,0 +1,1 @@
+R-C1 compiled and failed the named forged-duplicate behavior test because unwrap_err received successful SourceSpan output. The driver incorrectly required the literal word assertion. Source was restored; classify that exact successful-output panic as a semantic failure and rerun all controls.

@@ -1,0 +1,151 @@
+$ cargo test --features v2-crypto --test evidence_interpretation --test evidence_interpretation_review_regressions --test evidence_interpretation_followups --test evidence_assembly --test evidence_assembly_review_regressions --test evidence_reconstruction --test evidence_reconstruction_review_regressions --test evidence_recovery_bundle --test evidence_recovery_replay --test evidence_recovery_replay_review_regressions --test surface_conformance
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-conversation-adapter)
+error[E0308]: mismatched types
+   --> src/evidence_interpretation.rs:827:32
+    |
+827 |             let a = offset.max(region.start);
+    |                            --- ^^^^^^^^^^^^ expected `u64`, found `usize`
+    |                            |
+    |                            arguments to this method are incorrect
+    |
+help: the return type of this call is `usize` due to the type of the argument passed
+   --> src/evidence_interpretation.rs:827:21
+    |
+827 |             let a = offset.max(region.start);
+    |                     ^^^^^^^^^^^------------^
+    |                                |
+    |                                this argument influences the return type of `max`
+note: method defined here
+   --> /rustc/31fca3adb283cc9dfd56b49cdee9a96eb9c96ffd/library/core/src/cmp.rs:1033:7
+help: you can convert a `usize` to a `u64` and panic if the converted value doesn't fit
+    |
+827 |             let a = offset.max(region.start.try_into().unwrap());
+    |                                            ++++++++++++++++++++
+
+error[E0308]: mismatched types
+   --> src/evidence_interpretation.rs:829:20
+    |
+829 |             if a < b || (region.is_empty() && offset <= a && a <= end && a == region.start) {
+    |                -   ^ expected `u64`, found `usize`
+    |                |
+    |                expected because this is `u64`
+    |
+help: you can convert a `usize` to a `u64` and panic if the converted value doesn't fit
+    |
+829 |             if a < b.try_into().unwrap() || (region.is_empty() && offset <= a && a <= end && a == region.start) {
+    |                     ++++++++++++++++++++
+
+error[E0308]: mismatched types
+   --> src/evidence_interpretation.rs:829:67
+    |
+829 |             if a < b || (region.is_empty() && offset <= a && a <= end && a == region.start) {
+    |                                                              -    ^^^ expected `u64`, found `usize`
+    |                                                              |
+    |                                                              expected because this is `u64`
+    |
+help: you can convert a `usize` to a `u64` and panic if the converted value doesn't fit
+    |
+829 |             if a < b || (region.is_empty() && offset <= a && a <= end.try_into().unwrap() && a == region.start) {
+    |                                                                      ++++++++++++++++++++
+
+error[E0308]: mismatched types
+   --> src/evidence_interpretation.rs:829:79
+    |
+829 |             if a < b || (region.is_empty() && offset <= a && a <= end && a == region.start) {
+    |                                                                               ^^^^^^^^^^^^ expected `u64`, found `usize`
+
+error[E0277]: can't compare `u64` with `usize`
+   --> src/evidence_interpretation.rs:829:76
+    |
+829 |             if a < b || (region.is_empty() && offset <= a && a <= end && a == region.start) {
+    |                                                                            ^^ no implementation for `u64 == usize`
+    |
+    = help: the trait `PartialEq<usize>` is not implemented for `u64`
+help: `u64` implements trait `PartialEq<Rhs>`
+   --> /rustc/31fca3adb283cc9dfd56b49cdee9a96eb9c96ffd/library/core/src/cmp.rs:1875:12
+    |
+    = note: `PartialEq`
+   ::: /rustc/31fca3adb283cc9dfd56b49cdee9a96eb9c96ffd/library/core/src/cmp.rs:1899:5
+    |
+    = note: in this macro invocation
+    |
+   ::: /Users/m/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde_json-1.0.150/src/value/partial_eq.rs:76:13
+    |
+ 76 |               impl PartialEq<Value> for $ty {
+    |               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `PartialEq<serde_json::Value>`
+...
+ 97 | / partialeq_numeric! {
+ 98 | |     eq_i64[i8 i16 i32 i64 isize]
+ 99 | |     eq_u64[u8 u16 u32 u64 usize]
+100 | |     eq_f32[f32]
+101 | |     eq_f64[f64]
+102 | |     eq_bool[bool]
+103 | | }
+    | |_- in this macro invocation
+    = note: this error originates in the macro `partial_eq_impl` which comes from the expansion of the macro `partialeq_numeric` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0308]: mismatched types
+   --> src/evidence_interpretation.rs:835:50
+    |
+835 |                     bytes: (source.bytes.start + a - offset)..(source.bytes.start + b - offset),
+    |                                                  ^ expected `usize`, found `u64`
+
+error[E0277]: cannot add `u64` to `usize`
+   --> src/evidence_interpretation.rs:835:48
+    |
+835 |                     bytes: (source.bytes.start + a - offset)..(source.bytes.start + b - offset),
+    |                                                ^ no implementation for `usize + u64`
+    |
+    = help: the trait `std::ops::Add<u64>` is not implemented for `usize`
+    = help: the following other types implement trait `std::ops::Add<Rhs>`:
+              `&usize` implements `std::ops::Add<usize>`
+              `&usize` implements `std::ops::Add`
+              `usize` implements `std::ops::Add<&usize>`
+              `usize` implements `std::ops::Add<zerocopy::byteorder::Usize<O>>`
+              `usize` implements `std::ops::Add`
+
+error[E0308]: mismatched types
+   --> src/evidence_interpretation.rs:835:54
+    |
+835 |                     bytes: (source.bytes.start + a - offset)..(source.bytes.start + b - offset),
+    |                                                      ^^^^^^ expected `usize`, found `u64`
+
+error[E0277]: cannot subtract `u64` from `usize`
+   --> src/evidence_interpretation.rs:835:52
+    |
+835 |                     bytes: (source.bytes.start + a - offset)..(source.bytes.start + b - offset),
+    |                                                    ^ no implementation for `usize - u64`
+    |
+    = help: the trait `Sub<u64>` is not implemented for `usize`
+    = help: the following other types implement trait `Sub<Rhs>`:
+              `&usize` implements `Sub<usize>`
+              `&usize` implements `Sub`
+              `usize` implements `Sub<&usize>`
+              `usize` implements `Sub<zerocopy::byteorder::Usize<O>>`
+              `usize` implements `Sub`
+
+error[E0308]: mismatched types
+   --> src/evidence_interpretation.rs:835:89
+    |
+835 |                     bytes: (source.bytes.start + a - offset)..(source.bytes.start + b - offset),
+    |                                                                                         ^^^^^^ expected `usize`, found `u64`
+
+error[E0277]: cannot subtract `u64` from `usize`
+   --> src/evidence_interpretation.rs:835:87
+    |
+835 |                     bytes: (source.bytes.start + a - offset)..(source.bytes.start + b - offset),
+    |                                                                                       ^ no implementation for `usize - u64`
+    |
+    = help: the trait `Sub<u64>` is not implemented for `usize`
+    = help: the following other types implement trait `Sub<Rhs>`:
+              `&usize` implements `Sub<usize>`
+              `&usize` implements `Sub`
+              `usize` implements `Sub<&usize>`
+              `usize` implements `Sub<zerocopy::byteorder::Usize<O>>`
+              `usize` implements `Sub`
+
+Some errors have detailed explanations: E0277, E0308.
+For more information about an error, try `rustc --explain E0277`.
+error: could not compile `kan` (lib) due to 11 previous errors
+
+exit=101

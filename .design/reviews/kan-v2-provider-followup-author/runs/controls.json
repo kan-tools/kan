@@ -1,0 +1,86 @@
+[
+  {
+    "id": "R-C1-dup-full-frame-equality",
+    "old": "if expected != original {",
+    "new": "if false && expected != original {",
+    "occurrence": null,
+    "concern": "map_region accepts a forged duplicate whose body matches but whose full frame differs"
+  },
+  {
+    "id": "R-C2-direction-dropped",
+    "old": "Event::RequestChunk { offset } => (0, offset)",
+    "new": "Event::RequestChunk { offset } => (1, offset)",
+    "occurrence": null,
+    "concern": "map_region group identity ignores request/response direction"
+  },
+  {
+    "id": "R-C3-frame-offset",
+    "old": "if claimed_offset != s.offset {",
+    "new": "if false && claimed_offset != s.offset {",
+    "occurrence": null,
+    "concern": "map_region trusts segment offset over the frame-claimed offset"
+  },
+  {
+    "id": "R-C4-body-span",
+    "old": "if frame.body_span != source.bytes {",
+    "new": "if false && frame.body_span != source.bytes {",
+    "occurrence": null,
+    "concern": "map_region cites equal bytes outside the frame body (header)"
+  },
+  {
+    "id": "R-C5-final-extent",
+    "old": "    if next != bytes.len() {\n        return Err(Error::Mapping);",
+    "new": "    if false && next != bytes.len() {\n        return Err(Error::Mapping);",
+    "occurrence": null,
+    "concern": "map_region accepts contiguous bytes beyond the segment layout"
+  },
+  {
+    "id": "R-C6-block-start-after-message-delta",
+    "old": "if !state.started || state.delta {",
+    "new": "if !state.started {",
+    "occurrence": 0,
+    "concern": "content_block_start after message_delta is not a sequence issue"
+  },
+  {
+    "id": "R-C7-delta-after-block-stop",
+    "old": "if b.stopped {\n                    i.issues.push(Issue::Sequence);\n                }\n                if want != BlockKind::Unknown && b.kind != want",
+    "new": "if want != BlockKind::Unknown && b.kind != want",
+    "occurrence": null,
+    "concern": "content_block_delta after content_block_stop accepted"
+  },
+  {
+    "id": "R-C8-stop-without-message-delta",
+    "old": "if !state.started || !state.delta || state.open_blocks != 0 {",
+    "new": "if !state.started || state.open_blocks != 0 {",
+    "occurrence": null,
+    "concern": "message_stop without message_delta coheres"
+  },
+  {
+    "id": "R-C9-message-start-content",
+    "old": ".is_some_and(Vec::is_empty)",
+    "new": ".is_some()",
+    "occurrence": null,
+    "concern": "message_start with prefilled content not flagged"
+  },
+  {
+    "id": "R-C10-strict-output-uncharged",
+    "old": "    w.scan(bytes.len())?;\n    w.output(bytes.len())?;",
+    "new": "    w.scan(bytes.len())?;",
+    "occurrence": null,
+    "concern": "retained JSON Value is not charged to output budget (absolute output accounting)"
+  },
+  {
+    "id": "R-C11-double-block-stop",
+    "old": "if b.stopped {\n                    i.issues.push(Issue::Sequence);\n                } else {",
+    "new": "if false {\n                    i.issues.push(Issue::Sequence);\n                } else if !b.stopped {",
+    "occurrence": null,
+    "concern": "second content_block_stop for the same index silently accepted"
+  },
+  {
+    "id": "R-C12-empty-region-boundary",
+    "old": "(region.is_empty() && offset <= a && a <= end && a == region.start)",
+    "new": "(region.is_empty() && offset <= a && a < end && a == region.start)",
+    "occurrence": null,
+    "concern": "empty region at a segment end boundary loses the left citation (behaviour change, not safety)"
+  }
+]

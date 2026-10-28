@@ -1,0 +1,1 @@
+Independent post-review author check: 3788 exact paths + north-star.json; every exported byte equals actual Git blob at 0d048486c0e7c4e9bd2de76f19489b4d173975d4 and SHA256 manifest. Source worktree clean; reviewer exit 0.

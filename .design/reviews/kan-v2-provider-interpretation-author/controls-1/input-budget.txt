@@ -1,0 +1,21 @@
+
+running 1 test
+test exact_budgets_and_cancellation_return_no_partial_document ... FAILED
+
+failures:
+
+failures:
+    exact_budgets_and_cancellation_return_no_partial_document
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 12 filtered out; finished in 0.00s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-conversation-adapter)
+    Finished `test` profile [unoptimized] target(s) in 7.66s
+     Running tests/evidence_interpretation.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_interpretation-13fed510d614cbe3)
+
+thread 'exact_budgets_and_cancellation_return_no_partial_document' (10351575) panicked at tests/evidence_interpretation.rs:375:53:
+called `Result::unwrap_err()` on an `Ok` value: Document { format: Sse, json: None, items: [Item { kind: Protocol, region: 0..114, coarse: true, role: None, index: None, text: None, pointer: None, event: Some(Object {"message": Object {"content": Array [], "role": String("assistant"), "type": String("message")}, "type": String("message_start")}), issues: [] }, Item { kind: Text, region: 114..231, coarse: true, role: None, index: Some(0), text: Some(""), pointer: None, event: Some(Object {"content_block": Object {"text": String(""), "type": String("text")}, "index": Number(0), "type": String("content_block_start")}), issues: [] }, Item { kind: Text, region: 231..355, coarse: true, role: None, index: Some(0), text: Some("é \"hi\""), pointer: None, event: Some(Object {"delta": Object {"text": String("é \"hi\""), "type": String("text_delta")}, "index": Number(0), "type": String("content_block_delta")}), issues: [] }, Item { kind: Protocol, region: 355..428, coarse: true, role: None, index: Some(0), text: None, pointer: None, event: Some(Object {"index": Number(0), "type": String("content_block_stop")}), issues: [] }, Item { kind: Protocol, region: 428..516, coarse: true, role: None, index: None, text: None, pointer: None, event: Some(Object {"delta": Object {"stop_reason": String("end_turn")}, "type": String("message_delta")}), issues: [] }, Item { kind: Protocol, region: 516..567, coarse: true, role: None, index: None, text: None, pointer: None, event: Some(Object {"type": String("message_stop")}), issues: [] }], coherent_stop_observed: true, scanned_bytes: 944, output_bytes: 861 }
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+error: test failed, to rerun pass `--test evidence_interpretation`
+
+exit=101
