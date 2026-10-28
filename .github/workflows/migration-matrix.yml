@@ -260,8 +260,13 @@ jobs:
           if python3 scripts/migration_writer.py /tmp/writer --binary-path-file /tmp/writer-binary 2>/tmp/build.log; then
             echo built > /tmp/writer-status
           else
-            echo unbuildable > /tmp/writer-status
+            writer_exit=$?
             tail -20 /tmp/build.log || true
+            if [ "$writer_exit" -ne 10 ]; then
+              echo "::error::historical writer helper failed (exit $writer_exit); this is not an unbuildable release"
+              exit 1
+            fi
+            echo unbuildable > /tmp/writer-status
           fi
 
       - name: Write a workspace with it, then read it with this build

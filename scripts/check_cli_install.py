@@ -4,6 +4,7 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import sys
 import tempfile
 
 
@@ -18,6 +19,10 @@ def main():
                              "--format-version=1"))["packages"][0]
     targets = {t["name"] for t in package["targets"] if "bin" in t["kind"]}
     assert targets == {"kan", "kan-v1"}, targets
+    selection = json.loads(run(sys.executable, "scripts/migration_writer.py", str(root), "--inspect"))
+    assert selection["binary"] == "kan-v1", selection
+    assert selection["features"] == ["--no-default-features", "--features", "kan-v1", "--bin", "kan-v1"], selection
+    print(json.dumps({"real_manifest_writer_selection": selection, "status": "passed"}), flush=True)
     version = package["version"]
     suffix = ".exe" if os.name == "nt" else ""
     modes = [

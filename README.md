@@ -134,8 +134,11 @@ from many local logs into a coherent view, parameterized by whom you trust.
 
 ## Status
 
-1.0 beta (`v1.0.0-beta.1`; stable 1.0 is not yet declared). The local-only
-spine — one human, one-or-more agents, one repo — is built and hardening.
+The last published baseline is `v1.0.0-beta.1`. This branch prepares
+`2.0.0-beta.1`; it is not yet published. See the
+[release candidate checklist](docs/RELEASE-2.0.0-beta.1.md) for the CLI transition,
+qualification gates and known limitations. Stable 1.0 or 2.0 is not declared.
+The following repository-sharing behavior describes the retained legacy CLI.
 
 Sharing works in both directions as of v0.8. `kan-v1 publish <subject>` writes
 a subject's signed claims into a tracked `.claims/` directory, so they

@@ -38,14 +38,22 @@ must check JSON channel integrity, ancestor/repository boundaries, symlinks,
 preserved source bytes, suppression and unchanged command results.
 
 The focused CLI review at `40535f7` approved with five nonblocking follow-ups.
-The next integration addresses all five: tag each advisory line and document
-stderr suppression at the capture/gateway/Library contracts; escape remaining
-control and bidi formatting characters in displayed paths; select the explicit
-legacy binary for historical migration writers with the new manifest layout;
-compile packaged legacy-only sources as well as the default package; and assert
-the notice actually appears during the real MCP purity test. These changes await
-current qualification. The `2.0.0-beta.1` version preparation follows this work;
-the existing source version is unchanged and no merge/tag/publication is implied.
+All five are implemented at `e561330`: tagged and escaped advisory lines,
+explicit stderr suppression guidance, metadata-selected historical writers,
+packaged legacy-only compilation, and real MCP notice-emission assertions.
+That revision passed all 56 collect-all checks, 19 browser groups, four diagnostic
+jobs, three install modes, both packaged builds and 12 historical migration cells.
+The independent narrow Opus 5.5 review approved with three residual follow-ups.
+
+The `2.0.0-beta.1` candidate closes those residual items: distinguish helper
+failures from historical compiler failures, exercise writer selection against the
+actual manifest in CI, and update this status. The version and release notes are
+prepared, not published; current candidate qualification and narrow review are
+pending. See [the candidate checklist](../docs/RELEASE-2.0.0-beta.1.md) for the
+concrete merge/publication gates. Earlier completion-table positions below are
+historical implementation snapshots; the qualified revisions and retained review
+reports above supersede their pending-test wording. No merge, tag, publication or
+live migration is implied by candidate preparation.
 
 ### Completion checklist
 
