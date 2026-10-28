@@ -31,6 +31,10 @@ pub enum SurfaceWrite {
     GitTree,
     Overlay,
     Sqlite,
+    EvidenceArchive,
+    EvidenceBackup,
+    EvidenceRecovery,
+    EvidenceRecoverySource,
     Count,
 }
 
@@ -55,6 +59,10 @@ impl SurfaceWrite {
         Self::GitTree,
         Self::Overlay,
         Self::Sqlite,
+        Self::EvidenceArchive,
+        Self::EvidenceBackup,
+        Self::EvidenceRecovery,
+        Self::EvidenceRecoverySource,
     ];
 
     /// Catalog artifacts a capability is permitted to mutate. This match is
@@ -111,9 +119,39 @@ impl SurfaceWrite {
                 "overlay:LOCK",
             ],
             Self::Sqlite => &["sqlite:meta"],
+            Self::EvidenceArchive => &[
+                "evidence-db:archive.sqlite",
+                "evidence-db:archive.sqlite-wal",
+                "evidence-db:archive.sqlite-journal",
+                "evidence-db:archive.sqlite-shm",
+            ],
+            Self::EvidenceBackup => &[
+                "evidence-backup:archive.sqlite",
+                "evidence-backup:archive.sqlite-journal",
+                "evidence-backup:archive.sqlite-wal",
+                "evidence-backup:archive.sqlite-shm",
+            ],
+            Self::EvidenceRecovery => &[
+                "evidence-recovery:archive.sqlite",
+                "evidence-recovery:archive.sqlite-journal",
+            ],
+            Self::EvidenceRecoverySource => &[
+                "evidence-recovery-source:database-wal",
+                "evidence-recovery-source:database-shm",
+            ],
             Self::Count => &[],
         }
     }
+}
+
+/// SQLite may initialize WAL coordination files even with a read-only handle.
+/// It cannot rewrite source records or recover a hot rollback journal in this mode.
+#[cfg(feature = "v2-storage")]
+pub fn open_sqlite_recovery_source(
+    _surface: SurfaceWrite,
+    path: &Path,
+) -> rusqlite::Result<rusqlite::Connection> {
+    rusqlite::Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
 }
 
 pub fn create_dir_all(_surface: SurfaceWrite, path: &Path) -> std::io::Result<()> {
