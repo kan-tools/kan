@@ -1,0 +1,486 @@
+INDEPENDENT ADVERSARIAL REVIEW — Content/provider corrections (Scope A) + physical recovery bundle creation (Scope B)
+====================================================================================================================
+Frozen commit  918318da216d8e205c42e01f3ba9528ab95a67cd (feat/kan-v2-recovery-mutations)
+Source repo    /Users/m/code/kan-tools/kan/.worktrees/kan-v2-recovery-mutations
+Export (cwd)   .local-state/reviews/content-creation (4038 identity paths + north-star.json)
+Identity       ../content-creation-identity.json sha256 703629dfd94735ea0f54a46396dc4df313b4fcb00d9c34bcd575cd32caa5e65b
+North star     north-star.json sha256 64a00fe76d22f33b199d9191acbf21436190472eafb7b5680a12368777e1c19b
+Reviewer       Claude Code, Opus 5.5 (claude-opus-5-5); fresh cold session; no subagents (per instruction)
+Date           2026-10-19
+
+VERDICTS
+  Scope A  Content/provider corrections bb1e0ab..aef1067 (merged unchanged) ...... APPROVE WITH FOLLOW-UPS
+  Scope B  physical recovery bundle creation (create.rs, tests, oracle, catalog) .. APPROVE WITH FOLLOW-UPS
+  Overall  checkpoint 918318d ...................................................... APPROVE WITH FOLLOW-UPS
+  Full roadmap / parent acceptance: OPEN (nothing here closes a parent AC).
+
+Independence statement. I did not write any of the reviewed code and had no prior context beyond the
+committed baseline report I was told to audit against. Every claim below rests on commands I ran or
+code I read in the frozen bytes; author READMEs, design checkpoints and commit messages were treated as
+claims and checked. The live kan log was not read or written (day#168/kan#197, Git-first): skill
+Step 1 (`kan show`) and Step 7 (`day review record`) were deliberately not run. That is a declared
+deviation, not a failed read. Recording text for later operator backfill is in section 11.
+
+---------------------------------------------------------------------------------------------------
+0. CUSTODY, ENVIRONMENT, METHOD
+---------------------------------------------------------------------------------------------------
+Custody script: scripts/custody.py. BEFORE (custody/custody-00-before.json) and AFTER-RERUNS
+(custody/custody-01-after-reruns.json) both PASS. The export path set equals the identity's 4038 paths
+plus north-star.json, with everything else under review-evidence/ only. Every file matches its SHA-256 and
+its Git blob id computed from bytes. `git ls-tree -r 918318d` (read-only) has exactly the identity path set
+and blob ids, and every pinned blob's actual bytes (`git cat-file --batch`) hash to the identity SHA-256.
+Source worktree HEAD = 918318d; `git status --porcelain --untracked-files=all` empty. A final custody
+check after this report is written goes in custody/custody-02-final.json; if that check FAILS, this report
+is void.
+
+Ranges (read-only git): Scope A = bb1e0ab..aef1067 (7e94940, 1b13ba8, a50eb8a, a942676, 3568a7b,
+bb661b4, aef1067). Merge 564c2a8 (parents 616ff64, aef1067) is clean. `git diff aef1067 918318d` over
+src/evidence_content.rs, evidence_interpretation.rs, evidence_library.rs, web/, library_ui test,
+evidence_reader test and tests/support is EMPTY, so the Content code is byte-identical in the candidate.
+Scope B = c155abd, f22566e, c763bcf, 005dbe0, 616ff64, 22002e7, 918318d. Production: new
+src/evidence_store/bundle/create.rs (643 lines), bundle.rs (+3), persistence.rs (+EvidenceBundle),
+surface.rs (+2). Plus tests/evidence_bundle_creation.rs (702), surface tsv/conformance, CI and the oracle.
+
+Environment: shared CARGO_TARGET_DIR (.../kan-v2-library-resilience/.local-state/target), 4 jobs, one
+heavy job at a time, --offline --locked. I ran `cargo clean -p kan` FIRST (logs/10-clean.txt: 250.8 MiB
+removed; free 15.22 GiB). The first build took free space to 14.10 GiB (logs/11-build.txt). After that,
+artifacts overwrote in place; free space at the end was 13.95 GiB, and no GB-scale write was started below
+15 GiB. No network, downloads, installs, .lake, live archives, keys, traffic, stash, parent Git writes,
+or process kills outside my own test children. Loopback synthetic fixtures only. Temporary test files
+tests/zz_review_scopea_probes.rs and tests/zz_review_creation_probes.rs were byte-compared with their
+retained copies, then removed (`ls tests | grep -c zz_` = 0). The mutation driver restored every mutated
+file and checked its SHA-256 against the identity after each control.
+
+Retained reviewer-side failures (logs/FAILURES.md; none are candidate defects):
+  1 custody.py v1 deadlocked on the cat-file pipe (timeout, rewritten).
+  2 Scope A probe run 1: non-hex SSE attempt ids (the same trap the prior reviewer hit) and windows(0).
+  3 Scope B probe run 1: rowid on a WITHOUT ROWID table, and a TEXT-producing `||` edit.
+  4 The mutation driver's compile-error regex matched cargo's "error: test failed" line, so it mislabelled
+    genuine kills as INVALID(compile). The raw logs are intact; scripts/reclassify.py recomputes verdicts
+    (logs/41, mutations/summary-reclassified.json). logs/40 is retained unedited.
+  5 logs/90 'clippy_exit' captured `tail`'s status. Clippy's own exit=0 is in logs/91.
+Per instruction, I did not repeat the prior inconclusive 100-second timing probes. The deterministic hooks
+replace them (section 5).
+
+---------------------------------------------------------------------------------------------------
+1. NORTH STAR
+---------------------------------------------------------------------------------------------------
+The supplied frozen north-star.json carries one subject, telos/raw-data-and-projections, Decision
+bafyreied3rklhs57yewlxkodui3olxyjj5wkipnkzziibfl2gqkkdbyaee:
+  "Raw attested data is retained in full and never collapsed in the store. Every simplification --
+   identity, status, confidence, tension, ordering -- is a determined projection computed on demand over
+   that raw data ... A field holding a computed value is the failure mode: it asserts an output of the
+   fold as if it were input, and it forecloses every other projection."
+Its Retraction supersedes bafyreiaezpl..., not this Decision, so the Decision is live on the supplied
+record. The subject records InTensionWith telos/performance-at-scale, plus an Observation that it
+deliberately has no witnesses. Top-level "excluded_by_trust": 2. Those claims were NOT reconstructed.
+
+Purpose served:
+  Scope A: Content is an on-demand, disposable projection of authorized retained occurrences, with every
+    item citing raw bytes. It persists nothing. Aligned with the telos.
+  Scope B: bundle creation retains raw canonical metadata, proofs, plan, membership and every original
+    object byte, including empty/corrupt bytes, and records losses as signed observations. It does not
+    repair or re-sign, and it ignores derived columns as input. This is the telos applied to recovery.
+Tension (performance-at-scale): Scope A removed the quadratic scan but now hits a citation-count ceiling
+  that grows with items x occurrences (A2-F1). Fail-closed and honest, but it still limits whether the
+  projection is usable on realistic multi-turn requests.
+Parent purposes: kan-v2-human-frontend.md (AC-1..10), kan-v2-session-reconstruction.md (AC-1..8),
+  kan-v2-content-api.md (AC-1..5), kan-v2-provider-interpretation.md (AC-1..4),
+  kan-v2-recovery-bundles.md (AC-1..6), kan-v2-recovery-mutations.md (AC-1..5). All are "- [ ]" in the
+  frozen docs (grep counts: 10/8/5/4/6/5 unchecked, 0 checked). I close none of them.
+
+---------------------------------------------------------------------------------------------------
+2. BASELINE QUALIFICATION ON FROZEN BYTES (logs/)
+---------------------------------------------------------------------------------------------------
+  11 cargo build --offline --locked --features v2-crypto --tests ............................... exit 0
+  12 integration (14 targets) ........................................................... 185 passed, exit 0
+     creation 10 (+1 ignored crash child), recovery_bundle 15, member 16, member_corrections 2,
+     member_review_regressions 23, replay 10, replay_review_regressions 6, surface 19,
+     reader 26 (+2 ignored manual browser fixtures), interpretation 13, followups 9, regressions 19,
+     assembly 13, assembly_review_regressions 4
+  13 lib: evidence_content 9 (5 tests:: + 4 worker_tests::), evidence_library::budget_tests 3,
+     evidence_interpretation::tests 2 .............................................................. all pass
+  14 node --test tests/library_ui.test.cjs ............................................... 47/47 pass
+  16 cargo clippy --offline --locked --features v2-crypto --all-targets -- -D warnings .............. exit 0
+  17 cargo fmt --all -- --check ..................................................................... exit 0
+  90/91 final reruns after all probes/controls, on restored bytes: identical counts, clippy 0, fmt 0.
+Author count reconciliation (reproduced, not trusted):
+  Scope A "103 integrations + 12 units + 47 Node" = reader 26 + interpretation 13 + followups 9 +
+    regressions 19 + assembly 13 + 4 + surface 19 = 103; units = content 9 + budget 3 = 12; Node 47. Exact.
+  Scope B "70" = creation 10 + bundle 15 + member 16 + replay 10 + surface 19 = 70. Exact.
+CI: .design/reviews/kan-v2-recovery-creation-author/ci-box-failed.txt shows that 616ff64's strict clippy
+  failed on four `useless_conversion` lines in tests/evidence_bundle_creation.rs (:344, :534, :535, ...).
+  22002e7 removes them, and my strict clippy on 918318d passes. ci-box-perf.txt (run 39315201306) shows
+  "generation failed: observe exited 1 at claim 723 ... claim record is not canonical DAG-CBOR". This is
+  an UNRESOLVED legacy-codec failure, not a timing result. I did not rerun the legacy grid. I have NOT
+  observed an exact-head CI result for 918318d. CI is not reported green here, and no threshold was relaxed.
+
+---------------------------------------------------------------------------------------------------
+3. SCOPE A — disposition of baseline findings (baseline REPORT .design/reviews/kan-v2-content-integration-opus)
+---------------------------------------------------------------------------------------------------
+Code read in full: src/evidence_content.rs (current), the interpretation/library/app.js diffs
+(logs/20, logs/21) and tests/support/content_worker_unit.rs.
+
+B-F1 quadratic mapping charge ........................................... PARTIALLY CLOSED -> A2-F1
+  Fixed as claimed. stream() calls validate_mapping once per stream and charges mapping.scanned_bytes once
+  (evidence_content.rs:316-323). Items are mapped through ValidatedMapping::map
+  (evidence_interpretation.rs:778-810), which walks segments without revalidating. Measured:
+  scan_bytes ~5x body (130 msgs: 672,069 for 134,109 B). Control RA10 (re-charge per item) is killed by
+  the realistic 130/500 fixture.
+  However, char_a1 (logs/31) shows the practical ceiling has moved to the 4096 citation cap. Coarse request
+  items cite every segment, so citations = items x occurrences. I predicted the exact boundary before
+  running: 340 msgs x 1000 chars (6 occ, 681 items, 4086 citations) -> 200; 341 msgs (683 x 6 = 4098)
+  -> 422. Also 500 msgs/516 KB -> 422; 240 msgs x 10 KB (2.4 MB, 37 occ) -> 422; 40 x 60 KB (2.4 MB)
+  -> 422 (the serialized cap, because parsed_json duplicates the body); 30 x 60 KB (1.8 MB) -> 200.
+  SSE: 1019 deltas (1024 items) -> 200; 1500 -> 422 (items cap). The author fixtures (130 msgs, 500 deltas)
+  sit below these boundaries.
+B-F2 limit/busy worded as verification failure ............................................... CLOSED
+  ContentError {Read, Limited, Busy} (evidence_content.rs:76-86). The Library maps 422
+  {"error":"content-limit"} and 429 {"error":"content-busy"}, everything else unchanged
+  (evidence_library.rs:239-256). The UI wording is scoped to action=content (app.js:40). pass_a2: six
+  tamper modes -> 503, never 422/429; revoke -> 403; no canary in any body. pass_r5: a Source 422 keeps
+  the verification wording. Controls RA11, RA12 and RU04 are killed by author tests. All interpret/assembly
+  errors are Limit/Cancelled only (evidence_interpretation.rs:100-107, evidence_assembly.rs:57-62), so
+  render's Unavailable->Limited mapping cannot relabel a verification failure; Mapping stays Corrupt->503.
+  Residual A2-F3 (selection cleared after 422/429).
+B-F3 worker/permit/deadline/acquisition/request-wide accounting unpinned .................... CLOSED
+  The private generic seams `content_observed(after_item, after_acquired)` (evidence_content.rs:113-121)
+  are no-ops in production via content_detailed. No env/HTTP switch: grep of evidence_content.rs for env
+  finds nothing, and the hooks are not on the wire. Replays of every prior survivor on frozen bytes:
+  RA01 (=B-M1 permit before worker), RA02 (=B-M2 fresh cancel flag), RA03 (=B-M4 8 MiB cutoff),
+  RA04 (=B-M6 20 s deadline), RA05/06/07 (=B-M9/10/11 request-wide citations/output/items),
+  RA08 (=B-M12 serialized cap), RA09 (mapping scan uncharged), RA13 (=B-M3 final grant) — ALL KILLED by
+  author tests, with assertion text (section 5). The deadline test advances paused tokio time only after
+  real verification completes, so no per-RPC timeout can masquerade as the outer deadline (read at
+  content_worker_unit.rs:133-168). The acquisition cap stops after the record that crosses 8 MiB (9 of 10
+  fetched); the bound is 8 MiB plus at most one record.
+B-F4 stale control evidence ......................................... CLOSED by my re-demonstration
+  Independent of the author's controls-final: my 18 Scope A + 5 UI controls ran on 918318d bytes.
+B-F5 unexpected starts / extents not rendered ..................................................... CLOSED
+  app.js:194-201 render writer, unexpected starts, contiguous/claimed bytes and every observer claim.
+  RU02, RU03 and RU05 are killed by author and reviewer tests. pass_r2: out-of-range indices refuse with
+  no partial Content.
+B-F6 Interpret stuck after Source supersedes Content ............................................. CLOSED
+  inspect() calls updateSelection() (app.js:80); RU01 is killed by the author test.
+A-F10 /error pointer .............................................................................. CLOSED
+  Root "" pointer when error is absent, plus Shape when error is not an object (evidence_interpretation
+  .rs:348-357). char_a3: every Error pointer resolves; Shape exactly when error is not an object. RA15 is
+  killed by author and reviewer tests.
+A-F11 object tool_result content silent ................................ CLOSED, WITH OVERREACH -> A2-F2
+A-F12 sticky unknown_field (prior A-M12) ............................ CLOSED: RA17 killed (followups:287)
+A-I1 empty-key delta text ......................................... CLOSED: RA14 killed (followups:304)
+ValidatedMapping authority: the struct is pub(crate) with private stream/_inputs fields, constructible
+  only by validate_mapping. It borrows &'a Stream and &'a [Input] immutably, so a mapping cannot outlive
+  or be re-pointed at mutated evidence. Public map_region = validate + map
+  (evidence_interpretation.rs:758-771). pass_a4: every (start,end) region on a 3-chunk + duplicate stream
+  maps to source-equal bytes; forged input bytes -> Mapping; inverted or out-of-range region -> error;
+  citations=1 -> Limit. RA18 (map ignores region bounds) is killed by author
+  (interpretation.rs:337) and reviewer tests.
+Exact coordinates: char_a1 walks every successful response; ZERO bare JSON numbers.
+
+---------------------------------------------------------------------------------------------------
+4. SCOPE B — interface checks, both sides (create.rs read in full; helpers in bundle.rs,
+   evidence_store.rs:408-570, persistence.rs:211-270)
+---------------------------------------------------------------------------------------------------
+Order of operations in create_observed (create.rs:447-643):
+  prepare: observer pin, sample time, profile, duration <= 1 h, output pages 8..u32::MAX (:452-466) ->
+  source_path (private regular file, canonicalize, every existing -journal/-wal/-shm private,
+  mutual-inode alias refusal, pre-open byte sum) (:406-432) -> destination_path = sqlite_destination
+  (canonical parent; 4x4 name-equality and inode overlap with source participants; sidecar-of-source
+  basename alias; ALL destination sidecars must be absent) + main must not exist (:433-440;
+  evidence_store.rs:452-489) -> ONLY THEN the RO SQLite open (persistence::open_sqlite_recovery_source,
+  SQLITE_OPEN_READ_ONLY) with length limit, busy timeout, progress handler (cancel/deadline),
+  query_only, trusted_schema=OFF, bounded cache, mmap 0 and BEGIN (:480-494). Every read below happens
+  inside that one deferred read transaction (snapshot taken at the first PRAGMA read).
+  acquire: exact sqlite_schema equality against the in-memory SCHEMA(+attested,+copied for profile 3),
+  app id/user_version/encoding (:90-122); identity singleton vs archive/scope/issuer pins (:123-148);
+  profile 3 plan + upgrade_objects; commits(sequence, manifest, receipt) zipped with attestations in
+  lockstep with equal coordinates and contiguous 1..n (:183-217); objects with min length 0 (empty
+  originals kept). Derived columns (cid, scope, writer, operation, position, previous) and the bindings
+  table are never read.
+  initial_history: member::verify on the acquired bytes; frontier equality; signed "created" (recipe,
+  member commitment, selected frontier); maximal <=32-entry "unavailable" partitions shrunk until the
+  envelope fits; then replay::verify of the whole proposed chain BEFORE any output exists (:290-405).
+  Source connection dropped (rolled back) before reservation.
+  reservation: source_path and destination_path repeated (:521-523); write_new_owner_only = create_new
+  + 0600 + fsync (persistence.rs:255-269). Then a direct RW open (house convention: attested.rs,
+  copied.rs and evidence_store.rs do the same). journal_mode=DELETE, page_size 4096, synchronous FULL,
+  fullfsync, max_page_count with the applied value verified (:539-545). ONE IMMEDIATE transaction holds
+  schema, identity, plan, membership, records, objects, observations AND the application_id/user_version
+  markers (:552-607). commit_attempted is set before COMMIT. Then the connection is closed, the file and
+  parent directory are fsynced, and an independent RO inspect pins the expected checkpoint (:609-628).
+  Errors after commit_attempted -> Uncertain{path, checkpoint, cause}; before -> Refused. The output file
+  is never removed.
+Other side of the external APIs:
+  SQLite: DELETE-mode commit removes the journal; the explicit parent fsync makes that removal and the
+  new directory entry durable. A RO connection facing a hot journal refuses (my char_b7: "attempt to write
+  a readonly database"), so a crash mid-transaction is not recognised. With a 16 MiB spilled transaction
+  (cache 4 MiB), the main file held 13 MB of spilled pages, but page 1 stayed unwritten
+  (header app id 00000000, journal 1024 B) at MemberInserted/HistoryInserted/MarkersSet/BeforeCommit.
+  Even a main-file-only copy (journal lost) is "file is not a database". After commit: header 4b4e4231,
+  no journal, inspect OK.
+  Python sqlite3 (independent stdlib, my scripts/sql_compare.py) confirms on all three source kinds:
+  member_records == commits+proofs, member_objects == objects (missing stays absent, empty stays empty,
+  staged retained), member_plan == upgrade_plan, member_membership == upgrade_objects, identity ==
+  archive_identity + context, KNB1 markers, rollback-journal header (18/19 = 1/1), integrity ok, 0600,
+  no sidecars, no restored_objects. Byte-for-byte, with storage classes.
+  Read-only source opens create archive.sqlite-wal (0 B) and -shm (32 KiB) beside a WAL source
+  (char_b8). Main bytes and mtime are unchanged. This is catalogued
+  (evidence-bundle-source:database-wal/-shm) and declared in the opening design; it is not filesystem
+  purity, and nobody claims it is.
+Capability/catalog: SurfaceWrite::EvidenceBundle (persistence.rs:46,:83,:194-197); surface.rs values; two
+  tsv rows (authoritative-kan, retain-until-explicit-owner-erasure / sqlite-transaction-coordination);
+  PERSISTENCE_MUTATION_SITES adds both create.rs facade calls; rule evidence ->
+  tests/evidence_bundle_creation.rs. The author's wrong-capability controls are genuine assertion failures
+  (creation-controls/*.txt). The RW SQLite open is not itself a facade call (convention, see above).
+No writer activation: create() returns an Inspection only. Standalone refusal: the author test
+  (creation.rs:637-682) checks seven openers and asserts byte equality after each.
+
+---------------------------------------------------------------------------------------------------
+5. SEMANTIC CONTROLS (scripts/mutate.py + scripts/gen_spec.py; mutations/<id>.txt raw;
+   mutations/summary-reclassified.json; logs/41). One mutation at a time; restored and SHA-256-checked
+   against the identity after each (all 32 + RB02b: restored=True). No control was a compile error or a
+   timeout; every kill is a named test with its panic/assertion text.
+---------------------------------------------------------------------------------------------------
+Scope A (author suites: 6 integration targets + lib evidence_content + interpretation units;
+reviewer: zz_review_scopea_probes)
+  RA01 permit dropped before worker ......... KILLED author  content_worker_unit:48 "worker must own its permit while paused"
+  RA02 worker fresh cancel flag ............. KILLED author  :74 "cancelled render must not process the next item"
+  RA03 no 8 MiB acquisition cutoff .......... KILLED author  :197 "never fetch the tenth selected record"
+  RA04 no 20 s outer deadline ............... KILLED author  :166 Elapsed
+  RA05 citations not request-wide ........... KILLED author  evidence_content.rs:612
+  RA06 normalized output per stream ......... KILLED author  :637
+  RA07 items per stream ..................... KILLED author  :590
+  RA08 serialized cap unwired ............... KILLED author  :683 "serialized response must refuse after normalization"
+  RA09 mapping scan uncharged ............... KILLED author  :556
+  RA10 per-item full-source recharge ........ KILLED author  realistic fixture (reader:1550) + 2 units
+  RA11 busy -> limited ...................... KILLED author  busy HTTP test :122 + worker test
+  RA12 limited -> 503 ....................... KILLED author  reader:1225; reviewer char_a1
+  RA13 final current-grant read removed ..... KILLED author  reader:1367
+  RA14 empty-key delta promoted ............. KILLED author  followups:304
+  RA15 /error pointer fixed ................. KILLED author  followups:252; reviewer char_a3
+  RA16 tool_result Shape removed ............ KILLED author  followups:271
+  RA17 unknown_field sticky (A-M12) ......... KILLED author  followups:287
+  RA18 ValidatedMapping ignores bounds ...... KILLED author  interpretation:337; reviewer pass_a4
+UI (author library_ui 47; reviewer zz_ui_probes 5)
+  RU01 Interpret not restored after Source .. KILLED author
+  RU02 writer hidden ........................ KILLED author + reviewer
+  RU03 unexpected starts hidden ............. KILLED author + reviewer
+  RU04 422 generic wording .................. KILLED author + reviewer
+  RU05 extent claims hidden ................. KILLED author + reviewer
+Scope B (author: creation + recovery_bundle + surface; reviewer: zz_review_creation_probes)
+  RB01 no BEGIN (no single snapshot) ........ SURVIVED all suites (B2-F1)
+  RB02 frontier compares `through` only ..... SURVIVED, EQUIVALENT: RB02b (--nocapture) shows modes 0/1/3
+                                              refused as "created observation" by the pre-commit replay,
+                                              which compares the signed frontier with the member's.
+  RB03 source schema check removed .......... KILLED ONLY by reviewer pass_b3 (B2-F2)
+  RB04 reservation-time custody recheck gone  SURVIVED all suites (B2-F3; create_new still blocks main)
+  RB05 markers before the transaction ....... KILLED author (crash test :559) + reviewer pass_b6
+  RB06 failed COMMIT reported as Refused .... SURVIVED all suites (B2-F3)
+  RB07 destination sidecars unchecked ....... KILLED ONLY by reviewer pass_b2 (B2-F2)
+  RB08 source inode alias unchecked ......... KILLED author (aliases test :454)
+  RB09 proof coordinate not compared ........ KILLED ONLY by reviewer pass_b5 "shifted proof" (B2-F2):
+                                              a source proof row at the wrong coordinate would be
+                                              silently re-homed under its commit.
+Author Scope B controls (read, not rerun): seven genuine assertion failures plus a restored 10/10 pass
+  (creation-controls/*.txt).
+
+Reviewer probes (probes/, retained; all assertions pass on frozen bytes; logs/31, 33, 34):
+  Scope A: char_a1 scaling (above), pass_a2 tamper/revoke classification, char_a3 tool_result/error
+    shapes, pass_a4 map_region compatibility/forgery/bounds.
+  Scope B: pass_b1 independent Python SQL byte comparison (3 kinds), pass_b2 preexisting -journal/-wal/
+    -shm/-JOURNAL/-Wal refuse and survive untouched, pass_b3 extra table/index/view/trigger/column,
+    wrong user_version/app id, profile 3 extra table, pass_b4 stale frontier variants and wrong
+    profile/scope/issuer/sample time, pass_b5 shifted/missing proof, commit gap, manifest byte, TEXT
+    manifest, proof byte (-> "issuer proof"), second identity row, uppercase CID, pass_b6 failed artifact
+    retained (0 B, not KNB1) and retry refuses without touching it, char_b7 spilled-transaction SIGKILL at
+    5 boundaries, char_b8 source-side files.
+  UI: pass_r1 422 after a rendered panel clears old plaintext, pass_r2 out-of-range unexpected_starts/
+    extent inputs -> no partial Content, pass_r3 hostile writer/claim strings stay text with no non-aria
+    attributes, pass_r4 429 then retry, pass_r5 Source-422 wording.
+
+---------------------------------------------------------------------------------------------------
+6. FINDINGS (no BLOCK; no invariant violation)
+---------------------------------------------------------------------------------------------------
+No store mutation by Content; no subject destroyed; no cites fabricated; the source is never repaired or
+re-signed; failed artifacts are retained; no writer is activated.
+
+A2-F1 [MEDIUM-LOW, fitness / tension with performance-at-scale] Content's practical request ceiling is
+  now the 4096 citation cap, consumed at items x occurrences because each coarse request item cites every
+  segment (evidence_content.rs:261-280, :324-330; CITATIONS :26). Reproduced to the exact predicted
+  boundary: 340 vs 341 x 1 KB messages (~351 KB, 6 chunks). Bodies over ~2 MB also hit the 4 MiB
+  serialized cap, because parsed_json repeats the body. Fail-closed and correctly labelled 422, but
+  ordinary multi-turn agent requests above ~350 KB will refuse. The UI advice "Choose fewer occurrences"
+  does not help a single multi-chunk request: a subset yields a gap and no interpretation.
+  Follow-up: cite a coarse item's covering segments once per stream (or share one citation list), and
+  re-measure with char_a1 beyond 1 MB.
+A2-F2 [LOW, provider fidelity / drift from design text] A tool_result with NO content key, which I
+  understand to be valid in the Messages API (content optional; not re-verified here, no network), now
+  gets Shape (evidence_interpretation.rs:248-254; char_a3, including with is_error:true). The design text
+  names only "object/null/number tool-result content". This over-flags valid input. Follow-up: treat an
+  absent content key as valid, and add the case to followups.
+A2-F3 [LOW, UX honesty] After 422 or 429 the selection is cleared and Interpret disabled (run() catch ->
+  clearContent() default clearSelection=true; app.js:9-11, :52; CHAR_R1/CHAR_R4). The text says "then
+  retry" / "Choose fewer occurrences", but the user must re-select up to 40 boxes. Follow-up: keep the
+  selection on Content 422/429.
+A2-I1 [INFO] map_region now applies the caller's item limit separately to validation and mapping (a new
+  Work each), so the per-call item budget is up to 2x the previous combined count. Output is unchanged.
+A2-I2 [INFO] "Observed writer:" labels the authenticated retained-request signer, not an observer claim.
+  Consider wording that separates it from provider/observer claims, per the content-api design.
+A2-I3 [INFO] Browser evidence now has 4 screenshots and DOM dumps (browser-final/). The mobile
+  screenshot shows only the page header, not Content cards. Actual download delivery timed out after
+  15 s: UNVERIFIED.
+
+B2-F1 [LOW-MEDIUM, test adequacy] The "single pinned RO snapshot" is correct by code reading (BEGIN
+  before the first read, create.rs:494; all acquisition inside), but no test pins it. RB01 (drop BEGIN)
+  survives every suite including mine. The test named
+  creation_keeps_the_selected_snapshot_when_source_appends_during_output_work appends at
+  CreationBoundary::Reserved (creation.rs:692-697), AFTER the source connection is closed (create.rs:507).
+  It proves only that the frontier was captured earlier, not snapshot isolation during acquisition.
+  Follow-up: a private acquisition seam (like Content's) that appends between the commits and objects
+  scans, asserting success with the selected frontier and no extra object.
+B2-F2 [LOW, test adequacy] Three refusals that the design requires are pinned only by my probes: unknown
+  source schema (RB03), preexisting destination sidecars (RB07; the shared helper exists, but the
+  creation suite never exercises it), and the proof-row coordinate (RB09). Under RB09, a proof row at the
+  wrong sequence is silently re-homed under its commit, a raw-coordinate fidelity loss. Follow-up: promote
+  pass_b2, pass_b3 and pass_b5 (retained in probes/zz_review_creation_probes.rs).
+B2-F3 [LOW, test adequacy] Two outcome-semantics guarantees are unpinned:
+  (a) the reservation-time custody recheck (RB04; no hook between prepare and reservation — create_new
+      still prevents overwriting the main file, so the residual is a sidecar created in that window);
+  (b) a COMMIT that itself errors is reported Uncertain (RB06; nothing can make COMMIT fail in tests).
+      The code is correct as read (:606-607).
+  Follow-up: a test-only boundary before reservation and an injectable COMMIT failure (e.g. a commit hook
+  returning nonzero).
+B2-I1 [INFO] create_observed with its CreationBoundary callback is a PUBLIC export (bundle.rs:22). It is
+  a test seam on the production API, and the callback runs inside the IMMEDIATE transaction, outside any
+  deadline. It grants no authority. Consider pub(crate) plus a test feature.
+B2-I2 [INFO] The loss-partition algorithm is duplicated (create.rs:348-383 vs replay.rs:366-385). Replay
+  catches divergence (pre-commit), and the author's Python oracle is the independent check.
+B2-I3 [INFO] Not verifiable locally: power-loss durability of the file+parent fsync sequence, and
+  filesystem stalls versus the deadline (both declared as limits in the design).
+
+---------------------------------------------------------------------------------------------------
+7. REQ / AC TABLES
+---------------------------------------------------------------------------------------------------
+.design/kan-v2-content-api.md (Scope A delta over the baseline review)
+  REQ-1 authorized pinned selection, reverify before decode ..... MET (unchanged path; RA13 killed; pass_a2)
+  REQ-2 bounds, refuse incomplete acquisition ...... MET; every bound now pinned (RA03-09). Fitness: A2-F1
+  REQ-3 lineage, exact u64 strings .............................. MET (char_a1: zero bare numbers)
+  REQ-4 explicit format/issues/claims ........................... MET (B-F5 closed); A2-F2 over-flags one valid shape
+  REQ-5 navigation/selection/clearing ........................... MET (B-F6 closed); A2-F3 UX
+  REQ-6 cancellation/bounded workers ............................ MET and now PINNED (RA01/02/04)
+  REQ-7 real browser, fresh review .............................. PARTIAL: DOM/screenshots retained; download UNVERIFIED
+  AC-1 refusals without snippets ................................ MET
+  AC-2 exact identities/spans, >2^53 ............................ MET
+  AC-3 limits/cancellation -> explicit refusal .................. MET (422/429 distinct; RA01-RA12)
+  AC-4 browser fixtures ......................................... PARTIAL (retained DOM/screens; no live revoke/limit browser run; download unverified)
+  AC-5 behavioural mutations, lint, fresh review ................ MET for this checkpoint (sections 2, 5; this report)
+  Box remains "- [ ]" in the doc; parent frontend AC-1..10 OPEN.
+
+.design/kan-v2-recovery-mutations.md (Scope B is a creation-only checkpoint)
+  REQ-1 custody/collisions before open; exclusive private reservation; no overwrite
+        ...................................... MET (pass_b2, pass_b6, alias test); repeat-at-reservation unpinned (B2-F3a)
+  REQ-2 one snapshot; exact metadata/proofs/plan/membership/originals; pins/frontier; ignore derived;
+        refuse unknown schema/types/extra proofs/oversize .......... MET by code + pass_b1/b3/b4/b5;
+                                                                     snapshot unpinned (B2-F1)
+  REQ-3 created event + exact loss partition; one commit; file+parent sync; independent reopen
+        ...................................... MET (create.rs:552-628; char_b7; RB05 killed; Python oracle)
+  REQ-4 restoration ............................................... UNMET — not in this slice (declared)
+  REQ-5 limits; preserve failed artifacts; pre-commit vs uncertain
+        ...................................... MET in code; failed-COMMIT path unpinned (B2-F3b);
+                                               per-pass bounds + overall deadline, not RSS/quota (as declared)
+  REQ-6 typed capabilities/catalog; crash; source invariance; concurrency; standalone; review
+        ...................................... PARTIAL: capabilities/catalog/crash/standalone MET;
+                                               concurrent-append test does not test the snapshot (B2-F1)
+  AC-1 profile 2 / complete 3 / partial 3 with missing/corrupt/empty/staged originals; independent match
+        ...................................... MET (author oracle + my independent SQL byte comparison).
+                                               The "partial 3" fixture is synthesised by deleting commit
+                                               and proof rows, not by an interrupted copy_batch.
+  AC-2 aliases, preexisting outputs, wrong pins, stale frontier, invalid observer, budgets; checks before
+       open and at reservation ...................................... MET (reservation repeat unpinned)
+  AC-3 restoration/idempotent retry/two writers ................. UNMET (next slice)
+  AC-4 kill at 8 creation boundaries ............................ MET for creation (author + my spill variant);
+                                                                  restoration boundaries UNMET
+  AC-5 independent SQL + replay; standalone refusals; capabilities; controls; lint; review
+        ...................................... MET for creation; restoration parts UNMET
+  Parent kan-v2-recovery-bundles AC-1..6: OPEN (publication, backup/rebuild, restoration absent).
+
+---------------------------------------------------------------------------------------------------
+8. SCOPE-NARROWING (logs/50-scope-narrowing-grep.txt, 27 added lines)
+---------------------------------------------------------------------------------------------------
+  recovery-mutations.md Out of Scope / "Restoration/publication/jobs/RPC/UI remain required next slices"
+    — named in the design before implementation, separable, stated as REQUIRED. LEGITIMATE.
+  "it does not promise a whole-filesystem quota" / "not an exact RSS measure" — declared limits, matching
+    the code (Budget docs, bundle.rs:51-66; Creation.output_bytes doc, create.rs:18-20). LEGITIMATE.
+  content-api.md "Review correction candidate ... parent acceptance remains open" — honest. LEGITIMATE.
+  followup-status.md "Remote performance generation exposed an unresolved legacy claim-codec canonicality
+    refusal; it is not represented as a passing scaling result" — honest; matches ci-box-perf.txt.
+  followup-status.md Content row says "fresh correction review pending; download still unverified" —
+    accurate. Its claim "All current heads have green CI" for #290-296 is outside my scope and unverified.
+  provider-interpretation.md "object/null/number tool-result content receives Shape" — the code is
+    broader (A2-F2): drift in effect.
+  Parent frontend discovery/search/views/annotations/day/jobs: still listed as required roadmap items
+  (followup-status.md steps 3-8) and as "Upcoming"/unavailable in the live capability list (screenshot).
+  Not silently abandoned.
+
+---------------------------------------------------------------------------------------------------
+9. HOUSE RULES (CLAUDE.md, derived)
+---------------------------------------------------------------------------------------------------
+Fold reads, never mutates: untouched. No operation destroys a subject: creation never writes the source.
+Failed outputs are retained, and an existing output is never overwritten (pass_b6). Affordance, not
+enforcement: no hooks or gates. One surface: the v2 Library front end is the owner-authorized exception
+(CLAUDE.md 2026-10-18; the owner reaffirmed the full human frontend for this review). Content reads the
+same Reader API. Provenance: no cites fabricated; Content citations map to verified bytes; bundle history
+is signed by the pinned observer only. Persistence change => surface contract: done together (capability,
+tsv, conformance; the author's wrong-capability controls kill). Derived media never authority: derived
+commit columns and bindings are ignored (author test + code), and parsed JSON is labelled derived.
+
+---------------------------------------------------------------------------------------------------
+10. FOLLOW-UPS (ordered)
+---------------------------------------------------------------------------------------------------
+  1 A2-F1 dedupe coarse citations; re-measure Content beyond 1 MB requests.
+  2 B2-F1 pin snapshot isolation inside acquisition with a private seam.
+  3 B2-F2 promote pass_b2/pass_b3/pass_b5 into tests/evidence_bundle_creation.rs.
+  4 B2-F3 pin the reservation recheck and failed-COMMIT => Uncertain.
+  5 A2-F2 absent tool_result content is valid.  6 A2-F3 keep selection after 422/429.
+  7 INFO items A2-I1..I3, B2-I1..I3.
+  Still required and separate: restoration, publication, bundle-aware backup/rebuild, remote
+  integration, human recovery jobs, the full frontend (discovery/search/views/annotations/analysis/day/
+  admin), actual browser download delivery, exact-head CI for 918318d, and resolution of the legacy
+  codec canonicality failure (perf run 39315201306, claim 723).
+
+---------------------------------------------------------------------------------------------------
+11. RECORDING (Git-first; NOT executed)
+---------------------------------------------------------------------------------------------------
+No kan/day command was run. No claim CIDs are asserted beyond those read from north-star.json, and none
+were invented. For operator backfill once day#168/kan#197 permit (design-claim CID to be supplied):
+  day review record <subject> --verdict APPROVE-WITH-FOLLOW-UPS --rationale "918318d: Content corrections
+  close B-F2..B-F6/A-F10..A-F12/A-I1 with all prior survivors now killed; citation cap limits requests
+  ~350 KB; bundle creation verified byte-exact by independent SQL, crash-safe, snapshot/sidecar/schema/
+  proof-coordinate refusals partly unpinned" --cites <design CID>
+  Observations citing that verdict: A2-F1, A2-F2, A2-F3, B2-F1, B2-F2, B2-F3.
+
+---------------------------------------------------------------------------------------------------
+VERDICT
+---------------------------------------------------------------------------------------------------
+Scope A: APPROVE WITH FOLLOW-UPS. The corrections do what the baseline review asked. Mapping validation
+happens once per immutable borrowed stream. Limit and busy outcomes are distinct from verification
+failures and disclose nothing. Every worker, permit, deadline, acquisition and request-wide accounting
+guarantee that previously survived is now killed by a deterministic, private, production-inert test (18/18
+backend and 5/5 UI controls killed). The UI renders writer, start and extent provenance. The remaining
+gap is fitness rather than safety: the 4096 citation cap now refuses ordinary requests above ~350 KB
+(A2-F1, reproduced at its exact predicted boundary). There are also a small provider over-flag (A2-F2) and
+a selection-clearing UX wrinkle (A2-F3).
+Scope B: APPROVE WITH FOLLOW-UPS. Creation reads one pinned RO snapshot after all-participant custody
+checks. It preserves every authoritative byte, which my independent Python stdlib comparison confirmed on
+profile 2 and on complete and partial profile 3. It ignores derived columns and refuses foreign schema,
+types, pins, frontiers and proof coordinates. It commits member, history and KNB1 markers atomically under
+a page ceiling, syncs file and parent, and re-inspects before success. It distinguishes pre-commit refusal
+from uncertain outcomes, and never overwrites or deletes an output. Abrupt death, including a spilled
+16 MiB transaction, never yields a recognised partial bundle. What keeps this short of APPROVE is the
+tests rather than the code: the snapshot property and the reservation/COMMIT-outcome paths are unpinned
+(RB01, RB04, RB06 survive), and three required refusals are pinned only by my probes (RB03, RB07, RB09).
+Restoration, publication and parent recovery ACs remain open, as the design declares.
+Overall: APPROVE WITH FOLLOW-UPS. No invariant violation. CI is not claimed green: the exact-head
+918318d run was not observed, and the legacy codec performance failure is unresolved. Full roadmap and
+parent frontend/recovery acceptance stay open.

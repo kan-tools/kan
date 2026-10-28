@@ -1,0 +1,26 @@
+
+running 1 test
+test abrupt_death_never_publishes_a_partial_created_bundle ... FAILED
+
+failures:
+
+---- abrupt_death_never_publishes_a_partial_created_bundle stdout ----
+
+thread 'abrupt_death_never_publishes_a_partial_created_bundle' (10573590) panicked at tests/evidence_bundle_creation.rs:559:21:
+assertion `left != right` failed: recognized incomplete publication at MemberInserted
+  left: 1263419953
+ right: 1263419953
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    abrupt_death_never_publishes_a_partial_created_bundle
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 10 filtered out; finished in 0.51s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-recovery-mutations)
+    Finished `test` profile [unoptimized] target(s) in 7.85s
+     Running tests/evidence_bundle_creation.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_bundle_creation-2c0c9f1234da24e6)
+error: test failed, to rerun pass `--test evidence_bundle_creation`
+
+exit=101

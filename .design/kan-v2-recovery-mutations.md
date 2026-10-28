@@ -59,3 +59,61 @@ perform all-participant namespace and inode checks before SQLite opens, and
 must not present those existing checks as a hostile path-replacement fence or
 a promise that no other hard link exists. These remain mutation qualification
 obligations, not properties established by read-only inspection.
+
+
+## Creation draft under implementation
+The first mutation slice is `bundle::create`/`create_observed` in `src/evidence_store/bundle/create.rs`. It acquires profile2/3 raw bytes in one read transaction, checks the selected frontier, constructs and replays the initial signed loss history, exclusively reserves a new output and commits member/history/markers together. After commit begins, failure carries the expected checkpoint as an uncertain outcome. Files are synchronized and independently reopened before success. The source and failed output remain retained. The creation result does not activate a writer.
+
+The draft exposes an explicit main-file page ceiling and names rollback-journal/RAM overhead separately; it does not promise a whole-filesystem quota. Acquisition counts include newly constructed history. Each semantic audit/replay is bounded by the configured replay limits, with a shared overall deadline and cancellation flag; the combined CPU/byte pass count is a fixed multiple of that per-pass ceiling, not an exact RSS measure. Reopen uses the output-size allowance and the remaining deadline. Tests drafted for loss preservation, physical types, pins/frontier, all-participant aliases, cancellation/outcome uncertainty, source invariance and abrupt process death at eight boundaries. Compilation, behavioral controls, independent oracle comparison and fresh review are pending. Restoration/publication/jobs/RPC/UI remain required next slices.
+
+Restoration follow-through must reuse the replay candidate validator rather than
+signing first and asking replay whether the claim was true afterward. Extract the
+existing membership/length/CID/writer-binding checks behind a bounded private
+helper and retain all existing hostile candidate controls. Under `BEGIN IMMEDIATE`,
+acquire and replay the exact bundle again with the caller's external checkpoint.
+Only an existing verified same-bytes restoration may resolve an older checkpoint
+as an idempotent retry; a new transition requires equality with the latest
+checkpoint. Return the original restoration observation and the actual latest
+checkpoint for a retry, not a newly signed claim. Candidate insertion and its
+observation share one transaction; uncertain commit results retain the intended
+checkpoint. Publication and writer activation remain distinct subsequent actions.
+
+The current worktree's repeated `day design check` still returns exit2 for the
+shared-workspace refusal. The diagnostic is preserved locally; it is not counted
+as successful validation and was not redirected to the main checkout's log.
+
+## Creation author qualification — 2026-10-19
+
+Source22002e7 passes70 selected integration checks (including ten creation
+checks and eight abrupt-death boundaries), strict all-target v2 lint and format.
+The SQL/history oracle and seven compiled mutation controls pass with restored
+source identity. Evidence is in`reviews/kan-v2-recovery-creation-author/`.
+Initial fixture and lint failures remain recorded. Fresh Opus review is pending;
+restoration/publication/full recovery acceptance remain open. Remote performance
+generation exposed an unresolved legacy claim-codec canonicality refusal;
+it is not represented as a passing scaling result.
+
+
+## Creation review follow-ups — candidate
+Fresh actual Opus review of918318d approved creation with follow-ups. The report
+is retained at `reviews/kan-v2-content-creation-opus/REPORT.txt`. Three genuine
+controls survived: removing BEGIN, skipping reservation-time custody rechecks,
+and moving the uncertain-outcome flag after COMMIT. The through-only frontier
+mutation was redundant with complete precommit replay, which still rejected it.
+
+The candidate adds acquisition/pre-reservation phase notifications to the existing
+owner-side callback API. A real WAL writer appends between the metadata and object
+scans; the bundle must retain only its original snapshot's objects. A sidecar
+inserted after preparation must prevent reservation and survive untouched. A real
+SQLite reader holds a shared lock across the output's DELETE-mode COMMIT, which
+must return an uncertain outcome on the actual commit error. These checks avoid
+an environment switch or fake successful commit. The abrupt-death fixture also
+covers the two new phases before any destination exists.
+
+The independent review's schema, preexisting-sidecar and proof-coordinate cases
+are promoted, with case variants tested as aliases only when the test filesystem
+actually treats them as aliases. Original probe evidence remains local and
+unchanged. The public callback is retained for compatibility; it is owner-side,
+adds no remote authority and must return promptly. It is not a promise to preempt
+arbitrary callback or filesystem stalls. These changes still require compiled
+qualification, targeted fault controls and fresh review.

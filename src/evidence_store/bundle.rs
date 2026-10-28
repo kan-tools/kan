@@ -18,6 +18,9 @@ use std::{
     time::{Duration, Instant},
 };
 
+mod create;
+pub use create::{create, create_observed, Creation, CreationBoundary, CreationError};
+
 const SCHEMA: &str = include_str!("bundle.sql");
 const APPLICATION_ID: i64 = 0x4b4e4231;
 const MAX_SAFE: i64 = 9007199254740991;

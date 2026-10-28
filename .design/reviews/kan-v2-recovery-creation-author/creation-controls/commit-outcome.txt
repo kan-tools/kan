@@ -1,0 +1,24 @@
+
+running 1 test
+test precommit_cancellation_retains_unrecognized_artifact_and_postcommit_cancellation_is_uncertain ... FAILED
+
+failures:
+
+---- precommit_cancellation_retains_unrecognized_artifact_and_postcommit_cancellation_is_uncertain stdout ----
+
+thread 'precommit_cancellation_retains_unrecognized_artifact_and_postcommit_cancellation_is_uncertain' (10573325) panicked at tests/evidence_bundle_creation.rs:416:22:
+must report uncertain commit
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    precommit_cancellation_retains_unrecognized_artifact_and_postcommit_cancellation_is_uncertain
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 10 filtered out; finished in 0.49s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-recovery-mutations)
+    Finished `test` profile [unoptimized] target(s) in 7.98s
+     Running tests/evidence_bundle_creation.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_bundle_creation-2c0c9f1234da24e6)
+error: test failed, to rerun pass `--test evidence_bundle_creation`
+
+exit=101
