@@ -1,0 +1,15 @@
+2026-10-19 actual in-app browser recheck.
+IAB DOM and AX access work; native screen locking does not establish browser unavailability.
+Existing user tab4 Studio design preview was inspected without changes and left open.
+Owned tab15 opened the real Library synthetic fixture at 127.0.0.1:53319.
+Authenticated using its synthetic token, selected scope16 repeated32bytes,
+and displayed occurrence1 bytes0..64 exactly:
+5365636f6e6420617574686f72697a65642073636f70652e0a427974652d657861637420736f7572636520776974682062696e617279207375666669783a00ff
+waitForEvent(download,15000) began before clicking Download this range.
+Click fulfilled, download event timed out, AX unchanged, console warning/error list empty.
+No delivered path or file bytes obtained. File delivery remains UNVERIFIED.
+A narrow Downloads filename search yielded no result before stalling and was stopped;
+that is unavailable evidence, not proof of absent delivery.
+Locked Library: AX confirmed plaintext/rows hidden and token field focused.
+Closed owned tab15. Sent SIGINT to owned fixture PID96714 and stopped owned searchPID96859.
+Binary hash and fixture process result retained alongside this record.

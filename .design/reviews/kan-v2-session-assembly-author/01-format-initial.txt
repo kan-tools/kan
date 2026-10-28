@@ -1,0 +1,14 @@
+Diff in /Users/m/code/kan-tools/kan/.worktrees/kan-v2-session-assembly/src/lib.rs:77:
+ pub mod evidence_reader;
+ 
+ #[cfg(feature = "v2-crypto")]
+-pub mod evidence_reconstruction;
+-#[cfg(feature = "v2-crypto")]
+ pub mod evidence_assembly;
++#[cfg(feature = "v2-crypto")]
++pub mod evidence_reconstruction;
+ 
+ #[cfg(feature = "v2-crypto")]
+ pub mod evidence_library;
+
+exit=1

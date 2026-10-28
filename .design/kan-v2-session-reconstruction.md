@@ -200,3 +200,72 @@ accepted recognized frames must round-trip to the parsed JSON value across the
 mutation corpus, and absent clocks on unknown versions/observers/events/outcomes
 remain Unsupported. This pins classification precedence and catches future
 optional-field or unit-variant narrowing before a consumer is added.
+
+## Next implementation checkpoint: bounded occurrence assembly
+
+The next pure component consumes a bounded caller-selected list of authorized
+occurrences, with caller-supplied scope/writer identity and available or typed
+unavailable frame bytes. Source indices refer back to that complete input list;
+the caller must retain snapshot/proof/occurrence lineage with each index. This
+component grants no access and discovers no additional records. All inputs,
+including malformed, opaque, unsupported and unavailable ones, remain represented.
+
+Group recognized captures only by scope, authenticated writer, observer and attempt.
+Preserve each input at its observer ordinal. Exact duplicate frames may share one
+stream segment but retain every source index; different frames at the same ordinal
+are visible conflicts, never last-write-wins. Report observed ordinal holes without
+expanding missing integers or treating wall clocks/transport links as identity.
+
+Request/response assembly retains offset segments with exact frame-body spans.
+Checked end arithmetic, holes, overlaps, chunks after request-end and conflicting request-end claims prevent
+a synthetic contiguous rendering. Never allocate by a claimed offset or pad a hole.
+A contiguous response prefix and a claimed terminal outcome do not certify complete
+capture. An unknown request extent stays unknown. Metadata and other events remain
+inspectable as observations; provider semantics and metadata-chunk interpretation
+belong to the adapter stage.
+
+Explicit occurrence, encoded-input, scanned-byte, assembled-byte and time/cancel
+budgets return a refusal without partial success. Containers are bounded by input
+count; byte budgets are not an exact RSS/CPU promise. Arithmetic uses native u64
+coordinates and this pure result has no wire serializer. The later API must use
+validated decimal strings for JavaScript.
+
+Qualification must independently cover isolation, exact duplicates, same-ordinal
+conflicts, missing starts/terminals, contradictory request extents, offset overflow,
+large sparse coordinates, non-ASCII/binary source spans, unavailable input,
+determinism and cancellation/budget boundaries. This checkpoint does not implement
+provider adapters, source authorization, the Content API or the session UI and
+closes no full-session acceptance criterion.
+
+### Assembly author qualification
+
+The pure assembly checkpoint passes 30 affected integration checks and one
+deterministic cancellation unit, strict all-target v2 Clippy and formatting.
+Eight selected semantic mutants compile and fail named behavioral assertions;
+the restored assembly suite passes. Raw runs, the control-harness correction
+and initial CI performance failure are retained in
+`.design/reviews/kan-v2-session-assembly-author/`. Fresh independent review is
+still required; API, provider interpretation and browser acceptance stay open.
+
+### Fresh assembly review follow-through
+
+Actual cold Opus 5.5 reviewed frozen `eb4f471`: **APPROVE WITH FOLLOW-UPS**
+for assembly and the reader correction. The complete unchanged report, sixteen
+assembly probes, ten physical probes, all mutations and exact custody checks
+are retained in `.design/reviews/kan-v2-assembly-opening-opus/`.
+
+B-N1/N2/N3 add absolute decode/duplicate-comparison/copy scan accounting,
+out-of-ordinal-order offsets and every duplicate RequestEnd source to CI. B-N4
+clarifies that ordinal gaps mean no recognized capture at those ordinals, not
+proof that no input exists. Consumers must show unplaced unsupported, malformed
+and unavailable observations beside groups. A conflict can conservatively block
+both streams even when one has contiguous bytes; the UI must explain this.
+These changes are being qualified; no runtime assembly behavior changed.
+
+The same initial CI commit passed the requested performance rerun with ratio
+6.8 against unchanged bound 8; both runs are retained. Later commits need their
+own CI results. API, provider interpretation and full browser acceptance remain
+open. The new actual IAB recheck confirms browser access but the download event
+still timed out; delivery remains unverified.
+
+Follow-through qualification at 2906902 passes 84 integrations, four units, strict Clippy/fmt and five selected semantic controls with restored 17 assembly tests. Evidence: `.design/reviews/kan-v2-assembly-followup-author/`.

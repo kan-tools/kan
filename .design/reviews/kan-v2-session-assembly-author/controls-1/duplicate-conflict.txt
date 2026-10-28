@@ -1,0 +1,21 @@
+
+running 1 test
+test ordinal_conflicts_keep_both_bytes_and_prevent_synthetic_rendering ... FAILED
+
+failures:
+
+failures:
+    ordinal_conflicts_keep_both_bytes_and_prevent_synthetic_rendering
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 12 filtered out; finished in 0.00s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-session-assembly)
+    Finished `test` profile [unoptimized] target(s) in 7.52s
+     Running tests/evidence_assembly.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_assembly-ab2b7afbe8d062d0)
+
+thread 'ordinal_conflicts_keep_both_bytes_and_prevent_synthetic_rendering' (10282648) panicked at tests/evidence_assembly.rs:128:5:
+assertion failed: g.ordinals[0].conflict
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+error: test failed, to rerun pass `--test evidence_assembly`
+
+exit=101
