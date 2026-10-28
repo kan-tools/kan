@@ -1,0 +1,11 @@
+--- original
++++ mutated
+@@ -137,7 +137,7 @@
+     // Serde's internally tagged unit variant accepts extra map entries even
+     // with deny_unknown_fields. Do not silently discard fields from a recognized
+     // forwarding intent; the struct variants retain their derived strict checks.
+-    if kind == "forwarding-intent" && event.len() != 1 {
++    if false && kind == "forwarding-intent" && event.len() != 1 {
+         return Err(Error::Header);
+     }
+     let header: Header = serde_json::from_value(value).map_err(|_| Error::Header)?;

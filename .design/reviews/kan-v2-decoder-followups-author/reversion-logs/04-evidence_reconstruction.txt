@@ -1,0 +1,21 @@
+
+running 1 test
+test recognized_header_requires_explicit_timestamp_even_when_unknown ... FAILED
+
+failures:
+
+---- recognized_header_requires_explicit_timestamp_even_when_unknown stdout ----
+
+thread 'recognized_header_requires_explicit_timestamp_even_when_unknown' (9878333) panicked at tests/evidence_reconstruction.rs:16:30:
+called `Result::unwrap_err()` on an `Ok` value: Capture(Frame { header: Header { version: 2, attempt: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", observer: Collector, ordinal: 9007199254740993, observed_at_unix_micros: None, elapsed_micros: 18446744073709551615, unconfirmed_before: 0, event: RequestChunk { offset: 9007199254740995 } }, body: [], header_span: 9..269, body_span: 269..269 })
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    recognized_header_requires_explicit_timestamp_even_when_unknown
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 14 filtered out; finished in 0.00s
+
+    Finished `test` profile [unoptimized] target(s) in 0.12s
+     Running tests/evidence_reconstruction.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_reconstruction-f47b82f29e147a62)
+error: test failed, to rerun pass `--test evidence_reconstruction`

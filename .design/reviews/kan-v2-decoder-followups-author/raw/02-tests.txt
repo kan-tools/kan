@@ -1,0 +1,23 @@
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-reconstruction)
+    Finished `test` profile [unoptimized] target(s) in 6.77s
+     Running tests/evidence_reconstruction.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_reconstruction-f47b82f29e147a62)
+
+running 15 tests
+test capture_family_size_limit_precedes_unknown_envelope_classification ... ok
+test all_truncated_header_prefixes_fail_without_panicking ... ok
+test exact_spans_binary_body_and_u64_coordinates_are_not_rounded ... ok
+test multibyte_and_escaped_header_text_preserves_original_byte_spans ... ok
+test duplicate_and_escaped_alias_keys_never_choose_a_winner ... ok
+test identifiers_and_started_string_bounds_match_recorder ... ok
+test malformed_json_encoding_trailing_data_and_nested_input_refuse ... ok
+test opaque_and_unsupported_are_distinct_from_malformed_capture ... ok
+test non_chunk_events_cannot_smuggle_body_bytes ... ok
+test recognized_header_requires_explicit_timestamp_even_when_unknown ... ok
+test current_production_recorder_event_forms_roundtrip_with_exact_bodies ... ok
+test recognized_shapes_reject_missing_extra_wrong_type_and_bad_integer_fields ... ok
+test bounded_header_body_and_total_before_materialization ... ok
+test every_recognized_event_rejects_extra_fields_including_unit_variants ... ok
+test mutated_bounded_inputs_never_panic_or_claim_spans_outside_input ... ok
+
+test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+

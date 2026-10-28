@@ -1,0 +1,22 @@
+
+running 1 test
+test every_recognized_event_rejects_extra_fields_including_unit_variants ... FAILED
+
+failures:
+
+---- every_recognized_event_rejects_extra_fields_including_unit_variants stdout ----
+
+thread 'every_recognized_event_rejects_extra_fields_including_unit_variants' (9878188) panicked at tests/evidence_reconstruction.rs:16:30:
+called `Result::unwrap_err()` on an `Ok` value: Capture(Frame { header: Header { version: 2, attempt: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", observer: Collector, ordinal: 9007199254740993, observed_at_unix_micros: None, elapsed_micros: 18446744073709551615, unconfirmed_before: 0, event: ForwardingIntent }, body: [], header_span: 9..295, body_span: 295..295 })
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    every_recognized_event_rejects_extra_fields_including_unit_variants
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 14 filtered out; finished in 0.00s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-reconstruction/.local-state/reversion/7cb3600c396e43bfa6e23741f2c94d87)
+    Finished `test` profile [unoptimized] target(s) in 7.14s
+     Running tests/evidence_reconstruction.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_reconstruction-f47b82f29e147a62)
+error: test failed, to rerun pass `--test evidence_reconstruction`

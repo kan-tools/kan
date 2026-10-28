@@ -1,0 +1,27 @@
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-reconstruction/.local-state/reviews/reconstruction)
+    Finished `test` profile [unoptimized] target(s) in 0.63s
+     Running tests/evidence_capture.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_capture-54a9cad3536a7b47)
+
+running 18 tests
+test empty_body_still_requires_successful_output_flush ... ok
+test disconnect_is_unknown_and_retains_observed_prefix ... ok
+test full_and_unavailable_capture_continue_with_visible_gap ... ok
+test io_budget_is_cumulative_across_output_writes ... ok
+test deadline_and_dropped_future_record_unknown_without_retry ... ok
+test maximum_request_is_chunked_and_sent_once ... ok
+test encrypted_sink_recovers_after_contention_without_rewriting_evidence ... ok
+test resumed_capture_carries_gap_and_observers_attempts_have_distinct_ids ... ok
+test route_and_request_limits_refuse_before_provider ... ok
+test output_failure_and_backpressure_stop_reading ... ok
+test redirect_is_observed_but_never_followed ... ok
+test cli_missing_spool_reports_gap_separately_from_binary_stdout ... ok
+test killed_cli_retains_intent_without_fabricating_terminal_completion ... ok
+test encrypted_spool_reopens_drains_only_evidence_and_contains_no_plaintext ... ok
+test binary_stream_above_ten_mib_has_exact_bodies_and_independent_frames ... ok
+test capture_latency_does_not_consume_provider_io_budget ... ok
+test capture_wait_allowance_exhaustion_does_not_disable_recovery ... ok
+test cli_deadline_exits_even_when_stdout_pipe_is_not_consumed ... ok
+
+test result: ok. 18 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.61s
+
+exit=0

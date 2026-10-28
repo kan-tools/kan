@@ -1,0 +1,10 @@
+--- /Users/m/code/kan-tools/kan/.worktrees/kan-v2-reconstruction/.local-state/reviews/reconstruction/review-evidence/raw/mutations/A-REVERT-production/orig-src__bin__kan-v2.rs	2026-10-19 06:40:57
++++ /Users/m/code/kan-tools/kan/.worktrees/kan-v2-reconstruction/.local-state/reviews/reconstruction/src/bin/kan-v2.rs	2026-10-19 06:40:57
+@@ -883,7 +883,6 @@
+             historical_issuer,
+             nonce,
+         } => {
+-            kan::evidence_store::copy_upgrade::validate_plan_destination(&database, &plan)?;
+             let source = kan::evidence_store::copy_upgrade::PlannedCopy::open(
+                 &database,
+                 kan::evidence_copy_plan::Target {

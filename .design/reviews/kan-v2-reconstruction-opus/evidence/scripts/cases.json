@@ -1,0 +1,509 @@
+{
+ "A-REVERT-production": {
+  "patch": "/Users/m/code/kan-tools/kan/.worktrees/kan-v2-reconstruction/.local-state/reviews/reconstruction/review-evidence/scripts/A-production.diff",
+  "files": [
+   "src/bin/kan-v2.rs",
+   "src/evidence_store.rs",
+   "src/evidence_store/copy_upgrade.rs"
+  ],
+  "add": [
+   [
+    "/Users/m/code/kan-tools/kan/.worktrees/kan-v2-reconstruction/.local-state/reviews/reconstruction/review-evidence/probes/zz_review_copy_plan_probes.rs",
+    "tests/zz_review_copy_plan_probes.rs"
+   ]
+  ],
+  "runs": [
+   [
+    "copy_destination",
+    [
+     "test",
+     "--features",
+     "v2-crypto",
+     "--test",
+     "evidence_copy_destination"
+    ]
+   ],
+   [
+    "reviewer-probes",
+    [
+     "test",
+     "--features",
+     "v2-crypto",
+     "--test",
+     "zz_review_copy_plan_probes",
+     "--",
+     "--nocapture"
+    ]
+   ]
+  ]
+ },
+ "A-M1-noncanonical-source": {
+  "edits": [
+   [
+    "src/evidence_store/copy_upgrade.rs",
+    "plan_outside_sqlite(&std::fs::canonicalize(source)?, plan)",
+    "plan_outside_sqlite(source, plan)"
+   ]
+  ],
+  "add": [
+   [
+    "/Users/m/code/kan-tools/kan/.worktrees/kan-v2-reconstruction/.local-state/reviews/reconstruction/review-evidence/probes/zz_review_copy_plan_probes.rs",
+    "tests/zz_review_copy_plan_probes.rs"
+   ]
+  ],
+  "runs": [
+   [
+    "copy_destination",
+    [
+     "test",
+     "--features",
+     "v2-crypto",
+     "--test",
+     "evidence_copy_destination"
+    ]
+   ],
+   [
+    "reviewer-probes",
+    [
+     "test",
+     "--features",
+     "v2-crypto",
+     "--test",
+     "zz_review_copy_plan_probes",
+     "--",
+     "--nocapture"
+    ]
+   ]
+  ]
+ },
+ "A-M2-name-only-guard": {
+  "edits": [
+   [
+    "src/evidence_store.rs",
+    "            sqlite_name_eq(target.as_os_str(), source.as_os_str())\n                || same_existing_file(target, source)",
+    "            sqlite_name_eq(target.as_os_str(), source.as_os_str())"
+   ]
+  ],
+  "add": [
+   [
+    "/Users/m/code/kan-tools/kan/.worktrees/kan-v2-reconstruction/.local-state/reviews/reconstruction/review-evidence/probes/zz_review_copy_plan_probes.rs",
+    "tests/zz_review_copy_plan_probes.rs"
+   ]
+  ],
+  "runs": [
+   [
+    "copy_destination",
+    [
+     "test",
+     "--features",
+     "v2-crypto",
+     "--test",
+     "evidence_copy_destination"
+    ]
+   ],
+   [
+    "reviewer-probes",
+    [
+     "test",
+     "--features",
+     "v2-crypto",
+     "--test",
+     "zz_review_copy_plan_probes",
+     "--",
+     "--nocapture"
+    ]
+   ]
+  ]
+ },
+ "B-REVERT-production": {
+  "patch": "/Users/m/code/kan-tools/kan/.worktrees/kan-v2-reconstruction/.local-state/reviews/reconstruction/review-evidence/scripts/B-production.diff",
+  "files": [
+   "src/evidence_store/inventory.rs"
+  ],
+  "runs": [
+   [
+    "inventory",
+    [
+     "test",
+     "--features",
+     "v2-crypto",
+     "--test",
+     "evidence_inventory"
+    ]
+   ],
+   [
+    "inventory-vm",
+    [
+     "test",
+     "--features",
+     "v2-crypto",
+     "--lib",
+     "evidence_store::inventory::tests"
+    ]
+   ]
+  ]
+ },
+ "B-X1-text-treated-as-blob": {
+  "edits": [
+   [
+    "src/evidence_store/inventory.rs",
+    "CASE WHEN typeof(bytes)='blob' THEN length(bytes) ELSE -1 END",
+    "CASE WHEN typeof(bytes) IN ('blob','text') THEN length(bytes) ELSE -1 END"
+   ]
+  ],
+  "runs": [
+   [
+    "inventory",
+    [
+     "test",
+     "--features",
+     "v2-crypto",
+     "--test",
+     "evidence_inventory"
+    ]
+   ]
+  ]
+ },
+ "B-X2-cast-materializes": {
+  "edits": [
+   [
+    "src/evidence_store/inventory.rs",
+    "CASE WHEN typeof(bytes)='blob' THEN length(bytes) ELSE -1 END",
+    "CASE WHEN typeof(bytes)='blob' THEN length(bytes) ELSE length(CAST(bytes AS BLOB))*0-1 END"
+   ]
+  ],
+  "runs": [
+   [
+    "inventory",
+    [
+     "test",
+     "--features",
+     "v2-crypto",
+     "--test",
+     "evidence_inventory"
+    ]
+   ]
+  ]
+ },
+ "B-X3-deadline-ignored-by-vm": {
+  "edits": [
+   [
+    "src/evidence_store/inventory.rs",
+    "Some(move || cancelled.load(Ordering::Relaxed) || Instant::now() >= deadline)",
+    "Some(move || { let _ = deadline; cancelled.load(Ordering::Relaxed) })"
+   ]
+  ],
+  "runs": [
+   [
+    "inventory-vm",
+    [
+     "test",
+     "--features",
+     "v2-crypto",
+     "--lib",
+     "evidence_store::inventory::tests"
+    ]
+   ],
+   [
+    "inventory",
+    [
+     "test",
+     "--features",
+     "v2-crypto",
+     "--test",
+     "evidence_inventory"
+    ]
+   ]
+  ]
+ },
+ "B-X4-page-uses-stale-startup-handler-only": {
+  "edits": [
+   [
+    "src/evidence_store/inventory.rs",
+    "        reader\n            .ledger\n            .conn\n            .progress_handler(0, None::<fn() -> bool>)?;\n        Ok(Self {",
+    "        Ok(Self {"
+   ],
+   [
+    "src/evidence_store/inventory.rs",
+    "        configure_read(&self.reader.ledger.conn, &work, deadline)?;\n",
+    "        work.check(deadline)?;\n"
+   ]
+  ],
+  "runs": [
+   [
+    "inventory-vm",
+    [
+     "test",
+     "--features",
+     "v2-crypto",
+     "--lib",
+     "evidence_store::inventory::tests"
+    ]
+   ],
+   [
+    "inventory",
+    [
+     "test",
+     "--features",
+     "v2-crypto",
+     "--test",
+     "evidence_inventory"
+    ]
+   ]
+  ]
+ },
+ "B-X5-budget-off-by-one": {
+  "edits": [
+   [
+    "src/evidence_store/inventory.rs",
+    "    if *spent > maximum {",
+    "    if *spent >= maximum {"
+   ]
+  ],
+  "runs": [
+   [
+    "inventory",
+    [
+     "test",
+     "--features",
+     "v2-crypto",
+     "--test",
+     "evidence_inventory"
+    ]
+   ]
+  ]
+ },
+ "D-M1-exchange-unchecked": {
+  "edits": [
+   [
+    "src/evidence_reconstruction.rs",
+    "matches!(&header.event, Event::TransportLink { exchange } if !identifier(exchange))",
+    "matches!(&header.event, Event::TransportLink { exchange } if exchange.is_empty())"
+   ]
+  ],
+  "runs": [
+   [
+    "reconstruction",
+    [
+     "test",
+     "--features",
+     "v2-crypto",
+     "--test",
+     "evidence_reconstruction"
+    ]
+   ]
+  ]
+ },
+ "D-M2-route-chars-not-bytes": {
+  "edits": [
+   [
+    "src/evidence_reconstruction.rs",
+    "route.len()>2048",
+    "route.chars().count()>2048"
+   ]
+  ],
+  "runs": [
+   [
+    "reconstruction",
+    [
+     "test",
+     "--features",
+     "v2-crypto",
+     "--test",
+     "evidence_reconstruction"
+    ]
+   ]
+  ]
+ },
+ "D-M3-arrays-not-recursive-unique": {
+  "edits": [
+   [
+    "src/evidence_reconstruction.rs",
+    "while let Some(Unique(v)) = seq.next_element()? {",
+    "while let Some(v) = seq.next_element::<Value>()? {"
+   ]
+  ],
+  "runs": [
+   [
+    "reconstruction",
+    [
+     "test",
+     "--features",
+     "v2-crypto",
+     "--test",
+     "evidence_reconstruction"
+    ]
+   ]
+  ]
+ },
+ "D-M4-identifier-accepts-uppercase": {
+  "edits": [
+   [
+    "src/evidence_reconstruction.rs",
+    "b.is_ascii_digit() || (b'a'..=b'f').contains(&b)",
+    "b.is_ascii_hexdigit()"
+   ]
+  ],
+  "runs": [
+   [
+    "reconstruction",
+    [
+     "test",
+     "--features",
+     "v2-crypto",
+     "--test",
+     "evidence_reconstruction"
+    ]
+   ]
+  ]
+ },
+ "D-M5-outcome-precheck-removed": {
+  "edits": [
+   [
+    "src/evidence_reconstruction.rs",
+    "if !matches!(outcome, \"completed\" | \"outcome-unknown\") {",
+    "if false && !matches!(outcome, \"completed\" | \"outcome-unknown\") {"
+   ]
+  ],
+  "runs": [
+   [
+    "reconstruction",
+    [
+     "test",
+     "--features",
+     "v2-crypto",
+     "--test",
+     "evidence_reconstruction"
+    ]
+   ]
+  ]
+ },
+ "D-M6-header-span-off-by-one": {
+  "edits": [
+   [
+    "src/evidence_reconstruction.rs",
+    "header_span: 9..end,",
+    "header_span: 9..end.saturating_sub(1).max(9),"
+   ]
+  ],
+  "runs": [
+   [
+    "reconstruction",
+    [
+     "test",
+     "--features",
+     "v2-crypto",
+     "--test",
+     "evidence_reconstruction"
+    ]
+   ]
+  ]
+ },
+ "D-M7-total-frame-check-removed": {
+  "edits": [
+   [
+    "src/evidence_reconstruction.rs",
+    "    if bytes.len() > MAX_FRAME {\n        return Err(Error::Limit);\n    }\n",
+    ""
+   ]
+  ],
+  "add": [
+   [
+    "/Users/m/code/kan-tools/kan/.worktrees/kan-v2-reconstruction/.local-state/reviews/reconstruction/review-evidence/probes/zz_review_decoder_probes.rs",
+    "tests/zz_review_decoder_probes.rs"
+   ]
+  ],
+  "runs": [
+   [
+    "reconstruction",
+    [
+     "test",
+     "--features",
+     "v2-crypto",
+     "--test",
+     "evidence_reconstruction"
+    ]
+   ],
+   [
+    "reviewer-probes",
+    [
+     "test",
+     "--features",
+     "v2-crypto",
+     "--test",
+     "zz_review_decoder_probes",
+     "--",
+     "--nocapture",
+     "--test-threads=1"
+    ]
+   ]
+  ]
+ },
+ "D-M8-plain-value-no-duplicate-detection": {
+  "edits": [
+   [
+    "src/evidence_reconstruction.rs",
+    "let Unique(value) = serde_json::from_slice(json).map_err(|_| Error::Header)?;",
+    "let value: Value = serde_json::from_slice(json).map_err(|_| Error::Header)?; let _ = std::marker::PhantomData::<Unique>;"
+   ]
+  ],
+  "runs": [
+   [
+    "reconstruction",
+    [
+     "test",
+     "--features",
+     "v2-crypto",
+     "--test",
+     "evidence_reconstruction"
+    ]
+   ]
+  ]
+ },
+ "B-AUTHOR-indexed-large-row-materialization": {
+  "edits": [
+   [
+    "src/evidence_store/inventory.rs",
+    "SELECT CASE WHEN typeof(bytes)='blob' THEN length(bytes) ELSE -1 END FROM objects NOT INDEXED WHERE +cid=?",
+    "SELECT CASE WHEN typeof(bytes)='blob' THEN length(bytes) ELSE -1 END FROM objects WHERE cid=?"
+   ]
+  ],
+  "runs": [
+   [
+    "inventory",
+    [
+     "test",
+     "--features",
+     "v2-crypto",
+     "--test",
+     "evidence_inventory",
+     "inventory_large_rows_stay_below_the_materialization_memory_ceiling",
+     "--",
+     "--exact",
+     "--nocapture"
+    ]
+   ]
+  ]
+ },
+ "B-AUTHOR-omit-startup-record-budget": {
+  "edits": [
+   [
+    "src/evidence_store/inventory.rs",
+    "            add_spent(&mut items, 1, budget.items)?;\n            let record = raw_commit(row)?;",
+    "            let record = raw_commit(row)?;"
+   ]
+  ],
+  "runs": [
+   [
+    "inventory",
+    [
+     "test",
+     "--features",
+     "v2-crypto",
+     "--test",
+     "evidence_inventory"
+    ]
+   ]
+  ]
+ }
+}

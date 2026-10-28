@@ -1,0 +1,4 @@
+copy_destination: exit=101 compile_error=False failed=['copy_plan_cli_refuses_preexisting_sidecar_outputs_before_opening_source'] ['test result: FAILED. 32 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5.51s'] 13s
+reviewer-probes: exit=101 compile_error=False failed=['review_copy_plan_entry_point_probes'] ['test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.60s'] 1s
+added_removed=True
+restored_bytes=True

@@ -157,3 +157,46 @@ claims or invent witnesses for the existing telos. Design recording and bridge
 claims require later backfill; no claim CIDs or witnessed completion are asserted.
 Run the actual design validator and preserve its output, including any root-
 checkout path warnings, separately from implementation acceptance.
+
+## First implementation checkpoint: pure frame decoder
+
+`src/evidence_reconstruction.rs` adds a bounded, non-persistent decoder only.
+It returns opaque, unsupported, malformed or recognized capture input separately.
+The recognized frame exposes borrowed body bytes and exact header/body ranges;
+it has no wire serializer, grant, signature judgment or assembly-completeness
+claim. JSON maps reject duplicate keys recursively, including escaped aliases,
+before variant selection. Unknown envelope/version/observer/event/outcome is
+unsupported; unsupported means no semantic fields are accepted, not that all
+remaining fields satisfy a known schema. Recognized shapes use the current
+strict capture Header/Event types and recorder byte/identifier limits.
+
+HTTP directions, offsets, totals, status and timestamps remain observer claims;
+coherence belongs to later assembly. This checkpoint does not silently tighten
+the recorder's historical semantic guarantees. KANC-family truncation beginning
+with the four-byte family prefix is malformed; inputs without that prefix are
+opaque. Decode requires a complete retained frame, not a source-range fragment.
+All storage/RPC/browser/session acceptance remains open. No persistence surface
+is added by this pure function.
+
+### Decoder review decisions
+
+The first independent decoder review found that Serde's internally tagged unit
+variant silently ignores extra fields. Forwarding-intent now explicitly refuses
+anything beyond its type field; every recognized event has an extra-field test.
+A recognized header must include `observed_at_unix_micros`: explicit null retains
+the recorder's unavailable-clock claim, whereas absence is malformed. Unknown
+variants still accept no semantic interpretation. Noncanonical JSON whitespace
+and escaping remain accepted when unambiguous; exact original spans are retained.
+
+For every input beginning `KANC`, the total-frame size limit precedes envelope
+version classification, including unknown envelope versions. Thus oversized
+unknown KANC-family data is a limit refusal. Inputs without the KANC prefix remain
+opaque without parsing or copying, regardless of size. Downstream source-read
+budgets remain responsible for all input acquisition. These choices do not
+assert coverage or close the parent reconstruction acceptance criteria.
+
+The second cold review's PA1/PA2 probes are promoted into the normal test suite:
+accepted recognized frames must round-trip to the parsed JSON value across the
+mutation corpus, and absent clocks on unknown versions/observers/events/outcomes
+remain Unsupported. This pins classification precedence and catches future
+optional-field or unit-variant narrowing before a consumer is added.

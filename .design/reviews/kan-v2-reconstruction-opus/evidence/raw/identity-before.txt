@@ -1,0 +1,6 @@
+BEFORE commit 7b44429d09f4dcb22ee4bc3bfb4e0441d0006d89 manifest 2520 tree 2520
+manifest==tree set: True
+extra files: ['north-star.json']
+missing files: []
+hash/blob mismatches: 0
+RESULT OK

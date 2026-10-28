@@ -1,0 +1,68 @@
+cargo test --features v2-crypto --test zz_review_decoder_probes -- --nocapture --test-threads=1
+
+running 4 tests
+test review_probe_max_header_allocation_shapes_complete_quickly ... PROBE ALLOC many-zeros len=130899: Unsupported(Event)
+PROBE ALLOC many-zeros elapsed=12.082417ms
+PROBE ALLOC many-empty-objects len=130899: Unsupported(Event)
+PROBE ALLOC many-empty-objects elapsed=7.534958ms
+PROBE ALLOC many-keys len=130712: Unsupported(Event)
+PROBE ALLOC many-keys elapsed=24.798291ms
+ok
+test review_probe_recorder_boundary_forms_roundtrip ... PROBE recorder frames: 5
+ok
+test review_probe_table ... PROBE P1 forwarding-intent+extra: Capture(event=ForwardingIntent, header_span=9..258, body_span=258..258, observed_at=Some(5))
+PROBE P2 terminal+extra: Err(Header)
+PROBE P3 observed_at omitted: Capture(event=ForwardingIntent, header_span=9..211, body_span=211..211, observed_at=None)
+PROBE P4a KANC1 oversize: Unsupported(Envelope)
+PROBE P4b KANC3 oversize: Unsupported(Envelope)
+PROBE P4c KANC1 tiny: Unsupported(Envelope)
+PROBE P5 header-version3 with oversize declared length: Err(Limit)
+PROBE P6 escaped attempt: Capture(event=ForwardingIntent, header_span=9..244, body_span=244..244, observed_at=Some(5))
+PROBE P7 escaped type: Capture(event=ForwardingIntent, header_span=9..239, body_span=239..239, observed_at=Some(5))
+PROBE P8 unsupported nest depth 126: Err(Header)
+PROBE P8 unsupported nest depth 127: Err(Header)
+PROBE P8 unsupported nest depth 128: Err(Header)
+PROBE P9 dup in unknown-event array: Err(Header)
+PROBE P10 version 2e0: Err(Header)
+PROBE P10 version "2": Err(Header)
+PROBE P10 version 258: Unsupported(Version)
+PROBE P10 version -2: Err(Header)
+PROBE P10 version 02: Err(Header)
+PROBE P11a unknown observer no event: Unsupported(Observer)
+PROBE P11b version3 only: Unsupported(Version)
+PROBE P11c version3 non-object event: Unsupported(Version)
+PROBE P12 future event with body: Unsupported(Event)
+PROBE P13a terminal no outcome: Err(Header)
+PROBE P13b terminal outcome 1: Err(Header)
+PROBE P14a header tuple arity3: Err(Header)
+PROBE P14b status 65536: Err(Header)
+PROBE P14c ordinal -0: Err(Header)
+PROBE P15a empty header: Err(Header)
+PROBE P15b BOM header: Err(Header)
+PROBE P16 whitespace-wrapped header: Capture(event=ForwardingIntent, header_span=9..243, body_span=243..243, observed_at=Some(5))
+PROBE P17a chunk CHUNK body: Capture(event=ResponseChunk { offset: 0 }, header_span=9..247, body_span=247..65783, observed_at=Some(5))
+PROBE P17b chunk empty body: Capture(event=ResponseChunk { offset: 0 }, header_span=9..247, body_span=247..247, observed_at=Some(5))
+PROBE P18 uppercase exchange: Err(Header)
+PROBE P19 unknown event + extra top-level: Unsupported(Event)
+PROBE P20 lone surrogate in unsupported: Err(Header)
+PROBE P21 kanc2 lowercase: Opaque
+ok
+test review_probe_unit_variant_extra_is_strict ... FAILED
+
+failures:
+
+failures:
+    review_probe_unit_variant_extra_is_strict
+
+test result: FAILED. 3 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-reconstruction/.local-state/reviews/reconstruction)
+    Finished `test` profile [unoptimized] target(s) in 0.37s
+     Running tests/zz_review_decoder_probes.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/zz_review_decoder_probes-42f0a6323aa334d2)
+
+thread 'review_probe_unit_variant_extra_is_strict' (9870197) panicked at tests/zz_review_decoder_probes.rs:109:5:
+unit variant extra field was recognized: Ok(true)
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+error: test failed, to rerun pass `--test zz_review_decoder_probes`
+
+exit=101

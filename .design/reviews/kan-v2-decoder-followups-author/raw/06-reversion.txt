@@ -1,0 +1,11 @@
+Source export and logs: /Users/m/code/kan-tools/kan/.worktrees/kan-v2-reconstruction/.local-state/reversion/7cb3600c396e43bfa6e23741f2c94d87
+What would be reverted (worktree):
+  skipped .design/kan-v2-session-reconstruction.md (not in --include)
+  reverting src/evidence_reconstruction.rs: 1/1 hunk(s)
+  skipped tests/evidence_reconstruction.rs (not in --include)
+
+DEMONSTRATED — failed under revert: evidence_reconstruction::every_recognized_event_rejects_extra_fields_including_unit_variants, evidence_reconstruction::recognized_header_requires_explicit_timestamp_even_when_unknown
+
+Paste into the commit message:
+
+    Demonstrated-by: revert=HEAD tests=evidence_reconstruction::every_recognized_event_rejects_extra_fields_including_unit_variants,evidence_reconstruction::recognized_header_requires_explicit_timestamp_even_when_unknown outcome=DEMONSTRATED

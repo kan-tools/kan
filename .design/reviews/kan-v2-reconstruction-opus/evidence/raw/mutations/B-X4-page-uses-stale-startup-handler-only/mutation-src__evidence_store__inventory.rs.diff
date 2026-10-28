@@ -1,0 +1,22 @@
+--- /Users/m/code/kan-tools/kan/.worktrees/kan-v2-reconstruction/.local-state/reviews/reconstruction/review-evidence/raw/mutations/B-X4-page-uses-stale-startup-handler-only/orig-src__evidence_store__inventory.rs	2026-10-19 06:42:49
++++ /Users/m/code/kan-tools/kan/.worktrees/kan-v2-reconstruction/.local-state/reviews/reconstruction/src/evidence_store/inventory.rs	2026-10-19 06:42:49
+@@ -329,10 +329,6 @@
+             None
+         };
+         budget.check(deadline)?;
+-        reader
+-            .ledger
+-            .conn
+-            .progress_handler(0, None::<fn() -> bool>)?;
+         Ok(Self {
+             reader,
+             binding,
+@@ -359,7 +355,7 @@
+             return Err(Error::Invalid("inventory page budget"));
+         }
+         let deadline = work.deadline()?;
+-        configure_read(&self.reader.ledger.conn, &work, deadline)?;
++        work.check(deadline)?;
+         let mut expected = if let Some(cursor) = cursor {
+             if cursor.profile != self.profile
+                 || cursor.binding != self.binding

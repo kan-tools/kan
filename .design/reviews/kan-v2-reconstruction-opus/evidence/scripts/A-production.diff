@@ -1,0 +1,45 @@
+diff --git a/src/bin/kan-v2.rs b/src/bin/kan-v2.rs
+index c335e24..75757eb 100644
+--- a/src/bin/kan-v2.rs
++++ b/src/bin/kan-v2.rs
+@@ -883,6 +883,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
+             historical_issuer,
+             nonce,
+         } => {
++            kan::evidence_store::copy_upgrade::validate_plan_destination(&database, &plan)?;
+             let source = kan::evidence_store::copy_upgrade::PlannedCopy::open(
+                 &database,
+                 kan::evidence_copy_plan::Target {
+diff --git a/src/evidence_store.rs b/src/evidence_store.rs
+index f29b769..a778a1a 100644
+--- a/src/evidence_store.rs
++++ b/src/evidence_store.rs
+@@ -418,6 +418,9 @@ fn same_existing_file(a: &Path, b: &Path) -> bool {
+ // Conservative Unicode casing also rejects aliases such as long-s in `-ſhm`
+ // before a file exists. This is not an emulation of every filesystem's collation;
+ // existing-file identity below supplies the actual filesystem alias check.
++// Qualified on case-insensitive APFS; other filesystem collations (including
++// HFS+, NTFS/SMB and ext4 casefold) and arbitrary multi-codepoint aliases are
++// not qualified. This helper does not fence concurrent hostile path replacement.
+ fn sqlite_name_eq(a: &std::ffi::OsStr, b: &std::ffi::OsStr) -> bool {
+     match (a.to_str(), b.to_str()) {
+         (Some(a), Some(b)) => a
+diff --git a/src/evidence_store/copy_upgrade.rs b/src/evidence_store/copy_upgrade.rs
+index db1e4ad..db37f8b 100644
+--- a/src/evidence_store/copy_upgrade.rs
++++ b/src/evidence_store/copy_upgrade.rs
+@@ -161,6 +161,14 @@ fn plan_outside_sqlite(database: &Path, plan: &Path) -> Result<()> {
+     Ok(())
+ }
+ 
++/// Check an owner-selected plan output before opening the source database.
++/// Opening even a read-only SQLite source may consume a reserved sidecar. This
++/// filesystem-only preflight must precede `PlannedCopy::open`, not just retention.
++/// It shares the trusted-filesystem/no-concurrent-path-replacement boundary.
++pub fn validate_plan_destination(source: &Path, plan: &Path) -> Result<()> {
++    plan_outside_sqlite(&std::fs::canonicalize(source)?, plan)
++}
++
+ /// Validate plan custody against both SQLite families before any database opens.
+ /// An absent destination root must have an existing parent, as creation requires.
+ /// This protects owner-selected paths under the same trusted-filesystem contract

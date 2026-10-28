@@ -1,0 +1,24 @@
+
+running 1 test
+test capture_family_size_limit_precedes_unknown_envelope_classification ... FAILED
+
+failures:
+
+---- capture_family_size_limit_precedes_unknown_envelope_classification stdout ----
+
+thread 'capture_family_size_limit_precedes_unknown_envelope_classification' (9892069) panicked at tests/evidence_reconstruction.rs:16:30:
+called `Result::unwrap_err()` on an `Ok` value: Unsupported(Envelope)
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    capture_family_size_limit_precedes_unknown_envelope_classification
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 14 filtered out; finished in 0.00s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-reconstruction)
+    Finished `test` profile [unoptimized] target(s) in 6.90s
+     Running tests/evidence_reconstruction.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_reconstruction-f47b82f29e147a62)
+error: test failed, to rerun pass `--test evidence_reconstruction`
+
+exit=101

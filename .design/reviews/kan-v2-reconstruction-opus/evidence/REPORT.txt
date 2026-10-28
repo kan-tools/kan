@@ -1,0 +1,434 @@
+INDEPENDENT ADVERSARIAL REVIEW — kan v2 reconstruction checkpoint
+Frozen commit 7b44429d09f4dcb22ee4bc3bfb4e0441d0006d89 (branch feat/kan-v2-reconstruction)
+Reviewer: Claude Code, Opus 5.5 (claude-opus-5-5), fresh cold session, no subagents/delegation.
+Date: 2026-10-19. All evidence paths are relative to review-evidence/.
+
+=================================================================================================
+0. INDEPENDENCE, NORTH STAR, CONTEXT READS
+- Independence: I wrote none of the code under review. This session holds no author context.
+  The skill's Step 0 conflict declaration does not apply.
+- North star: the supplied north-star.json (not part of the commit; the only extra export file).
+  It holds one live telos, telos/raw-data-and-projections:
+  "Raw attested data is retained in full and never collapsed in the store. Every simplification
+  ... is a determined projection computed on demand over that raw data ... A field holding a
+  computed value is the failure mode."
+  - Its "excluded_by_trust": 2 claims were not reconstructed.
+  - The telos deliberately declares no witnesses. None were invented.
+- Context reads:
+  - Repo root: git rev-parse --show-toplevel resolves to the PARENT worktree. The export lives
+    inside the parent's .local-state.
+  - Every git read therefore used `git -C <parent>` and the pinned commit.
+  - `kan show --all --json` / day were NOT run. The operator's instruction is git-first recording
+    (day#168/kan#197 block worktree log context). This is a declared skip, not an empty read.
+- Governing designs read:
+  - .design/kan-v2-evidence-availability.md (follow-up sections)
+  - .design/kan-v2-degraded-inventory.md (commit de7f0f7 hunk via git show; NOT in the supplied
+    ../inventory-corrections.diff)
+  - .design/kan-v2-recovery-bundles.md, .design/kan-v2-recovery-bundle-codec.md
+  - .design/kan-v2-session-reconstruction.md
+  - the original raw .design/reviews/kan-v2-inventory-opus/evidence/REPORT.txt (F-A1, F-B1/B2,
+    C-1..C-8)
+  - .design/reviews/kan-v2-inventory-followups-author/DESIGN-RESPONSES.md
+
+=================================================================================================
+1. IDENTITY / CUSTODY
+- raw/identity-before.txt and raw/identity-after.txt
+  (script: scripts/identity.py; git -C <parent> ls-tree --full-tree -r -z 7b44429):
+  - manifest 2520 == tree 2520, set-equal;
+  - every SHA-256 matches the manifest, and every git blob SHA-1 matches the tree;
+  - extra files: ['north-star.json'] only; missing: none.
+  - RESULT OK before AND after.
+- No target/, .local-state/ or .lake/ was created inside the export.
+  CARGO_TARGET_DIR is the shared external target (`cargo clean -p kan` first: raw/00-clean.txt).
+- Temporary tests:
+  - tests/zz_review_decoder_probes.rs and tests/zz_review_copy_plan_probes.rs were copied in
+    only while running and removed afterwards (runner reports added_removed=True).
+  - Master copies are in probes/.
+- Every mutation restored its bytes (restored_bytes=True in each mutations/*/SUMMARY.txt). The
+  final identity check confirms this.
+- No git writes. No dependency installs. No production archives, keys or traffic. No process
+  kills.
+- OBSERVATION, NOT MINE (raw/parent-worktree-observation.txt):
+  - During this review the PARENT worktree gained uncommitted edits to
+    src/evidence_reconstruction.rs and tests/evidence_reconstruction.rs (mtime 06:39:46).
+  - The edits add a forwarding-intent `event.len() != 1` refusal and an
+    every_recognized_event_rejects_extra_fields... test. That is a fix for this review's F-D1.
+  - Parent HEAD is still 7b44429. I did not write, revert or review these edits; my runners
+    only write under the export path.
+  - They are out of scope and unqualified, and they are not counted toward any verdict below.
+    Whoever owns them should commit them as a fix round, with their own reversion evidence.
+
+=================================================================================================
+2. BASELINE (raw/baseline/*, re-run after all mutations in raw/final-restored/*; identical)
+- evidence_inventory 18/18
+- evidence_store::inventory::tests (VM) 2/2
+- evidence_copy_destination 33/33
+- evidence_reconstruction 12/12
+- evidence_capture 18/18. Localhost was not sandbox-denied in this session.
+- cargo clippy --features v2-crypto --all-targets -- -D warnings: exit 0
+- cargo fmt --all -- --check: exit 0
+- The huge unchanged compatibility/performance/Node matrix was NOT run. No concrete concern
+  required it.
+
+=================================================================================================
+3. SCOPE A — copy-plan pre-open custody (69277b7)
+Requirement / verdict / evidence:
+- F-A1: the path-only guard runs before PlannedCopy::open at the actual CLI entry point. MET.
+  - src/bin/kan-v2.rs:886 `validate_plan_destination(&database,&plan)?` precedes :887
+    PlannedCopy::open.
+  - The helper (src/evidence_store/copy_upgrade.rs:168) canonicalizes the source exactly as
+    RecoveryReader::open_profile_configured does (evidence_store.rs:189).
+  - It then applies the same plan_outside_sqlite that retain_plan uses (:140). No SQLite handle
+    is involved.
+- retain_plan still guards. MET: copy_upgrade.rs:140 is unchanged.
+- Preexisting plain/Unicode/case sidecar outputs stay byte-identical. MET.
+  - The author test (tests/evidence_copy_destination.rs:1545) passes.
+  - My entry-point probes (probes/zz_review_copy_plan_probes.rs, raw/probe-copyplan-run1.txt)
+    run the real kan-v2 binary:
+    - AP1: source named through a symlinked directory, `-ſhm` alias at the real path.
+    - AP2: relative source and relative `-Shm` from the source directory.
+    - AP3: plan hard-linked to the main DB → "plan aliases a SQLite database".
+    - AP4: absent `-Wal` alias is refused and not created.
+    - AP6: source via `../source/./archive.sqlite`, existing `-JOURNAL`.
+    - All refuse with empty stdout. Target bytes are preserved and the DB is unchanged.
+    - The directory listing shows NO -shm/-wal created, i.e. the source was never opened.
+    - Controls: AP5a (ordinary existing file → "File exists", preserved) and AP5b (fresh path →
+      success; sidecars are created only on this successful open).
+- Filesystem-scope documentation lives on the shared helper. MET: evidence_store.rs:421-423
+  (APFS qualified; HFS+/NTFS/SMB/ext4 casefold and multi-codepoint aliases not qualified;
+  no hostile-replacement fence).
+- Reversion (mutations/A-REVERT-production: patch -R of all three production files, test hunks
+  retained):
+  - copy_plan_cli_refuses_preexisting_sidecar_outputs_before_opening_source FAILED, 32 others
+    pass.
+  - My probe test also FAILED.
+  - Restored: 33/33.
+- Reviewer mutants:
+  - A-M1 (validate without canonicalize) SURVIVED all tests and my probes.
+    - Judged equivalent on this host: pre-existing outputs are caught by dev/ino identity
+      (same_existing_file); absent outputs have nothing to consume; retain_plan rechecks with a
+      canonical path.
+    - Canonicalization is defense in depth. Acceptable.
+  - A-M2 (drop inode identity in sqlite_destination): KILLED by existing
+    sidecar_hardlink_identity_is_rejected_even_with_an_unrelated_plan_name.
+- Limits, not regressions:
+  - The library API (PlannedCopy::open then retain_plan) can still be called in the old order.
+    The doc comment (copy_upgrade.rs:163-167) states the obligation; the CLI is the only
+    in-tree caller.
+  - The hostile namespace race (TOCTOU) is disclaimed, as asked. Not tested.
+SCOPE A VERDICT: APPROVE. F-A1 is closed at the real entry point, with demonstrated reversion
+and independent probes.
+
+=================================================================================================
+4. SCOPE B — inventory corrections (de7f0f7)
+- F-B1: non-BLOB cells classify Corrupt before length evaluation/materialization; healthy
+  neighbours stay browsable. MET.
+  - inventory.rs:463
+    `CASE WHEN typeof(bytes)='blob' THEN length(bytes) ELSE -1 END`.
+    -1 never equals an expected length (validated 1..MAX_REQUEST, :436-438), so the result is
+    Corrupt. The second materializing query (:474) is never reached for non-BLOB cells. NULL
+    also maps to -1, i.e. Corrupt, not Missing.
+  - source() reuses the same payload() inside its own pinned transaction (:525).
+  - Tests:
+    - wrong_sql_payload_types... (tests/evidence_inventory.rs:993): both profiles, tip and
+      middle, TEXT/INTEGER/REAL, fresh source after selection, restart, healthy neighbours
+      source Available.
+    - single_bit_blob_to_text... (:1083): an exact one-byte on-disk serial-type flip; asserts a
+      single differing byte, typeof='text', the rows=1 tip page, then the rest page
+      [(2,Corrupt),(1,Available)], and the file is byte-unchanged afterwards.
+- 96 MiB TEXT/BLOB/manifest child memory < 64 MiB. MET.
+  - The final run reports peak_bytes ≈ 10.4–10.6 MiB, matching the author's ~10 MiB.
+  - The worker asserts the page outcome (Corrupt/Available), not only memory.
+- Page VM deadline/cancel without the 3 s watchdog; handle reuse. MET.
+  - inventory.rs:602 runs the real Inventory::open, then injects a TEMP recursive view (temp
+    schema shadows main.objects).
+  - Both the 20 ms deadline and the cancel flag yield OperationInterrupted with fallback=false.
+  - The handler is then cleared, the view dropped, and the page is Available again.
+  - The injection is test-only and touches the temp schema only. The main DB is not mutated.
+- Profile-2 startup item budget counts records. MET: tests/evidence_inventory.rs:1059, items=2
+  refuses and items=3 succeeds (profile 2 has no upgrade_objects).
+- Reversion (mutations/B-REVERT-production: production hunk @455 only; test hunks retained):
+  - single_bit..., wrong_sql... and inventory_large_rows... (text-object case) all FAILED. The
+    VM tests pass, which is expected: they pin pre-existing code.
+  - Restored: 18+2.
+- Reviewer controls (all compile; all KILLED unless noted):
+  - B-X1 CASE admits 'text' → 3 tests fail. The rusqlite TEXT get raises InvalidColumnType and
+    the page is refused.
+  - B-X2 non-BLOB branch evaluates length(CAST(bytes AS BLOB)) → ONLY the memory test fails
+    (TooBig). This shows the new text-object case is load-bearing.
+  - B-X3 VM callback ignores the deadline → both VM unit tests fail. The integration suite
+    passes 18/18, so the deadline half is pinned only by the unit tests.
+  - B-X4 page() relies on a stale startup handler (startup handler kept; page configure_read
+    replaced by a plain check) → page_installs... fails.
+  - B-X5 add_spent `>=` off-by-one → ONLY startup_item_budget... fails (exact-boundary
+    coverage).
+  - Author controls reproduced independently: indexed-large-row-materialization (new CASE
+    pattern) and omit-startup-record-budget. Both KILLED.
+  - The author's earlier ten were reproduced by the previous review. The unchanged redundant
+    proof guards (B-M3/M4/M9/M10) were not repeated.
+- Disclosures now written as requirements, not implemented:
+  - .design/kan-v2-degraded-inventory.md "Adapter lifetime and cancellation obligations"
+    (de7f0f7) requires bounded handle lifetime/expiry/reopen, cancellation of abandoned work and
+    no invisible cache.
+  - It also requires mapping both typed budget errors and SQLite OperationInterrupted to a
+    bounded failure.
+  - Verified present. Not implemented, as declared.
+- Custody note: the supplied ../inventory-corrections.diff omits the commit's .design hunks
+  (degraded-inventory, availability, bundle docs). I read them from git show de7f0f7.
+SCOPE B VERDICT: APPROVE WITH FOLLOW-UPS.
+- The fix closes F-B1; F-B2 and the profile-2 budget gap are pinned. Budgets and allocation
+  hold under hostile controls.
+- Follow-ups (carried, not new defects):
+  - the RPC/job adapter must implement the lifetime/WAL and Interrupted-mapping obligations
+    before exposure;
+  - linear per-sample scan cost remains unqualified.
+
+=================================================================================================
+5. SCOPE C — DESIGN ONLY: KNB1 corrections C-1..C-8
+Each previous must/should against the final bundles.md + codec.md:
+- C-1 MUST, one flat definition. MET.
+  - bundles.md:83-87 says the codec appendix is the single wire definition and that "There is
+    no alternative v/kind/body statement wrapper".
+  - The tables in bundles.md:56-64 now match codec.md:184-201 by name and role.
+  - The commitment/frontier moved into the signed created event (bundles.md:58, codec.md:91).
+- C-2 MUST, partial profile 3. MET as the "ineligible + restart" option.
+  - bundles.md:147-157 and codec.md:143-145: no KNB1 publication, no in-bundle continuation.
+  - Restart path: confirm the retained complete source against the OLD plan/digest
+    (PlannedCopy::confirm exists), then a new nonce ⇒ new archive ID through the existing
+    copy-plan workflow.
+  - The old bundle and history are retained; the limitation is visible in the job/UI
+    capability.
+  - Residual (SHOULD): "the owner job recording the original bundle ID/checkpoint as a
+    provenance reference" has no defined carrier.
+    - The copy-plan v1 recipe has no such field, and the closed KNB1 event set has no
+      "restarted/superseded" event, so the old bundle's own history cannot say it was
+      superseded.
+    - Name the carrier (owner job record schema), or state explicitly that it lives only in
+      external job records.
+- C-3 MUST, loss coverage. MET (codec.md:147-176).
+  - Each (occurrence, CID) is one coordinate. Shared CIDs give distinct coordinates, with no
+    extra null entry.
+  - Null-occurrence entries exist only for unreferenced membership/object keys. Lengths must
+    agree, else creation refuses.
+  - Ordering: occurrence entries by sequence then CID, null entries last.
+  - No duplicates. Exact equality of the vector; omissions, extras and duplicates refuse.
+  - Greedy ≤32/16 KiB partition, immediately after created; later unavailable events are
+    invalid.
+  - Missing orphans are not invented.
+  - Note: at ~100 B per entry, 32 entries never approach 16 KiB, so the partition is
+    effectively fixed chunks of 32. That is deterministic either way.
+- C-4 MUST, non-BLOB refusal. MET: codec.md:68-72 (including TEXT with identical bytes),
+  bundles.md:130 and codec.md:160.
+  - Tension (SHOULD): this is exactly the F-B1 corruption class. An archive damaged that way is
+    browsable (scope B) but can never be bundled.
+  - The only stated route is "retain source and failed output for a separate forensic
+    workflow". Owner-facing recovery for that class is therefore currently undefined. State it
+    as a named roadmap gap in the recovery roadmap/UI capability result, as was done for C-2.
+- C-5 SHOULD, deterministic R1 and output union. MET.
+  - codec.md:123-145: R1 is every restored candidate strictly before the intent's sequence,
+    with one candidate per CID (a different candidate refuses; an identical one is idempotent
+    with no new observation).
+  - Output key union is deterministic. Intent commits the expected O1, and observed must equal
+    it.
+  - Residual tension (SHOULD): "a still-missing/corrupt key refuses publication, including
+    staged/orphan keys".
+    - One corrupt, never-admitted staged blob with no recoverable bytes makes the archive
+      permanently unpublishable through KNB1.
+    - That is consistent with "never collapse raw data", but the design should say so
+      explicitly as an owner-visible terminal state, not leave it as an inference.
+- C-6 SHOULD, O1 domain. MET: codec.md:85-87, tools.kan.recovery.output.v1.
+- C-7 SHOULD, restored.member. MET: codec.md:99.
+- C-8 SHOULD, multiple publications, fenced activation, checkpoint. MET.
+  - codec.md:248-265: several observed attempts, exactly one owner-selected and fenced through
+    the separate activation workflow.
+  - Every job returns the frontier, retained externally. Tail truncation past the checkpoint is
+    undetectable; the online observer key gives attribution, not tamper evidence.
+  - The checkpoint is not derived from the bundle.
+- Parent refinement: ledger placement moved into the KNB1 outer file. MET:
+  kan-v2-evidence-availability.md "Recovery-ledger placement refinement from C review".
+- State machine (codec.md:221-231): one intent per attempt; failed* then at most one observed;
+  observed after failure allowed on the same commitment; nothing after observed. Coherent.
+- Custody gap (SHOULD):
+  - AC-5 lists "path/sidecar collisions", but neither bundles.md nor codec.md says that bundle
+    and publication output paths must pass the scope A path-only custody check BEFORE any
+    SQLite open of the source, bundle or output. That is the F-A1 lesson.
+  - The previous review asked for this explicitly. Add one sentence.
+- No frozen DDL, vectors, codec or bundle writer exists (grep of src/ shows none; the docs
+  disclaim them).
+SCOPE C VERDICT: APPROVE WITH FOLLOW-UPS (design direction only).
+- Every previous MUST is resolved.
+- Remaining SHOULDs before DDL/vectors are frozen:
+  - (1) the C-2 provenance-reference carrier;
+  - (2) the non-BLOB/F-B1-class owner path named as a roadmap gap;
+  - (3) the unrecoverable corrupt orphan stated as an explicit unpublishable state;
+  - (4) custody-before-open ordering for bundle/output paths.
+- This is direction approval only. It is NOT format, DDL, vector or writer acceptance.
+
+=================================================================================================
+6. SCOPE D — pure capture frame decoder (7b44429)
+- Bounds before JSON allocation. MET.
+  - src/evidence_reconstruction.rs:65 checks the frame size, :76 the header (≤128 KiB), :82 the
+    body (≤CHUNK), all before :85 from_slice.
+  - My max-size allocation shapes (64k zeros, 43k objects, ~16k unique keys) finish in ≤25 ms
+    and return Unsupported (probe ALLOC lines).
+- Recursive duplicate-key rejection before variant selection. MET.
+  - Unique visitor :203-212; escaped aliases (s, k) are caught.
+  - It applies inside unknown variants and nested arrays (P9). Lone surrogates refuse (P20).
+- Opaque/unsupported/malformed classification. MET with one PRECEDENCE GAP.
+  - Results: KANC1 tiny → Unsupported(Envelope); lowercase "kanc2" → Opaque.
+  - version 258 → Unsupported(Version); 2e0, "2", -2 and 02 → Header.
+  - Unknown observer without an event → Unsupported(Observer). A future event with a body →
+    Unsupported(Event).
+  - Gap: oversize unknown envelopes (KANC1/KANC3 > MAX_FRAME) → Err(Limit), not Unsupported
+    (P4a/b).
+    - Mutant D-M7 (remove the total-frame check) SURVIVES all 12 author tests. Its only effect
+      is exactly this precedence: under D-M7, P4a/b become Unsupported(Envelope)
+      (mutations/D-M7/reviewer-probes.txt).
+    - Neither behavior is specified or pinned. LOW: decide it, and pin it with a test.
+- Recognized Header/Event strict current capture shape. PARTIAL — FINDING F-D1.
+- Identifier/body/string limits. MET.
+  - The attempt/exchange use lowercase 64-hex, the same as the Recorder's hex()/unhex().
+  - The method ≤32 and route ≤2048 limits count bytes.
+  - Non-chunk events cannot carry a body.
+  - Mutants D-M1 (exchange unchecked), D-M2 (route chars not bytes) and D-M4 (uppercase hex)
+    are KILLED.
+- Borrowed body and exact exclusive byte spans. MET. Mutant D-M6 (header span off by one) is
+  KILLED by 2 tests.
+  - My Recorder boundary probe: a 32-byte method; a 1024×"é" route (2048 bytes); a CHUNK
+    0xff body with offset u64::MAX; U+2028/quote/backslash direction; control and emoji
+    metadata; the Drop terminal.
+  - All 5 production frames decode as Capture, with header_span.end == 9 + declared length
+    and body == bytes[body_span].
+- u64 values stay exact. MET: 9007199254740993 and u64::MAX in the author test. There is no
+  Serialize impl (Frame/Decoded derive only Debug).
+- Unsupported means no semantic fields. MET: Unsupported carries only a reason enum.
+- Nothing beyond decoding: no filesystem/network/mutation/signing/authentication, no
+  consumer. MET.
+  - Imports are serde/serde_json/capture types only.
+  - `grep evidence_reconstruction:: src` finds no consumer.
+  - lib.rs gates the module behind v2-crypto.
+  - It closes no parent session/browser AC: every AC in session-reconstruction.md is still
+    unchecked.
+
+FINDING F-D1 [LOW-MEDIUM, demonstrated; must fix before any consumer or AC-1 closure]:
+recognized forwarding-intent frames silently drop unknown event fields.
+- Code: src/evidence_reconstruction.rs:133 `serde_json::from_value::<Header>`.
+  - Event::ForwardingIntent is a unit variant of an internally tagged enum
+    (src/evidence_capture.rs:26,38).
+  - Serde's internally tagged unit-variant visitor ignores remaining map entries despite
+    deny_unknown_fields.
+- Probe P1 (raw/probe-decoder-run2.txt):
+  {"type":"forwarding-intent","smuggled":{"a":1}} →
+  Capture(event=ForwardingIntent, header_span=9..258, ...).
+  - The assertion form, review_probe_unit_variant_extra_is_strict, FAILS on the frozen code.
+  - Control P2 (a struct variant terminal with an extra field) → Err(Header).
+  - The author's recognized_shapes_reject_missing_extra... checks extra fields only on struct
+    variants.
+- Consequence:
+  - This contradicts the checkpoint text "recognized shapes are strict" and REQ-2/AC-1
+    ("strict recognized shapes").
+  - A later Content/assembly view would show a plain "forwarding intent" while the frame
+    carries observer-supplied fields that no interpretation shows.
+  - Not a raw-data loss: exact bytes and spans are retained. The projection silently narrows.
+  - The honest Recorder never emits this shape. Only a crafted frame from a signed writer could.
+- Required fix: refuse extra entries for forwarding-intent, or more generally require
+  serde_json::to_value(&header) == parsed value. Add a regression across all ten variants and a
+  reversion demonstration.
+  - (An uncommitted parent-worktree edit implementing the first option appeared during this
+    review. It is unreviewed here; see section 1.)
+
+Related LOW observations (not blocking; decide explicitly):
+- P3: a header that omits observed_at_unix_micros is accepted as None. Serde treats a missing
+  Option as None.
+  - The Recorder always emits the field, so "absent" and "explicit null (clock
+    unrepresentable)" collapse into one decoded state.
+  - The to_value equality fix above would also refuse this. Decide whether that tightening is
+    intended.
+- P16/P6/P7: whitespace-wrapped headers and escaped identifier/type text are accepted as
+  recognized.
+  - These are non-canonical encodings the Recorder never produces. The spans stay exact, and
+    assembly compares frame bytes (same-ordinal byte differences are conflicts), so this is
+    informational only.
+- P8: unknown variants nested beyond ~125 levels return Err(Header) (serde_json recursion
+  limit 128), not Unsupported. Documented ("JSON's nesting limit remains enabled").
+
+Mutation table D (reviewer-authored; the author's 6 were not repeated verbatim):
+- KILLED: D-M1 exchange unchecked; D-M2 route chars; D-M3 arrays not recursive-unique;
+  D-M4 uppercase hex; D-M5 outcome precheck removed; D-M6 header span off by one;
+  D-M8 plain Value (no duplicate detection).
+- SURVIVED: D-M7 total-frame check (precedence only; see above).
+
+SCOPE D VERDICT: APPROVE WITH FOLLOW-UPS.
+- The pure decoder is bounded, has no authority, and is byte-exact against the production
+  Recorder.
+- Mandatory before any consumer or AC-1:
+  - F-D1 fix, regression and reversion demonstration;
+  - decide and pin oversize-unknown-envelope precedence;
+  - decide P3.
+- No consumer exists, so nothing exercises the defect today.
+
+=================================================================================================
+7. SCOPE-NARROWING / FORBIDDEN PATTERNS (raw/scope-narrowing-grep.txt)
+- Scope narrowing:
+  - Every added "follow-up/outside/later/not claim/not qualified" instance was named before
+    implementation, either in the previous review's limits or in the governing design. All are
+    LEGITIMATE.
+  - C-2's "no in-bundle continuation" is one of the two options the previous review offered.
+    It is decided, not drifted into.
+- Forbidden patterns:
+  - The decoder and inventory are read-only, with no fold mutation.
+  - No cites fabricated or dropped.
+  - No new surface or persistence: the decoder adds none, and the inventory's test-only TEMP
+    view is not production.
+  - No blocking hooks.
+  - The raw-data telos is upheld, except for the F-D1 projection-narrowing gap.
+
+=================================================================================================
+8. RAW COMMANDS, FAILED ATTEMPTS, PRESERVED LOGS
+- raw/00-clean.txt: cargo clean -p kan (861 files removed).
+- raw/01-build-tests.txt: build of the targeted test binaries.
+- scripts/baseline.sh → raw/baseline/; scripts/final.sh → raw/final-restored/.
+- scripts/mutate.py + scripts/cases.json → raw/mutations/<case>/:
+  - per-run logs, mutation diffs and patch apply output;
+  - one case per invocation, run sequentially;
+  - a progress log in raw/mutations-progress.txt.
+- scripts/A-production.diff and scripts/B-production.diff: production-only hunks extracted from
+  the supplied diffs and reverse-applied with `patch -p1 -R -d <export>`. scripts/revert_v2.py
+  and author control scripts were NOT run.
+- FAILED ATTEMPT, preserved: raw/probe-decoder-run1.txt.
+  - My first probe file failed to compile (E0716, a temporary lifetime in my own probe), not a
+    product defect.
+  - Fixed in probes/zz_review_decoder_probes.rs; rerun as raw/probe-decoder-run2.txt.
+- In run2, review_probe_unit_variant_extra_is_strict FAILS by design. It is the F-D1
+  demonstration, not a harness error.
+- raw/parent-worktree-observation.txt: the parent's dirty tree (see section 1).
+- Not performed:
+  - skill Step 7 kan/day recording (git-first per operator);
+  - Node/compat/perf matrix;
+  - non-APFS filesystems;
+  - Linux non-UTF-8 fallback;
+  - hostile namespace races.
+
+=================================================================================================
+9. OVERALL VERDICT: **APPROVE WITH FOLLOW-UPS**
+- A closes F-A1 at the real entry point. B closes F-B1/F-B2 and the profile-2 budget gap.
+  - Both whole-fix reversions fail their named tests and restore cleanly.
+  - Independent hostile probes and reviewer controls confirm that budgets and allocation hold.
+- C resolves every previous MUST at the design-direction level, leaving four SHOULDs.
+- D is a sound, bounded, authority-free decoder, with one demonstrated strictness defect
+  (F-D1).
+  - F-D1 silently narrows a recognized projection but never loses raw bytes, and no consumer
+    exists. That warrants a mandatory pre-consumer fix, not a BLOCK.
+Exact remaining requirements:
+- (D) F-D1 fix + all-variant regression + reversion demonstration, before any consumer/AC-1.
+- (D) Pin oversize unknown-envelope precedence (Limit vs Unsupported) and decide P3.
+- (B) The RPC/job adapter implements bounded inventory lifetime/WAL retention and maps SQLite
+  OperationInterrupted plus typed budget errors to bounded failure.
+- (C) Before freezing DDL/vectors:
+  - the C-2 provenance-reference carrier;
+  - the non-BLOB-class owner path as a named roadmap gap;
+  - the explicit unpublishable state for unrecoverable corrupt orphans;
+  - custody-before-any-SQLite-open for bundle/publication paths.
+- (C) Frozen DDL, independent vectors, codec and writer each still need their own fresh review.
+  Direction approval is not format acceptance.
+- No parent frontend, session or browser AC is closed by this checkpoint.

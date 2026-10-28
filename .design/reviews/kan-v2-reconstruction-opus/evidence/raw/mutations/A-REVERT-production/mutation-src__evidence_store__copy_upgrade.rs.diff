@@ -1,0 +1,17 @@
+--- /Users/m/code/kan-tools/kan/.worktrees/kan-v2-reconstruction/.local-state/reviews/reconstruction/review-evidence/raw/mutations/A-REVERT-production/orig-src__evidence_store__copy_upgrade.rs	2026-10-19 06:40:57
++++ /Users/m/code/kan-tools/kan/.worktrees/kan-v2-reconstruction/.local-state/reviews/reconstruction/src/evidence_store/copy_upgrade.rs	2026-10-19 06:40:57
+@@ -161,14 +161,6 @@
+     Ok(())
+ }
+ 
+-/// Check an owner-selected plan output before opening the source database.
+-/// Opening even a read-only SQLite source may consume a reserved sidecar. This
+-/// filesystem-only preflight must precede `PlannedCopy::open`, not just retention.
+-/// It shares the trusted-filesystem/no-concurrent-path-replacement boundary.
+-pub fn validate_plan_destination(source: &Path, plan: &Path) -> Result<()> {
+-    plan_outside_sqlite(&std::fs::canonicalize(source)?, plan)
+-}
+-
+ /// Validate plan custody against both SQLite families before any database opens.
+ /// An absent destination root must have an existing parent, as creation requires.
+ /// This protects owner-selected paths under the same trusted-filesystem contract

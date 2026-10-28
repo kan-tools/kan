@@ -1,0 +1,419 @@
+diff --git a/scripts/inventory_negative_controls.py b/scripts/inventory_negative_controls.py
+index e2fc063..be8cb35 100644
+--- a/scripts/inventory_negative_controls.py
++++ b/scripts/inventory_negative_controls.py
+@@ -2,12 +2,16 @@
+ """Compiled inventory controls; run alone using the explicitly shared Cargo target."""
+ from pathlib import Path
+ import subprocess
++import sys
+ 
+ ROOT = Path(__file__).resolve().parents[1]
+ OUT = ROOT / '.local-state/reviews/inventory-controls'
+ FILE = ROOT / 'src/evidence_store/inventory.rs'
+ CASES = [
+-    ('indexed-large-row-materialization', 'SELECT length(bytes) FROM objects NOT INDEXED WHERE +cid=?', 'SELECT length(bytes) FROM objects WHERE cid=?', 'inventory_large_rows_stay_below_the_materialization_memory_ceiling'),
++    ('omit-payload-storage-class', "CASE WHEN typeof(bytes)='blob' THEN length(bytes) ELSE -1 END", 'length(bytes)', 'wrong_sql_payload_types_are_corrupt_without_failing_healthy_neighbours'),
++    ('omit-page-vm-configuration', '        configure_read(&self.reader.ledger.conn, &work, deadline)?;\n', '', 'evidence_store::inventory::tests::page_installs_vm_limits_after_startup_removes_its_handler'),
++    ('omit-startup-record-budget', '            add_spent(&mut items, 1, budget.items)?;\n            let record = raw_commit(row)?;', '            let record = raw_commit(row)?;', 'startup_item_budget_counts_each_metadata_record_before_accepting_a_snapshot'),
++    ('indexed-large-row-materialization', "SELECT CASE WHEN typeof(bytes)='blob' THEN length(bytes) ELSE -1 END FROM objects NOT INDEXED WHERE +cid=?", "SELECT CASE WHEN typeof(bytes)='blob' THEN length(bytes) ELSE -1 END FROM objects WHERE cid=?", 'inventory_large_rows_stay_below_the_materialization_memory_ceiling'),
+     ('omit-sqlite-vm-callback', '        1000,\n', '        0,\n', 'evidence_store::inventory::tests::sqlite_vm_deadline_and_cancel_interrupt_unyielding_queries'),
+     ('require-payloads-at-startup', '        let plan = plan(&reader, profile, &binding)?;', '        reader.ledger.verify_contents()?;\n        let plan = plan(&reader, profile, &binding)?;', 'missing_and_corrupt_tip_or_middle_remain_visible_after_restart_with_healthy_neighbours'),
+     ('omit-payload-hash', 'bytes.len() != expected || ciphertext_cid(&bytes) != *id', 'bytes.len() != expected', 'missing_and_corrupt_tip_or_middle_remain_visible_after_restart_with_healthy_neighbours'),
+@@ -23,10 +27,13 @@ CASES = [
+ def main():
+     if not __debug__:
+         raise RuntimeError('assertions required')
++    selected = set(sys.argv[1:])
++    assert selected <= {case[0] for case in CASES}, "unknown control"
++    cases = [case for case in CASES if not selected or case[0] in selected]
+     OUT.mkdir(parents=True, exist_ok=True)
+     original = FILE.read_text()
+     try:
+-        for name, old, new, test in CASES:
++        for name, old, new, test in cases:
+             assert original.count(old) == 1, (name, original.count(old))
+             FILE.write_text(original.replace(old, new))
+             command = ['cargo', 'test', '--features', 'v2-crypto'] + (['--lib'] if '::' in test else ['--test', 'evidence_inventory']) + [test, '--', '--exact']
+@@ -43,7 +50,10 @@ def main():
+     run = subprocess.run(['cargo', 'test', '--features', 'v2-crypto', '--test', 'evidence_inventory'], cwd=ROOT, capture_output=True, text=True, timeout=180)
+     (OUT / 'restored.txt').write_text(run.stdout + run.stderr)
+     assert run.returncode == 0, 'restored baseline failed'
+-    print(str(len(CASES)) + ' controls; restored suite passed.', flush=True)
++    run = subprocess.run(['cargo', 'test', '--features', 'v2-crypto', '--lib', 'evidence_store::inventory::tests'], cwd=ROOT, capture_output=True, text=True, timeout=180)
++    (OUT / 'restored-vm.txt').write_text(run.stdout + run.stderr)
++    assert run.returncode == 0, 'restored VM baseline failed'
++    print(str(len(cases)) + ' controls; restored integration and VM suites passed.', flush=True)
+ 
+ 
+ if __name__ == '__main__':
+diff --git a/src/evidence_store/inventory.rs b/src/evidence_store/inventory.rs
+index c0f17ff..046bd4d 100644
+--- a/src/evidence_store/inventory.rs
++++ b/src/evidence_store/inventory.rs
+@@ -455,9 +455,12 @@ fn payload(
+     // SQLite's value limit applies. Scan by the bounded CID field instead;
+     // per-call VM cancellation bounds checked SQL work. This costs a linear
+     // object scan per sample and makes no large-archive latency promise.
++    // Check the stored SQLite type before computing length: TEXT length can
++    // materialize an oversized corrupt cell and counts characters, not bytes.
++    // A wrong payload storage class is local payload corruption, not a page error.
+     let length: Option<i64> = conn
+         .query_row(
+-            "SELECT length(bytes) FROM objects NOT INDEXED WHERE +cid=?",
++            "SELECT CASE WHEN typeof(bytes)='blob' THEN length(bytes) ELSE -1 END FROM objects NOT INDEXED WHERE +cid=?",
+             [id.to_string()],
+             |r| r.get(0),
+         )
+@@ -594,4 +597,124 @@ mod tests {
+             );
+         }
+     }
++
++    #[test]
++    fn page_installs_vm_limits_after_startup_removes_its_handler() {
++        let temp = tempfile::tempdir().unwrap();
++        let issuer = crate::sign::Identity::generate();
++        let writer = crate::sign::Identity::generate();
++        let binding = attested::Binding {
++            archive: [2; 32],
++            scope: [1; 32],
++            issuer: issuer.did().to_string(),
++        };
++        let root = temp.path().join("archive");
++        let mut archive = attested::Archive::create(&root, binding.clone()).unwrap();
++        let bytes = service::SignedRequest::sign(
++            service::Request {
++                version: 1,
++                scope: service::hex(&binding.scope),
++                principal: writer.did().to_string(),
++                audience: issuer.did().to_string(),
++                expires: None,
++                command: service::Command::Append {
++                    id: service::hex(&[1; 16]),
++                    position: 0,
++                    previous: None,
++                    ciphertext: service::hex(b"fixture"),
++                },
++            },
++            &writer,
++        )
++        .unwrap()
++        .bytes()
++        .unwrap();
++        archive
++            .admit(
++                &bytes,
++                &issuer,
++                &service::Grant {
++                    principal: writer.did().to_string(),
++                    append: true,
++                    inventory: true,
++                },
++                100,
++            )
++            .unwrap();
++        drop(archive);
++        let work = || Budget {
++            items: 100,
++            metadata_bytes: 1024 * 1024,
++            duration: Duration::from_secs(60),
++            cancelled: Arc::new(AtomicBool::new(false)),
++        };
++        let a = Inventory::open(
++            &root.join("archive.sqlite"),
++            Profile::Admitted,
++            binding,
++            work(),
++        )
++        .unwrap();
++        // Test-only in-memory workload injection after successful real startup:
++        // no main database mutation or millions of fixture rows on disk. The
++        // recursive view makes the ordinary page payload lookup unyielding.
++        let conn = &a.reader.ledger.conn;
++        conn.execute_batch("PRAGMA query_only=OFF; CREATE TEMP VIEW objects AS WITH RECURSIVE n(x) AS (VALUES(1) UNION ALL SELECT x+1 FROM n WHERE x<1000000000) SELECT 'probe-'||x AS cid,x'01' AS bytes FROM n; PRAGMA query_only=ON;").unwrap();
++        for cancel in [false, true] {
++            let mut budget = work();
++            if !cancel {
++                budget.duration = Duration::from_millis(20);
++            }
++            let flag = budget.cancelled.clone();
++            let interrupt = conn.get_interrupt_handle();
++            let (done, wait) = std::sync::mpsc::channel();
++            let watchdog = std::thread::spawn(move || {
++                if wait.recv_timeout(Duration::from_secs(3)).is_err() {
++                    interrupt.interrupt();
++                    true
++                } else {
++                    false
++                }
++            });
++            let cancellation = cancel.then(|| {
++                std::thread::spawn(move || {
++                    std::thread::sleep(Duration::from_millis(20));
++                    flag.store(true, Ordering::Relaxed);
++                })
++            });
++            let result = a.page(
++                None,
++                PageBudget {
++                    rows: 1,
++                    record_bytes: 1024 * 1024,
++                    payload_bytes: MAX_CHUNK,
++                },
++                budget,
++            );
++            let _ = done.send(());
++            let fallback = watchdog.join().unwrap();
++            if let Some(t) = cancellation {
++                t.join().unwrap();
++            }
++            assert!(!fallback, "page did not install its production VM callback");
++            assert!(
++                matches!(result,Err(Error::Sql(rusqlite::Error::SqliteFailure(e,_))) if e.code==rusqlite::ErrorCode::OperationInterrupted)
++            );
++        }
++        conn.progress_handler(0, None::<fn() -> bool>).unwrap();
++        conn.execute_batch("PRAGMA query_only=OFF; DROP VIEW temp.objects; PRAGMA query_only=ON;")
++            .unwrap();
++        let page = a
++            .page(
++                None,
++                PageBudget {
++                    rows: 1,
++                    record_bytes: 1024 * 1024,
++                    payload_bytes: MAX_CHUNK,
++                },
++                work(),
++            )
++            .unwrap();
++        assert_eq!(page.records[0].availability, Availability::Available);
++    }
+ }
+diff --git a/tests/evidence_inventory.rs b/tests/evidence_inventory.rs
+index b81251a..a43ef95 100644
+--- a/tests/evidence_inventory.rs
++++ b/tests/evidence_inventory.rs
+@@ -616,7 +616,7 @@ fn inventory_large_row_worker() {
+ 
+ #[test]
+ fn inventory_large_rows_stay_below_the_materialization_memory_ceiling() {
+-    for kind in ["object", "manifest"] {
++    for kind in ["object", "text-object", "manifest"] {
+         let t = tempfile::tempdir().unwrap();
+         let f = fixture(t.path(), Profile::Admitted);
+         let c = rusqlite::Connection::open(f.db()).unwrap();
+@@ -628,6 +628,12 @@ fn inventory_large_rows_stay_below_the_materialization_memory_ceiling() {
+                 [f.id(1)],
+             )
+             .unwrap();
++        } else if kind == "text-object" {
++            c.execute(
++                "UPDATE objects SET bytes=replace(hex(zeroblob(50331648)),'0','x') WHERE cid=?",
++                [f.id(1)],
++            )
++            .unwrap();
+         } else {
+             c.execute_batch("UPDATE commits SET manifest=zeroblob(100663296) WHERE sequence=2")
+                 .unwrap();
+@@ -982,3 +988,200 @@ fn empty_admitted_and_incomplete_retained_snapshots_do_not_claim_copy_readiness(
+         Source::Available { .. }
+     ));
+ }
++
++#[test]
++fn wrong_sql_payload_types_are_corrupt_without_failing_healthy_neighbours() {
++    for profile in [Profile::Admitted, Profile::Copied] {
++        for index in [1, 2] {
++            for expression in ["CAST(bytes AS TEXT)", "123", "1.25"] {
++                let t = tempfile::tempdir().unwrap();
++                let f = fixture(t.path(), profile);
++                let before = f.open();
++                let old = before.page(None, page_budget(), budget()).unwrap();
++                let selected = &old
++                    .records
++                    .iter()
++                    .find(|r| r.record.sequence == index as u64 + 1)
++                    .unwrap()
++                    .selection;
++                let c = rusqlite::Connection::open(f.db()).unwrap();
++                c.execute(
++                    &format!("UPDATE objects SET bytes={expression} WHERE cid=?"),
++                    [f.id(index)],
++                )
++                .unwrap();
++                drop(c);
++                // Fresh source cannot accept even byte-identical TEXT after selection.
++                assert!(matches!(
++                    inventory::source(
++                        &f.db(),
++                        f.profile,
++                        f.binding.clone(),
++                        selected,
++                        service::MAX_REQUEST,
++                        budget()
++                    )
++                    .unwrap(),
++                    Source::Unavailable(Availability::Corrupt)
++                ));
++                drop(before);
++                let restarted = f.open();
++                let page = restarted.page(None, page_budget(), budget()).unwrap();
++                assert_eq!(page.records.len(), 3);
++                for row in page.records {
++                    let expected = if row.record.sequence == index as u64 + 1 {
++                        Availability::Corrupt
++                    } else {
++                        Availability::Available
++                    };
++                    assert_eq!(row.availability, expected);
++                    if expected == Availability::Available {
++                        assert!(matches!(
++                            inventory::source(
++                                &f.db(),
++                                f.profile,
++                                f.binding.clone(),
++                                &row.selection,
++                                service::MAX_REQUEST,
++                                budget()
++                            )
++                            .unwrap(),
++                            Source::Available { .. }
++                        ));
++                    }
++                }
++            }
++        }
++    }
++}
++
++#[test]
++fn startup_item_budget_counts_each_metadata_record_before_accepting_a_snapshot() {
++    let t = tempfile::tempdir().unwrap();
++    let f = fixture(t.path(), Profile::Admitted);
++    let mut limited = budget();
++    limited.items = 2;
++    assert_eq!(
++        Inventory::open(&f.db(), f.profile, f.binding.clone(), limited)
++            .err()
++            .unwrap()
++            .to_string(),
++        "invalid input: inventory audit budget exhausted"
++    );
++    let mut exact = budget();
++    exact.items = 3;
++    assert_eq!(
++        Inventory::open(&f.db(), f.profile, f.binding.clone(), exact)
++            .unwrap()
++            .frontier()
++            .through,
++        3
++    );
++}
++
++#[test]
++fn single_bit_blob_to_text_serial_type_damage_remains_browsable() {
++    // Regression derived from independent Opus probe_b5, whose two unsuccessful
++    // fixture attempts and final raw probe remain in the preserved review.
++    for profile in [Profile::Admitted, Profile::Copied] {
++        let t = tempfile::tempdir().unwrap();
++        let f = fixture(t.path(), profile);
++        let c = rusqlite::Connection::open(f.db()).unwrap();
++        c.execute_batch("PRAGMA journal_mode=DELETE; VACUUM;")
++            .unwrap();
++        drop(c);
++        let id = f.id(1);
++        let n = f.requests[1].len() as u64;
++        let varint = |v: u64| {
++            assert!(v < 16384);
++            if v >= 128 {
++                vec![0x80 | (v >> 7) as u8, (v & 0x7f) as u8]
++            } else {
++                vec![v as u8]
++            }
++        };
++        let mut pattern = varint(2 * id.len() as u64 + 13);
++        pattern.extend(varint(2 * n + 12));
++        let serial_end = pattern.len();
++        pattern.extend(id.as_bytes());
++        let original = std::fs::read(f.db()).unwrap();
++        let mut damaged = original.clone();
++        let hits: Vec<_> = damaged
++            .windows(pattern.len())
++            .enumerate()
++            .filter(|(_, w)| *w == pattern)
++            .map(|(i, _)| i)
++            .collect();
++        assert_eq!(hits.len(), 1);
++        damaged[hits[0] + serial_end - 1] ^= 1;
++        assert_eq!(
++            original
++                .iter()
++                .zip(&damaged)
++                .filter(|(a, b)| a != b)
++                .count(),
++            1
++        );
++        std::fs::write(f.db(), &damaged).unwrap();
++        let c = rusqlite::Connection::open(f.db()).unwrap();
++        assert_eq!(
++            c.query_row(
++                "SELECT typeof(bytes) FROM objects WHERE cid=?",
++                [&id],
++                |r| r.get::<_, String>(0)
++            )
++            .unwrap(),
++            "text"
++        );
++        drop(c);
++        let a = f.open();
++        let first = a
++            .page(
++                None,
++                PageBudget {
++                    rows: 1,
++                    ..page_budget()
++                },
++                budget(),
++            )
++            .unwrap();
++        assert_eq!(first.records[0].availability, Availability::Available);
++        let rest = a
++            .page(first.next.as_ref(), page_budget(), budget())
++            .unwrap();
++        assert_eq!(
++            rest.records
++                .iter()
++                .map(|r| (r.record.sequence, r.availability))
++                .collect::<Vec<_>>(),
++            vec![(2, Availability::Corrupt), (1, Availability::Available)]
++        );
++        assert!(rest.next.is_none());
++        assert!(matches!(
++            inventory::source(
++                &f.db(),
++                f.profile,
++                f.binding.clone(),
++                &rest.records[0].selection,
++                service::MAX_REQUEST,
++                budget()
++            )
++            .unwrap(),
++            Source::Unavailable(Availability::Corrupt)
++        ));
++        assert!(matches!(
++            inventory::source(
++                &f.db(),
++                f.profile,
++                f.binding.clone(),
++                &rest.records[1].selection,
++                service::MAX_REQUEST,
++                budget()
++            )
++            .unwrap(),
++            Source::Available { .. }
++        ));
++        drop(a);
++        assert_eq!(std::fs::read(f.db()).unwrap(), damaged);
++    }
++}

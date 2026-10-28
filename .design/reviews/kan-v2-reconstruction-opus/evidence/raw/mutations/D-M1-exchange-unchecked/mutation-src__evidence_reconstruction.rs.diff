@@ -1,0 +1,11 @@
+--- /Users/m/code/kan-tools/kan/.worktrees/kan-v2-reconstruction/.local-state/reviews/reconstruction/review-evidence/raw/mutations/D-M1-exchange-unchecked/orig-src__evidence_reconstruction.rs	2026-10-19 06:43:25
++++ /Users/m/code/kan-tools/kan/.worktrees/kan-v2-reconstruction/.local-state/reviews/reconstruction/src/evidence_reconstruction.rs	2026-10-19 06:43:25
+@@ -132,7 +132,7 @@
+     }
+     let header: Header = serde_json::from_value(value).map_err(|_| Error::Header)?;
+     if !identifier(&header.attempt)
+-        || matches!(&header.event, Event::TransportLink { exchange } if !identifier(exchange))
++        || matches!(&header.event, Event::TransportLink { exchange } if exchange.is_empty())
+         || matches!(&header.event, Event::Started { method, route } if method.len()>32 || route.len()>2048)
+     {
+         return Err(Error::Header);
