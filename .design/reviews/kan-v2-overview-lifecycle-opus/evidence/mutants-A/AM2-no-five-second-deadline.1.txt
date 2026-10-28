@@ -1,0 +1,46 @@
+/Users/m/code/kan-tools/kan/.worktrees/kan-v2-proof-lifecycle/.local-state/reviews/lifecycle/review-evidence/cargo.sh test --features v2-crypto --test evidence_overview_review_regressions -- --test-threads=1 --nocapture
+
+running 10 tests
+test po10_session_counter_overflow_refuses ... ok
+test po2_build_changes_no_collection_file_or_metadata ... ok
+test po3_missing_generation_lock_refuses_without_creating_it ... ok
+test po4_hostile_active_rows_refuse_publication ... ok
+test po4b_invalid_unique_active_attempt_is_refused_not_summed ... ok
+test po5_conflicts_are_classified_and_manager_labels_them ... ok
+test po6_incomparable_rows_refuse_instead_of_componentwise_max ... ok
+test po7_u64_totals_beyond_i64_are_exact_decimal_strings ... ok
+test po8_cancel_then_refresh_does_not_start_concurrent_build ... ok
+test po9_dashboard_overview_routes_refuse_hostile_requests ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 18.51s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-proof-lifecycle/.local-state/reviews/lifecycle)
+    Finished `test` profile [unoptimized] target(s) in 0.46s
+     Running tests/evidence_overview_review_regressions.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_overview_review_regressions-5712576a46a30955)
+PO4 arith: invalid
+PO4 acked: invalid
+PO4 unknown-field: invalid
+PO4 id-mismatch: invalid
+PO4 blob-body: invalid
+PO4 negative-updated: invalid
+PO4 session-empty: invalid
+PO4 session-clean-2: invalid
+PO4 session-negative: invalid
+PO4 session-long: invalid
+PO4 worker-malformed: invalid
+PO4 binding-foreign: invalid
+PO9 no-auth-get: 401
+PO9 no-auth-post-body: 401
+PO9 lowercase-bearer: 401
+PO9 double-auth: 401
+PO9 wrong-host: 403
+PO9 foreign-origin: 403
+PO9 post-status-route: 405
+PO9 put-refresh: 405
+PO9 query-refresh: 405
+PO9 slash-refresh: 405
+PO9 get-cancel: 405
+PO9 chunked-empty: 400
+PO9 body: 400
+PO9 cancel-body: 400
+PO9 status-ok: 200

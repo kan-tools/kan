@@ -1,0 +1,19 @@
+/Users/m/code/kan-tools/kan/.worktrees/kan-v2-proof-lifecycle/.local-state/reviews/lifecycle/review-evidence/cargo.sh test --features v2-crypto --test evidence_attested_followups -- --test-threads=1 --nocapture
+
+running 9 tests
+test p1_profile1_archive_is_refused_by_attested_open_without_writes ... ok
+test p2_signature_only_mutation_refuses_open_with_named_audit_error ... ok
+test p3_retry_of_earlier_row_detects_proof_replacement_under_lock ... ok
+test p4_retry_of_earlier_row_detects_receipt_replacement_under_lock ... ok
+test p5a_single_historical_issuer_prefix_then_admission_is_accepted ... ok
+test p5b_mixed_historical_issuers_in_prefix_are_refused ... ok
+test p5c_historical_proof_purpose_and_bytes_survive_backup_and_rebuild ... ok
+test p6_concurrent_proven_append_from_second_handle_conflicts ... ok
+test p7_non_p256_issuer_binding_is_refused_at_create ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.42s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-proof-lifecycle/.local-state/reviews/lifecycle)
+    Finished `test` profile [unoptimized] target(s) in 0.38s
+     Running tests/evidence_attested_followups.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_attested_followups-a0c68bfd07b1cb59)
+P7 error: invalid input: archive requires canonical P-256 issuer

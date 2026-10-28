@@ -1,0 +1,51 @@
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-proof-lifecycle/.local-state/reviews/lifecycle)
+warning: associated function `at` is never used
+  --> tests/zz_review_overview_correction.rs:75:8
+   |
+54 | impl Fx {
+   | ------- associated function in this implementation
+...
+75 |     fn at(root: PathBuf) -> Self {
+   |        ^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: `kan` (test "zz_review_overview_correction") generated 1 warning
+    Finished `test` profile [unoptimized] target(s) in 0.45s
+     Running tests/zz_review_overview_correction.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/zz_review_overview_correction-712331e9fa93d268)
+
+running 9 tests
+test ra1_cross_process_writer_never_fails_during_near_ceiling_refreshes ... RA1 active bytes=27156480 pages=6630
+RA1 continuous: writer={"errors":0,"first_errors":[],"max_ms":22.045,"next_id":1000547,"over_50ms":0,"writes":547} refresh_outcomes={"busy:active snapshot source stayed busy after 5000ms": 1, "ok": 1} ok_build_ms=[6112] active_window_s=[4]
+RA1 20hz: writer={"errors":0,"first_errors":[],"max_ms":20.008,"next_id":1000678,"over_50ms":0,"writes":131} refresh_outcomes={"ok": 4} ok_build_ms=[2172, 2160, 2171, 2190] active_window_s=[0, 0, 0, 0]
+RA1 5hz: writer={"errors":0,"first_errors":[],"max_ms":19.417,"next_id":1000719,"over_50ms":0,"writes":41} refresh_outcomes={"failure:Capacity(\"memory\") after 1400ms": 6} ok_build_ms=[] active_window_s=[]
+ok
+test ra2_published_totals_are_a_consistent_committed_prefix_under_churn ... RA2 small: writer={"errors":0,"first_errors":[],"txns":636} consistent_published=3 refusals={"busy:active snapshot source stayed busy": 1, "busy:database is locked": 3} n_samples=[27, 54, 636]
+RA2 20k: writer={"errors":0,"first_errors":[],"txns":660} consistent_published=1 refusals={"busy:active snapshot source stayed busy": 1, "busy:database is locked": 14} n_samples=[660]
+ok
+test ra3a_cancellation_during_copy_is_clean ... RA3a phases/outcomes: {"before-pin:cancelled": 1, "during-active-copy-or-parse:cancelled": 13}
+RA3a post-cancel write 16ms
+ok
+test ra3b_sigkill_during_refresh_leaves_source_untouched ... RA3b completed refresh iterations before each kill: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+RA3b post-kill write 13ms
+ok
+test ra4_busy_versus_invalid_classification ... RA4a exclusive holder: state=failed reason=Some("source busy or in use; retry refresh") after 140ms
+RA4b reserved holder: Ok((1, 8))
+RA4c hot journal (Some(697864) bytes): state=failed reason=Some("source invalid or unavailable")
+RA4c after writer recovery: state=completed reason=None
+RA4d corrupt page: state=failed reason=Some("source invalid or unavailable")
+ok
+test ra5_sqlite_memory_highwater_fits_the_reserve ... RA5 active bytes=27156480
+RA5 noop: {"noop":true} | 6979584  maximum resident set size
+RA5 measure: {"accounted_bytes":133345985,"attempts":64001,"build_ms":2132,"error":"","ok":true,"sqlite_base":0,"sqlite_highwater":36742592} | 76709888  maximum resident set size
+ok
+test ra6_post_read_sealed_rehash_is_byte_exact ... RA6 append-one-byte: Err("other:operations collection invalid, unavailable or in use")
+RA6 flip-reserve-byte: Err("other:operations collection invalid, unavailable or in use")
+RA6 truncate-trailing-page: Err("other:operations collection invalid, unavailable or in use")
+ok
+test ra7_manager_labels_under_continuous_writer ... RA7 writer={"errors":0,"first_errors":[],"max_ms":22.014,"next_id":2000737,"over_50ms":0,"writes":737} manager_outcomes={"failed:Some(\"source busy or in use; retry refresh\")": 3}
+ok
+test zz_review_child ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 107.01s
+

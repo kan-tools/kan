@@ -1,0 +1,11 @@
+/Users/m/code/kan-tools/kan/.worktrees/kan-v2-proof-lifecycle/.local-state/reviews/lifecycle/review-evidence/cargo.sh test --features v2-crypto --test zz_review_proof_lifecycle -- rb5_cross_process_admission_during_rebuild_and_backup --exact --test-threads=1 --nocapture
+
+running 1 test
+test rb5_cross_process_admission_during_rebuild_and_backup ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 7.87s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-proof-lifecycle/.local-state/reviews/lifecycle)
+    Finished `test` profile [unoptimized] target(s) in 0.45s
+     Running tests/zz_review_proof_lifecycle.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/zz_review_proof_lifecycle-38f45f8bd3aa4b2c)
+RB5 writer={"err":0,"first":[],"ok":30} outputs=["rebuild through=21 backup=Ok(24)", "rebuild through=25 backup=Ok(29)", "rebuild through=30 backup=Ok(33)", "rebuild through=34 backup=Ok(38)"]

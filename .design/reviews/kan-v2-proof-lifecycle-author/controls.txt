@@ -1,0 +1,6 @@
+DEMONSTRATED: drop-proof-copy
+DEMONSTRATED: drop-extra-proof-check
+DEMONSTRATED: resume-as-legacy
+DEMONSTRATED: drop-backup-proof-audit
+DEMONSTRATED: drop-pinned-read
+Five compiled mutants fail; restored lifecycle/store/surface pass.

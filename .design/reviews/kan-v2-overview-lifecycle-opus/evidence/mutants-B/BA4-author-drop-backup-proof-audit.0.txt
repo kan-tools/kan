@@ -1,0 +1,20 @@
+/Users/m/code/kan-tools/kan/.worktrees/kan-v2-proof-lifecycle/.local-state/reviews/lifecycle/review-evidence/cargo.sh test --features v2-crypto --test evidence_attested_lifecycle -- backup_success_requires_verifying_the_copied_proof_chain --exact --test-threads=1 --nocapture
+
+running 1 test
+test backup_success_requires_verifying_the_copied_proof_chain ... FAILED
+
+failures:
+
+failures:
+    backup_success_requires_verifying_the_copied_proof_chain
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 8 filtered out; finished in 0.19s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-proof-lifecycle/.local-state/reviews/lifecycle)
+    Finished `test` profile [unoptimized] target(s) in 6.88s
+     Running tests/evidence_attested_lifecycle.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_attested_lifecycle-02231a6624d7c1e3)
+
+thread 'backup_success_requires_verifying_the_copied_proof_chain' (9554219) panicked at tests/evidence_attested_lifecycle.rs:253:5:
+byte-copy completion is not proof verification
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+error: test failed, to rerun pass `--test evidence_attested_lifecycle`

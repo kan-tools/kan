@@ -17,6 +17,7 @@ impl SurfaceValue {
 }
 
 /// Experimental v2 artifacts; schema columns are also inspected from SQLite in feature tests.
+/// Profile-2 backup/rebuild preserves these same proof fields; no lifecycle side store exists.
 pub const EVIDENCE_VALUES: &[SurfaceValue] = &[
     SurfaceValue::new("evidence-proof-sqlite:archive_identity", "singleton"),
     SurfaceValue::new("evidence-proof-sqlite:archive_identity", "archive"),

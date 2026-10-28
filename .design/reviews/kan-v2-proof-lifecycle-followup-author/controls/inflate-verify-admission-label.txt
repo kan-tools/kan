@@ -1,0 +1,24 @@
+
+running 1 test
+test owner_cli_requires_all_pins_and_reports_exact_proof_lifecycle ... FAILED
+
+failures:
+
+---- owner_cli_requires_all_pins_and_reports_exact_proof_lifecycle stdout ----
+
+thread 'owner_cli_requires_all_pins_and_reports_exact_proof_lifecycle' (9589907) panicked at tests/evidence_attested_lifecycle.rs:493:5:
+assertion `left == right` failed
+  left: String("admitted-verified")
+ right: "proof-purpose-dependent"
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    owner_cli_requires_all_pins_and_reports_exact_proof_lifecycle
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 10 filtered out; finished in 0.83s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-copy-upgrade)
+    Finished `test` profile [unoptimized] target(s) in 0.82s
+     Running tests/evidence_attested_lifecycle.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_attested_lifecycle-02231a6624d7c1e3)
+error: test failed, to rerun pass `--test evidence_attested_lifecycle`

@@ -1,0 +1,1506 @@
+diff --git a/.design/kan-v2-collection-overview.md b/.design/kan-v2-collection-overview.md
+index c80119a..2244d71 100644
+--- a/.design/kan-v2-collection-overview.md
++++ b/.design/kan-v2-collection-overview.md
+@@ -47,10 +47,13 @@ negative values and malformed JSON cannot be quietly filtered out.
+ ### Snapshot and projection lifetime
+ 
+ A refresh acquires the existing collection shared lock, validates and captures
+-the manifest, and reads one consistent active-generation transaction. Bound that
++the manifest, and copies one consistent active-generation snapshot into an in-memory SQLite
++database in short online-backup steps. Bound that
+ single journal by its existing 32 MiB profile, 100,000 attempt ceiling and 1,024
+-session ceiling. Copy only typed row values into bounded memory, then end the
+-SQLite transaction promptly. The build must not hold a read transaction while
++session ceiling. Parse typed row values from the memory copy; the live journal is no longer held
++in a read transaction during row decoding. A busy or continuously changing source
++may refuse refresh after five seconds. Cancellation is checked between 64-page
++backup steps and parsed rows. The build must not hold a live-source read transaction while
+ waiting for a browser, sleeping, or awaiting another generation. SQLite lock
+ contention fails the refresh within the existing bounded busy interval; capture
+ callbacks still never wait on this process.
+@@ -101,8 +104,8 @@ inspectable in their generation and must not be promoted to current liveness.
+ 
+ Use one background builder per Operations service, the existing maximum of
+ 1,024 manifest generations and 32 MiB per source file, plus explicit ceilings of
+-250,000 distinct attempts, 65,536 distinct sessions and 128 MiB retained row/key
+-payload. Account payload lengths before retaining a new row; container overhead
++250,000 distinct attempts, 65,536 distinct sessions and 128 MiB of accounted
++working storage. Account payload lengths before retaining a new row; container overhead
+ also needs a conservative allowance. A build reaching any ceiling returns
+ `capacity-limited` and publishes no new whole-collection total. It names the
+ bound and processed frontier; it does not silently omit older history. These are
+@@ -110,6 +113,13 @@ first-profile limits, not a guarantee that every legal 1,024-generation collecti
+ fits. Larger collections still have paginated generation/history access; an
+ external-memory projection is a required later capacity extension if needed.
+ 
++The 48-MiB working reserve leaves less than 80 MiB for rows, keys and source
++metadata. A row is charged its serialized length plus 1,024 bytes. For
++example, a 1,300-byte charge fits fewer than 64,528 simultaneously retained rows
++before other charges; buffered active rows and deduplication entries can overlap.
++The 250,000 identity ceiling is therefore not a promised practical capacity.
++Actual capacity depends on row lengths, repeats and active/sealed overlap.
++
+ The result names included generations, sealed hashes, active snapshot digest,
+ build time, sampled window, deduplicated counts, and `observations-only` coverage.
+ A complete result means complete for those validated inputs, never complete raw
+@@ -185,10 +195,40 @@ unknown. The source list includes sealed hashes and typed-row snapshot digests;
+ historical worker details remain in per-generation history rather than being
+ added or promoted to current health. The active worker sample stays with its
+ original active snapshot. Hashing streams 64-KiB buffers; the 128-MiB accounting
+-includes a 16-MiB allowance for SQLite, manifest and transient buffers, conservative
++includes a 48-MiB allowance for the bounded in-memory active database, SQLite, manifest and transient buffers, conservative
+ per-row/container allowances, buffered active rows and retained source metadata.
+ Caller-specified test limits can only reduce the production ceilings.
+ 
+ The UI offers explicit load/build/cancel controls, keeps failed-refresh samples
+ visibly old, formats exact integer strings and clears results on lock. Rust and
+-real-browser qualification are complete for this checkpoint: 58 Rust checks, 54 Node checks, strict v2 Clippy and six demonstrated negative controls. The browser confirmed a deduplicated three-generation result, source disclosure, light/dark/mobile layouts and clearing on lock. Evidence is preserved in `.design/reviews/kan-v2-overview-author/`. Fresh Opus review remains pending; no parent AC is marked complete.
++browser checks for the initial checkpoint passed 58 Rust checks, 54 Node checks, strict v2 Clippy and six demonstrated negative controls. This was not the full AC-5 state matrix. The browser confirmed a deduplicated three-generation result, source disclosure, light/dark/mobile layouts and clearing on lock. Evidence is preserved in `.design/reviews/kan-v2-overview-author/`. The subsequent review and corrections are recorded below; no parent AC is marked complete.
++
++### Review correction in progress
++
++The cold review of 67c1263 reproduced health-writer failures during a large
++active row scan and found Build/Cancel clicks discarded during in-flight polling.
++The reviewer returned APPROVE WITH FOLLOW-UPS for the overview, with O1 a required code correction; the checkpoint is not merge-qualified. The separate a1007a6 storage correction round received APPROVE. Raw reports are retained unchanged under `.design/reviews/kan-v2-overview-opus/`. The correction copies active SQLite
++pages into memory using short backup steps, releases live-source locks before
++parsing, and preserves a five-second/cancellable refusal path for a busy source.
++A fixed 32-MiB image allowance is added to the previous 16-MiB working reserve
++inside the same 128-MiB ceiling. This conservative accounting means some formerly
++accepted large inputs can return capacity-limited; it does not increase the limit.
++Snapshot timestamps name the copy window, not the later parse. Copied schema and
++control rows are revalidated. Build/Cancel preempt polls; actions remain serialized
++and stale replies cannot overwrite newer action state. The corrected checkpoint passes74 Rust checks,26 Operations Node checks,strict Clippy and13 semantic mutants; fresh re-review remains required.
++
++The follow-up distinguishes file-lock and SQLite contention from invalid history.
++The status API adds `active_generation` (null for standalone journals). The browser
++compares that value with the cached sample and derives a superseded label; this is
++not a new server publication state. It shows sample age and keeps prior-result
++labels on failed requests. Age uses the browser clock and explicitly handles a
++sample ahead of that clock. Restart responses clear stale displayed totals.
++
++Coverage is deliberately split: the original real browser exercise covers completed
++results and lock clearing in light/dark/mobile layouts. Node tests cover unavailable,
++building, failed, capacity-limited, cancelled, cached/superseded and request races;
++those tests do not close the full authenticated browser acceptance matrix. The
++new HTTP socket regression checks eight held header requests, refusal of a ninth,
++and permit reuse after completion. The 40,000-row active-source regression runs
++100 real health writes during refresh. Qualification and fresh review of these
++corrections must be recorded before closing their acceptance criteria.
+diff --git a/.design/kan-v2-next-build-status.md b/.design/kan-v2-next-build-status.md
+index 894c4d2..d740fff 100644
+--- a/.design/kan-v2-next-build-status.md
++++ b/.design/kan-v2-next-build-status.md
+@@ -75,7 +75,7 @@ approved 9f1dffa with follow-ups (106 core + 58 lifecycle/service checks). The
+ original report is retained in `.design/reviews/kan-v2-proof-storage-opus/`. Its
+ non-tip retry, historical-issuer and canonical-key regressions are incorporated;
+ small error-class/limit-propagation corrections pass 37 storage/surface checks and
+-strict all-target v2 Clippy. Fresh review of those corrections remains pending.
++strict all-target v2 Clippy. Fresh Opus review of those corrections at a1007a6 returned APPROVE; the raw combined review is preserved under `.design/reviews/kan-v2-overview-opus/`.
+ The complete pre-admission audit is deliberately unoptimized; see the storage
+ checkpoint scope in the governing design for its concurrency threat boundary.
+ 
+@@ -92,7 +92,7 @@ checkpoint scope in the governing design for its concurrency threat boundary.
+    Complete typed source scans, bounded deduplication, asynchronous refresh/cancel,
+    CLI, authenticated dashboard routes and UI are implemented. Author qualification
+    passed 58 Rust and 54 Node checks, strict v2 Clippy, six negative controls,
+-   and real light/dark/mobile browser inspection. Fresh Opus review remains pending;
++   and real completed/lock light/dark/mobile browser inspection. The initial Opus verdict was APPROVE WITH FOLLOW-UPS; correction qualification is recorded below;
+    evidence is in `.design/reviews/kan-v2-overview-author/`.
+ 4. Versioned human-readable conversation adapters with source lineage.
+ 5. Authorized search/filters, annotations, saved views, background analysis/day
+@@ -104,3 +104,14 @@ operational gates; they do not justify pretending the software roadmap is comple
+ Git-first design/review records await backfill while day#168 / kan#197 prevent
+ worktree-local recording. The existing raw-data-and-projections telos is deliberately
+ unwitnessed; no witnesses or omitted claim contents were invented.
++
++## Overview review corrections in progress
++
++The review of 67c1263 reproduced live health-writer exclusion during a large
++active scan and Build/Cancel requests discarded during polling. Draft corrections
++use a bounded in-memory active database copy and prioritize actions over polls.
++The existing 128-MiB ceiling now includes a 32-MiB image allowance plus 16-MiB
++working reserve; capacity refusal is explicit. Source copy can refuse after five
++seconds when busy. Tests target writer progress, post-read sealed changes, invalid
++unique health rows, historical worker separation and UI request races. Author qualification now passes 74 Rust checks,26 Operations Node checks,strict all-target v2 Clippy and13 semantic mutants with restored assertions. Evidence is in `.design/reviews/kan-v2-overview-correction-author/`; fresh re-review remains pending.
++The final cold review returned APPROVE WITH FOLLOW-UPS for the overview, with O1 a required code correction, and APPROVE for the storage corrections. The raw report and independent probes are preserved unchanged in `.design/reviews/kan-v2-overview-opus/`. Fresh review of the corrected overview remains required.
+diff --git a/.github/workflows/ci.yml b/.github/workflows/ci.yml
+index cacc348..980b7fa 100644
+--- a/.github/workflows/ci.yml
++++ b/.github/workflows/ci.yml
+@@ -33,7 +33,7 @@ jobs:
+       - run: python3 -m pip install cryptography==46.0.3
+       - run: python3 .design/tools/attestation_vectors.py --check
+       - run: python3 .design/tools/attestation_mutations.py
+-      - run: cargo test --features v2-crypto --test evidence_contract --test evidence_attestation --test evidence_attested_store --test evidence_attested_followups --test evidence_store --test evidence_service --test evidence_spool --test evidence_http --test evidence_crypto --test evidence_capture --test evidence_capture_adversarial --test evidence_capture_deadlines --test evidence_capture_contention --test evidence_gateway --test evidence_operations --test evidence_operations_collection --test evidence_operations_overview --test evidence_reader --test evidence_library_cli --test evidence_delivery --test evidence_import --test evidence_restore --test evidence_restore_adversarial --test migration_preflight --test recovery_cli --test migration_harness --test surface_conformance
++      - run: cargo test --features v2-crypto --test evidence_contract --test evidence_attestation --test evidence_attested_store --test evidence_attested_followups --test evidence_store --test evidence_service --test evidence_spool --test evidence_http --test evidence_crypto --test evidence_capture --test evidence_capture_adversarial --test evidence_capture_deadlines --test evidence_capture_contention --test evidence_gateway --test evidence_operations --test evidence_operations_collection --test evidence_operations_overview --test evidence_overview_review_regressions --test evidence_reader --test evidence_library_cli --test evidence_delivery --test evidence_import --test evidence_restore --test evidence_restore_adversarial --test migration_preflight --test recovery_cli --test migration_harness --test surface_conformance
+       - run: python3 scripts/check_gateway_global_cap.py
+       - run: python3 scripts/check_v2_supervision.py target/debug/kan-v2
+       - run: cargo test --features v2-crypto --lib evidence_gateway::admission_tests
+diff --git a/docs/V2-OPERATIONS.md b/docs/V2-OPERATIONS.md
+index f43caea..593db7d 100644
+--- a/docs/V2-OPERATIONS.md
++++ b/docs/V2-OPERATIONS.md
+@@ -154,21 +154,27 @@ remove journals. Standalone journal paths do not have a collection overview.
+ The overview deduplicates attempts and reporter sessions in generation order,
+ retaining whole cumulative observations. Regressions, conflicting observers or
+ terminal outcomes, altered sealed files, and counter overflow fail the refresh.
+-It first pins active rows and promptly releases their SQLite transaction, then
+-reads sealed history under the shared collection lock. Active health writers
++It copies a consistent active SQLite image in short backup steps, releases live
++source locks before decoding rows, then reads sealed history under the shared
++collection lock. Busy copying refuses the refresh after at most five seconds. Active health writers
+ continue; owner rotation refuses while the build holds membership. Status polling
+ reads published memory and never rebuilds the overview.
+ 
+ A successful sample lists each included generation/hash and its typed-row digest.
+ Its active worker observation belongs to that sample, not current service health.
+ New writes or rotation make the sample older; only another explicit build replaces
+-it. Failure/cancellation retains the previous sample with its original job and
++it. The UI labels cached sample age and compares its generation with active health
++to identify superseded samples. Failure/cancellation retains the previous sample with its original job and
+ frontier. Restart clears the cache and requires a new build. All totals are
+ observations-only; gaps remain visible and telemetry loss is a lower bound.
+ 
+ The first profile permits one build, 1,024 generations, 32 MiB per source,
+ 250,000 distinct attempts, 65,536 sessions and 128 MiB of conservatively accounted
+-working storage. Buffered active rows and deduplication maps share that budget.
++working storage, including a 48-MiB reserve for the active image and transients.
++Buffered active rows and deduplication maps share the remainder. A row is charged
++its serialized length plus 1,024 bytes; a 1,300-byte charge permits fewer
++than 64,528 retained rows before other charges, and buffered/map entries can
++overlap. The 250,000 identity ceiling is not a practical capacity guarantee.
+ A legal collection can exceed it: capacity failure publishes no partial total.
+ Per-generation history remains available. JSON totals use decimal strings so
+ browser display preserves full u64 precision. This experimental build still
+@@ -215,3 +221,10 @@ against the same journal: older versions still refuse those attempt writes.
+ The current UI uses a conservative five-second freshness window; long worker I/O
+ can exceed it and appear stale/unknown while still running. This is not a claim
+ that the worker has failed or that capture is complete.
++
++Overview review correction: active row parsing uses a bounded in-memory SQLite
++copy, with short backup steps and a five-second refusal bound when the source stays
++busy. The 128-MiB budget includes a 32-MiB image plus 16-MiB working reserve; fewer
++rows may fit than before. Build/Cancel actions preempt ordinary polling and cannot
++be silently discarded by an in-flight poll. Qualification of this correction is
++pending; the initial checkpoint remains unapproved.
+diff --git a/scripts/overview_negative_controls.py b/scripts/overview_negative_controls.py
+index 4d8238b..8d2f515 100644
+--- a/scripts/overview_negative_controls.py
++++ b/scripts/overview_negative_controls.py
+@@ -5,20 +5,29 @@ import subprocess
+ ROOT=Path(__file__).resolve().parents[1]
+ SOURCE=ROOT/'src/evidence_operations_collection/overview.rs'
+ JS=ROOT/'web/operations/app.js'
++PROJECTION=ROOT/'src/evidence_operations/projection.rs'
++DASHBOARD=ROOT/'src/evidence_dashboard.rs'
+ OUT=ROOT/'.local-state/reviews/overview-controls'
+ def main():
+     if not __debug__: raise RuntimeError('assertions required')
+     OUT.mkdir(parents=True,exist_ok=True)
+-    originals={SOURCE:SOURCE.read_text(),JS:JS.read_text()}
++    originals={SOURCE:SOURCE.read_text(),JS:JS.read_text(),PROJECTION:PROJECTION.read_text(),DASHBOARD:DASHBOARD.read_text()}
+     for path,value in originals.items(): (OUT/(path.name+'.original')).write_text(value)
+     s=originals[SOURCE]
+     cases=[
++      ('remove-connection-bound',DASHBOARD,originals[DASHBOARD].replace('Semaphore::new(8)', 'Semaphore::new(16)'),'overview_http_connection_limit_releases_slots_after_requests'),
+       ('no-deduplication',SOURCE,s.replace('        if let Some(old) = map.get(&key) {','        let key = format!("{key}:{}",map.len());\n        if let Some(old) = map.get(&key) {'),'cumulative_rows_are_deduplicated_without_rewriting_sources'),
+       ('no-dominance',SOURCE,s.replace('if !dominates {','if false && !dominates {'),'intermediate_regressions_conflicting_observers_and_terminals_refuse_publication'),
+       ('no-sealed-hash',SOURCE,s.replace('if &sealed_hash(&path, flag)? != expected {','if false && &sealed_hash(&path, flag)? != expected {'),'changed_missing_sources_binding_and_membership_fail_visibly'),
+       ('no-memory-cap',SOURCE,s.replace('if next > self.limit {','if false && next > self.limit {'),'bounds_cancellation_and_checked_sum_never_publish_partial_totals'),
+       ('no-cancellation',SOURCE,s.replace('if flag.load(Ordering::Relaxed) {','if false && flag.load(Ordering::Relaxed) {'),'bounds_cancellation_and_checked_sum_never_publish_partial_totals'),
+-      ('late-overview-repaint',JS,originals[JS].replace('if(current===generation)renderOverview(s);','renderOverview(s);'),'lock clears overview and prevents a late result from repainting'),
++      ('omit-post-read-sealed-hash',SOURCE,'if false && &sealed_hash(&path, flag)? != expected {'.join(s.rsplit('if &sealed_hash(&path, flag)? != expected {',1)),'sealed_change_after_row_scan_is_not_published'),
++      ('omit-unique-health-validation',PROJECTION,originals[PROJECTION].replace('!valid_health(&health)', 'false'),'ignored_sqlite_sidecars_and_invalid_unique_health_rows_refuse'),
++      ('promote-historical-worker',SOURCE,s.replace('snapshot.worker = None;', 'let _ = &snapshot;'),'historical_worker_is_hashed_but_not_promoted_to_current_health'),
++      ('omit-sealed-sidecar-check',SOURCE,s.replace('sidecars_absent(&path)?;', 'let _ = &path;'),'ignored_sqlite_sidecars_and_invalid_unique_health_rows_refuse'),
++      ('discard-action-during-poll',JS,originals[JS].replace('if(!action)return;', 'if(overviewRequest)return;'),'build preempts an in-flight overview poll and ignores its stale reply'),
++      ('hold-active-read-through-parse',SOURCE,s.replace('let (copy, window) = journal.projection_copy(&mut || cancel(flag))?;', 'let (copy, window) = (journal, (operations::now(), operations::now()));'),'active_snapshot_parsing_does_not_exclude_health_writes'),
++      ('late-overview-repaint',JS,originals[JS].replace('if(current===generation&&serial===overviewSerial)renderOverview(s);','renderOverview(s);'),'lock clears overview and prevents a late result from repainting'),
+     ]
+     try:
+       for name,path,changed,test in cases:
+@@ -28,7 +37,7 @@ def main():
+         result=subprocess.run(command,cwd=ROOT,capture_output=True,text=True)
+         (OUT/(name+'.txt')).write_text(result.stdout+result.stderr)
+         assert result.returncode!=0,f'SURVIVED: {name}'
+-        if path==SOURCE:
++        if path!=JS:
+           assert 'could not compile' not in result.stderr,f'compile failure: {name}'
+           assert 'running 1 test' in result.stdout and f'test {test} ... FAILED' in result.stdout,f'no named failure: {name}'
+         else: assert 'AssertionError' in result.stdout+result.stderr,f'no assertion: {name}'
+@@ -40,5 +49,5 @@ def main():
+       result=subprocess.run(command,cwd=ROOT,capture_output=True,text=True)
+       (OUT/('restored-'+name+'.txt')).write_text(result.stdout+result.stderr)
+       assert result.returncode==0,f'restored {name} failed'
+-    print('Five compiled Rust mutants and one UI mutant fail; restored checks pass.',flush=True)
++    print(f'{len(cases)} mutants fail with named assertions; restored checks pass.',flush=True)
+ if __name__=='__main__': main()
+diff --git a/src/evidence_operations.rs b/src/evidence_operations.rs
+index 73107cc..c9143fd 100644
+--- a/src/evidence_operations.rs
++++ b/src/evidence_operations.rs
+@@ -85,6 +85,7 @@ pub struct Journal {
+     _file_lock: std::fs::File,
+     pub(crate) collection_lock: Option<std::fs::File>,
+     pub(crate) scope: String,
++    pub(crate) active_generation: Option<String>,
+ }
+ #[derive(Debug, Clone, Serialize, Deserialize)]
+ pub struct WorkerStatus {
+@@ -103,6 +104,7 @@ pub struct WorkerStatus {
+ pub struct Snapshot {
+     pub version: u8,
+     pub read_at: u64,
++    pub active_generation: Option<String>,
+     pub coverage: String,
+     pub worker: Option<WorkerStatus>,
+     pub attempts: u64,
+@@ -227,9 +229,9 @@ impl Journal {
+         }
+         let file_lock = std::fs::File::open(lock_path)?;
+         if exclusive {
+-            fs4::FileExt::try_lock(&file_lock).map_err(|_| invalid())?;
++            fs4::FileExt::try_lock(&file_lock)?;
+         } else {
+-            fs4::FileExt::try_lock_shared(&file_lock).map_err(|_| invalid())?;
++            fs4::FileExt::try_lock_shared(&file_lock)?;
+         }
+         let conn = Connection::open_with_flags(
+             path,
+@@ -241,17 +243,29 @@ impl Journal {
+         )?;
+         conn.busy_timeout(Duration::from_millis(100))?;
+         conn.set_limit(rusqlite::limits::Limit::SQLITE_LIMIT_LENGTH, 32768)?;
++        let schema_version = Self::validate_connection(&conn)?;
++        if !read_only {
++            conn.execute_batch(
++                "PRAGMA synchronous=FULL; PRAGMA fullfsync=ON; PRAGMA max_page_count=8192;",
++            )?;
++        }
++        Ok(Self {
++            conn,
++            schema: schema_version,
++            read_only,
++            _file_lock: file_lock,
++            collection_lock: None,
++            scope: "selected standalone journal only".into(),
++            active_generation: None,
++        })
++    }
++    fn validate_connection(conn: &Connection) -> Result<u8> {
+         let schema_version: u8 = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
+         if conn.query_row("PRAGMA application_id", [], |r| r.get::<_, i64>(0))? != PROFILE
+             || !matches!(schema_version, 1 | 2)
+         {
+             return Err(invalid());
+         }
+-        if !read_only {
+-            conn.execute_batch(
+-                "PRAGMA synchronous=FULL; PRAGMA fullfsync=ON; PRAGMA max_page_count=8192;",
+-            )?;
+-        }
+         if conn.query_row("PRAGMA page_size", [], |r| r.get::<_, i64>(0))? != 4096 {
+             return Err(invalid());
+         }
+@@ -265,7 +279,7 @@ impl Journal {
+                 .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
+                 .collect()
+         }
+-        if schema(&conn)? != schema(&expected)? {
++        if schema(conn)? != schema(&expected)? {
+             return Err(invalid());
+         }
+         if schema_version == 2 {
+@@ -286,14 +300,7 @@ impl Journal {
+                 return Err(invalid());
+             }
+         }
+-        Ok(Self {
+-            conn,
+-            schema: schema_version,
+-            read_only,
+-            _file_lock: file_lock,
+-            collection_lock: None,
+-            scope: "selected standalone journal only".into(),
+-        })
++        Ok(schema_version)
+     }
+     pub(crate) fn binding(&self) -> Result<(String, String, String, String)> {
+         Ok(self.conn.query_row(
+@@ -558,6 +565,7 @@ impl Journal {
+         Ok(Snapshot {
+             version: 2,
+             read_at: now(),
++            active_generation: self.active_generation.clone(),
+             coverage: "observations-only; silence does not prove capture completeness".into(),
+             worker: body.map(|s| serde_json::from_str(&s)).transpose()?,
+             attempts,
+diff --git a/src/evidence_operations/projection.rs b/src/evidence_operations/projection.rs
+index 20a72a2..ce8cde0 100644
+--- a/src/evidence_operations/projection.rs
++++ b/src/evidence_operations/projection.rs
+@@ -2,6 +2,10 @@
+ use super::*;
+ use sha2::{Digest, Sha256};
+ 
++#[derive(Debug, thiserror::Error)]
++#[error("active snapshot source stayed busy")]
++pub(crate) struct SourceBusy;
++
+ #[derive(Debug, Clone, Serialize)]
+ #[serde(tag = "kind", rename_all = "kebab-case")]
+ pub(crate) enum Observation {
+@@ -31,6 +35,48 @@ fn hash<T: Serialize>(digest: &mut Sha256, value: &T) -> Result<()> {
+     Ok(())
+ }
+ impl Journal {
++    /// Copy a bounded active database into memory using short SQLite backup
++    /// steps. Parsing/deduplication then holds no read lock on the live journal.
++    /// A constantly changing or busy source can refuse refresh after five seconds.
++    pub(crate) fn projection_copy(
++        mut self,
++        check: &mut dyn FnMut() -> Result<()>,
++    ) -> Result<(Self, (u64, u64))> {
++        let start = now();
++        let deadline = std::time::Instant::now() + Duration::from_secs(5);
++        self.conn.busy_timeout(Duration::ZERO)?;
++        let mut memory = Connection::open_in_memory()?;
++        memory.execute_batch(
++            "PRAGMA page_size=4096; PRAGMA max_page_count=8192; PRAGMA temp_store=MEMORY;",
++        )?;
++        memory.set_limit(rusqlite::limits::Limit::SQLITE_LIMIT_LENGTH, 32768)?;
++        {
++            let backup = rusqlite::backup::Backup::new(&self.conn, &mut memory)?;
++            loop {
++                check()?;
++                if std::time::Instant::now() >= deadline {
++                    return Err(Box::new(SourceBusy));
++                }
++                let step = backup.step(64)?;
++                if !(0..=8192).contains(&backup.progress().pagecount) {
++                    return Err(invalid());
++                }
++                match step {
++                    rusqlite::backup::StepResult::Done => break,
++                    rusqlite::backup::StepResult::More => std::thread::yield_now(),
++                    rusqlite::backup::StepResult::Busy | rusqlite::backup::StepResult::Locked => {
++                        std::thread::sleep(Duration::from_millis(1));
++                    }
++                    _ => return Err(invalid()),
++                }
++            }
++        }
++        let end = now();
++        self.schema = Self::validate_connection(&memory)?;
++        self.conn = memory;
++        self.read_only = true;
++        Ok((self, (start, end)))
++    }
+     /// One pinned read transaction; callbacks must do bounded CPU/memory work and
+     /// must not wait for another source or browser. Cancellation is checked per row.
+     pub(crate) fn scan_projection(
+diff --git a/src/evidence_operations_collection.rs b/src/evidence_operations_collection.rs
+index d87f2bc..f6bd117 100644
+--- a/src/evidence_operations_collection.rs
++++ b/src/evidence_operations_collection.rs
+@@ -54,9 +54,9 @@ fn lock(root: &Path, exclusive: bool) -> Result<File> {
+     private(&path, false, 0)?;
+     let file = File::open(path)?;
+     if exclusive {
+-        fs4::FileExt::try_lock(&file).map_err(|_| invalid())?;
++        fs4::FileExt::try_lock(&file)?;
+     } else {
+-        fs4::FileExt::try_lock_shared(&file).map_err(|_| invalid())?;
++        fs4::FileExt::try_lock_shared(&file)?;
+     }
+     Ok(file)
+ }
+@@ -153,6 +153,7 @@ pub fn open(root: &Path) -> Result<Journal> {
+     if Binding::of(&journal)? != m.binding {
+         return Err(invalid());
+     }
++    journal.active_generation = Some(m.active.clone());
+     journal.scope = format!(
+         "active generation {} only; sealed history excluded",
+         m.active
+diff --git a/src/evidence_operations_collection/overview.rs b/src/evidence_operations_collection/overview.rs
+index c170548..1f18b50 100644
+--- a/src/evidence_operations_collection/overview.rs
++++ b/src/evidence_operations_collection/overview.rs
+@@ -11,7 +11,7 @@ use std::{
+ };
+ 
+ const SOURCE_LIMIT: u64 = 32 * 1024 * 1024;
+-const WORKING_RESERVE: usize = 16 * 1024 * 1024; // SQLite, manifest, hashing and bounded row buffers.
++const WORKING_RESERVE: usize = 48 * 1024 * 1024; // 32-MiB active SQLite copy + 16 MiB for SQLite/cache/transients.
+ #[derive(Debug, Clone, Copy)]
+ pub struct Limits {
+     pub attempts: usize,
+@@ -236,6 +236,7 @@ fn source(
+     binding: &Binding,
+     flag: &AtomicBool,
+     visit: &mut dyn FnMut(Observation) -> Result<()>,
++    hook: &mut dyn FnMut(Boundary) -> Result<()>,
+ ) -> Result<Source> {
+     cancel(flag)?;
+     let path = generation_path(root, &g.id);
+@@ -252,6 +253,12 @@ fn source(
+         }
+     }
+     let journal = Journal::open_file(&path, false, true)?;
++    let (journal, active_window) = if g.sealed_sha256.is_none() {
++        let (copy, window) = journal.projection_copy(&mut || cancel(flag))?;
++        (copy, Some(window))
++    } else {
++        (journal, None)
++    };
+     let expected = (
+         binding.spool.clone(),
+         binding.writer.clone(),
+@@ -262,6 +269,11 @@ fn source(
+         cancel(flag)?;
+         visit(row)
+     })?;
++    if let Some((start, end)) = active_window {
++        snapshot.started_at = start;
++        snapshot.finished_at = end;
++    }
++    hook(Boundary::SourceRowsRead)?;
+     // Recheck sealed bytes after the SQLite read so a changed source is never
+     // promoted merely because it passed a pre-open hash.
+     if let Some(expected) = &g.sealed_sha256 {
+@@ -281,6 +293,7 @@ fn source(
+ #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+ pub enum Boundary {
+     MembershipPinned,
++    SourceRowsRead,
+     ActiveRead,
+     GenerationRead,
+     BeforePublish,
+@@ -314,33 +327,45 @@ pub fn build_observed(
+     let active = m.generations.last().ok_or_else(invalid)?;
+     let mut attempt_count = 0usize;
+     let mut session_count = 0usize;
+-    let active_source = source(root, active, &m.binding, flag, &mut |row| {
+-        match &row {
+-            Observation::Attempt { .. } => {
+-                attempt_count += 1;
+-                if attempt_count > limits.attempts {
+-                    return Err(Box::new(Failure::Capacity("attempts")));
++    let active_source = source(
++        root,
++        active,
++        &m.binding,
++        flag,
++        &mut |row| {
++            match &row {
++                Observation::Attempt { .. } => {
++                    attempt_count += 1;
++                    if attempt_count > limits.attempts {
++                        return Err(Box::new(Failure::Capacity("attempts")));
++                    }
+                 }
+-            }
+-            Observation::Session { .. } => {
+-                session_count += 1;
+-                if session_count > limits.sessions {
+-                    return Err(Box::new(Failure::Capacity("sessions")));
++                Observation::Session { .. } => {
++                    session_count += 1;
++                    if session_count > limits.sessions {
++                        return Err(Box::new(Failure::Capacity("sessions")));
++                    }
+                 }
+             }
+-        }
+-        budget.add(cost(&row)?)?;
+-        active_rows.push(row);
+-        Ok(())
+-    })?;
++            budget.add(cost(&row)?)?;
++            active_rows.push(row);
++            Ok(())
++        },
++        hook,
++    )?;
+     hook(Boundary::ActiveRead)?;
+     let mut aggregate = Aggregate::new(limits);
+     let mut sources = Vec::new();
+     budget.add(serde_json::to_vec(&active_source)?.len() + 1024)?;
+     for g in &m.generations[..m.generations.len() - 1] {
+-        let sampled = source(root, g, &m.binding, flag, &mut |row| {
+-            aggregate.add(row, &mut budget)
+-        })?;
++        let sampled = source(
++            root,
++            g,
++            &m.binding,
++            flag,
++            &mut |row| aggregate.add(row, &mut budget),
++            hook,
++        )?;
+         budget.add(serde_json::to_vec(&sampled)?.len() + 1024)?;
+         sources.push(sampled);
+         hook(Boundary::GenerationRead)?;
+@@ -373,6 +398,18 @@ pub fn build_observed(
+     })
+ }
+ 
++fn source_busy(error: &(dyn std::error::Error + Send + Sync + 'static)) -> bool {
++    error.is::<operations::projection::SourceBusy>()
++        || matches!(
++            error.downcast_ref::<fs4::TryLockError>(),
++            Some(fs4::TryLockError::WouldBlock)
++        )
++        || error
++            .downcast_ref::<std::io::Error>()
++            .is_some_and(|e| e.kind() == std::io::ErrorKind::WouldBlock)
++        || matches!(error.downcast_ref::<rusqlite::Error>(),Some(rusqlite::Error::SqliteFailure(e,_)) if matches!(e.code,rusqlite::ErrorCode::DatabaseBusy|rusqlite::ErrorCode::DatabaseLocked))
++}
++
+ /// Published memory only. A prior result stays explicitly associated with its
+ /// original job/snapshot while a new refresh runs, fails or is cancelled.
+ #[derive(Debug, Clone, Serialize)]
+@@ -480,6 +517,9 @@ impl Manager {
+                                     "conflicting cumulative observations".into()
+                                 }
+                                 Some(Failure::Overflow) => "counter overflow".into(),
++                                _ if source_busy(error.as_ref()) => {
++                                    "source busy or in use; retry refresh".into()
++                                }
+                                 _ => "source invalid or unavailable".into(),
+                             });
+                         }
+diff --git a/tests/evidence_operations_collection.rs b/tests/evidence_operations_collection.rs
+index 0b8ede9..ee41b49 100644
+--- a/tests/evidence_operations_collection.rs
++++ b/tests/evidence_operations_collection.rs
+@@ -88,6 +88,10 @@ fn adoption_rotation_and_history_preserve_bytes_scope_and_worker_history() {
+     active.check_binding(&f.spool, None).unwrap();
+     let snapshot = active.snapshot().unwrap();
+     assert_eq!(snapshot.observed, 0);
++    assert_eq!(
++        snapshot.active_generation.as_deref(),
++        Some(first.active.as_str())
++    );
+     assert_eq!(snapshot.worker.unwrap().telemetry_failures, 7);
+     assert_eq!(snapshot.journal.reserve_bytes, 262144);
+     active.record(&health(2)).unwrap();
+diff --git a/tests/evidence_operations_overview.rs b/tests/evidence_operations_overview.rs
+index c4e168a..6558a2d 100644
+--- a/tests/evidence_operations_overview.rs
++++ b/tests/evidence_operations_overview.rs
+@@ -148,6 +148,219 @@ fn cumulative_rows_are_deduplicated_without_rewriting_sources() {
+     let json = serde_json::to_value(&a).unwrap();
+     assert_eq!(json["totals"]["observed"], "3");
+ }
++
++/// Regression derived from the cold review's PO1: parsing a large active
++/// rollback journal must not hold its SQLite reader lock across every row.
++#[test]
++fn active_snapshot_parsing_does_not_exclude_health_writes() {
++    let f = Fixture::new();
++    let mut conn = sql(&f.active());
++    let tx = conn.transaction().unwrap();
++    {
++        let mut insert = tx
++            .prepare("INSERT INTO attempts VALUES(?,?,?,?,?,?)")
++            .unwrap();
++        for n in 1000..41000u64 {
++            let mut h = health(3);
++            h.attempt = format!("{n:064x}");
++            insert
++                .execute(rusqlite::params![
++                    h.attempt,
++                    1,
++                    3,
++                    2,
++                    1,
++                    serde_json::to_string(&h).unwrap()
++                ])
++                .unwrap();
++        }
++    }
++    tx.commit().unwrap();
++    drop(conn);
++    let mut writer = Journal::open(&f.root).unwrap();
++    let root = f.root.clone();
++    let (started, ready) = mpsc::sync_channel(1);
++    let builder = std::thread::spawn(move || {
++        overview::build_observed(
++            &root,
++            &AtomicBool::new(false),
++            Limits::default(),
++            &mut |b| {
++                if b == Boundary::MembershipPinned {
++                    started.send(()).unwrap();
++                }
++                Ok(())
++            },
++        )
++    });
++    ready.recv_timeout(Duration::from_secs(5)).unwrap();
++    let mut failures = Vec::new();
++    for n in 500000..500100u64 {
++        let mut h = health(1);
++        h.attempt = format!("{n:064x}");
++        if let Err(e) = writer.record(&h) {
++            failures.push(e.to_string());
++        }
++    }
++    let sampled = builder.join().unwrap().unwrap();
++    assert!(sampled.totals.attempts >= 40001);
++    assert!(
++        failures.is_empty(),
++        "overview row scan excluded the health writer: {failures:?}"
++    );
++}
++
++#[test]
++fn sealed_change_after_row_scan_is_not_published() {
++    let f = Fixture::new();
++    let sealed = f.path(&f.generations().generations[0].id);
++    let mut scans = 0;
++    let result = overview::build_observed(
++        &f.root,
++        &AtomicBool::new(false),
++        Limits::default(),
++        &mut |b| {
++            if b == Boundary::SourceRowsRead {
++                scans += 1;
++                if scans == 2 {
++                    sql(&sealed)
++                        .execute("UPDATE sessions SET updated=updated+1", [])
++                        .unwrap();
++                }
++            }
++            Ok(())
++        },
++    );
++    assert_eq!(scans, 2, "must reach the post-read sealed hash fence");
++    assert!(
++        result.is_err(),
++        "a changed sealed source cannot be published from its earlier hash"
++    );
++}
++
++#[test]
++fn ignored_sqlite_sidecars_and_invalid_unique_health_rows_refuse() {
++    let f = Fixture::new();
++    let sealed = f.path(&f.generations().generations[0].id);
++    std::fs::write(format!("{}-wal", sealed.display()), []).unwrap();
++    assert!(
++        overview::build(&f.root, &AtomicBool::new(false), Limits::default()).is_err(),
++        "even an empty sealed WAL is outside the declared source"
++    );
++    for mutation in ["ack", "gap", "arithmetic"] {
++        let f = Fixture::new();
++        let mut h = health(3);
++        h.attempt = format!("{:064x}", 99);
++        match mutation {
++            "ack" => h.remote_acknowledged = true,
++            "gap" => h.recording_gap = false,
++            _ => h.observed = 4,
++        }
++        sql(&f.active())
++            .execute(
++                "INSERT INTO attempts VALUES(?,?,?,?,?,?)",
++                rusqlite::params![
++                    h.attempt,
++                    1,
++                    h.observed as i64,
++                    h.locally_queued as i64,
++                    h.unconfirmed as i64,
++                    serde_json::to_string(&h).unwrap()
++                ],
++            )
++            .unwrap();
++        assert!(
++            overview::build(&f.root, &AtomicBool::new(false), Limits::default()).is_err(),
++            "unique malformed health row: {mutation}"
++        );
++    }
++}
++
++#[test]
++fn historical_worker_is_hashed_but_not_promoted_to_current_health() {
++    let f = Fixture::new();
++    let sealed = f.path(&f.generations().generations[0].id);
++    let mut worker = kan::evidence_operations::WorkerStatus {
++        sampled_at: 1,
++        state: "idle".into(),
++        queue: None,
++        nonempty_since: None,
++        last_ack_at: None,
++        last_ack_position: None,
++        consecutive_failures: 99,
++        retry_seconds: 0,
++        telemetry_failures: 99,
++    };
++    sql(&sealed)
++        .execute(
++            "INSERT INTO worker VALUES(1,?)",
++            [serde_json::to_string(&worker).unwrap()],
++        )
++        .unwrap();
++    f.reseal(0);
++    worker.consecutive_failures = 2;
++    worker.telemetry_failures = 2;
++    Journal::open(&f.root)
++        .unwrap()
++        .save_worker(&worker)
++        .unwrap();
++    let first = f.build();
++    assert!(first.sources[0].snapshot.worker.is_none());
++    assert_eq!(
++        first
++            .sources
++            .last()
++            .unwrap()
++            .snapshot
++            .worker
++            .as_ref()
++            .unwrap()
++            .consecutive_failures,
++        2
++    );
++    worker.consecutive_failures = 100;
++    sql(&sealed)
++        .execute(
++            "UPDATE worker SET body=?",
++            [serde_json::to_string(&worker).unwrap()],
++        )
++        .unwrap();
++    f.reseal(0);
++    assert_ne!(
++        first.sources[0].snapshot.digest,
++        f.build().sources[0].snapshot.digest,
++        "omitted historical worker still belongs to its snapshot digest"
++    );
++}
++
++#[test]
++fn busy_sources_are_distinguished_from_invalid_history() {
++    let f = Fixture::new();
++    let manager = Manager::new();
++    manager.refresh(f.root.clone()).unwrap();
++    let first = finish(&manager);
++    assert_eq!(first.state, "completed");
++    let lock = std::fs::File::open(f.root.join("LOCK")).unwrap();
++    fs4::FileExt::try_lock(&lock).unwrap();
++    manager.refresh(f.root.clone()).unwrap();
++    let busy = finish(&manager);
++    assert_eq!(busy.state, "failed");
++    assert!(busy.reason.unwrap().contains("busy or in use"));
++    assert_eq!(busy.last_job, first.last_job);
++    drop(lock);
++    let conn = sql(&f.active());
++    conn.execute_batch(
++        "PRAGMA locking_mode=EXCLUSIVE; BEGIN EXCLUSIVE; SELECT count(*) FROM attempts;",
++    )
++    .unwrap();
++    manager.refresh(f.root.clone()).unwrap();
++    let busy = finish(&manager);
++    assert_eq!(busy.state, "failed");
++    assert!(busy.reason.unwrap().contains("busy or in use"));
++    drop(conn);
++    manager.refresh(f.root.clone()).unwrap();
++    assert_eq!(finish(&manager).state, "completed");
++}
+ #[test]
+ fn intermediate_regressions_conflicting_observers_and_terminals_refuse_publication() {
+     for defect in [
+@@ -521,6 +734,60 @@ async fn dashboard_overview_requires_auth_and_cannot_mutate_owner_history() {
+     let _ = server.await;
+ }
+ 
++#[tokio::test]
++async fn overview_http_connection_limit_releases_slots_after_requests() {
++    use tokio::io::{AsyncReadExt, AsyncWriteExt};
++    let f = Fixture::new();
++    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
++    let addr = listener.local_addr().unwrap();
++    let root = f.root.clone();
++    let token = "synthetic-overview-token-more-than-32";
++    let server =
++        tokio::spawn(
++            async move { kan::evidence_dashboard::serve(listener, token.into(), root).await },
++        );
++    let prefix =
++        format!("GET /api/overview HTTP/1.1\r\nHost: {addr}\r\nAuthorization: Bearer {token}\r\n");
++    let mut held = Vec::new();
++    for _ in 0..8 {
++        let mut stream = tokio::net::TcpStream::connect(addr).await.unwrap();
++        stream.write_all(prefix.as_bytes()).await.unwrap();
++        held.push(stream);
++    }
++    // Accept order is FIFO; the first eight incomplete requests retain permits.
++    let mut extra = tokio::net::TcpStream::connect(addr).await.unwrap();
++    let mut byte = [0u8];
++    let refusal = tokio::time::timeout(Duration::from_secs(2), extra.read(&mut byte)).await;
++    assert!(
++        matches!(refusal, Ok(Ok(0)) | Ok(Err(_))),
++        "ninth connection must be closed before header timeout: {refusal:?}"
++    );
++    drop(extra);
++    for mut stream in held {
++        stream.write_all(b"\r\n").await.unwrap();
++        let mut response = Vec::new();
++        tokio::time::timeout(Duration::from_secs(2), stream.read_to_end(&mut response))
++            .await
++            .unwrap()
++            .unwrap();
++        assert!(response.starts_with(b"HTTP/1.1 200"));
++    }
++    let client = reqwest::Client::builder().no_proxy().build().unwrap();
++    let response = client
++        .get(format!("http://{addr}/api/overview"))
++        .bearer_auth(token)
++        .send()
++        .await
++        .unwrap();
++    assert_eq!(
++        response.status(),
++        200,
++        "completed requests release connection permits"
++    );
++    server.abort();
++    let _ = server.await;
++}
++
+ #[tokio::test]
+ #[ignore = "manual synthetic browser fixture; explicit output path required"]
+ async fn overview_browser_fixture() {
+diff --git a/tests/evidence_overview_review_regressions.rs b/tests/evidence_overview_review_regressions.rs
+new file mode 100644
+index 0000000..6fd1960
+--- /dev/null
++++ b/tests/evidence_overview_review_regressions.rs
+@@ -0,0 +1,542 @@
++#![cfg(feature = "v2-crypto")]
++//! Regressions incorporated from the independent Opus review of 67c1263.
++//! Original probes/report are retained unchanged under .design/reviews/.
++//! The large-scan timing cases are replaced by the bounded writer regression
++//! in evidence_operations_overview.rs; the new image allowance changes capacity.
++use kan::{
++    evidence_capture::{Health, Observer, Outcome},
++    evidence_operations::Journal,
++    evidence_operations_collection::{
++        self as collection,
++        overview::{self, Boundary, Failure, Limits, Manager},
++    },
++    evidence_spool::Spool,
++    sign::Identity,
++};
++use sha2::{Digest, Sha256};
++use std::{
++    collections::BTreeMap,
++    io::{Read, Write},
++    path::{Path, PathBuf},
++    sync::{atomic::AtomicBool, mpsc},
++    time::{Duration, Instant},
++};
++
++fn h(attempt: u64, n: u64) -> Health {
++    Health {
++        attempt: format!("{attempt:064x}"),
++        observer: Observer::Collector,
++        observed: n,
++        locally_queued: n.saturating_sub(1),
++        unconfirmed: u64::from(n > 0),
++        recording_gap: n > 0,
++        remote_acknowledged: false,
++        status: Some(200),
++        outcome: Some(Outcome::Completed),
++    }
++}
++fn sql(path: &Path) -> rusqlite::Connection {
++    rusqlite::Connection::open(path).unwrap()
++}
++fn sha(path: &Path) -> String {
++    kan::evidence_service::hex(&Sha256::digest(std::fs::read(path).unwrap()))
++}
++struct Fx {
++    _dir: tempfile::TempDir,
++    root: PathBuf,
++}
++impl Fx {
++    /// Three generations: g0 sealed (attempt 1 obs 1, session s dropped 2),
++    /// g1 sealed (attempt 1 obs 2, session s 5), active (attempt 1 obs 3, s 8 clean).
++    fn new() -> Self {
++        let dir = tempfile::tempdir().unwrap();
++        let source = dir.path().join("health");
++        let root = dir.path().join("collection");
++        let spool = dir.path().join("queue");
++        let id = Identity::generate();
++        Spool::create(
++            &spool,
++            &format!("{:064x}", 3),
++            id.did().as_str(),
++            id.did().as_str(),
++            1 << 20,
++        )
++        .unwrap();
++        Journal::create(&source, &spool)
++            .unwrap()
++            .record(&h(1, 1))
++            .unwrap();
++        sql(&source)
++            .execute("INSERT INTO sessions VALUES('s',1,2,0)", [])
++            .unwrap();
++        collection::adopt(&source, &root).unwrap();
++        let f = Self { _dir: dir, root };
++        Journal::open(&f.root).unwrap().record(&h(1, 2)).unwrap();
++        sql(&f.active())
++            .execute("INSERT INTO sessions VALUES('s',1,5,0)", [])
++            .unwrap();
++        collection::rotate(&f.root).unwrap();
++        Journal::open(&f.root).unwrap().record(&h(1, 3)).unwrap();
++        sql(&f.active())
++            .execute("INSERT INTO sessions VALUES('s',1,8,1)", [])
++            .unwrap();
++        f
++    }
++    fn gens(&self) -> collection::Generations {
++        collection::generations(&self.root, 0, 100).unwrap()
++    }
++    fn path(&self, id: &str) -> PathBuf {
++        self.root.join(format!("generation-{id}.sqlite"))
++    }
++    fn active(&self) -> PathBuf {
++        self.path(&self.gens().active)
++    }
++    fn sealed(&self, i: usize) -> PathBuf {
++        self.path(&self.gens().generations[i].id)
++    }
++    fn reseal(&self, index: usize) {
++        let path = self.root.join("manifest.json");
++        let mut m: serde_json::Value =
++            serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
++        let id = m["generations"][index]["id"].as_str().unwrap().to_owned();
++        m["generations"][index]["sealed_sha256"] = sha(&self.path(&id)).into();
++        std::fs::write(path, serde_json::to_vec(&m).unwrap()).unwrap();
++    }
++    /// Directory state: name -> (len, mode, mtime, sha256). Detects creation of
++    /// sidecars/lock files and any byte or metadata change.
++    fn tree(&self) -> BTreeMap<String, (u64, u32, i128, String)> {
++        use std::os::unix::fs::PermissionsExt;
++        let mut out = BTreeMap::new();
++        for e in std::fs::read_dir(&self.root).unwrap() {
++            let e = e.unwrap();
++            let m = e.metadata().unwrap();
++            let mt = m
++                .modified()
++                .unwrap()
++                .duration_since(std::time::UNIX_EPOCH)
++                .unwrap()
++                .as_nanos() as i128;
++            out.insert(
++                e.file_name().to_string_lossy().into_owned(),
++                (m.len(), m.permissions().mode(), mt, sha(&e.path())),
++            );
++        }
++        out
++    }
++    fn build(&self) -> Result<overview::Overview, Box<dyn std::error::Error + Send + Sync>> {
++        overview::build(&self.root, &AtomicBool::new(false), Limits::default())
++    }
++}
++fn class(e: &(dyn std::error::Error + Send + Sync + 'static)) -> &'static str {
++    match e.downcast_ref::<Failure>() {
++        Some(Failure::Conflict) => "conflict",
++        Some(Failure::Overflow) => "overflow",
++        Some(Failure::Cancelled) => "cancelled",
++        Some(Failure::Capacity(_)) => "capacity",
++        None => "invalid",
++    }
++}
++
++/// PO2: a build (direct, Manager, and CLI) creates, deletes or changes no file
++/// in the collection directory, including -journal/-shm/.lock sidecars and mtimes.
++#[test]
++fn po2_build_changes_no_collection_file_or_metadata() {
++    let f = Fx::new();
++    let before = f.tree();
++    let a = f.build().unwrap();
++    assert_eq!(a.totals.attempts, 1);
++    let m = Manager::new();
++    m.refresh(f.root.clone()).unwrap();
++    let deadline = Instant::now() + Duration::from_secs(10);
++    while ["building", "cancelling"].contains(&m.status().state) {
++        assert!(Instant::now() < deadline);
++        std::thread::sleep(Duration::from_millis(5));
++    }
++    assert_eq!(m.status().state, "completed");
++    let out = std::process::Command::new(env!("CARGO_BIN_EXE_kan-v2"))
++        .arg("ops-overview")
++        .arg(&f.root)
++        .output()
++        .unwrap();
++    assert!(out.status.success());
++    assert_eq!(before, f.tree(), "collection directory changed by overview");
++}
++
++/// PO3: a missing generation lifetime-lock file refuses and is NOT created by
++/// the read projection (REQ-5: no new files).
++#[test]
++fn po3_missing_generation_lock_refuses_without_creating_it() {
++    let f = Fx::new();
++    let mut lock = f.sealed(0).into_os_string();
++    lock.push(".lock");
++    let lock = PathBuf::from(lock);
++    std::fs::remove_file(&lock).unwrap();
++    let r = f.build();
++    assert!(!lock.exists(), "overview created a generation lock file");
++    assert!(
++        r.is_err(),
++        "overview accepted a generation without its lock"
++    );
++}
++
++/// PO4: hostile rows in the ACTIVE generation (no sealed hash protects it) are
++/// refused, never quietly filtered or summed.
++#[test]
++fn po4_hostile_active_rows_refuse_publication() {
++    let cases: &[(&str, &str)] = &[
++        // Consistent summary columns, but the whole observation is invalid.
++        ("arith", "UPDATE attempts SET observed=5,queued=1,unconfirmed=1,body=json_set(body,'$.observed',5,'$.locally_queued',1,'$.unconfirmed',1)"),
++        ("acked", "UPDATE attempts SET body=json_set(body,'$.remote_acknowledged',json('true'))"),
++        ("unknown-field", "UPDATE attempts SET body=json_set(body,'$.extra',1)"),
++        ("id-mismatch", "UPDATE attempts SET body=json_set(body,'$.attempt','ff'||substr(attempt,3))"),
++        ("blob-body", "UPDATE attempts SET body=CAST(body AS BLOB)"),
++        ("negative-updated", "UPDATE attempts SET updated=-1"),
++        ("session-empty", "UPDATE sessions SET id=''"),
++        ("session-clean-2", "UPDATE sessions SET clean=2"),
++        ("session-negative", "UPDATE sessions SET dropped=-1"),
++        ("session-long", "UPDATE sessions SET id=hex(zeroblob(2049))"),
++        ("worker-malformed", "INSERT INTO worker VALUES(1,'{not json')"),
++        ("binding-foreign", "UPDATE binding SET scope='foreign'"),
++    ];
++    for (name, stmt) in cases {
++        let f = Fx::new();
++        sql(&f.active()).execute(stmt, []).unwrap();
++        let r = f.build();
++        assert!(r.is_err(), "accepted hostile active row: {name}");
++        eprintln!("PO4 {name}: {}", class(r.unwrap_err().as_ref()));
++    }
++}
++
++/// PO5: precise failure classes (the author's matrix asserts only is_err).
++#[test]
++fn po5_conflicts_are_classified_and_manager_labels_them() {
++    for (name, expect) in [
++        ("regression", "conflict"),
++        ("observer", "conflict"),
++        ("outcome", "conflict"),
++        ("session-reopen", "conflict"),
++        ("session-drop", "conflict"),
++    ] {
++        let f = Fx::new();
++        let mid = f.sealed(1);
++        match name {
++            "regression" => {
++                let x = h(1, 0);
++                sql(&mid)
++                    .execute(
++                        "UPDATE attempts SET observed=0,queued=0,unconfirmed=0,body=?",
++                        [serde_json::to_string(&x).unwrap()],
++                    )
++                    .unwrap();
++            }
++            "observer" => {
++                let mut x = h(1, 2);
++                x.observer = Observer::Gateway;
++                sql(&mid)
++                    .execute(
++                        "UPDATE attempts SET body=?",
++                        [serde_json::to_string(&x).unwrap()],
++                    )
++                    .unwrap();
++            }
++            "outcome" => {
++                let mut x = h(1, 2);
++                x.outcome = Some(Outcome::OutcomeUnknown);
++                sql(&mid)
++                    .execute(
++                        "UPDATE attempts SET body=?",
++                        [serde_json::to_string(&x).unwrap()],
++                    )
++                    .unwrap();
++            }
++            "session-reopen" => {
++                // Close the session in g0 so that g1's unclean row reopens it.
++                sql(&f.sealed(0))
++                    .execute("UPDATE sessions SET clean=1", [])
++                    .unwrap();
++                f.reseal(0);
++            }
++            "session-drop" => {
++                sql(&mid)
++                    .execute("UPDATE sessions SET dropped=1", [])
++                    .unwrap();
++            }
++            _ => unreachable!(),
++        }
++        f.reseal(1);
++        let e = f.build().expect_err(name);
++        assert_eq!(class(e.as_ref()), expect, "{name}");
++        let m = Manager::new();
++        m.refresh(f.root.clone()).unwrap();
++        let deadline = Instant::now() + Duration::from_secs(10);
++        while ["building", "cancelling"].contains(&m.status().state) {
++            assert!(Instant::now() < deadline);
++            std::thread::sleep(Duration::from_millis(5));
++        }
++        let s = m.status();
++        assert_eq!(s.state, "failed", "{name}");
++        assert_eq!(
++            s.reason.as_deref(),
++            Some("conflicting cumulative observations"),
++            "{name}"
++        );
++        assert!(s.last.is_none(), "{name}: published a total");
++    }
++}
++
++/// PO6: whole-row selection, not component maxima: a later row that raises one
++/// counter while lowering another refuses rather than synthesizing a maximum.
++#[test]
++fn po6_incomparable_rows_refuse_instead_of_componentwise_max() {
++    let f = Fx::new();
++    // g1: observed 2 = queued 1 + unconfirmed 1. Active: observed 3 = queued 3 + unconfirmed 0.
++    let mut x = h(1, 3);
++    x.locally_queued = 3;
++    x.unconfirmed = 0;
++    x.recording_gap = false;
++    sql(&f.active())
++        .execute(
++            "UPDATE attempts SET observed=3,queued=3,unconfirmed=0,body=?",
++            [serde_json::to_string(&x).unwrap()],
++        )
++        .unwrap();
++    let e = f.build().unwrap_err();
++    assert_eq!(class(e.as_ref()), "conflict");
++}
++
++/// PO7: exact u64 totals above i64 / 2^53 serialize as decimal strings.
++#[test]
++fn po7_u64_totals_beyond_i64_are_exact_decimal_strings() {
++    let f = Fx::new();
++    let mut j = Journal::open(&f.root).unwrap();
++    for n in 2..=3u64 {
++        let mut x = h(n, 0);
++        x.observed = i64::MAX as u64 - if n == 3 { 10 } else { 0 };
++        x.locally_queued = x.observed;
++        x.unconfirmed = 0;
++        x.recording_gap = false;
++        j.record(&x).unwrap();
++    }
++    drop(j);
++    let o = f.build().unwrap();
++    let v = serde_json::to_value(&o).unwrap();
++    // (2^63-1) + (2^63-11) + 3 = 2^64 - 9: above i64::MAX and 2^53, below u64::MAX.
++    assert_eq!(v["totals"]["observed"], "18446744073709551607");
++}
++
++/// PO8: one-build admission across cancel/refresh: refresh while a cancelled
++/// build is still running returns the same job and never starts a second build.
++#[test]
++fn po8_cancel_then_refresh_does_not_start_concurrent_build() {
++    let f = Fx::new();
++    let m = Manager::new();
++    let (entered, ready) = mpsc::channel();
++    let (release, wait) = mpsc::channel::<()>();
++    let started = m
++        .refresh_observed(f.root.clone(), Limits::default(), move |b| {
++            if b == Boundary::ActiveRead {
++                entered.send(()).unwrap();
++                wait.recv_timeout(Duration::from_secs(10)).unwrap();
++            }
++            Ok(())
++        })
++        .unwrap();
++    ready.recv_timeout(Duration::from_secs(10)).unwrap();
++    assert_eq!(m.cancel().state, "cancelling");
++    let again = m.refresh(f.root.clone()).unwrap();
++    assert_eq!(
++        again.job, started.job,
++        "second build admitted while first still running"
++    );
++    assert_eq!(again.state, "cancelling");
++    release.send(()).unwrap();
++    let deadline = Instant::now() + Duration::from_secs(10);
++    while ["building", "cancelling"].contains(&m.status().state) {
++        assert!(Instant::now() < deadline);
++        std::thread::sleep(Duration::from_millis(5));
++    }
++    assert_eq!(m.status().state, "cancelled");
++    assert!(m.status().last.is_none());
++    let next = m.refresh(f.root.clone()).unwrap();
++    assert_eq!(next.job, started.job + 1);
++}
++
++fn raw(addr: std::net::SocketAddr, request: String) -> (u16, String) {
++    let mut s = std::net::TcpStream::connect(addr).unwrap();
++    s.set_read_timeout(Some(Duration::from_secs(10))).unwrap();
++    s.write_all(request.as_bytes()).unwrap();
++    let mut out = Vec::new();
++    let _ = s.read_to_end(&mut out);
++    let text = String::from_utf8_lossy(&out).into_owned();
++    let code = text
++        .split_whitespace()
++        .nth(1)
++        .and_then(|c| c.parse().ok())
++        .unwrap_or(0);
++    (code, text)
++}
++
++/// PO9: hostile HTTP framing/method/auth against the overview routes.
++#[test]
++fn po9_dashboard_overview_routes_refuse_hostile_requests() {
++    let f = Fx::new();
++    let before = f.tree();
++    let token = "reviewer-synthetic-token-0123456789abcdef";
++    let rt = tokio::runtime::Builder::new_multi_thread()
++        .worker_threads(2)
++        .enable_all()
++        .build()
++        .unwrap();
++    let listener = rt
++        .block_on(tokio::net::TcpListener::bind("127.0.0.1:0"))
++        .unwrap();
++    let addr = listener.local_addr().unwrap();
++    let root = f.root.clone();
++    let server =
++        rt.spawn(async move { kan::evidence_dashboard::serve(listener, token.into(), root).await });
++    let host = addr.to_string();
++    let auth = format!("Authorization: Bearer {token}\r\n");
++    let req = |line: &str, extra: &str| {
++        format!("{line} HTTP/1.1\r\nHost: {host}\r\n{extra}Connection: close\r\n\r\n")
++    };
++    let cases: Vec<(&str, String, u16)> = vec![
++        ("no-auth-get", req("GET /api/overview", ""), 401),
++        ("no-auth-post-body", req("POST /api/overview/refresh", "Content-Length: 6\r\n").replace("\r\n\r\n", "\r\n\r\nrotate"), 401),
++        ("lowercase-bearer", req("GET /api/overview", &format!("Authorization: bearer {token}\r\n")), 401),
++        ("double-auth", req("GET /api/overview", &format!("{auth}{auth}")), 401),
++        ("wrong-host", format!("GET /api/overview HTTP/1.1\r\nHost: localhost:{}\r\n{auth}Connection: close\r\n\r\n", addr.port()), 403),
++        ("foreign-origin", req("POST /api/overview/refresh", &format!("{auth}Origin: http://evil.example\r\nContent-Length: 0\r\n")), 403),
++        ("post-status-route", req("POST /api/overview", &format!("{auth}Content-Length: 0\r\n")), 405),
++        ("put-refresh", req("PUT /api/overview/refresh", &format!("{auth}Content-Length: 0\r\n")), 405),
++        ("query-refresh", req("POST /api/overview/refresh?rotate=1", &format!("{auth}Content-Length: 0\r\n")), 405),
++        ("slash-refresh", req("POST /api/overview/refresh/", &format!("{auth}Content-Length: 0\r\n")), 405),
++        ("get-cancel", req("GET /api/overview/cancel", &auth), 405),
++        ("chunked-empty", req("POST /api/overview/refresh", &format!("{auth}Transfer-Encoding: chunked\r\n")).replace("\r\n\r\n", "\r\n\r\n0\r\n\r\n"), 400),
++        ("body", req("POST /api/overview/refresh", &format!("{auth}Content-Length: 6\r\n")).replace("\r\n\r\n", "\r\n\r\nrotate"), 400),
++        ("cancel-body", req("POST /api/overview/cancel", &format!("{auth}Content-Length: 2\r\n")).replace("\r\n\r\n", "\r\n\r\n{}"), 400),
++        ("status-ok", req("GET /api/overview", &auth), 200),
++    ];
++    let mut failures = Vec::new();
++    for (name, request, want) in &cases {
++        let (got, text) = raw(addr, request.clone());
++        eprintln!("PO9 {name}: {got}");
++        if got != *want {
++            failures.push(format!(
++                "{name}: want {want} got {got}: {}",
++                text.lines().next().unwrap_or("")
++            ));
++        }
++    }
++    // A valid refresh, then poll to completion with decimal-string totals.
++    let (code, _) = raw(
++        addr,
++        req(
++            "POST /api/overview/refresh",
++            &format!("{auth}Content-Length: 0\r\n"),
++        ),
++    );
++    assert_eq!(code, 200);
++    let deadline = Instant::now() + Duration::from_secs(10);
++    let body = loop {
++        let (_, text) = raw(addr, req("GET /api/overview", &auth));
++        let body = text.split("\r\n\r\n").nth(1).unwrap_or("").to_owned();
++        let v: serde_json::Value = serde_json::from_str(&body).unwrap_or_default();
++        if v["state"] == "completed" {
++            break v;
++        }
++        assert!(Instant::now() < deadline, "{body}");
++        std::thread::sleep(Duration::from_millis(10));
++    };
++    assert_eq!(body["last"]["totals"]["observed"], "3");
++    assert_eq!(body["last"]["totals"]["telemetry_dropped_lower_bound"], "8");
++    assert_eq!(body["last"]["capture_completeness"], "unknown");
++    // Published status survives removal of the manifest: memory-only polling.
++    let manifest = f.root.join("manifest.json");
++    let saved = std::fs::read(&manifest).unwrap();
++    std::fs::remove_file(&manifest).unwrap();
++    let (code, text) = raw(addr, req("GET /api/overview", &auth));
++    std::fs::write(&manifest, &saved).unwrap();
++    {
++        use std::os::unix::fs::PermissionsExt;
++        std::fs::set_permissions(&manifest, std::fs::Permissions::from_mode(0o600)).unwrap();
++    }
++    assert_eq!(code, 200, "{text}");
++    assert!(text.contains("\"state\":\"completed\""));
++    server.abort();
++    let _ = rt.block_on(server);
++    rt.shutdown_timeout(Duration::from_secs(5));
++    let mut after = f.tree();
++    let mut b = before.clone();
++    // The manifest was rewritten byte-identically by this probe; compare content only.
++    for t in [&mut after, &mut b] {
++        if let Some(e) = t.get_mut("manifest.json") {
++            e.2 = 0;
++        }
++    }
++    assert_eq!(b, after, "dashboard overview changed collection files");
++    assert!(failures.is_empty(), "{failures:#?}");
++}
++
++/// PO10: telemetry lower-bound and session dedup with overflow on sessions.
++#[test]
++fn po10_session_counter_overflow_refuses() {
++    let f = Fx::new();
++    let c = sql(&f.active());
++    for id in ["x", "y", "z"] {
++        c.execute(
++            "INSERT INTO sessions VALUES(?,1,?,0)",
++            rusqlite::params![id, i64::MAX],
++        )
++        .unwrap();
++    }
++    drop(c);
++    let e = f.build().unwrap_err();
++    assert_eq!(class(e.as_ref()), "overflow");
++}
++
++/// PO4b: an invalid whole observation for an attempt that appears ONLY in the
++/// active generation (no duplicate, so dominance() never sees it) must still be
++/// refused by row validation, not summed. Isolates the scan's valid_health check.
++#[test]
++fn po4b_invalid_unique_active_attempt_is_refused_not_summed() {
++    for (name, mutate) in [
++        (
++            "arith",
++            Box::new(|x: &mut Health| {
++                x.observed = 5;
++                x.locally_queued = 1;
++                x.unconfirmed = 1;
++            }) as Box<dyn Fn(&mut Health)>,
++        ),
++        (
++            "acked",
++            Box::new(|x: &mut Health| x.remote_acknowledged = true),
++        ),
++        (
++            "gap-flag",
++            Box::new(|x: &mut Health| x.recording_gap = false),
++        ),
++    ] {
++        let f = Fx::new();
++        let mut x = h(0xdead, 2);
++        mutate(&mut x);
++        sql(&f.active())
++            .execute(
++                "INSERT INTO attempts VALUES(?,1,?,?,?,?)",
++                rusqlite::params![
++                    x.attempt,
++                    x.observed as i64,
++                    x.locally_queued as i64,
++                    x.unconfirmed as i64,
++                    serde_json::to_string(&x).unwrap()
++                ],
++            )
++            .unwrap();
++        let r = f.build();
++        assert!(
++            r.is_err(),
++            "summed an invalid unique observation: {name} -> {:?}",
++            r.map(|o| o.totals)
++        );
++    }
++}
+diff --git a/tests/operations_ui.test.cjs b/tests/operations_ui.test.cjs
+index bc8a33f..ad8b098 100644
+--- a/tests/operations_ui.test.cjs
++++ b/tests/operations_ui.test.cjs
+@@ -32,3 +32,11 @@ test('overview refresh is explicit authenticated POST with exact large counters'
+ test('lock clears overview and prevents a late result from repainting',async()=>{const u=ui();u.login();await u.respond(snapshot());u.node('overview-load').events.click();await u.respond(overview());u.node('overview-build').events.click();u.node('lock').events.click();assert.equal(u.node('overview-summary').textContent,'');assert.equal(u.node('overview-sources').children.length,0);await u.respond(overview());assert.equal(u.node('overview-summary').textContent,'');assert.equal(u.node('data').hidden,true);});
+ test('failed or limited refresh labels the prior sample explicitly',async()=>{const u=ui();u.login();await u.respond(snapshot());u.node('overview-load').events.click();await u.respond(overview());u.node('overview-build').events.click();const s=overview();s.state='capacity-limited';s.job=2;s.reason='memory bound reached';await u.respond(s);assert.match(u.node('overview-state').textContent,/Prior sample retained/);assert.match(u.node('overview-summary').textContent,/1 distinct attempts/);});
+ test('overview rejects malformed source lists and unsafe numeric counters before rendering',async()=>{for(const change of [s=>s.last.sources.push({...s.last.sources[0]}),s=>s.last.totals.observed=9007199254740992,s=>s.last.sources[0].generation='<script>',s=>s.last.sources[0].sealed_sha256='d'.repeat(64)]){const u=ui();u.login();await u.respond(snapshot());u.node('overview-load').events.click();const s=overview();change(s);await u.respond(s);assert.equal(u.node('overview-sources').children.length,0);assert.match(u.node('overview-state').textContent,/Invalid/);}});
++
++test('build preempts an in-flight overview poll and ignores its stale reply',async()=>{const u=ui();u.login();await u.respond(snapshot());u.node('overview-load').events.click();u.node('overview-build').events.click();assert.ok(u.pending[1], 'build must dispatch while the overview poll is pending');assert.equal(u.pending[1].url,'/api/overview/refresh');await u.respond(overview());assert.equal(u.node('overview-summary').textContent||'','');const s=overview();s.state='building';s.job=2;await u.respond(s);assert.match(u.node('overview-state').textContent,/building/);});
++test('cancel preempts a poll while preserving server action order',async()=>{const u=ui();u.login();await u.respond(snapshot());u.node('overview-build').events.click();const s=overview();s.state='building';s.job=2;await u.respond(s);u.node('overview-load').events.click();u.node('overview-cancel').events.click();assert.equal(u.pending.at(-1).url,'/api/overview/cancel');await u.respond(overview());assert.match(u.node('overview-state').textContent,/building/);s.state='cancelling';await u.respond(s);assert.match(u.node('overview-state').textContent,/cancelling/);});
++test('a second action is queued behind an unfinished action, then dispatched',async()=>{const u=ui();u.login();await u.respond(snapshot());u.node('overview-build').events.click();u.node('overview-cancel').events.click();assert.equal(u.pending.length,1);assert.match(u.node('overview-state').textContent,/queued/);const s=overview();s.state='building';await u.respond(s);assert.equal(u.pending[0].url,'/api/overview/cancel');s.state='cancelled';await u.respond(s);assert.match(u.node('overview-state').textContent,/cancelled/);});
++
++test('cached overview shows its age and becomes visibly superseded after rotation',async()=>{const u=ui();u.login();const status=snapshot();status.active_generation='a'.repeat(32);await u.respond(status);u.node('overview-load').events.click();await u.respond(overview());assert.match(u.node('overview-state').textContent,/Cached sample.*old/);assert.doesNotMatch(u.node('overview-state').textContent,/Superseded/);status.active_generation='d'.repeat(32);u.node('refresh').events.click();await u.respond(status);assert.match(u.node('overview-state').textContent,/Superseded by active generation d+/);});
++test('invalid overview replies label retained totals and restart clears them',async()=>{const u=ui();u.login();await u.respond(snapshot());u.node('overview-load').events.click();await u.respond(overview());u.node('overview-load').events.click();const bad=overview();bad.last.sources=[];await u.respond(bad);assert.match(u.node('overview-state').textContent,/Invalid.*Prior sample retained/);assert.match(u.node('overview-summary').textContent,/1 distinct attempts/);u.node('overview-load').events.click();await u.respond({version:1,state:'unavailable',job:0,reason:null,last_job:null,last:null});assert.equal(u.node('overview-summary').textContent,'');assert.equal(u.node('overview-sources').children.length,0);assert.match(u.node('overview-state').textContent,/unavailable/);});
++test('late overview transport errors cannot repaint after lock',async()=>{const u=ui();u.login();await u.respond(snapshot());u.node('overview-load').events.click();u.node('lock').events.click();await u.respond({},503);assert.equal(u.node('overview-state').textContent,'No overview loaded.');});
+diff --git a/web/operations/app.js b/web/operations/app.js
+index 5a6f584..ecd4b53 100644
+--- a/web/operations/app.js
++++ b/web/operations/app.js
+@@ -87,7 +87,7 @@ function render(s){snapshot=s;const w=s.worker,q=w?.queue;const now=Date.now()/1
+   else if(stale.length||unseen)notice('A health reporter is stale or has no recent sampled heartbeat. Capture coverage is unknown.','warning');
+   else if(!unclosed.length)notice('No active capture reporter is recorded. Capture coverage is unknown.','warning');
+   else notice('Status is current. Capture completion and archive acknowledgment are separate observations.');
+-  rows();
++  rows();if(overviewData)labelOverview();
+ }
+ async function refresh(){if(!token||busy)return;busy=true;const current=generation;const controller=new AbortController();const timeout=setTimeout(()=>controller.abort(),8000);try{const r=await fetch('/api/status',{headers:{Authorization:'Bearer '+token},cache:'no-store',credentials:'omit',redirect:'error',signal:controller.signal});if(!r.ok)throw new Error(r.status===401?'Token rejected. Lock and reconnect.':'Status unavailable. Retained values may be stale.');const s=await r.json();if(s.version!==2||!s.journal)throw new Error('Unsupported status version.');if(current===generation)render(s);}catch(e){if(current!==generation)return;notice(e.name==='AbortError'?'Status request timed out. Retained values may be stale.':e.message,'error');$('updated').textContent='Disconnected · last values retained';}finally{clearTimeout(timeout);busy=false;}}
+ $('connect').addEventListener('submit',e=>{e.preventDefault();generation++;token=$('token').value;$('token').value='';refresh();});
+@@ -95,8 +95,8 @@ $('refresh').addEventListener('click',refresh);$('gaps-only').addEventListener('
+ $('lock').addEventListener('click',()=>{generation++;token='';snapshot=null;clearOverview();attemptButtons.clear();closeInspector();$('search').value='';$('gaps-only').checked=false;$('rows').replaceChildren();for(const id of ['pending','bytes','acked','acktime','gaps','attempts','telemetry','worker','retry','capacity-label','age','journal-state','journal-pages','journal-limits','journal-persistence','journal-scope','coverage-history','sample-count'])$(id).textContent='';$('capacity').value=0;$('journal-capacity').value=0;$('data').hidden=true;$('login').hidden=false;$('lock').hidden=true;$('refresh').disabled=true;$('updated').textContent='Locked';notice('Locked. Enter your token to reconnect.');$('token').focus();});
+ setInterval(()=>{refresh();if(overviewEnabled)loadOverview();},5000);
+ 
+-let overviewEnabled=false,overviewBusy=false,overviewKey='';
+-function clearOverview(){overviewEnabled=false;overviewBusy=false;overviewKey='';$('overview-state').textContent='No overview loaded.';for(const id of ['overview-summary','overview-coverage'])$(id).textContent='';$('overview-sources').replaceChildren();$('overview-cancel').disabled=true;$('overview-build').disabled=false;$('overview-load').disabled=false;}
++let overviewEnabled=false,overviewKey='',overviewRequest=null,overviewSerial=0,overviewQueued='',overviewData=null,overviewError='';
++function clearOverview(){if(overviewRequest)overviewRequest.controller.abort();overviewRequest=null;overviewSerial++;overviewQueued='';overviewData=null;overviewError='';overviewEnabled=false;overviewKey='';$('overview-state').textContent='No overview loaded.';for(const id of ['overview-summary','overview-coverage'])$(id).textContent='';$('overview-sources').replaceChildren();$('overview-cancel').disabled=true;$('overview-build').disabled=false;$('overview-load').disabled=false;}
+ function validateOverview(s){
+  const states=['unavailable','building','cancelling','cancelled','completed','failed','capacity-limited'];
+  if(!s||s.version!==1||!states.includes(s.state)||!Number.isSafeInteger(s.job)||s.job<0)throw new Error('Unsupported overview response.');
+@@ -108,17 +108,36 @@ function validateOverview(s){
+   if(v.sources.at(-1).generation!==v.active||v.sources.at(-1).sealed_sha256!==null||v.sources.slice(0,-1).some(x=>x.sealed_sha256===null))throw new Error('Invalid overview frontier.');
+  }
+ }
+-function renderOverview(s){validateOverview(s);const building=s.state==='building'||s.state==='cancelling';$('overview-cancel').disabled=!building;$('overview-build').disabled=building;
+- $('overview-state').textContent='Overview '+s.state+(s.reason?' · '+s.reason:'')+(s.last&&s.last_job!==s.job?' · Prior sample retained; this refresh has not replaced it.':'');
+- if(!s.last)return;const v=s.last,key=s.last_job+':'+v.manifest_sha256;if(key===overviewKey)return;overviewKey=key;
++function labelOverview(){
++ const s=overviewData;
++ if(overviewError){$('overview-state').textContent=overviewError+(s?.last?' Prior sample retained.':'');return;}
++ if(!s)return;
++ let label='Overview '+s.state+(s.reason?' · '+s.reason:'')+(s.last&&s.last_job!==s.job?' · Prior sample retained; this refresh has not replaced it.':'');
++ if(s.last){const age=Math.floor(Date.now()/1000-s.last.built_at);label+=' · Cached sample · '+(age<0?'sample clock is ahead':age<60?age+'s old':Math.floor(age/60)+'m old');
++  const active=snapshot?.active_generation;
++  if(typeof active==='string'&&/^[a-f0-9]{32}$/.test(active)&&active!==s.last.active)label+=' · Superseded by active generation '+active+'. Build a new overview.';
++ }
++ if(overviewQueued)label+=' · Action queued.';
++ $('overview-state').textContent=label;
++}
++function renderOverview(s){validateOverview(s);overviewData=s;overviewError='';const building=s.state==='building'||s.state==='cancelling';$('overview-cancel').disabled=!building;$('overview-build').disabled=building;labelOverview();
++ if(!s.last){overviewKey='';for(const id of ['overview-summary','overview-coverage'])$(id).textContent='';$('overview-sources').replaceChildren();return;}
++ const v=s.last,key=s.last_job+':'+v.manifest_sha256;if(key===overviewKey)return;overviewKey=key;
+  const t=v.totals,n=k=>BigInt(t[k]).toLocaleString();
+  $('overview-summary').textContent=n('attempts')+' distinct attempts · '+n('observed')+' observed · '+n('locally_queued')+' locally queued · '+n('unconfirmed')+' unconfirmed · '+n('attempts_with_gaps')+' attempts with gaps · '+n('sessions')+' reporter sessions · at least '+n('telemetry_dropped_lower_bound')+' dropped telemetry observations · '+n('unclosed_sessions')+' unclosed sessions';
+  $('overview-coverage').textContent='Complete for '+v.sources.length+' selected observation snapshots, built '+time(v.built_at)+'. Raw capture completeness remains unknown. Active generation: '+v.active+'.';
+  $('overview-sources').replaceChildren();for(const source of v.sources){const li=document.createElement('li');li.textContent=source.generation+' · '+(source.sealed_sha256?'sealed SHA-256 '+source.sealed_sha256:'active snapshot')+' · row digest '+source.snapshot.digest;$('overview-sources').append(li);}
+ }
+-async function loadOverview(action=''){if(!token||overviewBusy)return;overviewEnabled=true;overviewBusy=true;const current=generation,controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),8000);$('overview-load').disabled=true;
+- try{const r=await fetch('/api/overview'+action,{method:action?'POST':'GET',headers:{Authorization:'Bearer '+token},cache:'no-store',credentials:'omit',redirect:'error',signal:controller.signal});if(!r.ok)throw new Error(r.status===401?'Token rejected.':'Overview unavailable. Prior sample retained.');const s=await r.json();if(current===generation)renderOverview(s);}
+- catch(e){if(current===generation)$('overview-state').textContent=e.name==='AbortError'?'Overview request timed out. Prior sample retained.':e.message;}
+- finally{clearTimeout(timeout);if(current===generation){overviewBusy=false;$('overview-load').disabled=false;}}
++async function loadOverview(action=''){
++ if(!token)return;
++ if(overviewRequest){
++  if(!action)return;
++  if(overviewRequest.action){overviewQueued=action;$('overview-state').textContent='Overview action queued until the current request finishes.';return;}
++  overviewRequest.controller.abort();
++ }
++ overviewEnabled=true;const current=generation,serial=++overviewSerial,controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),8000);overviewRequest={action,controller};$('overview-load').disabled=true;
++ try{const r=await fetch('/api/overview'+action,{method:action?'POST':'GET',headers:{Authorization:'Bearer '+token},cache:'no-store',credentials:'omit',redirect:'error',signal:controller.signal});if(!r.ok)throw new Error(r.status===401?'Token rejected.':'Overview unavailable.');const s=await r.json();if(current===generation&&serial===overviewSerial)renderOverview(s);}
++ catch(e){if(current===generation&&serial===overviewSerial){overviewError=e.name==='AbortError'?'Overview request timed out.':e.message;labelOverview();}}
++ finally{clearTimeout(timeout);if(current===generation&&serial===overviewSerial){overviewRequest=null;$('overview-load').disabled=false;const queued=overviewQueued;overviewQueued='';if(queued)loadOverview(queued);}}
+ }
+ $('overview-load').addEventListener('click',()=>loadOverview());$('overview-build').addEventListener('click',()=>loadOverview('/refresh'));$('overview-cancel').addEventListener('click',()=>loadOverview('/cancel'));

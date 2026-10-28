@@ -1,0 +1,23 @@
+/Users/m/code/kan-tools/kan/.worktrees/kan-v2-proof-lifecycle/.local-state/reviews/lifecycle/review-evidence/cargo.sh test --features v2-crypto --test zz_review_proof_lifecycle -- rb2_valid_foreign_proof_substitution_is_refused_everywhere --exact --test-threads=1 --nocapture
+
+running 1 test
+test rb2_valid_foreign_proof_substitution_is_refused_everywhere ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 0.49s
+
+warning: unused variable: `binding`
+   --> src/evidence_store.rs:349:21
+    |
+349 |         if let Some(binding) = binding {
+    |                     ^^^^^^^ help: if this is intentional, prefix it with an underscore: `_binding`
+    |
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: `kan` (lib) generated 1 warning (run `cargo fix --lib -p kan` to apply 1 suggestion)
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-proof-lifecycle/.local-state/reviews/lifecycle)
+    Finished `test` profile [unoptimized] target(s) in 0.45s
+     Running tests/zz_review_proof_lifecycle.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/zz_review_proof_lifecycle-38f45f8bd3aa4b2c)
+RB2 branch-seq1: verify=Some(Corrupt("invalid attestation chain")) open=Some("corrupt evidence: invalid attestation chain") rebuild=Some(Corrupt("invalid attestation chain"))
+RB2 branch-tip: verify=Some(Corrupt("invalid attestation chain")) open=Some("corrupt evidence: invalid attestation chain") rebuild=Some(Corrupt("invalid attestation chain"))
+RB2 archive-seq1: verify=Some(Corrupt("invalid attestation chain")) open=Some("corrupt evidence: invalid attestation chain") rebuild=Some(Corrupt("invalid attestation chain"))
+RB2 archive-tip: verify=Some(Corrupt("invalid attestation chain")) open=Some("corrupt evidence: invalid attestation chain") rebuild=Some(Corrupt("invalid attestation chain"))

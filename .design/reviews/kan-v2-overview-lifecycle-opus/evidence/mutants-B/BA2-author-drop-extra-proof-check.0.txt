@@ -1,0 +1,20 @@
+/Users/m/code/kan-tools/kan/.worktrees/kan-v2-proof-lifecycle/.local-state/reviews/lifecycle/review-evidence/cargo.sh test --features v2-crypto --test evidence_attested_lifecycle -- recovery_refuses_missing_or_corrupt_proofs_and_payloads --exact --test-threads=1 --nocapture
+
+running 1 test
+test recovery_refuses_missing_or_corrupt_proofs_and_payloads ... FAILED
+
+failures:
+
+failures:
+    recovery_refuses_missing_or_corrupt_proofs_and_payloads
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 8 filtered out; finished in 0.34s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-proof-lifecycle/.local-state/reviews/lifecycle)
+    Finished `test` profile [unoptimized] target(s) in 6.80s
+     Running tests/evidence_attested_lifecycle.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_attested_lifecycle-02231a6624d7c1e3)
+
+thread 'recovery_refuses_missing_or_corrupt_proofs_and_payloads' (9553679) panicked at tests/evidence_attested_lifecycle.rs:158:9:
+must refuse INSERT INTO attestations VALUES(3,X'00')
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+error: test failed, to rerun pass `--test evidence_attested_lifecycle`
