@@ -86,6 +86,19 @@ enum Command {
         token_file: PathBuf,
     },
 
+    /// Human evidence Library; separate reader identity and explicitly configured scopes.
+    #[cfg(feature = "v2-crypto")]
+    Library {
+        #[arg(long)]
+        config: PathBuf,
+        #[arg(long)]
+        signing_key: PathBuf,
+        #[arg(long)]
+        token_file: PathBuf,
+        #[arg(long, default_value = "127.0.0.1:7284")]
+        listen: std::net::SocketAddr,
+    },
+
     /// TLS 1.3 gateway; explicit client CA authorizes this single-tenant instance.
     #[cfg(feature = "v2-crypto")]
     Gateway {
@@ -414,6 +427,52 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     result=kan::evidence_dashboard::serve(listener,token,journal)=>result,
                     _=shutdown()=>Ok(())
                 }
+            })?;
+        }
+        #[cfg(feature = "v2-crypto")]
+        Command::Library {
+            config,
+            signing_key,
+            token_file,
+            listen,
+        } => {
+            #[derive(serde::Deserialize)]
+            #[serde(deny_unknown_fields)]
+            struct SelectedScope {
+                scope: String,
+                endpoint: String,
+                issuer: String,
+                private_key_file: PathBuf,
+            }
+            if !listen.ip().is_loopback() {
+                return Err("reader requires literal loopback".into());
+            }
+            let bytes = kan::evidence_gateway::secret_file(&config)?;
+            let configured: Vec<SelectedScope> = serde_json::from_slice(&bytes)?;
+            if configured.is_empty() || configured.len() > 16 {
+                return Err("reader requires 1..16 configured scopes".into());
+            }
+            let mut scopes = Vec::new();
+            for entry in configured {
+                if !entry.private_key_file.is_absolute() {
+                    return Err("reader key paths must be absolute".into());
+                }
+                scopes.push(kan::evidence_reader::ScopeAccess {
+                    scope: fixed_hex(&entry.scope)?,
+                    endpoint: entry.endpoint,
+                    issuer: entry.issuer,
+                    private_key: recipient_private(&entry.private_key_file)?,
+                });
+            }
+            let reader =
+                kan::evidence_reader::Reader::new(service_identity(&signing_key)?, scopes)?;
+            let token = String::from_utf8(kan::evidence_gateway::secret_file(&token_file)?)?
+                .trim_end_matches('\n')
+                .to_string();
+            tokio::runtime::Runtime::new()?.block_on(async {
+                let listener = tokio::net::TcpListener::bind(listen).await?;
+                eprintln!("library http://{}", listener.local_addr()?);
+                tokio::select! { result=kan::evidence_library::serve(listener,token,reader)=>result, _=shutdown()=>Ok(()) }
             })?;
         }
         #[cfg(feature = "v2-crypto")]

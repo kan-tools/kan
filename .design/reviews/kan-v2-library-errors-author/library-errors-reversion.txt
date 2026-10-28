@@ -1,0 +1,11 @@
+Source export and logs: /Users/m/code/kan-tools/kan/.worktrees/kan-v2-reader-library/.local-state/reversion/6792918ed1ed4f93a9a74df191b11c89
+What would be reverted (worktree):
+  reverting scripts/revert_v2.py: 1/1 hunk(s)
+  skipped tests/library_ui.test.cjs (not in --include)
+  reverting web/library/app.js: 3/3 hunk(s)
+
+DEMONSTRATED — failed under revert: node::library_unavailable, node::library_directional
+
+Paste into the commit message:
+
+    Demonstrated-by: revert=HEAD tests=node::library_unavailable,node::library_directional outcome=DEMONSTRATED

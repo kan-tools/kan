@@ -1,0 +1,10 @@
+M01 pin principal check removed => KILLED by test pin_principal_and_audience_are_checked_even_with_valid_signatures ... FAILED
+M02 pin audience check removed => KILLED by test pin_principal_and_audience_are_checked_even_with_valid_signatures ... FAILED
+M04 page tip binding removed => KILLED by test reader_rejects_signed_page_completeness_and_tip_mismatches ... FAILED
+M05 page completeness removed => KILLED by test reader_rejects_signed_page_completeness_and_tip_mismatches ... FAILED
+M05a empty-incomplete clause removed => KILLED by test reader_rejects_signed_page_completeness_and_tip_mismatches ... FAILED
+M05b complete==last clause removed => KILLED by test reader_rejects_signed_page_completeness_and_tip_mismatches ... FAILED
+M13 Reader >16 scopes allowed => KILLED by test reader_configuration_scope_count_and_duplicates_are_bounded ... FAILED
+M13b duplicate scopes allowed => KILLED by test reader_configuration_scope_count_and_duplicates_are_bounded ... FAILED
+M14 page after>through local check removed => SURVIVED
+M25 pin reply signature not verified => KILLED by test pin_principal_and_audience_are_checked_even_with_valid_signatures ... FAILED

@@ -1,0 +1,43 @@
+# K05 non-auth error keeps plaintext
+# file web/library/app.js
+# rc 1 elapsed 0.1s
+✔ real endpoint uses header auth and untrusted source stays text (3.345291ms)
+✔ lock aborts pending source and clears every private view (0.78825ms)
+✔ page and scope navigation carry only the selected authenticated pin (0.858792ms)
+✔ download rechecks authorization and denied export clears prior plaintext (0.885541ms)
+✔ old transport errors cannot lock a newer session (0.734667ms)
+✔ range reads do not accumulate plaintext and inspector close returns focus (0.829208ms)
+✔ pagehide locks and no reader persistence or HTML execution sinks are present (0.660833ms)
+✔ source view can inspect exact bytes even when UTF-8 contains controls (0.681167ms)
+✔ export keeps exact bytes alive until navigation starts and releases on timeout or lock (2.044083ms)
+✔ scope changes remove old-scope rows before a new pin is used (0.589417ms)
+✖ unavailable or unverifiable source clears plaintext but preserves other browsing (0.93ms)
+✔ unverifiable page removes old rows and leaves scope recovery available (0.753209ms)
+✔ directional format controls default to exact hex and permit explicit UTF-8 (0.542167ms)
+✔ capability matrix renders actual service capabilities without claiming unknown support (0.560958ms)
+ℹ tests 14
+ℹ suites 0
+ℹ pass 13
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 41.642958
+
+✖ failing tests:
+
+test at tests/library_ui.test.cjs:32:1
+✖ unavailable or unverifiable source clears plaintext but preserves other browsing (0.93ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  
+  '<b>x' !== ''
+  
+      at TestContext.<anonymous> (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-reader-library/.local-state/reviews/opus-library-correction/tests/library_ui.test.cjs:32:348)
+      at async Test.run (node:internal/test_runner/test:1069:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:752:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: '<b>x',
+    expected: '',
+    operator: 'strictEqual'
+  }

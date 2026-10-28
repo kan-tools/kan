@@ -1,0 +1,2 @@
+A01 API claims semantic search available => SURVIVED
+A02 API capability fields removed => SURVIVED

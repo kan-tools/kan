@@ -1,0 +1,19 @@
+PROBE stale-click request {"action":"source","pin":"pin-B","sequence":3}
+✔ PROBE stale row click during scope switch reads the clicked sequence under the other scope pin (2.758209ms)
+PROBE stale-next request {"pin":"pin-B","after":3} next.disabled= false
+✔ PROBE stale Next during scope switch sends scope A continuation under scope B pin (0.969042ms)
+PROBE after 503 page: library.hidden= true notice= The reader could not verify this request. Reconnect to retry.
+✔ PROBE a 503 (e.g. one missing/corrupt object in page) locks the whole session (1.056708ms)
+PROBE after 404 source: notice= The reader could not verify this request. Reconnect to retry. locked= true
+✔ PROBE 404 Missing is shown identically to verification failure (0.701291ms)
+PROBE bidi range label= Bytes 0–6 of 9 · UTF-8 · end exclusive
+✔ PROBE bidi override text is not routed to hex view (0.72875ms)
+ℹ tests 5
+ℹ suites 0
+ℹ pass 5
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 35.954625
+exit=0

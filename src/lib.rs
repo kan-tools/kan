@@ -60,3 +60,9 @@ pub mod evidence_operations;
 
 #[cfg(feature = "v2-crypto")]
 pub mod evidence_operations_collection;
+
+#[cfg(feature = "v2-crypto")]
+pub mod evidence_reader;
+
+#[cfg(feature = "v2-crypto")]
+pub mod evidence_library;

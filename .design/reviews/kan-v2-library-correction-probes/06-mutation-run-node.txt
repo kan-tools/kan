@@ -1,0 +1,17 @@
+K01 every error locks => KILLED by ✖ unavailable or unverifiable source clears plaintext but preserves other browsing (0.941875ms); ✖ unverifiable page removes old rows and leaves scope recovery available (1.142958ms); ✖ failing tests:
+K02 access denial no longer locks while browsing => KILLED by ✖ download rechecks authorization and denied export clears prior plaintext (1.264708ms); ✖ failing tests:
+K03 401 not treated as denial => SURVIVED
+K04 403 not treated as denial => KILLED by ✖ download rechecks authorization and denied export clears prior plaintext (1.25175ms); ✖ failing tests:
+K05 non-auth error keeps plaintext => KILLED by ✖ unavailable or unverifiable source clears plaintext but preserves other browsing (0.93ms); ✖ failing tests:
+K07 page keeps old rows during load => KILLED by ✖ scope changes remove old-scope rows before a new pin is used (0.868166ms); ✖ unverifiable page removes old rows and leaves scope recovery available (0.535791ms); ✖ failing tests:
+K08 page keeps Next enabled during load => KILLED by ✖ scope changes remove old-scope rows before a new pin is used (0.863ms); ✖ failing tests:
+K08b page keeps Previous enabled during load => SURVIVED
+K09 page keeps old count/coverage during load => KILLED by ✖ unverifiable page removes old rows and leaves scope recovery available (0.868583ms); ✖ failing tests:
+K10 directional controls not forced to hex => KILLED by ✖ directional format controls default to exact hex and permit explicit UTF-8 (0.942958ms); ✖ failing tests:
+K10b isolates U+2066-2069 not forced to hex => SURVIVED
+K10c LRM/RLM/ALM not forced to hex => SURVIVED
+K11 lock keeps capability matrix => KILLED by ✖ capability matrix renders actual service capabilities without claiming unknown support (1.104083ms); ✖ failing tests:
+K12 unknown capability shown Available => KILLED by ✖ capability matrix renders actual service capabilities without claiming unknown support (1.247792ms); ✖ failing tests:
+K13 duplicate capability accepted => SURVIVED
+K14 capability shape check removed => SURVIVED
+J08 both late-response epoch checks removed => KILLED by ✖ lock aborts pending source and clears every private view (1.661708ms); ✖ failing tests:

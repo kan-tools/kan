@@ -1,0 +1,23 @@
+diff --git a/scripts/revert_v2.py b/scripts/revert_v2.py
+index cebfc05..e13d737 100644
+--- a/scripts/revert_v2.py
++++ b/scripts/revert_v2.py
+@@ -28,0 +29 @@ NODE_TESTS = {
++    'library_scope_switch': ('tests/library_ui.test.cjs', 'scope changes remove old-scope rows before a new pin is used'),
+diff --git a/tests/library_ui.test.cjs b/tests/library_ui.test.cjs
+index 0e0a6c1..d24a36c 100644
+--- a/tests/library_ui.test.cjs
++++ b/tests/library_ui.test.cjs
+@@ -28,0 +29,2 @@ test('export keeps exact bytes alive until navigation starts and releases on tim
++
++test('scope changes remove old-scope rows before a new pin is used',async()=>{const u=ui();await open(u);assert.equal(u.node('rows').children.length,1);u.node('scope').value='allowed-B';u.node('scope').events.change();await tick();assert.equal(u.node('rows').children.length,0,'old rows must not remain actionable under a new scope pin');assert.equal(u.node('next').disabled,true);await u.respond({...page,through:0,next:null,records:[]});assert.equal(u.node('empty').hidden,false);});
+diff --git a/web/library/app.js b/web/library/app.js
+index 66ad4da..5d5bb45 100644
+--- a/web/library/app.js
++++ b/web/library/app.js
+@@ -62 +62,4 @@
+-    clearInspector(); notice('Reading the selected snapshot…');
++    clearInspector(); buttons.clear(); $('rows').replaceChildren();
++    $('count').textContent = ''; $('coverage').textContent = ''; $('page-position').textContent = 'Loading…';
++    $('empty').hidden = true; $('previous').disabled = true; $('next').disabled = true;
++    notice('Reading the selected snapshot…');

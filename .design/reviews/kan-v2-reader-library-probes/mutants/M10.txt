@@ -1,0 +1,40 @@
+# M10 decode_record issuer check removed
+# file src/evidence_reader.rs
+# rc 101 elapsed 9.7s
+
+running 1 test
+test library_cli_browses_authenticated_retained_source_without_storage_authority ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.74s
+
+
+running 9 tests
+test library_browser_fixture ... ignored, manual browser fixture; requires KAN_LIBRARY_FIXTURE_INFO output path
+test reader_cli_refuses_public_configuration_and_relative_private_key_paths ... ok
+test reader_identity_scope_and_decryption_key_are_separate_checks ... ok
+test signed_reply_integrity_page_shape_and_source_membership_are_independent ... FAILED
+test revoked_grants_and_tampered_pins_cannot_read_cached_source ... ok
+test source_refuses_a_valid_read_from_a_different_snapshot_history ... ok
+test library_http_authority_is_separate_and_denial_does_not_reveal_scope_existence ... ok
+test inventory_is_snapshot_pinned_and_source_ranges_are_exact_across_scopes ... ok
+test large_source_is_returned_in_exact_bounded_ranges ... ok
+
+failures:
+
+---- signed_reply_integrity_page_shape_and_source_membership_are_independent stdout ----
+
+thread 'signed_reply_integrity_page_shape_and_source_membership_are_independent' (8790886) panicked at tests/evidence_reader.rs:325:9:
+assertion failed: matches!(reader.page(&pin, 0, 1).await, Err(Failure::Corrupt))
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    signed_reply_integrity_page_shape_and_source_membership_are_independent
+
+test result: FAILED. 7 passed; 1 failed; 1 ignored; 0 measured; 0 filtered out; finished in 1.43s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-reader-library/.local-state/reviews/opus-library)
+    Finished `test` profile [unoptimized] target(s) in 6.80s
+     Running tests/evidence_library_cli.rs (target/debug/deps/evidence_library_cli-ab14b7f82f96c656)
+     Running tests/evidence_reader.rs (target/debug/deps/evidence_reader-6b0841214b94ad1d)
+error: test failed, to rerun pass `--test evidence_reader`

@@ -1,0 +1,7 @@
+Q01 execution bound removed (4 -> 1000) => SURVIVED
+Q02 execution permit dropped before serving => SURVIVED
+Q03 accepted-socket bound 12 -> 1000 => SURVIVED
+Q04 accepted-socket bound 12 -> 5 => SURVIVED
+Q05 six-second queue deadline removed => SURVIVED
+Q06 overall 35s deadline removed => SURVIVED
+Q07 header read deadline removed => KILLED by test library_queues_a_browser_request_behind_four_idle_connections ... FAILED

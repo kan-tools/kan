@@ -1,0 +1,362 @@
+diff --git a/.design/kan-v2-reader-library.md b/.design/kan-v2-reader-library.md
+index cd118f9..edc9774 100644
+--- a/.design/kan-v2-reader-library.md
++++ b/.design/kan-v2-reader-library.md
+@@ -141,0 +142,16 @@ remains required. The parent complete-frontend acceptance criteria stay open.
++
++
++## Review-driven UI corrections in progress
++
++The author and independent reviewer both reproduced stale rows/continuation
++remaining actionable during a scope switch. The client now clears old rows,
++counts and navigation before requesting a page under the new pin. This has a
++named assertion kill under whole-fix reversion (61e2487).
++
++A second correction distinguishes 404 unavailable source from verification and
++transport failures, preserves other browsing after non-authorization errors,
++and defaults directional formatting controls to exact hex. Every failed source
++read clears displayed plaintext; 401/403 still lock everything. These changes
++have Node coverage and real whole-fix reversion, but require their own fresh
++review. The backend still fails a page containing a missing/corrupt referenced
++object; per-occurrence unavailable-evidence rows remain an explicit AC-3 gap.
+diff --git a/.design/reviews/kan-v2-library-errors-author/library-errors-reversion.txt b/.design/reviews/kan-v2-library-errors-author/library-errors-reversion.txt
+new file mode 100644
+index 0000000..8d99f54
+--- /dev/null
++++ b/.design/reviews/kan-v2-library-errors-author/library-errors-reversion.txt
+@@ -0,0 +1,11 @@
++Source export and logs: /Users/m/code/kan-tools/kan/.worktrees/kan-v2-reader-library/.local-state/reversion/6792918ed1ed4f93a9a74df191b11c89
++What would be reverted (worktree):
++  reverting scripts/revert_v2.py: 1/1 hunk(s)
++  skipped tests/library_ui.test.cjs (not in --include)
++  reverting web/library/app.js: 3/3 hunk(s)
++
++DEMONSTRATED — failed under revert: node::library_unavailable, node::library_directional
++
++Paste into the commit message:
++
++    Demonstrated-by: revert=HEAD tests=node::library_unavailable,node::library_directional outcome=DEMONSTRATED
+diff --git a/.design/reviews/kan-v2-library-errors-author/library-node-errors.txt b/.design/reviews/kan-v2-library-errors-author/library-node-errors.txt
+new file mode 100644
+index 0000000..77a9b35
+--- /dev/null
++++ b/.design/reviews/kan-v2-library-errors-author/library-node-errors.txt
+@@ -0,0 +1,41 @@
++✔ real endpoint uses header auth and untrusted source stays text (4.121ms)
++✔ lock aborts pending source and clears every private view (2.23025ms)
++✔ page and scope navigation carry only the selected authenticated pin (2.070959ms)
++✔ download rechecks authorization and denied export clears prior plaintext (1.903917ms)
++✔ old transport errors cannot lock a newer session (1.468791ms)
++✔ range reads do not accumulate plaintext and inspector close returns focus (1.674167ms)
++✔ pagehide locks and no reader persistence or HTML execution sinks are present (1.447333ms)
++✔ source view can inspect exact bytes even when UTF-8 contains controls (1.437625ms)
++✔ export keeps exact bytes alive until navigation starts and releases on timeout or lock (5.068208ms)
++✔ scope changes remove old-scope rows before a new pin is used (1.392958ms)
++✔ unavailable or unverifiable source clears plaintext but preserves other browsing (2.6965ms)
++✔ unverifiable page removes old rows and leaves scope recovery available (1.2145ms)
++✔ directional format controls default to exact hex and permit explicit UTF-8 (1.225875ms)
++✔ auth is header-only; gap filtering and untrusted values use text (19.9685ms)
++✔ late authenticated response cannot unlock a locked view (1.13275ms)
++✔ missing/stale data and HTTP failure cannot look healthy (0.649416ms)
++✔ absent and stale capture reporters remain explicitly unknown (0.752875ms)
++✔ fresh active sessions are current while historical losses remain visible (0.566833ms)
++✔ delivery retries, unsampled unclosed sessions and future clocks cannot look current (0.848917ms)
++✔ future clock samples produce consistent badges and retain uncertain reporter history (0.846542ms)
++✔ unsampled sessions and summary loss units are explicit (1.240709ms)
++✔ journal capacity is independent, sticky and never an exact coverage claim (1.508959ms)
++✔ unsupported status version retains visibly disconnected values (1.12575ms)
++✔ search is sample-bounded and inspection preserves exact untrusted identifiers (1.469042ms)
++✔ locking clears rendered private metadata and closes the inspector (1.749584ms)
++✔ reporter and attempt limits warn before exhaustion and preserve partial recording semantics (1.142417ms)
++✔ future persistence timestamps stay unknown (0.901208ms)
++✔ polling preserves the focused attempt and inspector close returns to the replacement row (1.429625ms)
++✔ unchanged notices are not announced again on every poll (1.223375ms)
++✔ first paint defaults to platform; System follows live platform changes (1.150667ms)
++✔ explicit choice persists only the theme and overrides platform until System selected (0.75325ms)
++✔ invalid preference, unavailable storage and cross-tab updates degrade safely (0.922917ms)
++✔ production and preview load the same theme controller before content (0.289875ms)
++ℹ tests 33
++ℹ suites 0
++ℹ pass 33
++ℹ fail 0
++ℹ cancelled 0
++ℹ skipped 0
++ℹ todo 0
++ℹ duration_ms 76.978417
+diff --git a/.design/reviews/kan-v2-library-errors-author/reversion/01-node.txt b/.design/reviews/kan-v2-library-errors-author/reversion/01-node.txt
+new file mode 100644
+index 0000000..ab8c405
+--- /dev/null
++++ b/.design/reviews/kan-v2-library-errors-author/reversion/01-node.txt
+@@ -0,0 +1,16 @@
++TAP version 13
++# Subtest: unavailable or unverifiable source clears plaintext but preserves other browsing
++ok 1 - unavailable or unverifiable source clears plaintext but preserves other browsing
++  ---
++  duration_ms: 4.101375
++  type: 'test'
++  ...
++1..1
++# tests 1
++# suites 0
++# pass 1
++# fail 0
++# cancelled 0
++# skipped 0
++# todo 0
++# duration_ms 34.0545
+diff --git a/.design/reviews/kan-v2-library-errors-author/reversion/02-node.txt b/.design/reviews/kan-v2-library-errors-author/reversion/02-node.txt
+new file mode 100644
+index 0000000..9c517e0
+--- /dev/null
++++ b/.design/reviews/kan-v2-library-errors-author/reversion/02-node.txt
+@@ -0,0 +1,16 @@
++TAP version 13
++# Subtest: directional format controls default to exact hex and permit explicit UTF-8
++ok 1 - directional format controls default to exact hex and permit explicit UTF-8
++  ---
++  duration_ms: 2.697667
++  type: 'test'
++  ...
++1..1
++# tests 1
++# suites 0
++# pass 1
++# fail 0
++# cancelled 0
++# skipped 0
++# todo 0
++# duration_ms 34.186834
+diff --git a/.design/reviews/kan-v2-library-errors-author/reversion/03-node.txt b/.design/reviews/kan-v2-library-errors-author/reversion/03-node.txt
+new file mode 100644
+index 0000000..58f7834
+--- /dev/null
++++ b/.design/reviews/kan-v2-library-errors-author/reversion/03-node.txt
+@@ -0,0 +1,32 @@
++TAP version 13
++# Subtest: unavailable or unverifiable source clears plaintext but preserves other browsing
++not ok 1 - unavailable or unverifiable source clears plaintext but preserves other browsing
++  ---
++  duration_ms: 3.214875
++  type: 'test'
++  location: '/Users/m/code/kan-tools/kan/.worktrees/kan-v2-reader-library/.local-state/reversion/6792918ed1ed4f93a9a74df191b11c89/tests/library_ui.test.cjs:32:1'
++  failureType: 'testCodeFailure'
++  error: |-
++    Expected values to be strictly equal:
++    
++    true !== false
++    
++  code: 'ERR_ASSERTION'
++  name: 'AssertionError'
++  expected: false
++  actual: true
++  operator: 'strictEqual'
++  stack: |-
++    TestContext.<anonymous> (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-reader-library/.local-state/reversion/6792918ed1ed4f93a9a74df191b11c89/tests/library_ui.test.cjs:32:303)
++    async Test.run (node:internal/test_runner/test:1069:7)
++    async startSubtestAfterBootstrap (node:internal/test_runner/harness:332:3)
++  ...
++1..1
++# tests 1
++# suites 0
++# pass 0
++# fail 1
++# cancelled 0
++# skipped 0
++# todo 0
++# duration_ms 34.64025
+diff --git a/.design/reviews/kan-v2-library-errors-author/reversion/04-node.txt b/.design/reviews/kan-v2-library-errors-author/reversion/04-node.txt
+new file mode 100644
+index 0000000..a93f555
+--- /dev/null
++++ b/.design/reviews/kan-v2-library-errors-author/reversion/04-node.txt
+@@ -0,0 +1,34 @@
++TAP version 13
++# Subtest: directional format controls default to exact hex and permit explicit UTF-8
++not ok 1 - directional format controls default to exact hex and permit explicit UTF-8
++  ---
++  duration_ms: 2.913834
++  type: 'test'
++  location: '/Users/m/code/kan-tools/kan/.worktrees/kan-v2-reader-library/.local-state/reversion/6792918ed1ed4f93a9a74df191b11c89/tests/library_ui.test.cjs:34:1'
++  failureType: 'testCodeFailure'
++  error: |-
++    Expected values to be strictly equal:
++    + actual - expected
++    
++    + 'abc‮txt'
++    - '616263e280ae747874'
++    
++  code: 'ERR_ASSERTION'
++  name: 'AssertionError'
++  expected: '616263e280ae747874'
++  actual: 'abc‮txt'
++  operator: 'strictEqual'
++  stack: |-
++    TestContext.<anonymous> (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-reader-library/.local-state/reversion/6792918ed1ed4f93a9a74df191b11c89/tests/library_ui.test.cjs:34:279)
++    async Test.run (node:internal/test_runner/test:1069:7)
++    async startSubtestAfterBootstrap (node:internal/test_runner/harness:332:3)
++  ...
++1..1
++# tests 1
++# suites 0
++# pass 0
++# fail 1
++# cancelled 0
++# skipped 0
++# todo 0
++# duration_ms 34.02175
+diff --git a/.design/reviews/kan-v2-library-errors-author/reversion/05-node.txt b/.design/reviews/kan-v2-library-errors-author/reversion/05-node.txt
+new file mode 100644
+index 0000000..79df857
+--- /dev/null
++++ b/.design/reviews/kan-v2-library-errors-author/reversion/05-node.txt
+@@ -0,0 +1,16 @@
++TAP version 13
++# Subtest: unavailable or unverifiable source clears plaintext but preserves other browsing
++ok 1 - unavailable or unverifiable source clears plaintext but preserves other browsing
++  ---
++  duration_ms: 4.223167
++  type: 'test'
++  ...
++1..1
++# tests 1
++# suites 0
++# pass 1
++# fail 0
++# cancelled 0
++# skipped 0
++# todo 0
++# duration_ms 34.656583
+diff --git a/.design/reviews/kan-v2-library-errors-author/reversion/06-node.txt b/.design/reviews/kan-v2-library-errors-author/reversion/06-node.txt
+new file mode 100644
+index 0000000..2b5e092
+--- /dev/null
++++ b/.design/reviews/kan-v2-library-errors-author/reversion/06-node.txt
+@@ -0,0 +1,16 @@
++TAP version 13
++# Subtest: directional format controls default to exact hex and permit explicit UTF-8
++ok 1 - directional format controls default to exact hex and permit explicit UTF-8
++  ---
++  duration_ms: 2.625917
++  type: 'test'
++  ...
++1..1
++# tests 1
++# suites 0
++# pass 1
++# fail 0
++# cancelled 0
++# skipped 0
++# todo 0
++# duration_ms 33.473833
+diff --git a/.design/reviews/kan-v2-library-errors-author/reversion/production.patch b/.design/reviews/kan-v2-library-errors-author/reversion/production.patch
+new file mode 100644
+index 0000000..2474818
+--- /dev/null
++++ b/.design/reviews/kan-v2-library-errors-author/reversion/production.patch
+@@ -0,0 +1,40 @@
++diff --git a/scripts/revert_v2.py b/scripts/revert_v2.py
++index e13d737..6e1fad2 100644
++--- a/scripts/revert_v2.py
+++++ b/scripts/revert_v2.py
++@@ -28,0 +29,2 @@ NODE_TESTS = {
+++    'library_unavailable': ('tests/library_ui.test.cjs', 'unavailable or unverifiable source clears plaintext but preserves other browsing'),
+++    'library_directional': ('tests/library_ui.test.cjs', 'directional format controls default to exact hex and permit explicit UTF-8'),
++diff --git a/tests/library_ui.test.cjs b/tests/library_ui.test.cjs
++index d24a36c..0070a29 100644
++--- a/tests/library_ui.test.cjs
+++++ b/tests/library_ui.test.cjs
++@@ -30,0 +31,4 @@ test('scope changes remove old-scope rows before a new pin is used',async()=>{co
+++
+++test('unavailable or unverifiable source clears plaintext but preserves other browsing',async()=>{for(const status of [404,503]){const u=ui();await open(u);u.node('rows').children[0].click();await tick();await u.respond(source);u.node('download').click();await tick();await u.respond({},status);assert.equal(u.node('library').hidden,false);assert.equal(u.node('source').textContent,'');assert.equal(u.node('provenance').children.length,0);assert.equal(u.node('rows').children.length,1);assert.match(u.node('notice').textContent,status===404?/Retained source is unavailable/:/could not be verified/);u.node('rows').children[0].click();await tick();await u.respond(source);assert.equal(u.node('source').textContent,'<b>x');}});
+++test('unverifiable page removes old rows and leaves scope recovery available',async()=>{const u=ui();await open(u);u.node('scope').value='allowed-B';u.node('scope').events.change();await tick();await u.respond({},503);assert.equal(u.node('library').hidden,false);assert.equal(u.node('rows').children.length,0);assert.equal(u.node('count').textContent,'');assert.equal(u.node('scope').children.length,2);assert.match(u.node('notice').textContent,/could not be verified/);});
+++test('directional format controls default to exact hex and permit explicit UTF-8',async()=>{const u=ui();await open(u);u.node('rows').children[0].click();await tick();await u.respond({...source,utf8:'abc\u202etxt',bytes_hex:'616263e280ae747874',total_bytes:9,next:null});assert.equal(u.node('source').textContent,'616263e280ae747874');u.node('encoding').click();assert.equal(u.node('source').textContent,'abc\u202etxt');});
++diff --git a/web/library/app.js b/web/library/app.js
++index 5d5bb45..fab82f8 100644
++--- a/web/library/app.js
+++++ b/web/library/app.js
++@@ -26 +26,7 @@
++-    if (!response.ok) throw new Error(response.status === 401 || response.status === 403 ? 'Access unavailable or revoked. Reconnect with an authorized reader.' : 'The reader could not verify this request. Reconnect to retry.');
+++    if (!response.ok) {
+++      const denied = response.status === 401 || response.status === 403;
+++      const message = denied ? 'Access unavailable or revoked. Reconnect with an authorized reader.' : response.status === 404
+++        ? 'Retained source is unavailable for this request. Choose another occurrence or refresh the snapshot.'
+++        : 'This response could not be verified. Retry, refresh the snapshot, or choose another scope.';
+++      const error = new Error(message); error.accessDenied = denied; error.readerMessage = message; throw error;
+++    }
++@@ -30 +36,6 @@
++-  function run(fn) { Promise.resolve().then(fn).catch(error => { if (error.name !== 'AbortError') lock(error.message); }); }
+++  function run(fn) { Promise.resolve().then(fn).catch(error => {
+++    if (error.name === 'AbortError') return;
+++    const message = error.readerMessage || 'Reader unavailable. Retry, refresh the snapshot, or choose another scope.';
+++    if (error.accessDenied || $('library').hidden) lock(message);
+++    else { clearInspector(); notice(message, true); }
+++  }); }
++@@ -47 +58 @@
++-    hexadecimal = value.utf8 === null || /[\u0000-\u0008\u000b\u000c\u000e-\u001f]/.test(value.utf8);
+++    hexadecimal = value.utf8 === null || /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069]/.test(value.utf8);
+diff --git a/docs/V2-LIBRARY.md b/docs/V2-LIBRARY.md
+index 1bdac82..b31e0f9 100644
+--- a/docs/V2-LIBRARY.md
++++ b/docs/V2-LIBRARY.md
+@@ -76,0 +77,20 @@ interpret this runbook as proof that uncompleted acceptance criteria passed.
++
++## Unavailable evidence and safe display
++
++Authorization failures lock and clear the Library. A missing response (404),
++verification/server failure, or transport failure clears the source inspector
++but keeps other already-authorized browsing controls available. An unavailable
++page displays no rows or counts from its failed response. Refresh the snapshot
++or select another scope to recover. This does not bypass verification or skip
++unreadable rows silently.
++
++The current storage Page RPC verifies referenced objects as it reads records.
++A damaged or missing object can therefore make its containing page unavailable;
++this first reader does not yet return per-occurrence unavailable-evidence rows.
++The service reports absent retained bytes as corruption, so physical absence and
++corruption are not independently distinguished by the Library. That remaining
++backend contract is required for full browsing coverage.
++
++Directional formatting controls default to hex, like control bytes. An explicit
++UTF-8 toggle shows the exact original text; it does not sanitize or rewrite the
++source. Byte ranges remain the unambiguous comparison/export representation.
+diff --git a/scripts/revert_v2.py b/scripts/revert_v2.py
+index e13d737..6e1fad2 100644
+--- a/scripts/revert_v2.py
++++ b/scripts/revert_v2.py
+@@ -28,0 +29,2 @@ NODE_TESTS = {
++    'library_unavailable': ('tests/library_ui.test.cjs', 'unavailable or unverifiable source clears plaintext but preserves other browsing'),
++    'library_directional': ('tests/library_ui.test.cjs', 'directional format controls default to exact hex and permit explicit UTF-8'),
+diff --git a/tests/library_ui.test.cjs b/tests/library_ui.test.cjs
+index d24a36c..0070a29 100644
+--- a/tests/library_ui.test.cjs
++++ b/tests/library_ui.test.cjs
+@@ -30,0 +31,4 @@ test('scope changes remove old-scope rows before a new pin is used',async()=>{co
++
++test('unavailable or unverifiable source clears plaintext but preserves other browsing',async()=>{for(const status of [404,503]){const u=ui();await open(u);u.node('rows').children[0].click();await tick();await u.respond(source);u.node('download').click();await tick();await u.respond({},status);assert.equal(u.node('library').hidden,false);assert.equal(u.node('source').textContent,'');assert.equal(u.node('provenance').children.length,0);assert.equal(u.node('rows').children.length,1);assert.match(u.node('notice').textContent,status===404?/Retained source is unavailable/:/could not be verified/);u.node('rows').children[0].click();await tick();await u.respond(source);assert.equal(u.node('source').textContent,'<b>x');}});
++test('unverifiable page removes old rows and leaves scope recovery available',async()=>{const u=ui();await open(u);u.node('scope').value='allowed-B';u.node('scope').events.change();await tick();await u.respond({},503);assert.equal(u.node('library').hidden,false);assert.equal(u.node('rows').children.length,0);assert.equal(u.node('count').textContent,'');assert.equal(u.node('scope').children.length,2);assert.match(u.node('notice').textContent,/could not be verified/);});
++test('directional format controls default to exact hex and permit explicit UTF-8',async()=>{const u=ui();await open(u);u.node('rows').children[0].click();await tick();await u.respond({...source,utf8:'abc\u202etxt',bytes_hex:'616263e280ae747874',total_bytes:9,next:null});assert.equal(u.node('source').textContent,'616263e280ae747874');u.node('encoding').click();assert.equal(u.node('source').textContent,'abc\u202etxt');});
+diff --git a/web/library/app.js b/web/library/app.js
+index 5d5bb45..fab82f8 100644
+--- a/web/library/app.js
++++ b/web/library/app.js
+@@ -26 +26,7 @@
+-    if (!response.ok) throw new Error(response.status === 401 || response.status === 403 ? 'Access unavailable or revoked. Reconnect with an authorized reader.' : 'The reader could not verify this request. Reconnect to retry.');
++    if (!response.ok) {
++      const denied = response.status === 401 || response.status === 403;
++      const message = denied ? 'Access unavailable or revoked. Reconnect with an authorized reader.' : response.status === 404
++        ? 'Retained source is unavailable for this request. Choose another occurrence or refresh the snapshot.'
++        : 'This response could not be verified. Retry, refresh the snapshot, or choose another scope.';
++      const error = new Error(message); error.accessDenied = denied; error.readerMessage = message; throw error;
++    }
+@@ -30 +36,6 @@
+-  function run(fn) { Promise.resolve().then(fn).catch(error => { if (error.name !== 'AbortError') lock(error.message); }); }
++  function run(fn) { Promise.resolve().then(fn).catch(error => {
++    if (error.name === 'AbortError') return;
++    const message = error.readerMessage || 'Reader unavailable. Retry, refresh the snapshot, or choose another scope.';
++    if (error.accessDenied || $('library').hidden) lock(message);
++    else { clearInspector(); notice(message, true); }
++  }); }
+@@ -47 +58 @@
+-    hexadecimal = value.utf8 === null || /[\u0000-\u0008\u000b\u000c\u000e-\u001f]/.test(value.utf8);
++    hexadecimal = value.utf8 === null || /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069]/.test(value.utf8);

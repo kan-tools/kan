@@ -1,0 +1,27 @@
+✖ scope changes remove old-scope rows before a new pin is used (2.735166ms)
+ℹ tests 1
+ℹ suites 0
+ℹ pass 0
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 32.40675
+
+✖ failing tests:
+
+test at .local-state/library-scope-race.test.cjs:30:1
+✖ scope changes remove old-scope rows before a new pin is used (2.735166ms)
+  AssertionError [ERR_ASSERTION]: old rows must not remain actionable under a new scope pin
+  
+  1 !== 0
+  
+      at TestContext.<anonymous> (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-reader-library/.local-state/library-scope-race.test.cjs:30:239)
+      at async Test.run (node:internal/test_runner/test:1069:7)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:332:3) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 1,
+    expected: 0,
+    operator: 'strictEqual'
+  }

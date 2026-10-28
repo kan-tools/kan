@@ -1,0 +1,25 @@
+# M24 cache-control removed
+# file src/evidence_library.rs
+# rc 101 elapsed 7.9s
+
+running 1 test
+test library_cli_browses_authenticated_retained_source_without_storage_authority ... FAILED
+
+failures:
+
+---- library_cli_browses_authenticated_retained_source_without_storage_authority stdout ----
+
+thread 'library_cli_browses_authenticated_retained_source_without_storage_authority' (8796303) panicked at tests/evidence_library_cli.rs:175:34:
+no entry found for key "cache-control"
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    library_cli_browses_authenticated_retained_source_without_storage_authority
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.73s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-reader-library/.local-state/reviews/opus-library)
+    Finished `test` profile [unoptimized] target(s) in 6.81s
+     Running tests/evidence_library_cli.rs (target/debug/deps/evidence_library_cli-ab14b7f82f96c656)
+error: test failed, to rerun pass `--test evidence_library_cli`
