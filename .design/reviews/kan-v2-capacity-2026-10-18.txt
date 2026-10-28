@@ -1,0 +1,62 @@
+**Verdict: APPROVE WITH FOLLOW-UPS**
+
+Independence: I'm a fresh agent and didn't write this code. No delegation, no kan/day writes, so skill Steps 7–8 (record the verdict, `day next`) were not done. North star is `telos/raw-data-and-projections`, as quoted in `review-context.txt`. That main-log read withholds two claims. I did not read the export's empty local log as "no teloi". The range is `git diff HEAD` (28 files, +3490/−79) against baseline a04f288.
+
+I found nothing that breaks an invariant. Source and sealed journals stayed byte-identical in the tests and in my CLI probe. v1 is never migrated. Upgraded writers can't bypass the locks. Sealed history is checked by hash and binding. No collection-wide totals are exposed. Old binaries refuse v2 journals outright (they require `user_version==1`), so they can't silently write into generations. Auth/Host/Origin/CSP are unchanged: `evidence_dashboard.rs` isn't in the diff and its tests pass. What's left is test gaps and one design cliff.
+
+## Findings (located)
+
+1. **Medium – hitting the session cap stops all attempt recording.** `src/evidence_operations.rs` `session()`: the 1,025th reporter session (roughly one per gateway start, never pruned) runs `note_capacity_failure`, which seals the journal. After that every `record()` is refused until the owner rotates. The author's own test asserts this, and I reproduced it with a temporary probe (since deleted). The UI shows sessions as plain text and has no near-limit warning (`app.js` `journalState` only warns on pages). The design wording "independent attempt/session limits" doesn't clearly allow this coupling, so it needs a decision.
+2. **Low–medium – a sealed journal does a durable write for every refused record.** `note_capacity_failure` rewrites the control row even when it's already exhausted. In my probe, 20 refusals bumped the SQLite change counter by 20 (about 13 ms each with fullfsync). Lost data is still counted, but it means steady fsync load and repeated rollback-journal attempts when the device is full.
+3. **Test gaps (mutations that survived):**
+   - M12: removing the "active must be the last, unsealed generation" check (`evidence_operations_collection.rs:111`) passes every test. A tampered manifest could then point writers at a sealed generation.
+   - M16: never writing `last_success` passes every Rust test, even though REQ-1 names the persistence timestamp.
+   - M15: skipping capacity marking on the worker write path passes.
+   - M07 and M08 each survive alone, because the two lock layers back each other up. Mutating both together is killed.
+   - M14: dropping the directory fsync after publication can't be detected without a crash harness.
+   - UI: focus restore after refresh (U02), not re-announcing an unchanged notice (U05), and the future-clock guard on `last_success_at` (U07) are only covered by the author's browser notes, not by Node tests.
+4. **Low – nothing stops the old file after adoption.** Adoption doesn't mark the source, and `ops-status health` still worked after `ops-adopt` (`cli-probe.log`). Avoiding split writes depends entirely on the runbook's reconfiguration step.
+5. **Low – lock-file race.** `open_file` and `lock()` check the lock file with `symlink_metadata`, then open it with `File::open`, which follows symlinks. That leaves a swap window, limited to the owner-only directory.
+6. **Low – the "persistence unknown" warning can flicker.** The UI treats persistence as fresh only within 5 s, but workers are allowed 45 s. A long `deliver_one` upload can briefly show the warning. It errs on the cautious side, not the dishonest side.
+
+## Requirement coverage
+- REQ-1/AC-1: met, apart from the M16 gap. v1 is read without changing its hash. Exhaustion under SQLITE_FULL (triggered via the page ceiling) is sticky and survives reopen. The attempt and session limits are covered, though the attempt test uses compact white-box rows, not real 100k payloads.
+- REQ-2/AC-2: met, plus finding 1. The callback does no I/O, and startup and delivery carry on when the journal is unavailable. A whole-device failure leaves the state unknown, as the design allows.
+- REQ-3/4, AC-3/4: met. All five interrupt boundaries behave correctly, and symlinks, hardlinks, permissions, corruption, reused paths and malformed manifests are refused. Finding 5 still applies.
+- REQ-5/AC-5: met. Polling reads only the active generation, pages are limited to 100, and output is labeled "not additive". The deduplicated overview is still open, as you said.
+- REQ-6/AC-6: met in Node tests. I didn't run a browser, and the author's screenshots come from a synthetic API.
+- REQ-7/AC-7: catalog, SurfaceWrite capability, facade digest and conformance are all updated (19/19 pass).
+
+## Mutations (19 Rust, 7 UI, each restored byte-for-byte)
+- **Killed, with the test that caught it:**
+  - M01 sticky refusal: attempt_count…, physical_full…, journal_session_exhaustion…
+  - M02 exhaustion flag: same three, plus full_health_journal…
+  - M03 session cap: session_capacity…, journal_session_exhaustion…
+  - M04 silent v1 migration: legacy_snapshot…
+  - M05 adoption source lock: source_writer_refuses…
+  - M06 direct-generation guard: adoption_rotation…, symlinks…
+  - M09 history hash check and M10 rotation hash check: sealed_corruption…
+  - M11 worker-history seeding: adoption_rotation…
+  - M13 hardlink check on open: source_aliases…
+  - M17 zero reserve rows: broad failures
+  - M07b both rotation locks shared: adoption_rotation…
+  - UI: U01, U03, U04, U06
+- **Survived:** M07, M08 (each alone), M12, M14, M15, M16, U02, U05, U07.
+- **Compile failure:** the first M03 attempt, caused by my own escaping mistake. I reran it as a semantic mutation and it was killed.
+
+## Runs (logs in `review-evidence/`)
+- v2 build: OK.
+- Unit tests 9/9; operations 20/20; collection 8/8; surface 19/19; delivery 5/5; gateway 17 passed (1 ignored); admission 1/1.
+- Node 16/16; `evidence_reference --check` and `check_v2_supervision` pass.
+- fmt passes; clippy `-D warnings` passes with and without v2.
+- Final rerun on the restored tree: all green.
+- **Reversion replay:** with production reverted and tests kept, the named session-exhaustion test fails (`left: Null, right: true`). After a fresh rebuild of the restored code it passes. My first "restored" run was stale because `cp -p` kept old mtimes and Cargo didn't rebuild; I caught it, touched the files and reran. As you noted, this only demonstrates that one assertion.
+
+## Not run
+- `check_gateway_global_cap.py` (Linux-only) and full `cargo test --workspace`.
+- A real device-full condition, power-loss or crash injection at the syscall level, and multi-process lock races.
+- Running old binaries against the new locks.
+- A real browser, screen reader or contrast audit.
+- Any live journal, deployment or kan telos re-read.
+
+No servers are left running and the scratch data is removed. The mutation driver is deleted. Logs and `reversion-backup/before.sha` are kept, and the target directory is yours to remove.

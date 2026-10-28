@@ -1,0 +1,38 @@
+✔ auth is header-only; gap filtering and untrusted values use text (13.011708ms)
+✔ late authenticated response cannot unlock a locked view (0.958333ms)
+✔ missing/stale data and HTTP failure cannot look healthy (0.628333ms)
+✔ absent and stale capture reporters remain explicitly unknown (0.646625ms)
+✔ fresh active sessions are current while historical losses remain visible (0.576625ms)
+✔ delivery retries, unsampled unclosed sessions and future clocks cannot look current (0.650459ms)
+✔ future clock samples produce consistent badges and retain uncertain reporter history (0.692667ms)
+✔ unsampled sessions and summary loss units are explicit (0.439667ms)
+✔ journal capacity is independent, sticky and never an exact coverage claim (0.602458ms)
+✔ unsupported status version retains visibly disconnected values (0.503917ms)
+✖ search is sample-bounded and inspection preserves exact untrusted identifiers (0.706083ms)
+✔ locking clears rendered private metadata and closes the inspector (1.006708ms)
+ℹ tests 12
+ℹ suites 0
+ℹ pass 11
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 47.955084
+
+✖ failing tests:
+
+test at tests/operations_ui.test.cjs:22:1
+✖ search is sample-bounded and inspection preserves exact untrusted identifiers (0.706083ms)
+  AssertionError [ERR_ASSERTION]: The input did not match the regular expression /does not scan older history/. Input:
+  
+  '1 shown / 1 in the latest sample.'
+  
+      at TestContext.<anonymous> (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-journal-capacity/.local-state/reviews/opus-capacity/tests/operations_ui.test.cjs:22:268)
+      at async Test.run (node:internal/test_runner/test:1069:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:752:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: '1 shown / 1 in the latest sample.',
+    expected: /does not scan older history/,
+    operator: 'match'
+  }

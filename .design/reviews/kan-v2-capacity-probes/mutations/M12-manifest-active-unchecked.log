@@ -1,0 +1,16 @@
+
+running 8 tests
+test source_aliases_and_malformed_coordination_files_cannot_bypass_lifetime_locks ... ok
+test source_writer_refuses_adoption_before_creating_destination ... ok
+test symlinks_public_paths_and_hardlinked_generations_are_refused ... ok
+test sealed_corruption_blocks_history_and_rotation_without_poisoning_active_poll ... ok
+test malformed_membership_and_bounds_are_rejected_without_repair ... ok
+test adoption_rotation_and_history_preserve_bytes_scope_and_worker_history ... ok
+test interrupted_adoption_keeps_original_and_never_guesses_a_manifest ... ok
+test interrupted_rotation_only_selects_published_generation ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 6.74s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-journal-capacity/.local-state/reviews/opus-capacity)
+    Finished `test` profile [unoptimized] target(s) in 6.60s
+     Running tests/evidence_operations_collection.rs (target/debug/deps/evidence_operations_collection-9f7d9f7685ac0e2b)

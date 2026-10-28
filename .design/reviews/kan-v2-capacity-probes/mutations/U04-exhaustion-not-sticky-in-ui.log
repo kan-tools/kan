@@ -1,0 +1,38 @@
+✔ auth is header-only; gap filtering and untrusted values use text (12.988625ms)
+✔ late authenticated response cannot unlock a locked view (0.906042ms)
+✔ missing/stale data and HTTP failure cannot look healthy (0.556583ms)
+✔ absent and stale capture reporters remain explicitly unknown (0.52275ms)
+✔ fresh active sessions are current while historical losses remain visible (0.492333ms)
+✔ delivery retries, unsampled unclosed sessions and future clocks cannot look current (0.648834ms)
+✔ future clock samples produce consistent badges and retain uncertain reporter history (0.782625ms)
+✔ unsampled sessions and summary loss units are explicit (0.473041ms)
+✖ journal capacity is independent, sticky and never an exact coverage claim (0.666708ms)
+✔ unsupported status version retains visibly disconnected values (0.715667ms)
+✔ search is sample-bounded and inspection preserves exact untrusted identifiers (0.616542ms)
+✔ locking clears rendered private metadata and closes the inspector (0.464208ms)
+ℹ tests 12
+ℹ suites 0
+ℹ pass 11
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 47.612667
+
+✖ failing tests:
+
+test at tests/operations_ui.test.cjs:19:1
+✖ journal capacity is independent, sticky and never an exact coverage claim (0.666708ms)
+  AssertionError [ERR_ASSERTION]: The input did not match the regular expression /exhaustion was recorded/. Input:
+  
+  'Status is current. Capture completion and archive acknowledgment are separate observations.'
+  
+      at TestContext.<anonymous> (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-journal-capacity/.local-state/reviews/opus-capacity/tests/operations_ui.test.cjs:19:339)
+      at async Test.run (node:internal/test_runner/test:1069:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:752:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 'Status is current. Capture completion and archive acknowledgment are separate observations.',
+    expected: /exhaustion was recorded/,
+    operator: 'match'
+  }

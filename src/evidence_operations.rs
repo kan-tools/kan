@@ -27,6 +27,43 @@ CREATE TABLE attempts(attempt TEXT PRIMARY KEY, updated INTEGER NOT NULL, observ
 CREATE TABLE sessions(id TEXT PRIMARY KEY, updated INTEGER NOT NULL, dropped INTEGER NOT NULL, clean INTEGER NOT NULL);
 CREATE TABLE worker(singleton INTEGER PRIMARY KEY CHECK(singleton=1), body TEXT NOT NULL);
 ";
+const CAPACITY_SCHEMA: &str = "
+PRAGMA user_version=2;
+CREATE TABLE control(singleton INTEGER PRIMARY KEY CHECK(singleton=1), last_success INTEGER NOT NULL, exhausted INTEGER NOT NULL, reason TEXT NOT NULL);
+CREATE TABLE reserve(id INTEGER PRIMARY KEY, bytes BLOB NOT NULL);
+";
+const ATTEMPT_LIMIT: u64 = 100_000;
+const SESSION_LIMIT: u64 = 1024;
+#[derive(Debug, thiserror::Error)]
+#[error("operations capacity exhausted: {0}")]
+struct CapacityLimit(&'static str);
+#[derive(Debug, Serialize, Deserialize)]
+pub struct JournalCapacity {
+    pub schema: u8,
+    pub pages_used: u64,
+    pub pages_limit: u64,
+    pub free_pages: u64,
+    pub page_size: u64,
+    pub attempts_used: u64,
+    pub attempts_limit: u64,
+    pub sessions_used: u64,
+    pub sessions_limit: Option<u64>,
+    pub reserve_bytes: u64,
+    pub exhausted_observed: Option<bool>,
+    pub exhaustion_reason: Option<String>,
+    pub last_success_at: Option<u64>,
+    pub loss_count_certainty: String,
+    pub scope: String,
+}
+fn successful(conn: &Connection, schema: u8) -> Result<()> {
+    if schema == 2 {
+        conn.execute(
+            "UPDATE control SET last_success=? WHERE singleton=1",
+            [now() as i64],
+        )?;
+    }
+    Ok(())
+}
 pub fn now() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -42,6 +79,11 @@ fn unsigned(r: &rusqlite::Row<'_>, i: usize) -> rusqlite::Result<u64> {
 }
 pub struct Journal {
     conn: Connection,
+    schema: u8,
+    read_only: bool,
+    _file_lock: std::fs::File,
+    pub(crate) collection_lock: Option<std::fs::File>,
+    pub(crate) scope: String,
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WorkerStatus {
@@ -70,12 +112,13 @@ pub struct Snapshot {
     pub unclosed_sessions: u64,
     pub recent: Vec<serde_json::Value>,
     pub reporters: Vec<serde_json::Value>,
+    pub journal: JournalCapacity,
 }
 impl Journal {
     pub fn create(path: &Path, spool_path: &Path) -> Result<Self> {
         let st = Spool::open(spool_path)?.status()?;
         let spool = spool_path.canonicalize()?;
-        for suffix in ["-journal", "-wal", "-shm"] {
+        for suffix in ["-journal", "-wal", "-shm", ".lock"] {
             let mut name = path.as_os_str().to_os_string();
             name.push(suffix);
             match std::fs::symlink_metadata(Path::new(&name)) {
@@ -93,7 +136,13 @@ impl Journal {
         let conn = Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_WRITE)?;
         conn.execute_batch("PRAGMA synchronous=FULL; PRAGMA fullfsync=ON; PRAGMA journal_mode=DELETE; PRAGMA max_page_count=8192;")?;
         conn.execute_batch(SCHEMA)?;
-        conn.execute(
+        conn.execute_batch(CAPACITY_SCHEMA)?;
+        let initialization = conn.unchecked_transaction()?;
+        initialization.execute("INSERT INTO control VALUES(1,0,0,'')", [])?;
+        for i in 0..64 {
+            initialization.execute("INSERT INTO reserve VALUES(?,zeroblob(4096))", [i])?;
+        }
+        initialization.execute(
             "INSERT INTO binding VALUES(1,?,?,?,?)",
             params![
                 spool.to_str().ok_or_else(invalid)?,
@@ -102,42 +151,105 @@ impl Journal {
                 st.audience
             ],
         )?;
+        initialization.commit()?;
         std::fs::File::open(
             path.parent()
                 .filter(|p| !p.as_os_str().is_empty())
                 .unwrap_or(Path::new(".")),
         )?
         .sync_all()?;
-        Self::open(path)
+        Self::open_file(path, false, false)
     }
     pub fn open(path: &Path) -> Result<Self> {
+        let meta = std::fs::symlink_metadata(path)?;
+        if meta.file_type().is_symlink() {
+            return Err(invalid());
+        }
+        if meta.is_dir() {
+            return crate::evidence_operations_collection::open(path);
+        }
+        crate::evidence_operations_collection::check_standalone(path)?;
+        Self::open_file(path, false, false)
+    }
+    pub(crate) fn open_file(path: &Path, exclusive: bool, read_only: bool) -> Result<Self> {
         let meta = std::fs::symlink_metadata(path)?;
         if !meta.is_file() || meta.file_type().is_symlink() || meta.len() > 32 * 1024 * 1024 {
             return Err(invalid());
         }
         #[cfg(unix)]
         {
-            use std::os::unix::fs::PermissionsExt;
-            if meta.permissions().mode() & 0o077 != 0 {
+            use std::os::unix::fs::{MetadataExt, PermissionsExt};
+            if meta.permissions().mode() & 0o077 != 0 || meta.nlink() != 1 {
                 return Err(invalid());
             }
         }
-        let conn = Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_WRITE)?;
+        // flock and SQLite fcntl locks can interact on macOS. Lifetime
+        // maintenance coordination must use a separate inode.
+        let mut lock_name = path.as_os_str().to_os_string();
+        lock_name.push(".lock");
+        let lock_path = Path::new(&lock_name);
+        match std::fs::symlink_metadata(lock_path) {
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                // surface-write: evidence-operations:database-lock
+                match crate::persistence::write_new_owner_only(
+                    crate::persistence::SurfaceWrite::EvidenceOperations,
+                    lock_path,
+                    &[],
+                ) {
+                    Ok(()) => {}
+                    Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {}
+                    Err(e) => return Err(e.into()),
+                }
+            }
+            Err(e) => return Err(e.into()),
+            Ok(_) => {}
+        }
+        let lock_meta = std::fs::symlink_metadata(lock_path)?;
+        if !lock_meta.is_file() || lock_meta.file_type().is_symlink() || lock_meta.len() != 0 {
+            return Err(invalid());
+        }
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::{MetadataExt, PermissionsExt};
+            if lock_meta.permissions().mode() & 0o077 != 0 || lock_meta.nlink() != 1 {
+                return Err(invalid());
+            }
+        }
+        let file_lock = std::fs::File::open(lock_path)?;
+        if exclusive {
+            fs4::FileExt::try_lock(&file_lock).map_err(|_| invalid())?;
+        } else {
+            fs4::FileExt::try_lock_shared(&file_lock).map_err(|_| invalid())?;
+        }
+        let conn = Connection::open_with_flags(
+            path,
+            if read_only {
+                OpenFlags::SQLITE_OPEN_READ_ONLY
+            } else {
+                OpenFlags::SQLITE_OPEN_READ_WRITE
+            },
+        )?;
         conn.busy_timeout(Duration::from_millis(100))?;
         conn.set_limit(rusqlite::limits::Limit::SQLITE_LIMIT_LENGTH, 32768)?;
+        let schema_version: u8 = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
         if conn.query_row("PRAGMA application_id", [], |r| r.get::<_, i64>(0))? != PROFILE
-            || conn.query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0))? != 1
+            || !matches!(schema_version, 1 | 2)
         {
             return Err(invalid());
         }
-        conn.execute_batch(
-            "PRAGMA synchronous=FULL; PRAGMA fullfsync=ON; PRAGMA max_page_count=8192;",
-        )?;
+        if !read_only {
+            conn.execute_batch(
+                "PRAGMA synchronous=FULL; PRAGMA fullfsync=ON; PRAGMA max_page_count=8192;",
+            )?;
+        }
         if conn.query_row("PRAGMA page_size", [], |r| r.get::<_, i64>(0))? != 4096 {
             return Err(invalid());
         }
         let expected = Connection::open_in_memory()?;
         expected.execute_batch(SCHEMA)?;
+        if schema_version == 2 {
+            expected.execute_batch(CAPACITY_SCHEMA)?;
+        }
         fn schema(c: &Connection) -> rusqlite::Result<Vec<(String, String)>> {
             c.prepare("SELECT name,coalesce(sql,'') FROM sqlite_schema ORDER BY name")?
                 .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
@@ -146,7 +258,64 @@ impl Journal {
         if schema(&conn)? != schema(&expected)? {
             return Err(invalid());
         }
-        Ok(Self { conn })
+        if schema_version == 2 {
+            let (rows, exhausted, reason, reserved, valid): (i64,i64,String,u64,u64) = conn.query_row(
+                "SELECT count(*),exhausted,reason,(SELECT count(*) FROM reserve),(SELECT coalesce(sum(id>=0 AND id<64 AND length(bytes)=4096),0) FROM reserve) FROM control WHERE singleton=1",
+                [], |r| Ok((r.get(0)?,r.get(1)?,r.get(2)?,unsigned(r,3)?,unsigned(r,4)?)),
+            )?;
+            if rows != 1
+                || (exhausted == 0 && (!reason.is_empty() || reserved != 64 || valid != 64))
+                || (exhausted == 1
+                    && (reserved != 0
+                        || !matches!(
+                            reason.as_str(),
+                            "sqlite_full" | "attempt_limit" | "session_limit"
+                        )))
+                || !matches!(exhausted, 0 | 1)
+            {
+                return Err(invalid());
+            }
+        }
+        Ok(Self {
+            conn,
+            schema: schema_version,
+            read_only,
+            _file_lock: file_lock,
+            collection_lock: None,
+            scope: "selected standalone journal only".into(),
+        })
+    }
+    pub(crate) fn binding(&self) -> Result<(String, String, String, String)> {
+        Ok(self.conn.query_row(
+            "SELECT spool,writer,scope,audience FROM binding WHERE singleton=1",
+            [],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+        )?)
+    }
+    pub(crate) fn frozen_bytes(&mut self, path: &Path) -> Result<Vec<u8>> {
+        let tx = self
+            .conn
+            .transaction_with_behavior(rusqlite::TransactionBehavior::Exclusive)?;
+        let bytes = std::fs::read(path)?;
+        tx.commit()?;
+        Ok(bytes)
+    }
+    pub(crate) fn seed_worker(&mut self, old: &Journal) -> Result<()> {
+        let body: Option<String> = old
+            .conn
+            .query_row("SELECT body FROM worker WHERE singleton=1", [], |r| {
+                r.get(0)
+            })
+            .optional()?;
+        if let Some(body) = body {
+            let checked: WorkerCheckpoint = serde_json::from_str(&body)?;
+            if let Some(queue) = &checked.status.queue {
+                self.check_queue(queue)?;
+            }
+            self.conn
+                .execute("INSERT INTO worker VALUES(1,?)", [body])?;
+        }
+        Ok(())
     }
     pub fn check_binding(&self, spool: &Path, writer: Option<&str>) -> Result<()> {
         let (stored, owner): (String, String) = self.conn.query_row(
@@ -186,11 +355,45 @@ impl Journal {
         }
         Ok(())
     }
+    // A finite reserve preserves the exhaustion observation; it cannot make a
+    // failed whole-device write durable. Failed markers leave freshness unknown.
+    fn note_capacity_failure<T>(&mut self, result: &Result<T>) {
+        if self.schema != 2 {
+            return;
+        }
+        let reason = result.as_ref().err().and_then(|e| {
+            if let Some(limit) = e.downcast_ref::<CapacityLimit>() { Some(limit.0) }
+            else if e.downcast_ref::<rusqlite::Error>().is_some_and(|e| matches!(e, rusqlite::Error::SqliteFailure(code, _) if code.code == rusqlite::ErrorCode::DiskFull)) { Some("sqlite_full") }
+            else { None }
+        });
+        if let Some(reason) = reason {
+            let mark = || -> Result<()> {
+                let tx = self.conn.unchecked_transaction()?;
+                tx.execute("DELETE FROM reserve", [])?;
+                tx.execute("UPDATE control SET exhausted=1, reason=CASE WHEN exhausted=0 THEN ? ELSE reason END WHERE singleton=1", [reason])?;
+                tx.commit()?;
+                Ok(())
+            };
+            let _ = mark(); // The original write failure remains the caller's result.
+        }
+    }
     pub fn record(&mut self, h: &Health) -> Result<()> {
+        let result = self.record_inner(h);
+        self.note_capacity_failure(&result);
+        result
+    }
+    fn record_inner(&mut self, h: &Health) -> Result<()> {
         if !valid_health(h) {
             return Err(invalid());
         }
         let tx = self.conn.transaction()?;
+        if self.schema == 2
+            && tx.query_row("SELECT exhausted FROM control WHERE singleton=1", [], |r| {
+                r.get::<_, bool>(0)
+            })?
+        {
+            return Err(Box::new(CapacityLimit("sealed_for_capacity")));
+        }
         let count = tx.query_row("SELECT count(*) FROM attempts", [], |r| unsigned(r, 0))?;
         let old: Option<String> = tx
             .query_row(
@@ -199,8 +402,8 @@ impl Journal {
                 |r| r.get(0),
             )
             .optional()?;
-        if old.is_none() && count >= 100_000 {
-            return Err(invalid());
+        if old.is_none() && count >= ATTEMPT_LIMIT {
+            return Err(Box::new(CapacityLimit("attempt_limit")));
         }
         if let Some(old) = old {
             let old: Health = serde_json::from_str(&old)?;
@@ -209,18 +412,46 @@ impl Journal {
             }
         }
         tx.execute("INSERT INTO attempts VALUES(?,?,?,?,?,?) ON CONFLICT(attempt) DO UPDATE SET updated=excluded.updated, observed=excluded.observed,queued=excluded.queued,unconfirmed=excluded.unconfirmed,body=excluded.body",params![h.attempt,now() as i64,i64::try_from(h.observed)?,i64::try_from(h.locally_queued)?,i64::try_from(h.unconfirmed)?,serde_json::to_string(h)?])?;
+        successful(&tx, self.schema)?;
         tx.commit()?;
         Ok(())
     }
-    fn session(&self, id: &str, dropped: u64, clean: bool) -> Result<()> {
-        self.conn.execute("INSERT INTO sessions VALUES(?,?,?,?) ON CONFLICT(id) DO UPDATE SET updated=excluded.updated,dropped=max(dropped,excluded.dropped),clean=excluded.clean",params![id,now() as i64,i64::try_from(dropped)?,clean])?;
-        Ok(())
+    fn session(&mut self, id: &str, dropped: u64, clean: bool) -> Result<()> {
+        let write = || -> Result<()> {
+            let tx = rusqlite::Transaction::new_unchecked(
+                &self.conn,
+                rusqlite::TransactionBehavior::Immediate,
+            )?;
+            let (count, existing): (u64, bool) = tx.query_row(
+                "SELECT count(*),coalesce(sum(id=?),0)>0 FROM sessions",
+                [id],
+                |r| Ok((unsigned(r, 0)?, r.get(1)?)),
+            )?;
+            if self.schema == 2 && count >= SESSION_LIMIT && !existing {
+                return Err(Box::new(CapacityLimit("session_limit")));
+            }
+            tx.execute("INSERT INTO sessions VALUES(?,?,?,?) ON CONFLICT(id) DO UPDATE SET updated=excluded.updated,dropped=max(dropped,excluded.dropped),clean=excluded.clean",params![id,now() as i64,i64::try_from(dropped)?,clean])?;
+            successful(&tx, self.schema)?;
+            tx.commit()?;
+            Ok(())
+        };
+        let result = write();
+        self.note_capacity_failure(&result);
+        result
     }
-    pub fn save_worker(&self, status: &WorkerStatus) -> Result<()> {
+    pub fn save_worker(&mut self, status: &WorkerStatus) -> Result<()> {
+        let result = self.save_worker_inner(status);
+        self.note_capacity_failure(&result);
+        result
+    }
+    fn save_worker_inner(&mut self, status: &WorkerStatus) -> Result<()> {
         if let Some(st) = &status.queue {
             self.check_queue(st)?;
         }
-        self.conn.execute("INSERT INTO worker VALUES(1,?) ON CONFLICT(singleton) DO UPDATE SET body=excluded.body",[serde_json::to_string(status)?])?;
+        let tx = self.conn.transaction()?;
+        tx.execute("INSERT INTO worker VALUES(1,?) ON CONFLICT(singleton) DO UPDATE SET body=excluded.body",[serde_json::to_string(status)?])?;
+        successful(&tx, self.schema)?;
+        tx.commit()?;
         Ok(())
     }
     pub fn snapshot(&mut self) -> Result<Snapshot> {
@@ -249,9 +480,51 @@ impl Journal {
             let values=query.query_map([],|r|Ok(serde_json::json!({"updated_at":unsigned(r,0)?,"dropped":unsigned(r,1)?,"clean":r.get::<_,bool>(2)?})))?.collect::<rusqlite::Result<Vec<_>>>()?;
             values
         };
+        let (reserve_bytes, exhausted_observed, exhaustion_reason, last_success_at) =
+            if self.schema == 2 {
+                let (at, full, reason): (u64, bool, String) = tx.query_row(
+                    "SELECT last_success,exhausted,reason FROM control WHERE singleton=1",
+                    [],
+                    |r| Ok((unsigned(r, 0)?, r.get(1)?, r.get(2)?)),
+                )?;
+                let reserve = tx.query_row(
+                    "SELECT coalesce(sum(length(bytes)),0) FROM reserve",
+                    [],
+                    |r| unsigned(r, 0),
+                )?;
+                (
+                    reserve,
+                    Some(full),
+                    (!reason.is_empty()).then_some(reason),
+                    (at > 0).then_some(at),
+                )
+            } else {
+                (0, None, None, None)
+            };
+        let journal = JournalCapacity {
+            schema: self.schema,
+            pages_used: tx.query_row("PRAGMA page_count", [], |r| unsigned(r, 0))?,
+            pages_limit: if self.read_only {
+                8192
+            } else {
+                tx.query_row("PRAGMA max_page_count", [], |r| unsigned(r, 0))?
+            },
+            free_pages: tx.query_row("PRAGMA freelist_count", [], |r| unsigned(r, 0))?,
+            page_size: 4096,
+            attempts_used: attempts,
+            attempts_limit: ATTEMPT_LIMIT,
+            sessions_used: tx.query_row("SELECT count(*) FROM sessions", [], |r| unsigned(r, 0))?,
+            sessions_limit: (self.schema == 2).then_some(SESSION_LIMIT),
+            reserve_bytes,
+            exhausted_observed,
+            exhaustion_reason,
+            last_success_at,
+            loss_count_certainty: "lower_bound".into(),
+            scope: self.scope.clone(),
+        };
         tx.commit()?;
         Ok(Snapshot {
-            version: 1,
+            version: 2,
             read_at: now(),
             coverage: "observations-only; silence does not prove capture completeness".into(),
             worker: body.map(|s| serde_json::from_str(&s)).transpose()?,
@@ -263,6 +536,7 @@ impl Journal {
             unclosed_sessions,
             recent,
             reporters,
+            journal,
         })
     }
 }
@@ -451,7 +725,7 @@ fn reporter_inner(
     // Even initial session admission is best effort: capacity cannot stop inference.
     let initial_loss = u64::from(
         journal
-            .as_ref()
+            .as_mut()
             .is_some_and(|j| j.session(&id, 0, false).is_err()),
     );
     let (tx, rx) = mpsc::sync_channel::<()>(1);
@@ -486,13 +760,13 @@ fn reporter_inner(
                 }
                 writer_pending.finish(shard, &h.attempt, revision);
                 if heartbeat.elapsed() >= Duration::from_millis(500) {
-                    if let Some(j) = &journal {
+                    if let Some(j) = &mut journal {
                         let _ = j.session(&id, losses.load(Ordering::Relaxed), false);
                     }
                     heartbeat = std::time::Instant::now();
                 }
             }
-            if let Some(j) = &journal {
+            if let Some(j) = &mut journal {
                 let _ = j.session(&id, losses.load(Ordering::Relaxed), disconnected);
             }
             if disconnected {
@@ -602,6 +876,7 @@ fn save_worker_run(
         "INSERT INTO worker VALUES(1,?) ON CONFLICT(singleton) DO UPDATE SET body=excluded.body",
         [serde_json::to_string(&checkpoint)?],
     )?;
+    successful(&tx, journal.schema)?;
     tx.commit()?;
     *status = merged;
     run.committed = true;
@@ -618,10 +893,11 @@ fn persist_worker(
         *next_open = std::time::Instant::now() + Duration::from_secs(1);
         *journal = load().ok();
     }
-    if journal
-        .as_mut()
-        .is_none_or(|j| save_worker_run(j, status, run).is_err())
-    {
+    if journal.as_mut().is_none_or(|j| {
+        let result = save_worker_run(j, status, run);
+        j.note_capacity_failure(&result);
+        result.is_err()
+    }) {
         run.failures = run.failures.saturating_add(1);
     }
 }
@@ -1033,9 +1309,142 @@ mod tests {
         assert!(failed, "SQLite capacity control must actually fail a write");
         let before = journal.snapshot().unwrap();
         assert!(before.unconfirmed > 0);
+        assert_eq!(before.journal.exhausted_observed, Some(true));
+        assert_eq!(
+            before.journal.exhaustion_reason.as_deref(),
+            Some("sqlite_full")
+        );
+        assert_eq!(before.journal.reserve_bytes, 0);
+        journal.session("reserved-control-probe", 9, true).unwrap();
+        assert!(
+            journal.record(&health).is_err(),
+            "capacity exhaustion stays sticky after control writes"
+        );
         drop(journal);
         let after = Journal::open(&path).unwrap().snapshot().unwrap();
         assert_eq!(after.unconfirmed, before.unconfirmed);
         assert_eq!(after.attempts, before.attempts);
+        assert_eq!(after.telemetry_dropped, 9);
+        assert_eq!(after.journal.exhausted_observed, Some(true));
+        assert_eq!(after.journal.loss_count_certainty, "lower_bound");
+    }
+    #[test]
+    fn legacy_snapshot_does_not_rewrite_or_invent_control_evidence() {
+        use sha2::{Digest, Sha256};
+        let dir = tempfile::tempdir().unwrap();
+        let spool = dir.path().join("queue");
+        let path = dir.path().join("health");
+        let id = crate::sign::Identity::generate();
+        Spool::create(
+            &spool,
+            &crate::evidence_service::hex(&[3; 32]),
+            id.did().as_str(),
+            id.did().as_str(),
+            10000,
+        )
+        .unwrap();
+        let journal = Journal::create(&path, &spool).unwrap();
+        journal
+            .conn
+            .execute_batch("DROP TABLE control; DROP TABLE reserve; PRAGMA user_version=1")
+            .unwrap();
+        drop(journal);
+        let before = Sha256::digest(std::fs::read(&path).unwrap());
+        let snapshot = Journal::open(&path).unwrap().snapshot().unwrap();
+        assert_eq!(snapshot.version, 2);
+        assert_eq!(snapshot.journal.schema, 1);
+        assert_eq!(snapshot.journal.exhausted_observed, None);
+        assert_eq!(snapshot.journal.last_success_at, None);
+        assert_eq!(snapshot.journal.sessions_limit, None);
+        assert_eq!(Sha256::digest(std::fs::read(&path).unwrap()), before);
+    }
+    #[test]
+    fn attempt_count_exhaustion_retains_existing_rows_and_marks_once() {
+        let dir = tempfile::tempdir().unwrap();
+        let spool = dir.path().join("queue");
+        let path = dir.path().join("health");
+        let id = crate::sign::Identity::generate();
+        Spool::create(
+            &spool,
+            &crate::evidence_service::hex(&[3; 32]),
+            id.did().as_str(),
+            id.did().as_str(),
+            10000,
+        )
+        .unwrap();
+        let mut journal = Journal::create(&path, &spool).unwrap();
+        // Compact synthetic rows reach the logical count before the page limit.
+        // The selected new health remains a valid production observation.
+        journal.conn.execute_batch("WITH RECURSIVE n(i) AS (VALUES(0) UNION ALL SELECT i+1 FROM n WHERE i<99999) INSERT INTO attempts SELECT printf('%064x',i),0,0,0,0,'{}' FROM n").unwrap();
+        let health = Health {
+            attempt: format!("{:064x}", 100_000),
+            observer: crate::evidence_capture::Observer::Collector,
+            observed: 1,
+            locally_queued: 0,
+            unconfirmed: 1,
+            recording_gap: true,
+            remote_acknowledged: false,
+            status: None,
+            outcome: None,
+        };
+        let error = journal.record(&health).unwrap_err();
+        assert_eq!(
+            error.downcast_ref::<CapacityLimit>().unwrap().0,
+            "attempt_limit"
+        );
+        let (count, exhausted, reason, reserve): (u64, bool, String, u64) = journal.conn.query_row("SELECT (SELECT count(*) FROM attempts),exhausted,reason,(SELECT count(*) FROM reserve) FROM control", [], |r| Ok((unsigned(r,0)?,r.get(1)?,r.get(2)?,unsigned(r,3)?))).unwrap();
+        assert_eq!(count, 100_000);
+        assert!(exhausted);
+        assert_eq!(reason, "attempt_limit");
+        assert_eq!(reserve, 0);
+        journal
+            .session("control-after-attempt-limit", 1, true)
+            .unwrap();
+        assert_eq!(
+            journal
+                .record(&health)
+                .unwrap_err()
+                .downcast_ref::<CapacityLimit>()
+                .unwrap()
+                .0,
+            "sealed_for_capacity"
+        );
+        drop(journal);
+        let reopened = Journal::open(&path).unwrap();
+        assert_eq!(
+            reopened
+                .conn
+                .query_row("SELECT reason FROM control", [], |r| r.get::<_, String>(0))
+                .unwrap(),
+            "attempt_limit"
+        );
+    }
+    #[test]
+    fn session_capacity_is_sticky_and_existing_control_still_updates() {
+        let dir = tempfile::tempdir().unwrap();
+        let spool = dir.path().join("queue");
+        let path = dir.path().join("health");
+        let id = crate::sign::Identity::generate();
+        Spool::create(
+            &spool,
+            &crate::evidence_service::hex(&[3; 32]),
+            id.did().as_str(),
+            id.did().as_str(),
+            10000,
+        )
+        .unwrap();
+        let mut journal = Journal::create(&path, &spool).unwrap();
+        // Seed the bounded session table without thousands of separate fsyncs.
+        journal.conn.execute_batch("WITH RECURSIVE n(i) AS (VALUES(0) UNION ALL SELECT i+1 FROM n WHERE i<1023) INSERT INTO sessions SELECT printf('%032x',i),0,0,1 FROM n").unwrap();
+        assert!(journal.session("new-session", 1, false).is_err());
+        journal.session(&format!("{:032x}", 0), 12, true).unwrap();
+        let s = journal.snapshot().unwrap();
+        assert_eq!(s.journal.sessions_used, 1024);
+        assert_eq!(
+            s.journal.exhaustion_reason.as_deref(),
+            Some("session_limit")
+        );
+        assert_eq!(s.telemetry_dropped, 12);
+        assert_eq!(s.journal.reserve_bytes, 0);
     }
 }
