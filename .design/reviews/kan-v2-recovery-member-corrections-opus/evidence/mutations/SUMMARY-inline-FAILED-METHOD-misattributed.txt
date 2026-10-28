@@ -1,0 +1,13 @@
+M01-authenticated-length [author] exit=101 compile_fail=False author_failures={} reviewer_probe_failures=[]
+M02-partial-length-kept [author] exit=101 compile_fail=False author_failures={} reviewer_probe_failures=[]
+M03-partial-basis-verified [author] exit=101 compile_fail=False author_failures={} reviewer_probe_failures=[]
+M04-shared-request-allowed [author] exit=101 compile_fail=False author_failures={} reviewer_probe_failures=[]
+M05-request-bound-removed [author] exit=101 compile_fail=False author_failures={} reviewer_probe_failures=[]
+M06-request-bound-off-by-one [reviewer] exit=101 compile_fail=False author_failures={} reviewer_probe_failures=[]
+M07-clear-referenced-too [reviewer] exit=101 compile_fail=False author_failures={} reviewer_probe_failures=[]
+M08-clear-in-complete-copies [reviewer] exit=101 compile_fail=False author_failures={} reviewer_probe_failures=[]
+M09-orphan-basis-as-membership [reviewer] exit=101 compile_fail=False author_failures={} reviewer_probe_failures=[]
+M10-length-check-on-all-bytes [reviewer] exit=101 compile_fail=False author_failures={} reviewer_probe_failures=[]
+M11-occurrence-basis-as-recipe [reviewer] exit=101 compile_fail=False author_failures={} reviewer_probe_failures=[]
+M12-issuer-utf8-chars [author] exit=101 compile_fail=False author_failures={} reviewer_probe_failures=[]
+all sources restored to frozen sha256

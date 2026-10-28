@@ -1,0 +1,61 @@
+# AC04-membership-zero-length
+# old: '(1..=MAX_OBJECT as u64).contains(&length)'
+# new: '(0..=MAX_OBJECT as u64).contains(&length)'
+# restored_sha256=5a6857fdff878198c46bdf1783b78c3572aa94a8d34c34747141435fab894558
+
+## cmd: cargo test --offline --no-fail-fast --features v2-crypto --lib evidence_recovery_commitment::polling_tests
+## exit=0
+
+running 2 tests
+test evidence_recovery_commitment::polling_tests::cancellation_interrupts_member_hash_before_the_full_payload_is_charged ... ok
+test evidence_recovery_commitment::polling_tests::cancellation_interrupts_candidate_verification_before_the_full_payload_is_charged ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 79 filtered out; finished in 0.14s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-recovery-member/.local-state/reviews/recovery-member)
+    Finished `test` profile [unoptimized] target(s) in 6.49s
+     Running unittests src/lib.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/kan-480f4f845bac8ec9)
+
+## cmd: cargo test --offline --no-fail-fast --features v2-crypto --test evidence_recovery_commitment --test evidence_recovery_commitment_review_regressions
+## exit=101
+
+running 8 tests
+test skipped_extra_and_reordered_sections_never_finish ... ok
+test profile_plan_and_cid_shape_cannot_be_silently_reinterpreted ... ok
+test sorted_unique_cids_are_required_and_candidate_hashes_are_checked ... ok
+test missing_empty_corrupt_and_restored_bytes_remain_distinct ... ok
+test independent_python_member_output_and_restoration_framing_matches ... ok
+test local_limits_cancellation_and_failed_work_are_explicit ... ok
+test failure_mid_payload_and_candidate_verification_consumes_budget_and_poisons ... ok
+test maximum_objects_and_metadata_bounds_do_not_change_framing ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.36s
+
+
+running 2 tests
+test rv_a4_local_bounds_exact_edges ... FAILED
+test rv_a3_section_count_sequence_boundaries ... ok
+
+failures:
+
+---- rv_a4_local_bounds_exact_edges stdout ----
+
+thread 'rv_a4_local_bounds_exact_edges' (10051013) panicked at tests/evidence_recovery_commitment_review_regressions.rs:161:9:
+assertion `left == right` failed: membership-length-0
+  left: true
+ right: false
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    rv_a4_local_bounds_exact_edges
+
+test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-recovery-member/.local-state/reviews/recovery-member)
+    Finished `test` profile [unoptimized] target(s) in 7.60s
+     Running tests/evidence_recovery_commitment.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_recovery_commitment-5a89bc2efd1208f4)
+     Running tests/evidence_recovery_commitment_review_regressions.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_recovery_commitment_review_regressions-5463b13d6f2b3ba3)
+error: test failed, to rerun pass `--test evidence_recovery_commitment_review_regressions`
+error: 1 target failed:
+    `--test evidence_recovery_commitment_review_regressions`

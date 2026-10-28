@@ -1,7 +1,7 @@
 #![cfg(feature = "v2-storage")]
 //! Promoted independent RA3/RA4 probes from frozen a8927a6 review.
-//! Every assertion states the behaviour the design/doc requires. Vectors come from
-//! review-evidence/probes/indep_commitments.py (prose-only implementation).
+//! Retained source: .design/reviews/kan-v2-recovery-commitment-opus/evidence/probes/.
+//! These section/boundary probes do not consume the independent vector corpus.
 use atproto_dasl::Cid;
 use kan::evidence_recovery_commitment::{
     Counts, Domain, Header, Limits, MemberFraming, RestorationFraming,
@@ -211,6 +211,16 @@ fn rv_a4_local_bounds_exact_edges() {
         h.issuer = &issuer;
         expect(
             &format!("issuer-len-{len}"),
+            MemberFraming::new(h, counts(0, 0, 0), Domain::Member, limits()).is_ok(),
+            want,
+        );
+    }
+    for (characters, want) in [(40, true), (41, false)] {
+        let issuer = "é".repeat(characters);
+        let mut h = header2();
+        h.issuer = &issuer;
+        expect(
+            &format!("issuer-utf8-bytes-{}", issuer.len()),
             MemberFraming::new(h, counts(0, 0, 0), Domain::Member, limits()).is_ok(),
             want,
         );

@@ -1,0 +1,3 @@
+[post] commit=5e54513c629b3b2e954eff5e3e43f98d471725c0 repo_HEAD=5e54513c629b3b2e954eff5e3e43f98d471725c0 manifest_files=3108 export_files_checked=3108 git_tree_entries=3108 blob_mismatches=0
+[post] extras_allowed_present=['north-star.json', 'review-evidence']
+[post] problems=0

@@ -1,0 +1,10 @@
+DEMONSTRATED: item-budget
+DEMONSTRATED: input-budget
+SURVIVED: early cancellation guard; final commitment framing still refuses cancellation (not coverage of early interruption)
+DEMONSTRATED: source-digest
+DEMONSTRATED: expected-length
+DEMONSTRATED: duplicate-operation
+DEMONSTRATED: original-hash
+DEMONSTRATED: orphan-loss
+DEMONSTRATED: writer-signature
+9 compiled controls attempted; see individual semantic failures/survivors above; restored suite passed.

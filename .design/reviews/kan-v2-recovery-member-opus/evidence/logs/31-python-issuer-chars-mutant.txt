@@ -1,0 +1,15 @@
+# cwd: /Users/m/code/kan-tools/kan/.worktrees/kan-v2-recovery-member/.local-state/reviews/recovery-member
+# cmd: python3 review-evidence/mutations/python/recovery_commitments_chars.py --check
+# started: 2026-10-19T15:18:23Z
+Traceback (most recent call last):
+  File "/Users/m/code/kan-tools/kan/.worktrees/kan-v2-recovery-member/.local-state/reviews/recovery-member/review-evidence/mutations/python/recovery_commitments_chars.py", line 191, in <module>
+    if __name__=='__main__':main()
+  File "/Users/m/code/kan-tools/kan/.worktrees/kan-v2-recovery-member/.local-state/reviews/recovery-member/review-evidence/mutations/python/recovery_commitments_chars.py", line 184, in main
+    generated=vectors();checks(generated)
+  File "/Users/m/code/kan-tools/kan/.worktrees/kan-v2-recovery-member/.local-state/reviews/recovery-member/review-evidence/mutations/python/recovery_commitments_chars.py", line 175, in checks
+    else:require(accepted,'accepted invalid issuer byte length')
+  File "/Users/m/code/kan-tools/kan/.worktrees/kan-v2-recovery-member/.local-state/reviews/recovery-member/review-evidence/mutations/python/recovery_commitments_chars.py", line 23, in require
+    raise ValueError(reason)
+ValueError: accepted invalid issuer byte length
+
+# exit=1 elapsed_s=0

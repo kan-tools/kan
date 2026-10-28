@@ -1,0 +1,21 @@
+=== R03-slot-conflict
+=== R05-retained-membership
+  independently_constructed_python_members_match_commitments_losses_and_refusals @ tests/evidence_recovery_member.rs:588:13
+      assertion `left == right` failed: "absent-original-membership" | left: "source metadata digest" | right: "retained reference absent from membership"
+  owner_pins_proofs_missing_membership_and_conflicting_lengths_refuse @ tests/evidence_recovery_member.rs:333:5
+      assertion `left == right` failed | left: Some(Invalid("source metadata digest")) | right: Some(Invalid("retained reference absent from membership"))
+  rp16_partial_retained_reference_outside_membership_refuses @ tests/zz_review_member_probes2.rs:398:5
+      assertion `left == right` failed | left: None | right: Some("retained reference absent from membership")
+=== R09-writer-predecessor
+  issuer_resigning_cannot_hide_invalid_writer_chain @ tests/evidence_recovery_member.rs:399:5
+      assertion `left == right` failed | left: Some(Invalid("retained writer request")) | right: Some(Invalid("writer predecessor"))
+  rp17_writer_predecessor_without_bytes @ tests/zz_review_member_probes2.rs:416:5
+      assertion `left == right` failed | left: None | right: Some("writer predecessor")
+=== R14-new-initial-check
+=== R15-membership-input-charge
+=== R17-nonempty-original
+  rp15_empty_orphan_with_empty_cid_is_corrupt @ tests/zz_review_member_probes2.rs:381:5
+      assertion `left == right` failed | left: [] | right: [Loss { occurrence: None, cid: Cid(bafkreihdwdcefgh4dqkjv67uzcmw7ojee6xedzdetojuzjevtenxquvyku), expected_length: None, state: Corrupt }]
+=== R18-record-position
+  independently_constructed_python_members_match_commitments_losses_and_refusals @ tests/evidence_recovery_member.rs:588:13
+      assertion `left == right` failed: "reordered-record" | left: "issuer proof" | right: "record position"

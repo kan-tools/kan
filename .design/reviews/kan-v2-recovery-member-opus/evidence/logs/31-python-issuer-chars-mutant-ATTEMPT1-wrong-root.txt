@@ -1,0 +1,19 @@
+# cwd: /Users/m/code/kan-tools/kan/.worktrees/kan-v2-recovery-member/.local-state/reviews/recovery-member
+# cmd: python3 review-evidence/mutations/python/recovery_commitments_chars.py --check
+# started: 2026-10-19T15:18:18Z
+Traceback (most recent call last):
+  File "/Users/m/code/kan-tools/kan/.worktrees/kan-v2-recovery-member/.local-state/reviews/recovery-member/review-evidence/mutations/python/recovery_commitments_chars.py", line 191, in <module>
+    if __name__=='__main__':main()
+  File "/Users/m/code/kan-tools/kan/.worktrees/kan-v2-recovery-member/.local-state/reviews/recovery-member/review-evidence/mutations/python/recovery_commitments_chars.py", line 184, in main
+    generated=vectors();checks(generated)
+  File "/Users/m/code/kan-tools/kan/.worktrees/kan-v2-recovery-member/.local-state/reviews/recovery-member/review-evidence/mutations/python/recovery_commitments_chars.py", line 123, in vectors
+    issuer=json.loads((ROOT/'.design/fixtures/service-attestation-v1.json').read_text())['pinnedIssuer']
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/pathlib.py", line 1256, in read_text
+    with self.open(mode='r', encoding=encoding, errors=errors) as f:
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/pathlib.py", line 1242, in open
+    return io.open(self, mode, buffering, encoding, errors, newline,
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/pathlib.py", line 1110, in _opener
+    return self._accessor.open(self, flags, mode)
+FileNotFoundError: [Errno 2] No such file or directory: '/Users/m/code/kan-tools/kan/.worktrees/kan-v2-recovery-member/.local-state/reviews/recovery-member/review-evidence/.design/fixtures/service-attestation-v1.json'
+
+# exit=1 elapsed_s=0

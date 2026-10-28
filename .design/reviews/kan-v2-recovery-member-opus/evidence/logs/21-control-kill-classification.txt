@@ -1,0 +1,119 @@
+=== A-cancelled
+  rp10a_precancelled_refuses_before_semantic_work @ tests/zz_review_member_probes.rs:642:5
+      assertion `left == right` failed | left: Some(Invalid("issuer proof")) | right: Some(Cancelled)
+  rp10b_midflight_cancellation_is_prompt @ tests/zz_review_member_probes.rs:676:5
+      cancellation latency 1.396970541s vs member stage 1.751507041s | ---- rp10d_cancellation_latency_is_below_one_object_hash stdout ---- | RP rp10d trial 1: delay=43.075508ms latency=388.123417ms result=Some(Cancelled)
+  rp10d_cancellation_latency_is_below_one_object_hash @ tests/zz_review_member_probes.rs:803:5
+      worst latency 388.123417ms vs one-object hash 109.64675ms | failures:
+=== A-duplicate-operation
+  shared_cid_lengths_and_duplicate_operations_refuse_even_when_all_bytes_missing @ tests/evidence_recovery_member.rs:634:5
+      assertion `left == right` failed | left: None | right: Some(Invalid("duplicate operation"))
+=== A-expected-length
+  independently_constructed_python_members_match_commitments_losses_and_refusals @ tests/evidence_recovery_member.rs:588:13
+      assertion `left == right` failed: "conflicting-membership-length" | left: "source metadata digest" | right: "conflicting expected lengths"
+  owner_pins_proofs_missing_membership_and_conflicting_lengths_refuse @ tests/evidence_recovery_member.rs:341:5
+      assertion `left == right` failed | left: Some(Invalid("source metadata digest")) | right: Some(Invalid("conflicting expected lengths"))
+  shared_cid_lengths_and_duplicate_operations_refuse_even_when_all_bytes_missing @ tests/evidence_recovery_member.rs:659:5
+      assertion `left == right` failed | left: None | right: Some(Invalid("conflicting expected lengths"))
+=== A-input-budget
+  bounded_acquisition_order_and_cancellation_refuse @ tests/evidence_recovery_member.rs:357:5
+      assertion `left == right` failed | left: None | right: Some(Budget)
+  rp11_caps_before_work @ tests/zz_review_member_probes.rs:717:5
+      assertion `left == right` failed | left: None | right: Some(Budget)
+=== A-item-budget
+  bounded_acquisition_order_and_cancellation_refuse @ tests/evidence_recovery_member.rs:354:5
+      assertion `left == right` failed | left: None | right: Some(Budget)
+  rp11_caps_before_work @ tests/zz_review_member_probes.rs:712:5
+      assertion `left == right` failed | left: None | right: Some(Budget)
+=== A-original-hash
+  independently_constructed_python_members_match_commitments_losses_and_refusals @ tests/evidence_recovery_member.rs:612:9
+      assertion `left == right` failed: "profile2-loss" | left: Array [Object {"cid": String("bafkreia6lir6zdjc2v6g527lrhnncnlils2nbgnpoyjlvb53fbbgh6iwna"), "expectedLength": Number(616), "occurrence": Number(2), "state": String("missing")}, Object {"cid": String("bafkreidswquskzfgnvjebap7jzzmpi7goqt7qfp2xckckv46fn7wk5wmoi"), "expectedLength": Number(616), "occurrence": Number(3), "state": String("corru
+  missing_corrupt_empty_and_orphan_bytes_have_exact_distinct_loss_and_commitment @ tests/evidence_recovery_member.rs:289:9
+      assertion `left == right` failed | left: 2 | right: 3
+=== A-orphan-loss
+  independently_constructed_python_members_match_commitments_losses_and_refusals @ tests/evidence_recovery_member.rs:612:9
+      assertion `left == right` failed: "profile2-loss" | left: Array [Object {"cid": String("bafkreia6lir6zdjc2v6g527lrhnncnlils2nbgnpoyjlvb53fbbgh6iwna"), "expectedLength": Number(616), "occurrence": Number(2), "state": String("missing")}, Object {"cid": String("bafkreidswquskzfgnvjebap7jzzmpi7goqt7qfp2xckckv46fn7wk5wmoi"), "expectedLength": Number(616), "occurrence": Number(3), "state": String("corru
+  missing_corrupt_empty_and_orphan_bytes_have_exact_distinct_loss_and_commitment @ tests/evidence_recovery_member.rs:289:9
+      assertion `left == right` failed | left: 2 | right: 3
+  rp01_staged_membership_key_null_coordinate @ tests/zz_review_member_probes.rs:340:5
+      assertion `left == right` failed | left: [] | right: [Loss { occurrence: None, cid: Cid(bafkreiffhsthmwxqnfkigsu62e6zgbjlkivef7ks5trqfgwljsb5c2n3wu), expected_length: Some(22), state: Missing }]
+  rp02_partial_profile3_membership_is_unauthenticated @ tests/zz_review_member_probes.rs:412:5
+      assertion `left == right` failed | left: [] | right: [Loss { occurrence: None, cid: Cid(bafkreiav77l6pr75nrhn236watzfzttwg2khllxo4jy7sjv5pob5ybrl3i), expected_length: Some(77), state: Missing }]
+=== A-source-digest
+  copy_plan_cannot_relabel_a_different_complete_source_digest @ tests/evidence_recovery_member.rs:503:5
+      assertion `left == right` failed | left: None | right: Some(Invalid("source metadata digest"))
+  independently_constructed_python_members_match_commitments_losses_and_refusals @ tests/evidence_recovery_member.rs:584:38
+      hostile member must refuse | failures:
+  rp02_partial_profile3_membership_is_unauthenticated @ tests/zz_review_member_probes.rs:397:5
+      assertion `left == right` failed | left: None | right: Some("source metadata digest")
+=== A-writer-signature
+  hash_valid_but_unsigned_bytes_are_not_treated_as_recoverable_loss @ tests/evidence_recovery_member.rs:441:5
+      assertion `left == right` failed | left: None | right: Some(Invalid("retained writer request"))
+  valid_json_with_bad_writer_signature_and_resigned_manifest_substitution_refuse @ tests/evidence_recovery_member.rs:765:5
+      assertion `left == right` failed | left: None | right: Some(Invalid("retained writer request"))
+  rp03_shared_request_cid_is_unsatisfiable_but_accepted_when_missing @ tests/zz_review_member_probes.rs:460:5
+      assertion `left == right` failed | left: None | right: Some("retained writer request")
+=== R01-historical-receipt-issuer
+  rp04_retained_receipts_from_wrong_issuer_refuse @ tests/zz_review_member_probes.rs:469:5
+      assertion `left == right` failed | left: None | right: Some("historical receipt issuer")
+=== R02-source-tip
+  rp05_source_tip_mismatch_refuses @ tests/zz_review_member_probes.rs:483:5
+      assertion `left == right` failed | left: None | right: Some("source tip")
+=== R03-slot-conflict
+=== R04-service-slot
+  issuer_resigning_does_not_make_wrong_service_slot_valid_when_payload_is_missing @ tests/evidence_recovery_member.rs:741:5
+      assertion `left == right` failed | left: None | right: Some(Invalid("service slot"))
+=== R05-retained-membership
+  independently_constructed_python_members_match_commitments_losses_and_refusals @ tests/evidence_recovery_member.rs:588:13
+      assertion `left == right` failed: "absent-original-membership" | left: "source metadata digest" | right: "retained reference absent from membership"
+  owner_pins_proofs_missing_membership_and_conflicting_lengths_refuse @ tests/evidence_recovery_member.rs:333:5
+      assertion `left == right` failed | left: Some(Invalid("source metadata digest")) | right: Some(Invalid("retained reference absent from membership"))
+=== R06-partial-untracked-object
+  profile3_partial_metadata_does_not_claim_completion_or_accept_extra_objects @ tests/evidence_recovery_member.rs:318:5
+      assertion `left == right` failed | left: None | right: Some(Invalid("untracked object in partial copy"))
+=== R07-proof-purpose
+  independently_constructed_python_members_match_commitments_losses_and_refusals @ tests/evidence_recovery_member.rs:584:38
+      hostile member must refuse
+  rp07_proof_purpose_per_range @ tests/zz_review_member_probes.rs:508:5
+      assertion `left == right` failed | left: Some("historical receipt issuer") | right: Some("proof purpose")
+=== R08-null-loss-for-membership-keys
+  rp01_staged_membership_key_null_coordinate @ tests/zz_review_member_probes.rs:340:5
+      assertion `left == right` failed | left: [] | right: [Loss { occurrence: None, cid: Cid(bafkreiffhsthmwxqnfkigsu62e6zgbjlkivef7ks5trqfgwljsb5c2n3wu), expected_length: Some(22), state: Missing }]
+  rp02_partial_profile3_membership_is_unauthenticated @ tests/zz_review_member_probes.rs:412:5
+      assertion `left == right` failed | left: [] | right: [Loss { occurrence: None, cid: Cid(bafkreiav77l6pr75nrhn236watzfzttwg2khllxo4jy7sjv5pob5ybrl3i), expected_length: Some(77), state: Missing }]
+=== R09-writer-predecessor
+  issuer_resigning_cannot_hide_invalid_writer_chain @ tests/evidence_recovery_member.rs:399:5
+      assertion `left == right` failed | left: Some(Invalid("retained writer request")) | right: Some(Invalid("writer predecessor"))
+=== R10-static-writer
+  rp09_non_static_writer_refuses_without_bytes @ tests/zz_review_member_probes.rs:625:9
+      did-web-documentcid
+=== R11-plan-scope-issuer-binding
+  rp06_plan_target_scope_and_issuer_binding @ tests/zz_review_member_probes.rs:492:5
+      assertion `left == right` failed | left: None | right: Some("plan binding")
+=== R12-hash-unchunked
+  rp10d_cancellation_latency_is_below_one_object_hash @ tests/zz_review_member_probes.rs:803:5
+      worst latency 82.136709ms vs one-object hash 112.278375ms
+=== R13-hash-no-poll
+  rp10d_cancellation_latency_is_below_one_object_hash @ tests/zz_review_member_probes.rs:803:5
+      worst latency 85.298166ms vs one-object hash 109.996417ms
+=== R14-new-initial-check
+=== R15-membership-input-charge
+=== R16-full-flag-always-false
+  both_profiles_verify_real_writer_requests_and_empty_members @ tests/evidence_recovery_member.rs:269:13
+      assertion failed: m.recipe_metadata_complete() | ---- complete_copy_accepts_new_admitted_suffix_without_rewriting_original_recipe stdout ----
+  complete_copy_accepts_new_admitted_suffix_without_rewriting_original_recipe @ tests/evidence_recovery_member.rs:709:36
+      called `Result::unwrap()` on an `Err` value: Invalid("untracked object in partial copy") | ---- copy_plan_cannot_relabel_a_different_complete_source_digest stdout ----
+  copy_plan_cannot_relabel_a_different_complete_source_digest @ tests/evidence_recovery_member.rs:503:5
+      assertion `left == right` failed | left: None | right: Some(Invalid("source metadata digest"))
+  independently_constructed_python_members_match_commitments_losses_and_refusals @ tests/evidence_recovery_member.rs:607:9
+      assertion `left == right` failed | left: false | right: true
+  missing_corrupt_empty_and_orphan_bytes_have_exact_distinct_loss_and_commitment @ tests/evidence_recovery_member.rs:286:35
+      called `Result::unwrap()` on an `Err` value: Invalid("untracked object in partial copy") | failures:
+  rp01_staged_membership_key_null_coordinate @ tests/zz_review_member_probes.rs:332:5
+      assertion failed: m.recipe_metadata_complete() | ---- rp02_partial_profile3_membership_is_unauthenticated stdout ----
+  rp02_partial_profile3_membership_is_unauthenticated @ tests/zz_review_member_probes.rs:397:5
+      assertion `left == right` failed | left: None | right: Some("source metadata digest")
+=== R17-nonempty-original
+=== R18-record-position
+  independently_constructed_python_members_match_commitments_losses_and_refusals @ tests/evidence_recovery_member.rs:588:13
+      assertion `left == right` failed: "reordered-record" | left: "issuer proof" | right: "record position"

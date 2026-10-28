@@ -1,0 +1,105 @@
+# date: 2026-10-19T15:57:30Z
+# cwd: /Users/m/code/kan-tools/kan/.worktrees/kan-v2-recovery-member/.local-state/reviews/member-corrections
+# cmd: cargo test --offline --features v2-crypto --no-fail-fast --test evidence_recovery_member --test evidence_recovery_member_review_regressions
+# ---
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-recovery-member/.local-state/reviews/member-corrections)
+error[E0432]: unresolved import `kan::evidence_recovery_member::Basis`
+  --> tests/evidence_recovery_member_review_regressions.rs:12:39
+   |
+12 |         self as member, Availability, Basis, Budget, Input, Loss, Membership, Object, Row,
+   |                                       ^^^^^ no `Basis` in `evidence_recovery_member`
+
+error[E0433]: cannot find `Basis` in `member`
+   --> tests/evidence_recovery_member.rs:305:32
+    |
+305 |                 basis: member::Basis::OriginalObject,
+    |                                ^^^^^ could not find `Basis` in `member`
+
+error[E0560]: struct `Loss` has no field named `basis`
+   --> tests/evidence_recovery_member.rs:305:17
+    |
+305 |                 basis: member::Basis::OriginalObject,
+    |                 ^^^^^ `Loss` does not have this field
+    |
+    = note: all struct fields are already assigned
+
+error[E0560]: struct `Loss` has no field named `basis`
+   --> tests/evidence_recovery_member_review_regressions.rs:408:13
+    |
+408 |             basis: Basis::VerifiedCopyRecipe
+    |             ^^^^^ `Loss` does not have this field
+    |
+    = note: all struct fields are already assigned
+
+error[E0560]: struct `Loss` has no field named `basis`
+   --> tests/evidence_recovery_member_review_regressions.rs:427:13
+    |
+427 |             basis: Basis::VerifiedCopyRecipe
+    |             ^^^^^ `Loss` does not have this field
+    |
+    = note: all struct fields are already assigned
+
+error[E0560]: struct `Loss` has no field named `basis`
+   --> tests/evidence_recovery_member_review_regressions.rs:451:17
+    |
+451 |                 basis: Basis::IssuerMetadata
+    |                 ^^^^^ `Loss` does not have this field
+    |
+    = note: all struct fields are already assigned
+
+error[E0560]: struct `Loss` has no field named `basis`
+   --> tests/evidence_recovery_member_review_regressions.rs:458:17
+    |
+458 |                 basis: Basis::IssuerMetadata
+    |                 ^^^^^ `Loss` does not have this field
+    |
+    = note: all struct fields are already assigned
+
+error[E0560]: struct `Loss` has no field named `basis`
+   --> tests/evidence_recovery_member_review_regressions.rs:465:17
+    |
+465 |                 basis: Basis::VerifiedCopyRecipe
+    |                 ^^^^^ `Loss` does not have this field
+    |
+    = note: all struct fields are already assigned
+
+error[E0560]: struct `Loss` has no field named `basis`
+   --> tests/evidence_recovery_member_review_regressions.rs:515:13
+    |
+515 |             basis: Basis::UnverifiedMembership
+    |             ^^^^^ `Loss` does not have this field
+    |
+    = note: all struct fields are already assigned
+
+error[E0609]: no field `basis` on type `&Loss`
+   --> tests/evidence_recovery_member.rs:611:186
+    |
+611 | ...tedLength":l.expected_length,"basis":format!("{:?}",l.basis),"state":match l.state {Availability::Missing=>"missing",Availabilit...
+    |                                                          ^^^^^ unknown field
+    |
+    = note: available fields are: `occurrence`, `cid`, `expected_length`, `state`
+
+error[E0560]: struct `Loss` has no field named `basis`
+    --> tests/evidence_recovery_member_review_regressions.rs:1039:13
+     |
+1039 |             basis: Basis::OriginalObject
+     |             ^^^^^ `Loss` does not have this field
+     |
+     = note: all struct fields are already assigned
+
+error[E0560]: struct `Loss` has no field named `basis`
+    --> tests/evidence_recovery_member_review_regressions.rs:1143:13
+     |
+1143 |             basis: Basis::OriginalObject
+     |             ^^^^^ `Loss` does not have this field
+     |
+     = note: all struct fields are already assigned
+
+Some errors have detailed explanations: E0433, E0560, E0609.
+For more information about an error, try `rustc --explain E0433`.
+Some errors have detailed explanations: E0432, E0560.
+For more information about an error, try `rustc --explain E0432`.
+error: could not compile `kan` (test "evidence_recovery_member") due to 3 previous errors
+warning: build failed, waiting for other jobs to finish...
+error: could not compile `kan` (test "evidence_recovery_member_review_regressions") due to 9 previous errors
+# --- exit=101

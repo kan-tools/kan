@@ -1,0 +1,199 @@
+# origin=author file=src/evidence_recovery_member.rs
+# old='require(!c.referenced, "reused service request CID")?;'
+# new='require(true || !c.referenced, "reused service request CID")?;'
+# cmd=cargo test --offline --features v2-crypto --no-fail-fast --test evidence_recovery_member --test evidence_recovery_member_review_regressions --test evidence_recovery_member_corrections --test evidence_recovery_commitment_review_regressions --test zz_corrections_review_probes
+
+running 2 tests
+test rv_a3_section_count_sequence_boundaries ... ok
+test rv_a4_local_bounds_exact_edges ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.25s
+
+
+running 16 tests
+test expected_oversized_length_refuses_without_a_physical_object ... ok
+test issuer_resigning_does_not_make_wrong_service_slot_valid_when_payload_is_missing ... ok
+test hash_valid_but_unsigned_bytes_are_not_treated_as_recoverable_loss ... ok
+test issuer_resigning_cannot_hide_invalid_writer_chain ... ok
+test bounded_acquisition_order_and_cancellation_refuse ... ok
+test copy_plan_cannot_relabel_a_different_complete_source_digest ... ok
+test profile3_partial_metadata_does_not_claim_completion_or_accept_extra_objects ... ok
+test complete_copy_accepts_new_admitted_suffix_without_rewriting_original_recipe ... ok
+test time_and_physical_object_bounds_refuse ... ok
+test shared_missing_service_request_cid_refuses_before_restoration ... FAILED
+test valid_json_with_bad_writer_signature_and_resigned_manifest_substitution_refuse ... ok
+test both_profiles_verify_real_writer_requests_and_empty_members ... ok
+test owner_pins_proofs_missing_membership_and_conflicting_lengths_refuse ... ok
+test independently_constructed_python_members_match_commitments_losses_and_refusals ... FAILED
+test shared_cid_lengths_and_duplicate_operations_refuse_even_when_all_bytes_missing ... ok
+test missing_corrupt_empty_and_orphan_bytes_have_exact_distinct_loss_and_commitment ... ok
+
+failures:
+
+---- shared_missing_service_request_cid_refuses_before_restoration stdout ----
+
+thread 'shared_missing_service_request_cid_refuses_before_restoration' (10103272) panicked at tests/evidence_recovery_member.rs:472:5:
+assertion `left == right` failed
+  left: None
+ right: Some(Invalid("reused service request CID"))
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- independently_constructed_python_members_match_commitments_losses_and_refusals stdout ----
+
+thread 'independently_constructed_python_members_match_commitments_losses_and_refusals' (10103265) panicked at tests/evidence_recovery_member.rs:584:38:
+hostile member must refuse
+
+
+failures:
+    independently_constructed_python_members_match_commitments_losses_and_refusals
+    shared_missing_service_request_cid_refuses_before_restoration
+
+test result: FAILED. 14 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.19s
+
+
+running 2 tests
+test incomplete_membership_has_no_authenticated_length_or_byte_classification ... ok
+test authentic_bytes_with_false_metadata_are_not_repairable_loss ... FAILED
+
+failures:
+
+---- authentic_bytes_with_false_metadata_are_not_repairable_loss stdout ----
+
+thread 'authentic_bytes_with_false_metadata_are_not_repairable_loss' (10103277) panicked at tests/evidence_recovery_member_corrections.rs:112:9:
+reused-missing-service-request: contradictory metadata accepted as repairable loss
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    authentic_bytes_with_false_metadata_are_not_repairable_loss
+
+test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s
+
+
+running 20 tests
+test orphan_hash_mismatch_is_reported_without_rewriting_its_bytes ... ok
+test completed_copy_cannot_mislabel_hash_valid_orphan_with_false_length ... ok
+test membership_bytes_are_charged_at_the_exact_input_boundary ... ok
+test rp10a_precancelled_refuses_before_semantic_work ... ok
+test rp06_plan_target_scope_and_issuer_binding ... ok
+test rp04_retained_receipts_from_wrong_issuer_refuse ... ok
+test rp13_noncanonical_spelling_is_invisible_to_typed_api ... ok
+test rp03_shared_request_cid_refuses_with_or_without_bytes ... FAILED
+test rp05_source_tip_mismatch_refuses ... ok
+test rp15_empty_orphan_with_empty_cid_is_corrupt ... ok
+test rp08_membership_order_duplicates_and_codec ... ok
+test rp01_staged_membership_key_null_coordinate ... ok
+test rp02_partial_profile3_membership_is_labeled_unverified ... ok
+test rp07_proof_purpose_per_range ... ok
+test rp16_partial_retained_reference_outside_membership_refuses ... ok
+test rp12_cross_scope_issuer_and_observer ... ok
+test rp14_hash_valid_bytes_with_false_signed_length ... ok
+test rp09_non_static_writer_refuses_without_bytes ... ok
+test rp17_writer_predecessor_without_bytes ... ok
+test rp11_caps_before_work ... ok
+
+failures:
+
+---- rp03_shared_request_cid_refuses_with_or_without_bytes stdout ----
+RP rp03-shared-missing: ACCEPT through=2 verified=0 complete=true losses=[Loss { occurrence: Some(1), cid: Cid(bafkreid6zo5zmdm74tloedzg3huklmmco26rpjnfkqva2yqpss4pdi5wdi), expected_length: Some(555), state: Missing, basis: IssuerMetadata }, Loss { occurrence: Some(2), cid: Cid(bafkreid6zo5zmdm74tloedzg3huklmmco26rpjnfkqva2yqpss4pdi5wdi), expected_length: Some(555), state: Missing, basis: IssuerMetadata }]
+
+thread 'rp03_shared_request_cid_refuses_with_or_without_bytes' (10103286) panicked at tests/evidence_recovery_member_review_regressions.rs:564:5:
+assertion `left == right` failed
+  left: None
+ right: Some("reused service request CID")
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    rp03_shared_request_cid_refuses_with_or_without_bytes
+
+test result: FAILED. 19 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.45s
+
+
+running 12 tests
+test cp08_referenced_hash_invalid_is_corrupt ... ok
+test cp03_empty_cid_positive_length_without_bytes ... ok
+test cp07_complete_membership_only_corrupt_variants ... ok
+test cp05_partial_out_of_bound_rows_refuse ... ok
+test cp10_profile3_complete_shared_request_refuses ... FAILED
+test cp06_m1_retains_unverified_lengths ... ok
+test cp09_shared_request_variants ... FAILED
+test cp12_partial_row_contradicting_issuer_length_refuses_with_bytes ... ok
+test cp11_basis_deterministic ... ok
+test cp04_partial_membership_only_corrupt_and_empty ... ok
+test cp01_request_length_edges_without_bytes ... ok
+test cp02_staged_object_above_request_bound_is_not_a_request ... ok
+
+failures:
+
+---- cp10_profile3_complete_shared_request_refuses stdout ----
+RP cp10-p3-complete-shared: ACCEPT through=2 verified=0 complete=true losses=[Loss { occurrence: Some(1), cid: Cid(bafkreigaxged477u5edgut5eqzidnuv3gsvzako6rbmowp5swyowybmira), expected_length: Some(555), state: Missing, basis: IssuerMetadata }, Loss { occurrence: Some(2), cid: Cid(bafkreigaxged477u5edgut5eqzidnuv3gsvzako6rbmowp5swyowybmira), expected_length: Some(555), state: Missing, basis: IssuerMetadata }]
+
+thread 'cp10_profile3_complete_shared_request_refuses' (10103333) panicked at tests/zz_corrections_review_probes.rs:663:5:
+assertion `left == right` failed
+  left: None
+ right: Some("reused service request CID")
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- cp09_shared_request_variants stdout ----
+RP cp09-non-adjacent-shared: ACCEPT through=3 verified=0 complete=true losses=[Loss { occurrence: Some(1), cid: Cid(bafkreid6zo5zmdm74tloedzg3huklmmco26rpjnfkqva2yqpss4pdi5wdi), expected_length: Some(555), state: Missing, basis: IssuerMetadata }, Loss { occurrence: Some(2), cid: Cid(bafkreigcfsxncfaft5u6fstjxu6qzoibtmerungp27j63towxfmsfvqaou), expected_length: Some(612), state: Missing, basis: IssuerMetadata }, Loss { occurrence: Some(3), cid: Cid(bafkreid6zo5zmdm74tloedzg3huklmmco26rpjnfkqva2yqpss4pdi5wdi), expected_length: Some(555), state: Missing, basis: IssuerMetadata }]
+
+thread 'cp09_shared_request_variants' (10103332) panicked at tests/zz_corrections_review_probes.rs:620:5:
+assertion `left == right` failed
+  left: None
+ right: Some("reused service request CID")
+
+
+failures:
+    cp09_shared_request_variants
+    cp10_profile3_complete_shared_request_refuses
+
+test result: FAILED. 10 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.29s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-recovery-member/.local-state/reviews/member-corrections)
+warning: unused import: `Ordering`
+  --> tests/zz_corrections_review_probes.rs:21:30
+   |
+21 |         atomic::{AtomicBool, Ordering},
+   |                              ^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: call to `.clone()` on a reference in this situation does nothing
+   --> tests/zz_corrections_review_probes.rs:461:90
+    |
+461 |     eprintln!("CP03 outcome: {:?}", r.as_ref().map(|m| m.losses().to_vec()).map_err(|e| e.clone()));
+    |                                                                                          ^^^^^^^^
+    |
+    = note: the type `kan::evidence_recovery_member::Error` does not implement `Clone`, so calling `clone` on `&kan::evidence_recovery_member::Error` copies the reference, which does not do anything and can be removed
+    = note: `#[warn(noop_method_call)]` on by default
+help: remove this redundant call
+    |
+461 -     eprintln!("CP03 outcome: {:?}", r.as_ref().map(|m| m.losses().to_vec()).map_err(|e| e.clone()));
+461 +     eprintln!("CP03 outcome: {:?}", r.as_ref().map(|m| m.losses().to_vec()).map_err(|e| e));
+    |
+help: if you meant to clone `kan::evidence_recovery_member::Error`, implement `Clone` for it
+   --> src/evidence_recovery_member.rs:27:1
+    |
+ 27 + #[derive(Clone)]
+ 28 | pub enum Error {
+    |
+
+warning: `kan` (test "zz_corrections_review_probes") generated 2 warnings (run `cargo fix --test "zz_corrections_review_probes" -p kan` to apply 2 suggestions)
+    Finished `test` profile [unoptimized] target(s) in 7.81s
+     Running tests/evidence_recovery_commitment_review_regressions.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_recovery_commitment_review_regressions-5463b13d6f2b3ba3)
+     Running tests/evidence_recovery_member.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_recovery_member-9be305d24ad97b48)
+error: test failed, to rerun pass `--test evidence_recovery_member`
+     Running tests/evidence_recovery_member_corrections.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_recovery_member_corrections-139989e045e17eb4)
+error: test failed, to rerun pass `--test evidence_recovery_member_corrections`
+     Running tests/evidence_recovery_member_review_regressions.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_recovery_member_review_regressions-9f02720da46a1f05)
+error: test failed, to rerun pass `--test evidence_recovery_member_review_regressions`
+     Running tests/zz_corrections_review_probes.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/zz_corrections_review_probes-40f69a883b3ce883)
+error: test failed, to rerun pass `--test zz_corrections_review_probes`
+error: 4 targets failed:
+    `--test evidence_recovery_member`
+    `--test evidence_recovery_member_corrections`
+    `--test evidence_recovery_member_review_regressions`
+    `--test zz_corrections_review_probes`
+
+# exit=101

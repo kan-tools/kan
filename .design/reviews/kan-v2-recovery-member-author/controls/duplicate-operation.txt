@@ -1,0 +1,26 @@
+
+running 1 test
+test shared_cid_lengths_and_duplicate_operations_refuse_even_when_all_bytes_missing ... FAILED
+
+failures:
+
+---- shared_cid_lengths_and_duplicate_operations_refuse_even_when_all_bytes_missing stdout ----
+
+thread 'shared_cid_lengths_and_duplicate_operations_refuse_even_when_all_bytes_missing' (9993134) panicked at tests/evidence_recovery_member.rs:634:5:
+assertion `left == right` failed
+  left: None
+ right: Some(Invalid("duplicate operation"))
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    shared_cid_lengths_and_duplicate_operations_refuse_even_when_all_bytes_missing
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 15 filtered out; finished in 0.06s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-recovery-member)
+    Finished `test` profile [unoptimized] target(s) in 7.24s
+     Running tests/evidence_recovery_member.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_recovery_member-9be305d24ad97b48)
+error: test failed, to rerun pass `--test evidence_recovery_member`
+
+exit=101

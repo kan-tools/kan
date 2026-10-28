@@ -1,0 +1,26 @@
+
+running 1 test
+test missing_corrupt_empty_and_orphan_bytes_have_exact_distinct_loss_and_commitment ... FAILED
+
+failures:
+
+---- missing_corrupt_empty_and_orphan_bytes_have_exact_distinct_loss_and_commitment stdout ----
+
+thread 'missing_corrupt_empty_and_orphan_bytes_have_exact_distinct_loss_and_commitment' (9993682) panicked at tests/evidence_recovery_member.rs:289:9:
+assertion `left == right` failed
+  left: 2
+ right: 3
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    missing_corrupt_empty_and_orphan_bytes_have_exact_distinct_loss_and_commitment
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 15 filtered out; finished in 0.08s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-recovery-member)
+    Finished `test` profile [unoptimized] target(s) in 7.29s
+     Running tests/evidence_recovery_member.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_recovery_member-9be305d24ad97b48)
+error: test failed, to rerun pass `--test evidence_recovery_member`
+
+exit=101

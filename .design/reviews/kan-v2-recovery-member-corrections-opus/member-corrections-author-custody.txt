@@ -1,0 +1,3 @@
+[author-recheck] commit=b11cbf42af09d09113e467f5cf9cdea82ef9ade0 repo_HEAD=b11cbf42af09d09113e467f5cf9cdea82ef9ade0 manifest_files=3252 export_files_checked=3252 git_tree_entries=3252 blob_mismatches=0
+[author-recheck] extras_allowed_present=['north-star.json', 'review-evidence']
+[author-recheck] problems=0
