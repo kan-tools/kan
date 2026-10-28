@@ -14,6 +14,20 @@ struct Cli {
 }
 #[derive(Subcommand)]
 enum Command {
+    /// Experimental single POST: raw stdin/body stdout, capture health on stderr.
+    #[cfg(feature = "v2-crypto")]
+    CapturePost {
+        #[arg(long)]
+        endpoint: String,
+        #[arg(long)]
+        spool: PathBuf,
+        #[arg(long)]
+        key: PathBuf,
+        #[arg(long)]
+        recipient: String,
+        #[arg(long, default_value_t = 300, value_parser = clap::value_parser!(u32).range(1..=86400))]
+        deadline_seconds: u32,
+    },
     /// Recover an explicitly pinned import into a NEW private plaintext directory.
     #[cfg(feature = "v2-crypto")]
     RestoreImport {
@@ -215,6 +229,56 @@ fn hex(bytes: &[u8]) -> String {
 }
 fn run() -> Result<(), Box<dyn std::error::Error>> {
     match Cli::parse().command {
+        #[cfg(feature = "v2-crypto")]
+        Command::CapturePost {
+            endpoint,
+            spool,
+            key,
+            recipient,
+            deadline_seconds,
+        } => {
+            use kan::evidence_capture::{self as capture, EncryptedSpool};
+            let route = capture::Route::new(&endpoint)?;
+            let signer = service_identity(&key)?;
+            let recipient = fixed_hex::<32>(&recipient)?;
+            let request = bounded_read(std::io::stdin().lock(), capture::MAX_REQUEST)?;
+            // Open failure is degraded capture, not permission to drop inference.
+            let mut spool = kan::evidence_spool::Spool::open(&spool).ok();
+            // A readable, mismatched writer is a configuration error. Storage
+            // that cannot be inspected still follows the visible-gap policy.
+            if let Some(queue) = spool.as_mut() {
+                if let Ok(status) = queue.status() {
+                    if status.writer != signer.did().as_str() {
+                        return Err("capture signing key does not match spool writer".into());
+                    }
+                }
+            }
+            let mut sink = EncryptedSpool {
+                spool: spool.as_mut(),
+                signer: &signer,
+                recipient,
+            };
+            let mut notify = |health: &capture::Health| {
+                use std::io::Write;
+                let stderr = std::io::stderr();
+                let mut stderr = stderr.lock();
+                let _ = serde_json::to_writer(&mut stderr, health);
+                let _ = writeln!(stderr);
+            };
+            let runtime = tokio::runtime::Runtime::new()?;
+            let result = runtime.block_on(capture::forward(
+                &route,
+                request,
+                &mut sink,
+                &mut notify,
+                &mut tokio::io::stdout(),
+                std::time::Duration::from_secs(u64::from(deadline_seconds)),
+            ));
+            // Tokio stdout uses a blocking worker. A full downstream pipe must
+            // not make runtime destruction wait forever after the I/O deadline.
+            runtime.shutdown_timeout(std::time::Duration::from_millis(100));
+            result?;
+        }
         #[cfg(feature = "v2-crypto")]
         Command::RestoreImport {
             database,

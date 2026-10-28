@@ -334,3 +334,36 @@ The remaining coordinate-call-site/error-specificity coverage limits and tooling
 limits are explicit in `.design/reviews/kan-v2-import-restore-2026-10-17.md`.
 No production source changed after the first review. This completes the offline
 selected-byte recovery build point, not P7 operational qualification.
+
+
+## First capture forwarding build point — 2026-10-17
+
+Restore final head 2531f91 has green CI. Permanent child worktree
+`.worktrees/kan-v2-capture`, branch `feat/kan-v2-capture`, draft PR #276, starts
+there. Its final implementation is 8c00a28ecd6a8f098d16302ece98306c177f039f.
+`capture-post` and the shared observer recorder now encrypt raw body observations
+into the existing spool, preserve KANC2 provenance and observation clocks, signal
+recording gaps separately from bytes, and forward one configured POST without
+application retries, redirects, proxies or pooled-connection reuse. The CLI
+rejects known writer misconfiguration before sending. Recording latency no longer
+consumes the cumulative network/output I/O budget or falsely fails a completed
+provider response. Exact-byte archive drain remains separate from inference.
+
+Three fresh actual Claude Code Opus 5.5 reviews each returned APPROVE WITH
+FOLLOW-UPS. All production corrections have full-fix runtime reversion evidence.
+There are 29 capture integration tests, independent encrypted-frame decoding,
+and 6 + 7 + 2 targeted mutation controls across the reviewed build points. The
+second reviewer also ran all 140 existing v2 integration tests. Details, exact
+review identities/ranges/hashes and remaining limits are versioned in
+`.design/reviews/kan-v2-capture-forwarding-2026-10-17.md`. Public reviewer deadline
+probes are retained beside that report, independent of temporary directories.
+
+P6 is not complete. Next prioritize bounded admission latency under spool
+contention and CI coverage for provider-body read deadlines, then authenticated
+collector↔gateway transport and the selected real harness/provider profile.
+The present CLI is a gateway-side body witness, not an end-to-end harness proxy;
+headers/hooks/attachments, production custody/grants/erasure, independent-host
+backup/restore, final delta/cutover and capacity qualification remain open.
+No main merge, deployment or live user-data migration occurred. The original
+checkout's edits are untouched; scratch build targets were cleaned, with about
+16 GiB free at the final review checkpoint.
