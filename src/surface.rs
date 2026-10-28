@@ -74,3 +74,7 @@ pub const EVIDENCE_VALUES: &[SurfaceValue] = &[
     SurfaceValue::new("evidence-sqlite:bindings", "length"),
     SurfaceValue::new("evidence-sqlite:bindings", "first_manifest"),
 ];
+
+/// Browser-owned appearance preference; no tokens or evidence.
+pub const BROWSER_VALUES: &[SurfaceValue] =
+    &[SurfaceValue::new("browser:localStorage", "kan.theme")];

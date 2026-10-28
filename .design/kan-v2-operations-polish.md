@@ -116,3 +116,31 @@ No blocking product question remains for this design. Implementation must prove 
 
 ## Process record
 Context was read from the operations branch and the main checkout's bulk kan view. `day doctor` still reports two withheld claims without subject attribution and cannot establish complete process composition. The raw-data-and-projections maintenance telos deliberately has no witnesses; none are invented here. Design/bridge/claim backfill remains pending under that known limitation, following the user's prior decision to preserve ground truth and proceed in Git. `day next design` reports generative-build. Source files are unchanged in this design pass; the permanent worktree is `.worktrees/kan-v2-operations-polish`.
+
+## Build checkpoint — theme and worker recovery
+
+The first child build adds System/Light/Dark to the production operations client
+and the full synthetic Studio preview. Appearance storage is cataloged separately
+from credentials. Current reporter/worker freshness and retry state are separated
+from retained gap/failure counts; fresh unclosed sessions are active, while stale
+or unsampled unclosed sessions remain uncertain. Clock samples materially in the
+future are not treated as current.
+
+Worker checkpoints now reconcile history transactionally on every write, including
+late journal open and startup read contention. The existing JSON worker row gains
+an optional run identity and cumulative run-failure watermark; legacy rows read
+with an empty identity and zero watermark. This preserves the existing SQLite
+schema and snapshot version. The counter delta is deduplicated on retry, and the
+highest valid prior acknowledgment keeps its paired timestamp. A regressed queue
+frontier or mismatched stored binding fails reconciliation. A previously committed
+run cannot overwrite a successor's checkpoint. Deployment still requires one
+supervised worker per spool; this is not worker election. Public legacy
+`save_worker` is a low-level replacement API, not the drain checkpoint path.
+
+This is a separable first implementation slice, not completion of the 10 runtime
+ACs. Capacity certainty/reserve, preserved-history rotation, coalescing, the new
+nested snapshot model, reader API and full frontend integrations remain in the
+already declared sequence. The Linux global-cap negative control now has a CI
+runner; a successful Linux run is required before claiming the earlier survivor
+was killed. New persistence fields live in the already cataloged operations
+journal, under its existing typed creation capability.
