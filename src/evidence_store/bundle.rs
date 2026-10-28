@@ -19,7 +19,11 @@ use std::{
 };
 
 mod create;
+mod restore;
 pub use create::{create, create_observed, Creation, CreationBoundary, CreationError};
+pub use restore::{
+    restore, restore_observed, Restoration, RestorationBoundary, RestorationError, Restored,
+};
 
 const SCHEMA: &str = include_str!("bundle.sql");
 const APPLICATION_ID: i64 = 0x4b4e4231;
@@ -275,6 +279,138 @@ fn objects(
     }
     Ok(out)
 }
+struct Acquired {
+    plan: Option<Vec<u8>>,
+    membership: Vec<(Cid, u64)>,
+    records: Vec<EncodedRow>,
+    original: Vec<(Cid, Vec<u8>)>,
+    candidates: Vec<(Cid, Vec<u8>)>,
+    observations: Vec<Vec<u8>>,
+}
+impl Acquired {
+    fn with_input<T>(
+        &self,
+        context: &Context,
+        f: impl FnOnce(Input<'_>, &[Object<'_>], &[&[u8]]) -> Result<T>,
+    ) -> Result<T> {
+        let membership: Vec<_> = self
+            .membership
+            .iter()
+            .map(|(cid, length)| Membership {
+                cid,
+                length: *length,
+            })
+            .collect();
+        let records: Vec<_> = self
+            .records
+            .iter()
+            .map(|r| Row {
+                sequence: r.sequence,
+                manifest: &r.manifest,
+                receipt: &r.receipt,
+                proof: &r.proof,
+            })
+            .collect();
+        let original: Vec<_> = self
+            .original
+            .iter()
+            .map(|(cid, bytes)| Object { cid, bytes })
+            .collect();
+        let candidates: Vec<_> = self
+            .candidates
+            .iter()
+            .map(|(cid, bytes)| Object { cid, bytes })
+            .collect();
+        let observations: Vec<_> = self.observations.iter().map(Vec::as_slice).collect();
+        let input = Input {
+            context,
+            plan: self.plan.as_deref(),
+            membership: &membership,
+            records: &records,
+            objects: &original,
+        };
+        f(input, &candidates, &observations)
+    }
+}
+fn acquire(conn: &Connection, work: &mut Work) -> Result<Acquired> {
+    let mut plan = None;
+    let query = format!(
+        "SELECT singleton,{} FROM member_plan",
+        projection("envelope", 4096)
+    );
+    let mut stmt = conn.prepare(&query)?;
+    let mut rows = stmt.query([])?;
+    while let Some(row) = rows.next()? {
+        work.charge(1, 8)?;
+        integer(row, 0, 1, 1)?;
+        require(plan.is_none(), "plan cardinality")?;
+        plan = Some(cell(row, 1, 1, 4096, false, work)?);
+    }
+    let mut membership = Vec::new();
+    let query = format!(
+        "SELECT {},length FROM member_membership NOT INDEXED ORDER BY cid",
+        projection("cid", 59)
+    );
+    let mut stmt = conn.prepare(&query)?;
+    let mut rows = stmt.query([])?;
+    while let Some(row) = rows.next()? {
+        work.charge(1, 8)?;
+        membership.push((cid(row, 0, work)?, integer(row, 3, 1, MAX_OBJECT as i64)?));
+    }
+    let mut records = Vec::new();
+    let query = format!(
+        "SELECT sequence,{},{},{} FROM member_records NOT INDEXED ORDER BY sequence",
+        projection("manifest", 65536),
+        projection("receipt", 65536),
+        projection("envelope", 16384)
+    );
+    let mut stmt = conn.prepare(&query)?;
+    let mut rows = stmt.query([])?;
+    while let Some(row) = rows.next()? {
+        work.charge(1, 8)?;
+        records.push(EncodedRow {
+            sequence: integer(row, 0, 1, MAX_SAFE)?,
+            manifest: cell(row, 1, 1, 65536, false, work)?,
+            receipt: cell(row, 4, 1, 65536, false, work)?,
+            proof: cell(row, 7, 1, 16384, false, work)?,
+        });
+    }
+    let original = objects(conn, "member_objects", 0, work)?;
+    let candidates = objects(conn, "restored_objects", 1, work)?;
+    let mut observations = Vec::new();
+    let query = format!(
+        "SELECT sequence,{} FROM observations NOT INDEXED ORDER BY sequence",
+        projection("envelope", 16384)
+    );
+    let mut stmt = conn.prepare(&query)?;
+    let mut rows = stmt.query([])?;
+    while let Some(row) = rows.next()? {
+        work.charge(1, 8)?;
+        require(
+            integer(row, 0, 1, MAX_SAFE)? == observations.len() as u64 + 1,
+            "observation coordinate",
+        )?;
+        observations.push(cell(row, 1, 1, 16384, false, work)?);
+    }
+    work.check()?;
+    Ok(Acquired {
+        plan,
+        membership,
+        records,
+        original,
+        candidates,
+        observations,
+    })
+}
+fn replay_limits(work: &Work) -> Limits {
+    Limits {
+        items: work.budget.replay_items,
+        bytes: work.budget.replay_scan_bytes,
+        duration: work.deadline.saturating_duration_since(Instant::now()),
+        cancelled: work.budget.cancelled.clone(),
+    }
+}
+
 /// Inspect one pinned SQLite snapshot. The owner must retain checkpoints outside
 /// the file. SQLite can initialize WAL/SHM coordination files; main records are
 /// never rewritten. A hot journal refuses. No output path or writer is selected.
@@ -351,108 +487,17 @@ fn inspect_snapshot(
         schema(&conn, &mut work)?;
         identity(&conn, &context, &mut work)?;
         after_identity();
-        let mut plan = None;
-        let query = format!(
-            "SELECT singleton,{} FROM member_plan",
-            projection("envelope", 4096)
-        );
-        let mut stmt = conn.prepare(&query)?;
-        let mut rows = stmt.query([])?;
-        while let Some(row) = rows.next()? {
-            work.charge(1, 8)?;
-            integer(row, 0, 1, 1)?;
-            require(plan.is_none(), "plan cardinality")?;
-            plan = Some(cell(row, 1, 1, 4096, false, &mut work)?);
-        }
-        let mut membership = Vec::new();
-        let query = format!(
-            "SELECT {},length FROM member_membership NOT INDEXED ORDER BY cid",
-            projection("cid", 59)
-        );
-        let mut stmt = conn.prepare(&query)?;
-        let mut rows = stmt.query([])?;
-        while let Some(row) = rows.next()? {
-            work.charge(1, 8)?;
-            membership.push((
-                cid(row, 0, &mut work)?,
-                integer(row, 3, 1, MAX_OBJECT as i64)?,
-            ));
-        }
-        let mut records = Vec::new();
-        let query = format!(
-            "SELECT sequence,{},{},{} FROM member_records NOT INDEXED ORDER BY sequence",
-            projection("manifest", 65536),
-            projection("receipt", 65536),
-            projection("envelope", 16384)
-        );
-        let mut stmt = conn.prepare(&query)?;
-        let mut rows = stmt.query([])?;
-        while let Some(row) = rows.next()? {
-            work.charge(1, 8)?;
-            records.push(EncodedRow {
-                sequence: integer(row, 0, 1, MAX_SAFE)?,
-                manifest: cell(row, 1, 1, 65536, false, &mut work)?,
-                receipt: cell(row, 4, 1, 65536, false, &mut work)?,
-                proof: cell(row, 7, 1, 16384, false, &mut work)?,
-            });
-        }
-        let original = objects(&conn, "member_objects", 0, &mut work)?;
-        let candidates = objects(&conn, "restored_objects", 1, &mut work)?;
-        let mut observations = Vec::new();
-        let query = format!(
-            "SELECT sequence,{} FROM observations NOT INDEXED ORDER BY sequence",
-            projection("envelope", 16384)
-        );
-        let mut stmt = conn.prepare(&query)?;
-        let mut rows = stmt.query([])?;
-        while let Some(row) = rows.next()? {
-            work.charge(1, 8)?;
-            require(
-                integer(row, 0, 1, MAX_SAFE)? == observations.len() as u64 + 1,
-                "observation coordinate",
-            )?;
-            observations.push(cell(row, 1, 1, 16384, false, &mut work)?);
-        }
-        work.check()?;
-        let membership: Vec<_> = membership
-            .iter()
-            .map(|(cid, length)| Membership {
-                cid,
-                length: *length,
-            })
-            .collect();
-        let records: Vec<_> = records
-            .iter()
-            .map(|r| Row {
-                sequence: r.sequence,
-                manifest: &r.manifest,
-                receipt: &r.receipt,
-                proof: &r.proof,
-            })
-            .collect();
-        let original: Vec<_> = original
-            .iter()
-            .map(|(cid, bytes)| Object { cid, bytes })
-            .collect();
-        let candidates: Vec<_> = candidates
-            .iter()
-            .map(|(cid, bytes)| Object { cid, bytes })
-            .collect();
-        let observations: Vec<_> = observations.iter().map(Vec::as_slice).collect();
-        let input = Input {
-            context: &context,
-            plan: plan.as_deref(),
-            membership: &membership,
-            records: &records,
-            objects: &original,
-        };
-        let limits = Limits {
-            items: work.budget.replay_items,
-            bytes: work.budget.replay_scan_bytes,
-            duration: deadline.saturating_duration_since(Instant::now()),
-            cancelled: work.budget.cancelled.clone(),
-        };
-        let replay = replay::verify(input, &candidates, &observations, checkpoint, limits)?;
+        let data = acquire(&conn, &mut work)?;
+        let replay = data.with_input(&context, |input, candidates, observations| {
+            replay::verify(
+                input,
+                candidates,
+                observations,
+                checkpoint,
+                replay_limits(&work),
+            )
+            .map_err(Error::Replay)
+        })?;
         work.check()?;
         Ok(Inspection {
             source,

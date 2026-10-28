@@ -1,0 +1,18 @@
+CI39320463688, candidate6a09d6e. Full log retained locally; SHA256=e5d1505a767f7bcaa92134e1fb0434568c21529e6aea027dfb53844c47727e86
+
+2026-10-19T20:44:07.8145321Z ---- restoration_checks_writer_signature_and_manifest_binding_before_signing stdout ----
+2026-10-19T20:44:07.8145710Z 
+2026-10-19T20:44:07.8146203Z thread 'restoration_checks_writer_signature_and_manifest_binding_before_signing' (40024) panicked at tests/evidence_bundle_creation.rs:1120:9:
+2026-10-19T20:44:07.8146880Z assertion `left == right` failed
+2026-10-19T20:44:07.8147257Z   left: "did:key:zDnaeWp1hEZZ97SCZmeqok6kPDWfzHWcvaE5zredZ6Qj1mzzX"
+2026-10-19T20:44:07.8148100Z  right: "did:key:zDnaecHPsjcBu5kNSihw6GtfiKT2AcohbugkVoVwWJzR2tuxU"
+2026-10-19T20:44:07.8148624Z note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+2026-10-19T20:44:07.8148966Z 
+2026-10-19T20:44:07.8148970Z 
+2026-10-19T20:44:07.8149048Z failures:
+2026-10-19T20:44:07.8149367Z     restoration_checks_writer_signature_and_manifest_binding_before_signing
+2026-10-19T20:44:07.8149683Z 
+2026-10-19T20:44:07.8149964Z test result: FAILED. 17 passed; 1 failed; 2 ignored; 0 measured; 0 filtered out; finished in 13.60s
+2026-10-19T20:44:07.8150350Z 
+2026-10-19T20:44:07.8156636Z ^[[1m^[[91merror^[[0m: test failed, to rerun pass `--test evidence_bundle_creation`
+2026-10-19T20:44:07.8251793Z ##[error]Process completed with exit code 101.
