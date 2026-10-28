@@ -1,0 +1,5 @@
+$ cargo clippy --features v2-crypto --all-targets -- -D warnings
+    Checking kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-content-followups)
+    Finished `dev` profile [unoptimized] target(s) in 5.97s
+
+exit=0

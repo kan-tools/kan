@@ -1,0 +1,199 @@
+- complementary:
+  - link "kan•":
+    - /url: /
+  - generic: YOUR KNOWLEDGE
+  - generic: Evidence Library
+  - paragraph:
+    - text: Retained source.
+    - text: Inspectable provenance.
+  - generic: Authorized reader
+- main:
+  - generic: KAN STUDIO / LIBRARY
+  - heading "Your evidence library." [level=1]
+  - paragraph: Explore retained occurrences and inspect the bytes behind them.
+  - generic: Appearance
+  - combobox "Appearance":
+    - option "System"
+    - option "Light"
+    - option "Dark" [selected]
+  - button "Lock"
+  - status: Content interpreted from the explicit selection · original source and provenance remain available.
+  - status: Source checks complete · only currently authorized scopes are shown.
+  - button "Retry sources"
+  - generic: Authorized scope
+  - combobox "Authorized scope":
+    - option "2323232323232323232323232323232323232323232323232323232323232323" [selected]
+  - button "Refresh snapshot"
+  - generic: selected scope at authenticated snapshot; committed occurrences, not normalized sessions
+  - region "Retained occurrences":
+    - heading "Occurrences" [level=2]
+    - generic: 10 at snapshot
+    - paragraph: Committed entries at the selected snapshot.
+    - generic: Interpret selected captures as
+    - combobox "Interpret selected captures as":
+      - option "Anthropic Messages · streamed response" [selected]
+      - option "Anthropic Messages · JSON response"
+    - generic: 7 selected
+    - button "Read Content"
+    - button "Clear"
+    - paragraph: Select captures on this page. Interpretation covers only this selection.
+    - checkbox "Select occurrence 1 for Content" [checked]
+    - button "Occurrence 1 bafyreiailb27q6okpikx4ctokamduw7tv6fmjb7pww55virwcxxgzgkynm":
+      - strong: Occurrence 1
+      - generic: bafyreiailb27q6okpikx4ctokamduw7tv6fmjb7pww55virwcxxgzgkynm
+    - checkbox "Select occurrence 2 for Content" [checked]
+    - button "Occurrence 2 bafyreiefpnxd3zm6sxnt2lkj3nzr52zc7pziawq7ybgox2b2eqza5qcmlu":
+      - strong: Occurrence 2
+      - generic: bafyreiefpnxd3zm6sxnt2lkj3nzr52zc7pziawq7ybgox2b2eqza5qcmlu
+    - checkbox "Select occurrence 3 for Content" [checked]
+    - button "Occurrence 3 bafyreiffgpffuwfq4rvojzc2mdeohppklrgbf2vancgtigoc3adggasqcu":
+      - strong: Occurrence 3
+      - generic: bafyreiffgpffuwfq4rvojzc2mdeohppklrgbf2vancgtigoc3adggasqcu
+    - checkbox "Select occurrence 4 for Content" [checked]
+    - button "Occurrence 4 bafyreiagcap2vxqmxjafeqlmrym7madahvuw56so7qbbpsak45lruv4faa":
+      - strong: Occurrence 4
+      - generic: bafyreiagcap2vxqmxjafeqlmrym7madahvuw56so7qbbpsak45lruv4faa
+    - checkbox "Select occurrence 5 for Content" [checked]
+    - button "Occurrence 5 bafyreihjneq4zr2i3lte2rcnccsydzpqwzfm4f4wvrkrhgxjaxxoa6b7ly":
+      - strong: Occurrence 5
+      - generic: bafyreihjneq4zr2i3lte2rcnccsydzpqwzfm4f4wvrkrhgxjaxxoa6b7ly
+    - checkbox "Select occurrence 6 for Content" [checked]
+    - button "Occurrence 6 bafyreihrkn6d727p3i3wypu4yp2rdvxfeuivldulgfrdcfh45fvanhuw3u":
+      - strong: Occurrence 6
+      - generic: bafyreihrkn6d727p3i3wypu4yp2rdvxfeuivldulgfrdcfh45fvanhuw3u
+    - checkbox "Select occurrence 7 for Content" [checked]
+    - button "Occurrence 7 bafyreie2innc57tricxk5ogtjk36hd7uvobu7umze5beijoejniy7v36q4":
+      - strong: Occurrence 7
+      - generic: bafyreie2innc57tricxk5ogtjk36hd7uvobu7umze5beijoejniy7v36q4
+    - checkbox "Select occurrence 8 for Content"
+    - button "Occurrence 8 bafyreidilh6wvnxa6hgwqtdgee2fojj2wh4g22svepwo2gxavih2x53m4q":
+      - strong: Occurrence 8
+      - generic: bafyreidilh6wvnxa6hgwqtdgee2fojj2wh4g22svepwo2gxavih2x53m4q
+    - checkbox "Select occurrence 9 for Content"
+    - button "Occurrence 9 bafyreibtbjkcaaxbamk5cgr6xevcqqhmjrtbllm2b26l6zcs7md4zjndiq":
+      - strong: Occurrence 9
+      - generic: bafyreibtbjkcaaxbamk5cgr6xevcqqhmjrtbllm2b26l6zcs7md4zjndiq
+    - checkbox "Select occurrence 10 for Content"
+    - button "Occurrence 10 bafyreihcrxafnqvp6on6wb56cjwkqalpsgrljvuqnvpkwgd2dkltpbcgna":
+      - strong: Occurrence 10
+      - generic: bafyreihcrxafnqvp6on6wb56cjwkqalpsgrljvuqnvpkwgd2dkltpbcgna
+    - button "Previous" [disabled]
+    - generic: 1–10
+    - button "Next" [disabled]
+  - region "Source inspector":
+    - heading "Selected Content" [level=2]
+    - button "Close"
+    - paragraph: Observed content · roles and outcomes are claims. Follow citations to verified retained source.
+    - button "Content" [pressed]
+    - button "Source" [disabled]
+    - button "Provenance" [disabled]
+    - paragraph: explicit selection only; ordinal gaps mean no recognized capture, not absent inputs; protocol claims do not prove complete capture
+    - heading "collector · claimed-completed" [level=3]
+    - paragraph: "4444444444444444444444444444444444444444444444444444444444444444"
+    - paragraph: "Retained request signer: did:key:zDnaexGA8gewe3nnPT2yCYMHBE4dPdcGEQxEPxTtPdxcvU29Q"
+    - generic "Retained occurrence lineage"
+    - heading "Request · supplied history" [level=4]
+    - paragraph: "Contiguous selected bytes: 330 · Consistent observer length claim: 330"
+    - generic "Observer length claims"
+    - article:
+      - heading "Supplied history · protocol" [level=5]
+      - paragraph: Parsed JSON location /
+      - generic: Enclosing bytes 0–330 · coarse attribution · end exclusive
+      - button "Sources · shared range 1"
+    - article:
+      - heading "Supplied history · system" [level=5]
+      - paragraph: Parsed JSON location /system
+      - generic: Enclosing bytes 0–330 · coarse attribution · end exclusive
+      - button "Sources · shared range 1"
+    - article:
+      - heading "Supplied history · system · text" [level=5]
+      - generic: You are a helpful assistant.
+      - paragraph: Parsed JSON location /system
+      - generic: Enclosing bytes 0–330 · coarse attribution · end exclusive
+      - button "Sources · shared range 1"
+    - article:
+      - heading "Supplied history · user · context" [level=5]
+      - paragraph: Parsed JSON location /messages/0
+      - generic: Enclosing bytes 0–330 · coarse attribution · end exclusive
+      - button "Sources · shared range 1"
+    - article:
+      - heading "Supplied history · user · text" [level=5]
+      - generic: Explain provenance. <img src=https://untrusted.invalid/tracker onerror=alert(1)>
+      - paragraph: Parsed JSON location /messages/0/content/0
+      - generic: Enclosing bytes 0–330 · coarse attribution · end exclusive
+      - button "Sources · shared range 1"
+    - article:
+      - heading "Supplied history · user · attachment" [level=5]
+      - paragraph: Parsed JSON location /messages/0/content/1
+      - generic: Enclosing bytes 0–330 · coarse attribution · end exclusive
+      - button "Sources · shared range 1"
+    - article:
+      - heading "Supplied history · user · unsupported" [level=5]
+      - paragraph: unknown
+      - paragraph: Parsed JSON location /messages/0/content/2
+      - generic: Enclosing bytes 0–330 · coarse attribution · end exclusive
+      - button "Sources · shared range 1"
+    - generic "Shared source range 1 · 1 citations"
+    - button "Source 2 · 251–581" [active]
+    - generic "Parsed body · numbers may be rounded; Source preserves exact bytes"
+    - heading "Response · observed output" [level=4]
+    - paragraph: "Contiguous selected bytes: 675 · Consistent observer length claim: none"
+    - paragraph: Coherent protocol stop observed · capture completeness is unknown.
+    - article:
+      - heading "protocol" [level=5]
+      - generic "Parsed event · numbers may be rounded; Source preserves exact bytes"
+      - generic: Enclosing bytes 0–114 · coarse attribution · end exclusive
+      - button "Source 4 · 252–366"
+      - button "Source 6 · 252–366"
+    - article:
+      - heading "text · block 0" [level=5]
+      - generic "Parsed event · numbers may be rounded; Source preserves exact bytes"
+      - generic: Enclosing bytes 114–231 · coarse attribution · end exclusive
+      - button "Source 4 · 366–483"
+      - button "Source 6 · 366–483"
+    - article:
+      - heading "text · block 0" [level=5]
+      - generic: Provenance connects an interpretation to the exact retained evidence. Inspect the source before trusting a claim. ☃
+      - generic "Parsed event · numbers may be rounded; Source preserves exact bytes"
+      - generic: Enclosing bytes 231–463 · coarse attribution · end exclusive
+      - button "Source 4 · 483–589"
+      - button "Source 6 · 483–589"
+      - button "Source 5 · 254–380"
+    - article:
+      - heading "protocol · block 0" [level=5]
+      - generic "Parsed event · numbers may be rounded; Source preserves exact bytes"
+      - generic: Enclosing bytes 463–536 · coarse attribution · end exclusive
+      - button "Source 5 · 380–453"
+    - article:
+      - heading "protocol" [level=5]
+      - generic "Parsed event · numbers may be rounded; Source preserves exact bytes"
+      - generic: Enclosing bytes 536–624 · coarse attribution · end exclusive
+      - button "Source 5 · 453–541"
+    - article:
+      - heading "protocol" [level=5]
+      - generic "Parsed event · numbers may be rounded; Source preserves exact bytes"
+      - generic: Enclosing bytes 624–675 · coarse attribution · end exclusive
+      - button "Source 5 · 541–592"
+  - region "Reader capabilities":
+    - heading "Reader capabilities" [level=2]
+    - paragraph: Reported by this reader. Upcoming features remain unavailable.
+    - term: Snapshot inventory
+    - definition: Available
+    - term: Source ranges
+    - definition: Available
+    - term: Provenance
+    - definition: Available
+    - term: Selected Content
+    - definition: Available
+    - term: Search
+    - definition: Upcoming
+    - term: Sessions
+    - definition: Upcoming
+    - term: Annotations
+    - definition: Upcoming
+    - term: Saved views
+    - definition: Upcoming
+    - term: Analysis
+    - definition: Upcoming
+    - term: Admin jobs
+    - definition: Upcoming

@@ -1,0 +1,20 @@
+$ cargo test --features v2-crypto --lib evidence_content
+
+running 9 tests
+test evidence_content::tests::canonical_decimal_and_new_source_coordinates_preserve_full_width ... ok
+test evidence_content::tests::dropping_request_guard_signals_the_worker ... ok
+test evidence_content::tests::serialized_byte_limit_and_cancellation_refuse_without_partial_output ... ok
+test evidence_content::tests::aggregate_work_is_charged_across_interpretation_and_all_item_mappings ... ok
+test evidence_content::tests::serialized_content_cap_is_independent_of_normalized_output ... ok
+test evidence_content::worker_tests::busy_content_http_response_is_distinct_and_retry_succeeds_after_capacity_returns ... ok
+test evidence_content::worker_tests::overall_content_deadline_covers_acquisition_work_after_a_verified_read ... ok
+test evidence_content::worker_tests::cancelling_real_content_keeps_worker_admission_until_exit_and_stops_after_first_item ... ok
+test evidence_content::worker_tests::acquisition_cap_stops_before_fetching_the_next_selected_record ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 87 filtered out; finished in 35.13s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-content-followups)
+    Finished `test` profile [unoptimized] target(s) in 7.28s
+     Running unittests src/lib.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/kan-480f4f845bac8ec9)
+
+exit=0

@@ -90,3 +90,183 @@ test('PB7 after malformed retry, old scope names and pins cannot be navigated',a
  u.node('scope').value='allowed-A';u.node('scope').events.change();await tick();assert.equal(u.pending.length,0,'old scopes array still navigable');
  u.node('resnapshot').click();await tick();assert.equal(u.pending.length,0,'old pin still usable');
 });
+
+const exactPin='{"reply":{"through":9007199254740993},"signature":"synthetic-exact"}';
+const contentCatalog={...catalog,capabilities:[...catalog.capabilities,'content-inspection'],scopes:catalog.scopes.map(s=>({...s,pin_wire:exactPin}))};
+const contentPage={...page,through:'9007199254740993',next:null,records:[{...page.records[0],sequence:'9007199254740993'}]};
+const contentResult={version:'kan-content/2',pin_wire:exactPin,coverage:'explicit selection only',occurrences:[{record:{sequence:'9007199254740993'}}],observations:[{input:'0',kind:'capture'}],groups:[{writer:'writer-A',unexpected_starts:[],observer:'collector',terminal:'unknown',attempt:'a'.repeat(64),missing_start:false,events_after_terminal:false,unconfirmed_claim:false,ordinal_gaps:[['1','3']],ordinals:[],request:{citation_sets:[[{input:'0',bytes:['20','30']}]],observed_bytes:'10',expected_bytes:'10',extent_claims:[],state:'interpreted',issues:[],coherent_stop_observed:false,parsed_json:'{"unknown":9007199254740993}',items:[{kind:'text',role:'user',index:null,text:'<script>never execute</script>',issues:[],pointer:'/messages/0/content',event_json:null,region:['0','10'],coarse:true,citation_set:'0'}]},response:{citation_sets:[],observed_bytes:null,expected_bytes:null,extent_claims:[],state:'unavailable',issues:[{kind:'gap',bytes:['0','8']}],items:[]}}]};
+const walk=e=>[e,...e.children.flatMap(walk)];
+async function openContent(u){await u.login();await u.respond(contentCatalog);assert.deepEqual(JSON.parse(u.pending[0].opts.body),{action:'content-page',pin_wire:exactPin,after:'0',limit:20});await u.respond(contentPage);u.node('content-format').value='anthropic-messages-sse';const check=u.node('rows').children[0].children[0];check.checked=true;check.events.change();}
+async function interpretContent(u){u.node('interpret').click();await tick();assert.deepEqual(JSON.parse(u.pending[0].opts.body),{action:'content',pin_wire:exactPin,sequences:['9007199254740993'],format:'anthropic-messages-sse'});await u.respond(contentResult);}
+test('Content preserves opaque pins and large sequence strings through source return',async()=>{
+ const u=ui();await openContent(u);await interpretContent(u);
+ assert.equal(u.node('content-panel').hidden,false);assert.equal(u.node('content-tab').disabled,false);
+ const all=walk(u.node('content-panel'));assert.ok(all.some(e=>e.textContent==='<script>never execute</script>'));
+ assert.ok(all.some(e=>e.textContent==='{"unknown":9007199254740993}'));
+ assert.ok(all.some(e=>String(e.textContent).includes('No recognized capture at ordinals 1–3')));
+ const cite=all.find(e=>String(e.textContent).startsWith('Source 9007199254740993'));assert.ok(cite);cite.click();await tick();
+ assert.deepEqual(JSON.parse(u.pending[0].opts.body),{action:'source-exact',pin_wire:exactPin,sequence:'9007199254740993',offset:'20',length:'65536'});
+ await u.respond({...source,record:{...source.record,sequence:'9007199254740993'},offset:'20',total_bytes:'30',next:null});
+ assert.equal(u.node('content-panel').hidden,true);assert.match(u.node('range').textContent,/20–24 of 30/);
+ u.node('content-tab').click();assert.equal(u.node('content-panel').hidden,false);assert.equal(u.active(),cite);
+});
+test('Content lock, scope, selection and format changes discard late plaintext',async()=>{
+ for(const action of ['lock','scope','selection','format']){
+  const u=ui();await openContent(u);u.node('interpret').click();await tick();const pending=u.pending.shift();
+  if(action==='lock')u.node('lock').click();
+  if(action==='scope'){u.node('scope').value='allowed-B';u.node('scope').events.change();await tick();}
+  if(action==='selection'){const check=u.node('rows').children[0].children[0];check.checked=false;check.events.change();}
+  if(action==='format'){u.node('content-format').value='anthropic-messages-json';u.node('content-format').events.change();}
+  assert.equal(pending.opts.signal.aborted,true,action);pending.resolve({ok:true,status:200,json:async()=>contentResult});await tick();await tick();
+  assert.equal(u.node('content-panel').children.length,0,action);assert.equal(u.node('content-tab').disabled,true,action);
+ }
+});
+test('Content unplaced input is visible and denied citations clear all plaintext',async()=>{
+ const u=ui();await openContent(u);u.node('interpret').click();await tick();await u.respond({...contentResult,observations:[{input:'0',kind:'unsupported',reason:'Event'}],groups:[]});
+ const nodes=walk(u.node('content-panel'));assert.ok(nodes.some(e=>e.textContent==='Other selected evidence'));
+ const cite=nodes.find(e=>e.textContent==='Inspect source');cite.click();await tick();await u.respond({},403);
+ assert.equal(u.node('content-panel').children.length,0);assert.equal(u.node('content-count').textContent,'0 selected');assert.equal(u.node('source').textContent,'');assert.equal(u.node('library').hidden,true);
+});
+test('Content refuses wrong snapshot and missing exact pins before exposing items',async()=>{
+ const u=ui();await openContent(u);u.node('interpret').click();await tick();await u.respond({...contentResult,pin_wire:'other-snapshot'});
+ assert.equal(u.node('content-panel').children.length,0);assert.equal(u.node('content-tab').disabled,true);
+ const bad=ui();await bad.login();await bad.respond({...contentCatalog,scopes:catalog.scopes});assert.equal(bad.pending.length,0);assert.equal(bad.node('library').hidden,true);
+});
+
+test('Content labels supplied history and derived numbers, with separate tool block citations',async()=>{
+ const u=ui();await openContent(u);u.node('interpret').click();await tick();
+ const value=JSON.parse(JSON.stringify(contentResult));
+ value.groups[0].request.citation_sets.push([{input:'0',bytes:['40','80']}]);value.groups[0].request.items[0].tool={json:'{"x":1}',region:['0','80'],citation_set:'1'};
+ await u.respond(value);
+ const nodes=walk(u.node('content-panel'));
+ assert.ok(nodes.some(n=>n.textContent==='Supplied history · user · text'));
+ assert.ok(nodes.some(n=>/Parsed body.*numbers may be rounded/.test(n.textContent)));
+ assert.ok(nodes.some(n=>n.textContent==='Accumulated tool input (derived)'));
+ const tool=nodes.find(n=>n.textContent==='Tool input source 9007199254740993 · 40–80');assert.ok(tool);
+ tool.click();await tick();assert.deepEqual(JSON.parse(u.pending[0].opts.body),{action:'source-exact',pin_wire:exactPin,sequence:'9007199254740993',offset:'40',length:'65536'});
+});
+
+test('Content exposes unexpected starts and every exact observer length claim beside unavailable streams',async()=>{
+ const u=ui();await openContent(u);u.node('interpret').click();await tick();
+ const v=JSON.parse(JSON.stringify(contentResult));v.groups[0].unexpected_starts=['0'];
+ v.groups[0].response.extent_claims=[{input:'0',bytes:'9007199254740993'},{input:'0',bytes:'9007199254740994'}];
+ await u.respond(v);const nodes=walk(u.node('content-panel'));
+ assert.ok(nodes.some(n=>n.textContent==='Retained request signer: writer-A'));
+ assert.ok(nodes.some(n=>n.textContent==='Unexpected start · Source 9007199254740993'));
+ assert.ok(nodes.some(n=>n.textContent==='Contiguous selected bytes: unavailable · Consistent observer length claim: none'));
+ assert.ok(nodes.some(n=>n.textContent==='Claimed bytes: 9007199254740993 '));
+ assert.ok(nodes.some(n=>n.textContent==='Claimed bytes: 9007199254740994 '));
+ const claim=nodes.find(n=>n.textContent==='Length claim · Source 9007199254740993');claim.click();await tick();
+ assert.equal(JSON.parse(u.pending[0].opts.body).sequence,'9007199254740993');
+ await u.respond({...source,record:{...source.record,sequence:'9007199254740993'},offset:'0',total_bytes:'8',next:null});
+ u.node('content-tab').click();assert.equal(u.active(),claim);
+});
+
+test('Content limits and busy workers have distinct fixed messages without claiming failed verification',async()=>{
+ for(const [status,pattern] of [[422,/presentation limit or deadline/],[429,/workers are busy/]]){
+  const u=ui();await openContent(u);u.node('interpret').click();await tick();await u.respond({},status);
+  assert.match(u.node('notice').textContent,pattern);assert.doesNotMatch(u.node('notice').textContent,/could not be verified/);
+  assert.equal(u.node('library').hidden,false);assert.equal(u.node('content-panel').children.length,0);assert.equal(u.node('source').textContent,'');
+ }
+});
+test('Source supersedes pending Content and leaves Interpret available for the current selection',async()=>{
+ const u=ui();await openContent(u);u.node('interpret').click();await tick();const contentRequest=u.pending[0];
+ u.node('rows').children[0].children[1].click();await tick();
+ assert.equal(contentRequest.opts.signal.aborted,true);assert.equal(u.node('interpret').disabled,false);
+ await u.respond(contentResult);assert.equal(u.node('content-panel').children.length,0);
+ await u.respond({...source,record:{...source.record,sequence:'9007199254740993'},offset:'0',total_bytes:'8',next:null});
+ assert.equal(u.node('interpret').disabled,false);u.node('interpret').click();await tick();
+ assert.equal(JSON.parse(u.pending[0].opts.body).action,'content');
+});
+
+// ===== independent reviewer UI probes (bb1e0ab). pass_* assert; char_* log observed behaviour =====
+const clone=v=>JSON.parse(JSON.stringify(v));
+const texts=u=>walk(u.node('content-panel')).map(e=>String(e.textContent));
+test('pass_u2 late Content reply after resnapshot is suppressed',async()=>{
+ const u=ui();await openContent(u);u.node('interpret').click();await tick();const pending=u.pending.shift();
+ u.node('resnapshot').click();await tick();assert.equal(pending.opts.signal.aborted,true);
+ pending.resolve({ok:true,status:200,json:async()=>contentResult});await tick();await tick();
+ assert.equal(u.node('content-panel').children.length,0);assert.equal(u.node('content-tab').disabled,true);
+ assert.equal(u.node('content-count').textContent,'0 selected');
+});
+test('pass_u3 invalid citation index leaves no partial Content',async()=>{
+ const u=ui();await openContent(u);u.node('interpret').click();await tick();
+ const v=clone(contentResult);v.groups[0].request.citation_sets[0]=[{input:'7',bytes:['0','1']}];await u.respond(v);
+ assert.equal(u.node('content-panel').children.length,0);assert.equal(u.node('content-tab').disabled,true);
+ assert.equal(u.node('library').hidden,false);
+});
+test('pass_u4 hostile strings in every rendered field stay text and set no attributes',async()=>{
+ const u=ui();await openContent(u);u.node('interpret').click();await tick();
+ const h='<img src=x onerror=alert(1)>‮';const v=clone(contentResult);
+ Object.assign(v.groups[0],{observer:h,terminal:h,attempt:h});
+ v.observations=[{input:'0',kind:h,reason:h}];
+ v.groups[0].request.citation_sets.push([{input:'0',bytes:[h,h]}]);
+ Object.assign(v.groups[0].request.items[0],{role:h,kind:h,text:h,pointer:h,event_json:h,issues:[h],index:h,tool:{json:h,region:[h,h],citation_set:'1'}});
+ v.groups[0].request.parsed_json=h;v.coverage=h;await u.respond(v);
+ const all=walk(u.node('content-panel'));assert.ok(all.length>10);
+ for(const e of all){for(const k of Object.keys(e.attrs))assert.ok(/^aria-/.test(k),'unexpected attribute '+k);assert.ok(!('innerHTML' in e));}
+ assert.ok(texts(u).some(t=>t===h));assert.ok(texts(u).some(t=>t.includes(h)&&t.startsWith('Supplied history')));
+});
+test('pass_u5 page navigation clears selection and disables Interpret',async()=>{
+ const u=ui();await u.login();await u.respond(contentCatalog);await u.respond({...contentPage,next:'9007199254740993'});
+ const check=u.node('rows').children[0].children[0];check.checked=true;check.events.change();assert.equal(u.node('content-count').textContent,'1 selected');
+ u.node('next').click();await tick();assert.deepEqual(JSON.parse(u.pending[0].opts.body).after,'9007199254740993');
+ assert.equal(u.node('content-count').textContent,'0 selected');assert.equal(u.node('interpret').disabled,true);
+});
+test('pass_u7 duplicate lineage citations navigate to each distinct occurrence',async()=>{
+ const u=ui();await openContent(u);u.node('interpret').click();await tick();const v=clone(contentResult);
+ v.occurrences=[{record:{sequence:'9007199254740993'}},{record:{sequence:'18446744073709551615'}}];
+ v.groups[0].request.citation_sets[0]=[{input:'0',bytes:['20','30']},{input:'1',bytes:['20','30']}];await u.respond(v);
+ const second=walk(u.node('content-panel')).find(e=>e.textContent==='Source 18446744073709551615 · 20–30');assert.ok(second);
+ second.click();await tick();assert.equal(JSON.parse(u.pending[0].opts.body).sequence,'18446744073709551615');
+});
+test('pass_u10 more than 40 occurrences or wrong version is refused',async()=>{
+ for(const bad of [{occurrences:Array.from({length:41},()=>({record:{sequence:'1'}}))},{version:'kan-content/3'}]){
+  const u=ui();await openContent(u);u.node('interpret').click();await tick();await u.respond({...clone(contentResult),...bad});
+  assert.equal(u.node('content-panel').children.length,0);
+ }
+});
+test('pass_u11 format change keeps selection but clears Content',async()=>{
+ const u=ui();await openContent(u);await interpretContent(u);assert.ok(u.node('content-panel').children.length>0);
+ u.node('content-format').value='anthropic-messages-json';u.node('content-format').events.change();
+ assert.equal(u.node('content-panel').children.length,0);assert.equal(u.node('content-count').textContent,'1 selected');assert.equal(u.node('interpret').disabled,false);
+});
+test('pass_u12 v1 reader without content capability keeps numeric v1 page/source and no checkboxes',async()=>{
+ const u=ui();await u.login();await u.respond(catalog);const req=JSON.parse(u.pending[0].opts.body);assert.equal(req.action,'page');assert.equal(req.after,0);
+ await u.respond(page);assert.equal(u.node('rows').children[0].children.length,2,'button only (title+id), no checkbox wrapper');
+ assert.equal(u.node('interpret').disabled,true);
+ u.node('rows').children[0].click();await tick();assert.equal(JSON.parse(u.pending[0].opts.body).action,'source');
+});
+test('pass_u13 refreshed snapshot missing pin_wire is refused; old signed snapshot stays coherent',async()=>{
+ const u=ui();await openContent(u);u.node('resnapshot').click();await tick();await u.respond({pin});
+ assert.equal(u.node('content-count').textContent,'0 selected');assert.match(u.node('notice').textContent,/Reader unavailable/);
+ const check=u.node('rows').children[0].children[0];check.checked=true;check.events.change();u.node('interpret').click();await tick();
+ assert.equal(JSON.parse(u.pending[0].opts.body).pin_wire,exactPin,'old exact pin still used, never a half-updated pin');
+});
+
+
+test('retryable Content limits keep selection and retry the exact request',async()=>{
+ for(const status of [422,429]){
+  const u=ui();await openContent(u);await interpretContent(u);
+  u.node('interpret').click();await tick();const first=JSON.parse(u.pending[0].opts.body);await u.respond({},status);
+  assert.equal(u.node('content-panel').children.length,0);assert.equal(u.node('source').textContent,'');
+  assert.equal(u.node('content-count').textContent,'1 selected');assert.equal(u.node('interpret').disabled,false);assert.equal(u.node('rows').children[0].children[0].checked,true);
+  u.node('interpret').click();await tick();assert.deepEqual(JSON.parse(u.pending[0].opts.body),first);await u.respond(contentResult);assert.ok(u.node('content-panel').children.length>0);
+ }
+});
+test('shared citation ranges render once and preserve exact source navigation and focus',async()=>{
+ const u=ui();await openContent(u);u.node('interpret').click();await tick();const v=clone(contentResult);
+ v.groups[0].request.items=Array.from({length:500},()=>clone(v.groups[0].request.items[0]));await u.respond(v);
+ const nodes=walk(u.node('content-panel'));const sources=nodes.filter(n=>String(n.textContent).startsWith('Source 9007199254740993'));
+ assert.equal(sources.length,1);const references=nodes.filter(n=>n.textContent==='Sources · shared range 1');assert.equal(references.length,500);
+ references[499].click();assert.equal(u.active(),sources[0]);assert.equal(nodes.find(n=>n.className==='content-citation-set').open,true);
+ sources[0].click();await tick();assert.equal(JSON.parse(u.pending[0].opts.body).offset,'20');
+ await u.respond({...source,record:{...source.record,sequence:'9007199254740993'},offset:'20',total_bytes:'30',next:null});u.node('content-tab').click();assert.equal(u.active(),sources[0]);
+});
+test('malformed shared citation references fail closed without partial Content',async()=>{
+ for(const ref of ['1','-1','01','1e0','9007199254740993',0,null]){
+  const u=ui();await openContent(u);u.node('interpret').click();await tick();const v=clone(contentResult);v.groups[0].request.items[0].citation_set=ref;await u.respond(v);
+  assert.equal(u.node('content-panel').children.length,0,String(ref));assert.equal(u.node('content-tab').disabled,true,String(ref));
+ }
+ const u=ui();await openContent(u);u.node('interpret').click();await tick();const v=clone(contentResult);v.groups[0].request.citation_sets=null;await u.respond(v);assert.equal(u.node('content-panel').children.length,0);
+});

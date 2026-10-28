@@ -1,4 +1,5 @@
 //! Human evidence Library. Loopback presentation with a separate read capability.
+use crate::evidence_content::ContentError;
 use crate::evidence_reader::{Pin, Reader};
 use crate::evidence_service::Failure;
 use http_body_util::{BodyExt, Full, Limited};
@@ -17,6 +18,22 @@ use tokio::{
 #[derive(Deserialize)]
 #[serde(tag = "action", rename_all = "kebab-case", deny_unknown_fields)]
 enum Query {
+    Content {
+        pin_wire: String,
+        sequences: Vec<String>,
+        format: crate::evidence_content::Format,
+    },
+    ContentPage {
+        pin_wire: String,
+        after: String,
+        limit: usize,
+    },
+    SourceExact {
+        pin_wire: String,
+        sequence: String,
+        offset: String,
+        length: String,
+    },
     Catalog,
     Snapshot {
         scope: String,
@@ -48,8 +65,58 @@ fn denied(code: StatusCode) -> Response<Full<Bytes>> {
         r#"{"error":"reader request unavailable or refused"}"#,
     )
 }
-async fn query(reader: &Reader, query: Query) -> Result<serde_json::Value, Failure> {
-    match query {
+async fn query(reader: &Reader, query: Query) -> Result<Vec<u8>, ContentError> {
+    use crate::evidence_content as content;
+    let value: serde_json::Value = match query {
+        Query::Content {
+            pin_wire,
+            sequences,
+            format,
+        } => {
+            return reader
+                .content_detailed(&content::pin(&pin_wire)?, &sequences, format)
+                .await
+        }
+        Query::ContentPage {
+            pin_wire,
+            after,
+            limit,
+        } => {
+            let page = reader
+                .page(
+                    &content::pin(&pin_wire)?,
+                    content::coordinate(&after)?,
+                    limit,
+                )
+                .await?;
+            Ok(
+                serde_json::json!({"scope":page.scope,"through":page.through.to_string(),"tip":page.tip,
+                "records":page.records.iter().map(content::occurrence).collect::<Vec<_>>(),
+                "next":page.next.map(|n|n.to_string()),"coverage":page.coverage}),
+            )
+        }
+        Query::SourceExact {
+            pin_wire,
+            sequence,
+            offset,
+            length,
+        } => {
+            let offset =
+                usize::try_from(content::coordinate(&offset)?).map_err(|_| Failure::Invalid)?;
+            let length =
+                usize::try_from(content::coordinate(&length)?).map_err(|_| Failure::Invalid)?;
+            Ok(content::source(
+                reader
+                    .source(
+                        &content::pin(&pin_wire)?,
+                        content::coordinate(&sequence)?,
+                        offset,
+                        length,
+                    )
+                    .await?,
+            ))
+        }
+
         Query::Catalog => {
             let mut scopes = Vec::new();
             let mut partial = false;
@@ -68,17 +135,20 @@ async fn query(reader: &Reader, query: Query) -> Result<serde_json::Value, Failu
                     .flatten()
                 {
                     match result {
-                        Ok(pin) => scopes.push(serde_json::json!({"scope":scope,"pin":pin})),
+                        Ok(pin) => scopes.push(serde_json::json!({"scope":scope,"pin_wire":content::pin_wire(&pin)?,"pin":pin})),
                         Err(Failure::AccessLimited) => {}
                         Err(_) => partial = true,
                     }
                 }
             }
             Ok(
-                serde_json::json!({"version":1,"scopes":scopes,"coverage":if partial {"partial"} else {"complete"},"capabilities":["snapshot-inventory","source-ranges","provenance"],"unavailable":["semantic-search","normalized-sessions","annotations","saved-views","analysis","administrative-jobs"]}),
+                serde_json::json!({"version":1,"scopes":scopes,"coverage":if partial {"partial"} else {"complete"},"capabilities":["snapshot-inventory","source-ranges","provenance","content-inspection"],"unavailable":["semantic-search","normalized-sessions","annotations","saved-views","analysis","administrative-jobs"]}),
             )
         }
-        Query::Snapshot { scope } => Ok(serde_json::json!({"pin":reader.snapshot(&scope).await?})),
+        Query::Snapshot { scope } => {
+            let pin = reader.snapshot(&scope).await?;
+            Ok(serde_json::json!({"pin_wire":content::pin_wire(&pin)?,"pin":pin}))
+        }
         Query::Page { pin, after, limit } => {
             serde_json::to_value(reader.page(&pin, after, limit).await?)
                 .map_err(|_| Failure::Invalid)
@@ -90,7 +160,8 @@ async fn query(reader: &Reader, query: Query) -> Result<serde_json::Value, Failu
             length,
         } => serde_json::to_value(reader.source(&pin, sequence, offset, length).await?)
             .map_err(|_| Failure::Invalid),
-    }
+    }?;
+    serde_json::to_vec(&value).map_err(|_| ContentError::Read(Failure::Invalid))
 }
 async fn handle(
     r: Request<Incoming>,
@@ -167,13 +238,20 @@ async fn handle(
         Err(_) => return Ok(denied(StatusCode::BAD_REQUEST)),
     };
     Ok(match query(&reader, request).await {
-        Ok(value) => match serde_json::to_vec(&value) {
-            Ok(bytes) => response(StatusCode::OK, "application/json", bytes),
-            Err(_) => denied(StatusCode::SERVICE_UNAVAILABLE),
-        },
-        Err(Failure::AccessLimited) => denied(StatusCode::FORBIDDEN),
-        Err(Failure::Missing) => denied(StatusCode::NOT_FOUND),
-        Err(Failure::Invalid) => denied(StatusCode::BAD_REQUEST),
+        Ok(bytes) => response(StatusCode::OK, "application/json", bytes),
+        Err(ContentError::Read(Failure::AccessLimited)) => denied(StatusCode::FORBIDDEN),
+        Err(ContentError::Read(Failure::Missing)) => denied(StatusCode::NOT_FOUND),
+        Err(ContentError::Read(Failure::Invalid)) => denied(StatusCode::BAD_REQUEST),
+        Err(ContentError::Limited) => response(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "application/json",
+            r#"{"error":"content-limit"}"#,
+        ),
+        Err(ContentError::Busy) => response(
+            StatusCode::TOO_MANY_REQUESTS,
+            "application/json",
+            r#"{"error":"content-busy"}"#,
+        ),
         Err(_) => denied(StatusCode::SERVICE_UNAVAILABLE),
     })
 }

@@ -7,7 +7,7 @@ use crate::{
     sign::Identity,
 };
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, sync::Arc};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct Occurrence {
@@ -59,6 +59,7 @@ pub struct ScopeAccess {
 pub struct Reader {
     signer: Identity,
     scopes: BTreeMap<String, ScopeAccess>,
+    pub(crate) content_workers: Arc<tokio::sync::Semaphore>,
 }
 /// The original signed snapshot reply and request are the snapshot evidence.
 /// A pin is not a grant: every subsequent read contacts the authorized service.
@@ -121,6 +122,7 @@ impl Reader {
         Ok(Self {
             signer,
             scopes: selected,
+            content_workers: Arc::new(tokio::sync::Semaphore::new(2)),
         })
     }
     fn access(&self, scope: &str) -> Result<&ScopeAccess, Failure> {
@@ -260,6 +262,34 @@ impl Reader {
         if sequence == 0 || length == 0 || length > RANGE_LIMIT {
             return Err(Failure::Invalid);
         }
+        let acquired = self.acquire(pin, sequence).await?;
+        let plaintext = acquired.plaintext;
+        if offset > plaintext.len() {
+            return Err(Failure::Invalid);
+        }
+        let end = offset.saturating_add(length).min(plaintext.len());
+        let slice = &plaintext[offset..end];
+        Ok(Source {
+            scope: service::hex(&acquired.scope),
+            record: acquired.record,
+            writer: acquired.writer,
+            service_issuer: acquired.service_issuer,
+            signature: "retained writer signature and manifest verified",
+            admission: "signed service response; membership verified at selected snapshot",
+            content_trust:
+                "untrusted observed bytes; writer identity does not establish the claimed speaker",
+            total_bytes: plaintext.len(),
+            offset,
+            next: (end < plaintext.len()).then_some(end),
+            bytes_hex: service::hex(slice),
+            utf8: std::str::from_utf8(slice).ok().map(str::to_owned),
+        })
+    }
+    /// Complete, currently authorized plaintext. Never a Source-range fragment.
+    pub(crate) async fn acquire(&self, pin: &Pin, sequence: u64) -> Result<Acquired, Failure> {
+        if sequence == 0 {
+            return Err(Failure::Invalid);
+        }
         let (access, through, _) = self.check_pin(pin)?;
         if sequence > through {
             return Err(Failure::Missing);
@@ -294,25 +324,20 @@ impl Reader {
         let ciphertext = service::unhex(&ciphertext, service::MAX_PAYLOAD)?;
         let plaintext = evidence_crypto::open(&access.private_key, &access.scope, &ciphertext)
             .map_err(|_| Failure::Corrupt)?;
-        if offset > plaintext.len() {
-            return Err(Failure::Invalid);
-        }
-        let end = offset.saturating_add(length).min(plaintext.len());
-        let slice = &plaintext[offset..end];
-        Ok(Source {
-            scope: service::hex(&access.scope),
+        Ok(Acquired {
+            scope: access.scope,
             record,
             writer: signed.request.principal,
             service_issuer: access.issuer.clone(),
-            signature: "retained writer signature and manifest verified",
-            admission: "signed service response; membership verified at selected snapshot",
-            content_trust:
-                "untrusted observed bytes; writer identity does not establish the claimed speaker",
-            total_bytes: plaintext.len(),
-            offset,
-            next: (end < plaintext.len()).then_some(end),
-            bytes_hex: service::hex(slice),
-            utf8: std::str::from_utf8(slice).ok().map(str::to_owned),
+            plaintext,
         })
     }
+}
+
+pub(crate) struct Acquired {
+    pub scope: [u8; 32],
+    pub record: Occurrence,
+    pub writer: String,
+    pub service_issuer: String,
+    pub plaintext: Vec<u8>,
 }

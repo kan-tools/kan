@@ -1,0 +1,27 @@
+$ cargo test --features v2-crypto --lib evidence_content::tests::aggregate_work_is_charged_across_interpretation_and_all_item_mappings -- --exact
+
+running 1 test
+test evidence_content::tests::aggregate_work_is_charged_across_interpretation_and_all_item_mappings ... FAILED
+
+failures:
+
+---- evidence_content::tests::aggregate_work_is_charged_across_interpretation_and_all_item_mappings stdout ----
+
+thread 'evidence_content::tests::aggregate_work_is_charged_across_interpretation_and_all_item_mappings' (10560984) panicked at src/evidence_content.rs:637:9:
+assertion `left == right` failed
+  left: 195
+ right: 97
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    evidence_content::tests::aggregate_work_is_charged_across_interpretation_and_all_item_mappings
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 95 filtered out; finished in 0.01s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-content-followups)
+    Finished `test` profile [unoptimized] target(s) in 7.34s
+     Running unittests src/lib.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/kan-480f4f845bac8ec9)
+error: test failed, to rerun pass `--lib`
+
+exit=101
