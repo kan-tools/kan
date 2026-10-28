@@ -18,6 +18,10 @@ readme = "README.md"
 keywords = ["agents", "provenance", "append-only", "content-addressed", "mcp"]
 categories = ["command-line-utilities", "development-tools"]
 
+[features]
+# Draft RFC 4 reference API. No production caller or stable wire promise.
+evidence-contract = []
+
 [dependencies]
 atproto-dasl = "0.14.5"
 atproto-repo = "0.14.5"

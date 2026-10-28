@@ -11,6 +11,7 @@ relationship to Architecture Decision Records are defined by
 - [RFC 1: Principal, scope, and delegated identity](1-identity-system.md) — Accepted
 - [RFC 2: kan URI schemes and resolution](2-kan-uri-scheme.md) — Accepted
 - [RFC 3: Authoritative Lexicon publication and versioned AppView](3-authoritative-lexicon-publication.md) — Review
+- [RFC 4: Experimental evidence records and blind storage commitments](4-evidence-contract.md) — Draft
 
 RFC 1 specifies the kan identity architecture. RFC 2 specifies the kan URI
 schemes; the ordering records that URI identity resources depend on the
