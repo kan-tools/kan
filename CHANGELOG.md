@@ -15,9 +15,9 @@ decision was made is `docs/DECISIONS.md`; the ADR numbers below point into it.
 
 The format is loosely based on [Keep a Changelog](https://keepachangelog.com).
 
-## [Unreleased] — 2.0.0-beta.1 candidate
+## [2.0.0-beta.1] — Unpublished
 
-**Prepared, not published.** Candidate qualification and release gates are tracked
+**Qualified candidate, not published.** Publication date remains unset. Release gates are tracked
 in [the release checklist](docs/RELEASE-2.0.0-beta.1.md).
 
 ### Added

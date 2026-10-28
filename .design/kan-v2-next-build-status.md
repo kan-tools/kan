@@ -45,33 +45,27 @@ That revision passed all 56 collect-all checks, 19 browser groups, four diagnost
 jobs, three install modes, both packaged builds and 12 historical migration cells.
 The independent narrow Opus 5.5 review approved with three residual follow-ups.
 
-The `2.0.0-beta.1` candidate closes those residual items: distinguish helper
-failures from historical compiler failures, exercise writer selection against the
-actual manifest in CI, and update this status. The version and release notes are
-prepared, not published; current candidate qualification and narrow review are
-pending. See [the candidate checklist](../docs/RELEASE-2.0.0-beta.1.md) for the
-concrete merge/publication gates. Earlier completion-table positions below are
-historical implementation snapshots; the qualified revisions and retained review
-reports above supersede their pending-test wording. No merge, tag, publication or
-live migration is implied by candidate preparation.
+The `2.0.0-beta.1` candidate at `de34a674af08718dea34ba82dd4cec17c682a2bc`
+passed all 56 checks, 19 browser groups, required CI/diagnostic jobs, both packaged
+builds and all three install modes. All 24 representative migration cells matched
+committed outcomes, including explicit keychain exclusions. The actual narrow
+Opus 5.5 review approved with nonblocking follow-ups; R1–R3 and the maintenance
+repair are accepted. See [the release checklist](../docs/RELEASE-2.0.0-beta.1.md)
+for exact evidence, remaining follow-ups and publication gates.
 
-Candidate `32ebf71` passed all 56 collect-all checks, 19 browser groups, both
-packaged builds, three installs and the representative historical migration
-matrix including keychain cells. PR CI separately failed the workspace erasure
-restart test with `Unavailable` after the old workspace was dropped. Qualification
-is therefore incomplete. The repair gives maintenance leases a shared owned guard
-that explicitly unlocks only after the last owner drops, preserving the recovery
-cleanup handoff. New deterministic descriptor-duplication, independent-reader,
-cleanup and error-path regressions await remote CI. The local OS primitive
-reproduces close-only descriptor retention; the failing CI descriptor provenance
-was not traced. The matrix bot's `ea0dac3` measurement conversion is preserved.
-At `20bbf0e`, all three new lock regressions and the original erasure reopen
-test passed. Qualification instead caught two synthetic fixture writes bypassing
-the persistence facade: surface-conformance and strict Clippy rejected them. The
-follow-up routes both writes through existing typed capabilities and records their
-exact call counts, without exemptions or weakened checks; remote validation of
-that correction is pending. All 19 browser groups still passed.
+The `32ebf71` erasure/reopen failure and `20bbf0e` fixture conformance failures
+remain retained. `20bbf0e` introduced an Arc-owned maintenance guard with explicit
+final-owner unlock and recovery cleanup retention; `de34a67` corrected fixture
+writes through typed persistence capabilities and exact inventory counts. All
+new lock regressions, the original erasure/reopen case and conformance checks now
+pass. The local OS mechanism was reproduced; the original CI descriptor provenance
+was not traced. The bot's `ea0dac3` measurement conversion remains preserved.
 
+On 2026-10-28 the owner authorized executing the release plan: documentation
+finalization, sequenced ancestry-preserving stack merges and final-main qualification.
+The full all-writer matrix remains a prepublication gate. Tag/publication approval,
+live deployment and migration remain separate. Earlier completion-table positions
+below are historical snapshots superseded by the retained qualification/reviews.
 
 ### Completion checklist
 

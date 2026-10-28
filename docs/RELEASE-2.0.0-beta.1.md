@@ -1,10 +1,10 @@
 # Kan 2.0.0-beta.1 release candidate
 
-Prepared 2026-10-27. **Unpublished; candidate qualification pending.** This is a
-reviewable release artifact under the existing AGENTS.md SOP, not a new process
-policy. Source preparation and CI are authorized. Stack merges, tag push,
-registry publication, deployment and live migration still need concrete owner
-approval. A successful candidate build does not perform any of those actions.
+Updated 2026-10-28. **Qualified candidate; unpublished.** The owner authorized
+executing this plan, including the sequenced stack merges and final-main
+qualification, on 2026-10-28. Tag push, registry publication, deployment and live
+migration remain separately gated. This checklist records release execution
+under the existing AGENTS.md SOP; qualification does not publish a release.
 
 ## User-facing contract
 
@@ -34,43 +34,60 @@ records no authorization or migration acknowledgement.
 
 ## Evidence and candidate gates
 
-The last qualified implementation is `e56133045025ff44bdfc2848cda7cc208bd07bbe`:
-56 collect-all checks, 19 real browser groups (zero script errors/external loads),
-four diagnostic jobs, all three installs and both packaged builds passed. Its
-12 representative historical migration cells passed. The independent narrow
-Opus 5.5 review approved all five CLI follow-ups, leaving R1–R3 nonblocking.
+The qualified implementation is `de34a674af08718dea34ba82dd4cec17c682a2bc`.
+Collect-all 40621934587, PR CI 40621891588, push CI 40621884275, migration
+40621891593, perf 40621891804 and RFC 40621891496 all succeeded. Independent
+inspection confirmed 56 checks, 19 browser groups with zero errors/external loads,
+four diagnostic jobs and the PR macOS canary, two packaged-source builds, three
+installation modes at version 2.0.0-beta.1, eight helper tests and actual-manifest
+`kan-v1` selection. All 24 representative migration cells matched their committed
+outcomes with cache misses; capability exclusions are not successful keychain
+migrations. This is not the full all-writer matrix.
 
-This candidate bumps only the root package version and closes R1–R3: distinct
-helper versus compiler failure classification, actual-manifest writer selection
-in CI, and corrected status prose. It does not change storage/admission code.
-The candidate itself is not qualified by the preceding green run.
+The candidate changes the root version, historical-writer qualification tooling,
+and workspace maintenance coordination. The final owned maintenance guard now
+explicitly unlocks after SQLite closes and recovery cleanup finishes. All three
+new maintenance regressions, the original erasure/reopen regression and persistence
+conformance checks passed. Archive admission and storage formats are unchanged.
+Earlier failures at `32ebf71` and `20bbf0e` remain retained; the migration bot's
+`ea0dac3` measured v1 keychain capability exclusions remain in the ancestry.
 
-Candidate `32ebf71` subsequently passed all 56 collect-all checks and 19 browser
-groups, but separate PR CI failed a workspace maintenance reopen after erasure
-setup (`Unavailable`). Its repair changes workspace coordination: a shared owned
-maintenance guard explicitly unlocks only when its final owner drops, including
-recovery cleanup. Archive admission/storage formats remain unchanged. New
-regressions and the repaired revision still require CI and narrow review; neither
-the successful parallel run nor the local lock primitive reproduction closes the
-qualification failure. The migration bot's `ea0dac3` conversion of v1 keychain
-expectations to measured capability exclusions is retained.
+The actual Claude Code Opus 5.5 narrow review of `e561330..de34a67` returned
+**APPROVE WITH FOLLOW-UPS** (session `6537f35b-1e43-4ae9-a9c3-fc75277cd575`).
+R1–R3 and the maintenance repair were accepted with no blockers. This documentation
+update closes F1's stale status and freeze-policy wording. F2's broad historical
+build-failure classification, F3's exact-error assertions and F4's post-SQLite
+error-path test remain nonblocking follow-ups. A pre-existing SQLite descriptor
+locking concern was explicitly unverified and remains a triage item, not a
+confirmed defect or a claim of repair.
 
+- [x] Record the frozen candidate SHA and inspect all current required runs and
+  per-check/browser artifacts, including applicable macOS/keychain coverage.
+- [x] Inspect both packaged builds, all three installed executable sets/version
+  strings, eight helper tests and real-manifest writer selection.
+- [x] Inspect the representative migration cells and distinguish exclusions from
+  actual migration outcomes. Helper failures remain hard failures.
+- [x] Retain the narrow independent review; do not repeat completed whole-product
+  reviews or heavy capacity fixtures.
+- [ ] Qualify this documentation-only update with push CI and retain the exact
+  diff showing no executable inputs or migration cache inputs changed.
+- [ ] Merge the authorized stack in order and verify final-main tree identity.
+- [ ] Run and inspect full all-writer migration coverage on final main before
+  publication approval, retaining outcomes, exclusions and cached/fresh distinctions.
+- [x] Finalize the changelog version heading while retaining explicit unpublished
+  status; the publication date remains unset until known. Further documentation
+  updates follow the policy below.
 
-- [ ] Record the frozen candidate SHA, current PR/push CI, collect-all, migration,
-  performance and RFC results; inspect actual per-check artifacts, not just the
-  aggregate green run. Require all 56 checks and 19 browser groups, and all
-  applicable diagnostic jobs (including the version-change macOS/keychain job).
-- [ ] Inspect both packaged builds, all three installed executable sets/version
-  strings, eight helper tests and the real-manifest `kan-v1` selection log.
-- [ ] Inspect current historical migration cells, including the version-change
-  keychain plane. Metadata/selection/helper errors must fail the job; only a
-  nonzero historical `cargo build` may produce `unbuildable`.
-- [ ] Retain one narrow independent review of these candidate changes; do not
-  repeat completed whole-product reviews or heavy capacity fixtures.
-- [ ] Run and inspect the full historical-writer migration matrix on the final
-  release tree before approving publication. Ordinary PR coverage samples eras;
-  tag-triggered checks run concurrently with publication and are too late to act
-  as this gate. Retain all outcomes, exclusions and cached/fresh distinctions.
+### Qualification after documentation-only changes
+
+A delta confined to release notes, checklists and status prose may reuse the
+qualified implementation evidence after inspecting the exact path/content diff.
+It still requires successful push CI. Source, tests, scripts, manifests, lockfiles,
+workflows, migration expectations and all migration cache inputs must be identical;
+a change to any of those requires relevant qualification. Record both the qualified
+implementation SHA and the documentation SHA. Merge commits alone may reuse that
+evidence only after verifying tree identity. Final-main CI and the full all-writer
+matrix remain mandatory before publication, even for an identical tree.
 
 The new v2 expectation rows are explicitly PREDICTED. They describe the optional
 legacy writer, not the default v2 command, and are not a measurement of a released
@@ -78,13 +95,13 @@ v2 tag. An automatic matrix commit converting older predictions to measurements
 must be inspected and retained; do not overwrite it. Reconcile its parent/tree
 and any changed code before freezing the release commit.
 
-Local evidence: `.local-state/qualification-e561330` (including per-check and
-browser artifacts), `.local-state/qualification-e561330-migration.log`, and
-`.local-state/reviews/cli-followups-e561330/report.md`. Candidate evidence will be
-stored under its own revision. Prior failed qualifications and reviews remain
-retained. Local Rust builds/tests/installs were not used on the shared laptop.
+Local evidence: `.local-state/qualification-de34a67/` contains the full logs,
+per-check/browser artifacts and `ci-evidence.json`; the independent review is
+`.local-state/reviews/release-candidate-de34a67/report.md` with its full result
+and execution diagnostics. Prior qualifications and reviews remain retained.
+No local Rust builds, tests or installs were used on the shared laptop.
 
-## Merge sequence — requires approval
+## Merge sequence — authorized 2026-10-28
 
 The 50 draft PRs #264–#313 were verified open, unmerged and chained on 2026-10-27.
 The branch was 506 commits ahead of main before this preparation. Recheck current
