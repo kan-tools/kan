@@ -1276,3 +1276,73 @@ fn open_rejects_corrupt_content_before_journal_conversion() {
         assert!(!temp.path().join(format!("archive.sqlite{suffix}")).exists());
     }
 }
+
+#[test]
+fn audited_partition_frontier_fences_new_writes_and_exact_retries() {
+    let t = tempfile::tempdir().unwrap();
+    let mut ledger = Ledger::create(t.path()).unwrap();
+    let stale = ledger.snapshot().unwrap();
+    let (first, receipt) = pair(b"first", 0, None, 1);
+    ledger.stage(b"first").unwrap();
+    // Another connection commits after the service's audit but before admission.
+    let mut raw = Ledger::open(t.path()).unwrap();
+    raw.commit(first.bytes(), receipt.bytes()).unwrap();
+    let (next, next_receipt) = pair(b"next", 1, Some(&first), 2);
+    ledger.stage(b"next").unwrap();
+    for (m, r) in [(&first, &receipt), (&next, &next_receipt)] {
+        assert!(matches!(
+            ledger.commit_partition_at(m.bytes(), r.bytes(), &stale),
+            Err(Error::Conflict("service audit frontier"))
+        ));
+    }
+    let current = ledger.snapshot().unwrap();
+    let wrong_tip = Snapshot {
+        through: current.through,
+        tip: Some(receipt.cid().clone()),
+    };
+    assert!(matches!(
+        ledger.commit_partition_at(next.bytes(), next_receipt.bytes(), &wrong_tip),
+        Err(Error::Conflict("service audit frontier"))
+    ));
+    assert_eq!(ledger.snapshot().unwrap(), current);
+    let retry = ledger
+        .commit_partition_at(first.bytes(), receipt.bytes(), &current)
+        .unwrap();
+    assert!(retry.duplicate);
+    assert_eq!(retry.receipt.bytes(), receipt.bytes());
+    let admitted = ledger
+        .commit_partition_at(next.bytes(), next_receipt.bytes(), &current)
+        .unwrap();
+    assert!(!admitted.duplicate);
+    assert_eq!(admitted.sequence, 2);
+    assert_eq!(ledger.verify().unwrap().commits, 2);
+}
+
+#[test]
+fn partition_scope_range_guard_rejects_both_foreign_directions() {
+    let t = tempfile::tempdir().unwrap();
+    let mut ledger = Ledger::create(t.path()).unwrap();
+    ledger.stage(b"synthetic opaque ciphertext\x00").unwrap();
+    let scoped = |scope: u8| {
+        let mut m = golden("manifest");
+        m["body"]["scopeToken"] = json!({"$bytes":format!("{scope:02x}").repeat(32)});
+        let manifest = record(&m);
+        let mut r = golden("receipt");
+        r["body"]["scopeToken"] = m["body"]["scopeToken"].clone();
+        r["body"]["manifest"] = json!({"$link":manifest.cid().to_string()});
+        (manifest, record(&r))
+    };
+    let (m, r) = scoped(128);
+    let first = ledger.commit_partition(m.bytes(), r.bytes()).unwrap();
+    for scope in [127, 129] {
+        let (m, r) = scoped(scope);
+        assert!(matches!(
+            ledger.commit_partition(m.bytes(), r.bytes()),
+            Err(Error::Conflict("service partition scope"))
+        ));
+    }
+    let retry = ledger.commit_partition(m.bytes(), r.bytes()).unwrap();
+    assert!(retry.duplicate);
+    assert_eq!(retry.receipt.bytes(), first.receipt.bytes());
+    assert_eq!(ledger.verify().unwrap().commits, 1);
+}

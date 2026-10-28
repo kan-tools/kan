@@ -15,6 +15,9 @@ use crate::evidence::{self, Decoded, Kind, Record};
 
 pub const MAX_CHUNK: usize = 4 * 1024 * 1024;
 const APPLICATION_ID: i64 = 0x4b563201;
+// Two range probes use the existing scope-leading indexes, including when every
+// retained row has the requested scope. `scope != ?` scans that entire index.
+const FOREIGN_SCOPE: &str = "SELECT EXISTS(SELECT 1 FROM commits WHERE scope < ?1) OR EXISTS(SELECT 1 FROM commits WHERE scope > ?1)";
 const SCHEMA: &str = "
 CREATE TABLE objects(cid TEXT PRIMARY KEY, bytes BLOB NOT NULL CHECK(length(bytes)>0 AND length(bytes)<=4194304)) WITHOUT ROWID;
 CREATE TABLE commits(
@@ -697,13 +700,25 @@ impl Ledger {
         receipt: &[u8],
         observe: &mut dyn FnMut(Boundary),
     ) -> Result<Committed> {
-        self.commit_inner(manifest, receipt, observe, false)
+        self.commit_inner(manifest, receipt, observe, false, None)
     }
 
     /// Service partition admission: serialized with all other writers. The first
     /// commit binds an empty partition; later service commits cannot mix scopes.
     pub fn commit_partition(&mut self, manifest: &[u8], receipt: &[u8]) -> Result<Committed> {
-        self.commit_inner(manifest, receipt, &mut |_| {}, true)
+        self.commit_inner(manifest, receipt, &mut |_| {}, true, None)
+    }
+
+    /// Admit only if no commit has arrived since the caller audited `expected`.
+    /// The comparison is serialized with insertion, including exact retries.
+    /// This is an optimistic concurrency fence, not a service-profile validator.
+    pub fn commit_partition_at(
+        &mut self,
+        manifest: &[u8],
+        receipt: &[u8],
+        expected: &Snapshot,
+    ) -> Result<Committed> {
+        self.commit_inner(manifest, receipt, &mut |_| {}, true, Some(expected))
     }
 
     fn commit_inner(
@@ -712,6 +727,7 @@ impl Ledger {
         receipt: &[u8],
         observe: &mut dyn FnMut(Boundary),
         single_scope: bool,
+        expected_snapshot: Option<&Snapshot>,
     ) -> Result<Committed> {
         let manifest = known(manifest, Kind::Manifest)?;
         let receipt = known(receipt, Kind::Receipt)?;
@@ -728,13 +744,26 @@ impl Ledger {
         let tx = self
             .conn
             .transaction_with_behavior(TransactionBehavior::Immediate)?;
-        if single_scope
-            && tx.query_row(
-                "SELECT EXISTS(SELECT 1 FROM commits WHERE scope != ?)",
-                [scope],
-                |row| row.get::<_, bool>(0),
-            )?
-        {
+        if let Some(expected) = expected_snapshot {
+            let current: Option<(i64, String)> = tx
+                .query_row(
+                    "SELECT sequence,cid FROM commits ORDER BY sequence DESC LIMIT 1",
+                    [],
+                    |row| Ok((row.get(0)?, row.get(1)?)),
+                )
+                .optional()?;
+            let matches = match current {
+                None => expected.through == 0 && expected.tip.is_none(),
+                Some((sequence, cid)) => {
+                    u64::try_from(sequence).ok() == Some(expected.through)
+                        && expected.tip.as_ref().map(ToString::to_string).as_ref() == Some(&cid)
+                }
+            };
+            if !matches {
+                return Err(Error::Conflict("service audit frontier"));
+            }
+        }
+        if single_scope && tx.query_row(FOREIGN_SCOPE, [scope], |row| row.get::<_, bool>(0))? {
             return Err(Error::Conflict("service partition scope"));
         }
         let prior: Option<(i64,String,Vec<u8>,Vec<u8>)> = tx.query_row(
@@ -1044,5 +1073,57 @@ impl Ledger {
         };
         ledger.check_schema()?;
         ledger.verify()
+    }
+}
+
+#[cfg(test)]
+mod admission_tests {
+    use super::*;
+
+    #[test]
+    fn scope_guard_uses_bounded_index_probes() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(SCHEMA).unwrap();
+        let tx = conn.transaction().unwrap();
+        for position in 0..20_000i64 {
+            // Query-planner fixture only, not purported canonical evidence.
+            tx.execute("INSERT INTO commits(cid,scope,writer,operation,position,manifest,receipt) VALUES(?,?,?,?,?,x'01',x'01')",
+                params![position.to_string(),[128u8;32].as_slice(),"writer",position.to_be_bytes().as_slice(),position]).unwrap();
+        }
+        tx.commit().unwrap();
+        let mut plan = conn
+            .prepare(&format!("EXPLAIN QUERY PLAN {FOREIGN_SCOPE}"))
+            .unwrap();
+        let details: Vec<String> = plan
+            .query_map([[128u8; 32].as_slice()], |row| row.get(3))
+            .unwrap()
+            .collect::<std::result::Result<_, _>>()
+            .unwrap();
+        assert_eq!(
+            details
+                .iter()
+                .filter(|s| s.contains("SEARCH commits") && s.contains("scope"))
+                .count(),
+            2,
+            "{details:?}"
+        );
+        assert!(
+            !details.iter().any(|s| s.contains("SCAN commits")),
+            "{details:?}"
+        );
+        for (scope, foreign) in [(128u8, false), (127, true), (129, true)] {
+            let mut statement = conn.prepare(FOREIGN_SCOPE).unwrap();
+            assert_eq!(
+                statement
+                    .query_row([[scope; 32].as_slice()], |row| row.get::<_, bool>(0))
+                    .unwrap(),
+                foreign
+            );
+            let steps = statement.get_status(rusqlite::StatementStatus::VmStep);
+            assert!(
+                steps < 100,
+                "scope guard used {steps} VM steps for scope {scope}"
+            );
+        }
     }
 }
