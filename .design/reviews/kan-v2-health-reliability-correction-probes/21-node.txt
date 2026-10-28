@@ -1,0 +1,16 @@
+✔ auth is header-only; gap filtering and untrusted values use text (13.892917ms)
+✔ late authenticated response cannot unlock a locked view (0.601083ms)
+✔ missing/stale data and HTTP failure cannot look healthy (0.934291ms)
+✔ absent and stale capture reporters remain explicitly unknown (0.593375ms)
+✔ fresh active sessions are current while historical losses remain visible (0.4765ms)
+✔ delivery retries, unsampled unclosed sessions and future clocks cannot look current (0.696625ms)
+✔ future clock samples produce consistent badges and retain uncertain reporter history (0.636667ms)
+✔ unsampled sessions and summary loss units are explicit (0.420875ms)
+ℹ tests 8
+ℹ suites 0
+ℹ pass 8
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 50.1365

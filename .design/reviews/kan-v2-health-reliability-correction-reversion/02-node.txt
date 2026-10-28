@@ -1,0 +1,32 @@
+TAP version 13
+# Subtest: unsampled sessions and summary loss units are explicit
+not ok 1 - unsampled sessions and summary loss units are explicit
+  ---
+  duration_ms: 12.358542
+  type: 'test'
+  location: '/Users/m/code/kan-tools/kan/.worktrees/kan-v2-health-reliability/.local-state/reversion/4c2b474c9ad5432c894d374764b8ed38/tests/operations_ui.test.cjs:17:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    The input did not match the regular expression /8 health telemetry loss observations \(at least\)/. Input:
+    
+    '8 health summary loss observations (at least) · 0 worker reports failed'
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+  actual: '8 health summary loss observations (at least) · 0 worker reports failed'
+  operator: 'match'
+  stack: |-
+    TestContext.<anonymous> (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-health-reliability/.local-state/reversion/4c2b474c9ad5432c894d374764b8ed38/tests/operations_ui.test.cjs:17:438)
+    async Test.run (node:internal/test_runner/test:1069:7)
+    async startSubtestAfterBootstrap (node:internal/test_runner/harness:332:3)
+  ...
+1..1
+# tests 1
+# suites 0
+# pass 0
+# fail 1
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 40.382167

@@ -1,0 +1,20 @@
+✔ auth is header-only; gap filtering and untrusted values use text (13.64875ms)
+✔ late authenticated response cannot unlock a locked view (0.555166ms)
+✔ missing/stale data and HTTP failure cannot look healthy (0.53275ms)
+✔ absent and stale capture reporters remain explicitly unknown (0.863291ms)
+✔ fresh active sessions are current while historical losses remain visible (0.538958ms)
+✔ delivery retries, unsampled unclosed sessions and future clocks cannot look current (0.622042ms)
+✔ future clock samples produce consistent badges and retain uncertain reporter history (0.617833ms)
+✔ unsampled sessions and summary loss units are explicit (0.515042ms)
+✔ first paint defaults to platform; System follows live platform changes (1.0855ms)
+✔ explicit choice persists only the theme and overrides platform until System selected (0.721708ms)
+✔ invalid preference, unavailable storage and cross-tab updates degrade safely (0.784666ms)
+✔ production and preview load the same theme controller before content (0.5425ms)
+ℹ tests 12
+ℹ suites 0
+ℹ pass 12
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 48.463583

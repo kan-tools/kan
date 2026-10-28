@@ -193,3 +193,42 @@ qualify callback concurrency, and tighten the burst barrier to the record write.
 Unsampled-session wording, summary counter units and native mixed-language
 reversion replay also remain explicit follow-ups. Capacity/rotation and the full
 reader/frontend sequence remain unchanged.
+
+
+## Build plan — health admission reliability
+
+Address the six coalescing-review follow-ups before capacity/rotation. Shorten
+the memory-lock critical section by retaining immutable shared observations and
+cloning references for the writer batch. Partition attempts over 64 memory locks
+with one global 256-attempt bound; a writer never locks all shards together. Retry a contended `try_lock` a fixed
+number of times with CPU hints only: no blocking lock, scheduler yield, sleep or
+I/O on the callback. Exhaustion remains counted exactly once per rejected offered
+summary. Qualification includes synchronized callers below distinct-attempt
+capacity and an explicit held-lock test; no finite retry budget guarantees lossless
+health telemetry under arbitrary scheduling. Raw capture remains independent.
+
+Bind the SQLite burst-test barrier to the record transaction, not a heartbeat,
+and force a heartbeat first to test that distinction. Clarify UI units as summary
+loss observations (a lower bound, potentially including older update units), and
+separate stale sampled sessions from unclosed sessions outside the sample. Add a
+repository reversion runner that accepts real exact Rust/Node names and replayable
+committed correction ranges, with baseline/revert/restore evidence and failure
+classification. The bundled day tool remains the authority for generated trailers;
+the repository runner supplies the mixed-language execution adapter explicitly.
+
+
+## Reliability review correction
+
+Fresh Opus 5.5 approved fcd8c6f with follow-ups. The next correction adds a
+deterministic transient-contention retry test (independent of the workload
+threshold), bounds global capacity reservation to 64 compare-exchange attempts,
+and replaces the deprecated atomic API flagged by the newer Linux CI compiler.
+The callback uses at most 512 shard-lock tries; semantic refusal is not retried.
+
+The mixed-language runner now owns a POSIX process group so a timeout kills test
+descendants in that group, reports untracked source files, and tests export
+isolation and timeout cleanup. Build-cache sharing through an explicitly supplied
+CARGO_TARGET_DIR is documented separately from tracked-source isolation. The loss
+label is broadened to health telemetry observations because initial session and
+dead-writer wake failures also contribute. Small fixed-size allocation remains;
+there is no hard-realtime scheduling claim.

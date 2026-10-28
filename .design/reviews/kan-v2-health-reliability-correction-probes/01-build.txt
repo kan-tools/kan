@@ -1,0 +1,2 @@
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-health-reliability/.local-state/reviews/opus-reliability-correction)
+    Finished `dev` profile [unoptimized] target(s) in 26.28s

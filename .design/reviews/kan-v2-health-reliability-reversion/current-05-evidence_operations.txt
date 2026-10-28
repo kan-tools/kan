@@ -1,0 +1,9 @@
+
+running 1 test
+test synchronized_streams_retain_terminal_summaries ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 18 filtered out; finished in 1.57s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-health-reliability/.local-state/reversion/092efbcf573b46d0a0b3df168cc789ad)
+    Finished `test` profile [unoptimized] target(s) in 6.44s
+     Running tests/evidence_operations.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-gateway/target/debug/deps/evidence_operations-8f396ba67ddb65cc)

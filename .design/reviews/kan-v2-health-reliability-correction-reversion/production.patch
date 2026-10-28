@@ -1,0 +1,201 @@
+diff --git a/.design/kan-v2-operations-polish.md b/.design/kan-v2-operations-polish.md
+index e3b9071..7bc5638 100644
+--- a/.design/kan-v2-operations-polish.md
++++ b/.design/kan-v2-operations-polish.md
+@@ -217,0 +218,17 @@ the repository runner supplies the mixed-language execution adapter explicitly.
++
++
++## Reliability review correction
++
++Fresh Opus 5.5 approved fcd8c6f with follow-ups. The next correction adds a
++deterministic transient-contention retry test (independent of the workload
++threshold), bounds global capacity reservation to 64 compare-exchange attempts,
++and replaces the deprecated atomic API flagged by the newer Linux CI compiler.
++The callback uses at most 512 shard-lock tries; semantic refusal is not retried.
++
++The mixed-language runner now owns a POSIX process group so a timeout kills test
++descendants in that group, reports untracked source files, and tests export
++isolation and timeout cleanup. Build-cache sharing through an explicitly supplied
++CARGO_TARGET_DIR is documented separately from tracked-source isolation. The loss
++label is broadened to health telemetry observations because initial session and
++dead-writer wake failures also contribute. Small fixed-size allocation remains;
++there is no hard-realtime scheduling claim.
+diff --git a/scripts/revert_v2.py b/scripts/revert_v2.py
+index 1863ecd..60fde85 100644
+--- a/scripts/revert_v2.py
++++ b/scripts/revert_v2.py
+@@ -9 +9,2 @@ Runs in a permanent source export under .local-state/reversion, never in a Git
+-worktree or the caller's source tree. Uses CARGO_TARGET_DIR only when explicitly
++worktree; the caller's tracked source is never changed. Exports are inside its
++gitignored scratch directory. Uses CARGO_TARGET_DIR only when explicitly
+@@ -19,0 +21 @@ import re
++import signal
+@@ -31,0 +34,18 @@ NODE_TESTS = {
++def run_process(command, cwd, timeout):
++    """Own a POSIX process group so timeout cannot orphan a test descendant."""
++    if os.name != 'posix':
++        raise ValueError('the reversion runner requires POSIX process-group cleanup')
++    process = subprocess.Popen(command, cwd=cwd, stdout=subprocess.PIPE,
++                               stderr=subprocess.PIPE, text=True, start_new_session=True)
++    try:
++        stdout, stderr = process.communicate(timeout=timeout)
++    except (subprocess.TimeoutExpired, KeyboardInterrupt):
++        try:
++            os.killpg(process.pid, signal.SIGKILL)
++        except ProcessLookupError:
++            pass
++        process.communicate()
++        raise
++    return subprocess.CompletedProcess(command, process.returncode, stdout, stderr)
++
++
+@@ -146 +166 @@ def main():
+-                    run = subprocess.run(command, cwd=cwd, capture_output=True, text=True, timeout=240)
++                    run = run_process(command, cwd, timeout=240)
+@@ -167,0 +188 @@ def main():
++        untracked = git(root, 'ls-files', '--others', '--exclude-standard').decode()
+@@ -174 +195 @@ def main():
+-                return ''
++                return untracked
+diff --git a/src/evidence_operations.rs b/src/evidence_operations.rs
+index 366e419..2a777e5 100644
+--- a/src/evidence_operations.rs
++++ b/src/evidence_operations.rs
+@@ -288,0 +289,21 @@ fn dominates(new: &Health, old: &Health) -> bool {
++fn reserve_attempt(count: &AtomicUsize) -> bool {
++    let mut current = count.load(Ordering::Relaxed);
++    for _ in 0..64 {
++        if current >= 256 {
++            return false;
++        }
++        match count.compare_exchange_weak(
++            current,
++            current + 1,
++            Ordering::Relaxed,
++            Ordering::Relaxed,
++        ) {
++            Ok(_) => return true,
++            Err(observed) => {
++                current = observed;
++                std::hint::spin_loop();
++            }
++        }
++    }
++    false
++}
+@@ -307,7 +328 @@ impl PendingHealth {
+-        if !self.entries.contains_key(&health.attempt)
+-            && count
+-                .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |n| {
+-                    (n < 256).then_some(n + 1)
+-                })
+-                .is_err()
+-        {
++        if !self.entries.contains_key(health.attempt.as_str()) && !reserve_attempt(count) {
+@@ -383,0 +399,7 @@ fn offer_pending(pending: &HealthBuffer, h: &Health) -> bool {
++    bounded_admission(|| match shard.try_lock() {
++        Ok(mut p) => Some(p.offer(h, &pending.count)),
++        Err(std::sync::TryLockError::Poisoned(_)) => Some(false),
++        Err(std::sync::TryLockError::WouldBlock) => None,
++    })
++}
++fn bounded_admission(mut attempt: impl FnMut() -> Option<bool>) -> bool {
+@@ -385,4 +407,2 @@ fn offer_pending(pending: &HealthBuffer, h: &Health) -> bool {
+-        match shard.try_lock() {
+-            Ok(mut p) => return p.offer(h, &pending.count),
+-            Err(std::sync::TryLockError::Poisoned(_)) => return false,
+-            Err(std::sync::TryLockError::WouldBlock) => std::hint::spin_loop(),
++        if let Some(result) = attempt() {
++            return result;
+@@ -389,0 +410 @@ fn offer_pending(pending: &HealthBuffer, h: &Health) -> bool {
++        std::hint::spin_loop();
+@@ -809,0 +831,24 @@ mod tests {
++    fn admission_retries_transient_contention_but_stops_at_budget() {
++        let mut calls = 0;
++        assert!(bounded_admission(|| {
++            calls += 1;
++            (calls == 4).then_some(true)
++        }));
++        assert_eq!(calls, 4, "brief contention must be retried");
++        calls = 0;
++        assert!(!bounded_admission(|| {
++            calls += 1;
++            None
++        }));
++        assert_eq!(
++            calls, 512,
++            "admission must stop at its documented finite budget"
++        );
++        calls = 0;
++        assert!(!bounded_admission(|| {
++            calls += 1;
++            Some(false)
++        }));
++        assert_eq!(calls, 1, "a semantic refusal must not be retried");
++    }
++    #[test]
+diff --git a/tests/operations_ui.test.cjs b/tests/operations_ui.test.cjs
+index 0a8d73d..f418f7a 100644
+--- a/tests/operations_ui.test.cjs
++++ b/tests/operations_ui.test.cjs
+@@ -12 +12 @@ test('absent and stale capture reporters remain explicitly unknown',async()=>{co
+-test('fresh active sessions are current while historical losses remain visible',async()=>{const u=ui();u.login();const s=snapshot();s.reporters=[{clean:false,updated_at:Date.now()/1000}];s.unclosed_sessions=1;s.telemetry_dropped=7;s.worker.telemetry_failures=3;await u.respond(s);assert.equal(u.node('notice').className,'notice ');assert.match(u.node('notice').textContent,/Status is current/);assert.match(u.node('coverage-history').textContent,/1 unconfirmed.*7 health summary loss observations.*3 worker reports failed/);assert.match(u.node('telemetry').textContent,/3 worker reports failed/);});
++test('fresh active sessions are current while historical losses remain visible',async()=>{const u=ui();u.login();const s=snapshot();s.reporters=[{clean:false,updated_at:Date.now()/1000}];s.unclosed_sessions=1;s.telemetry_dropped=7;s.worker.telemetry_failures=3;await u.respond(s);assert.equal(u.node('notice').className,'notice ');assert.match(u.node('notice').textContent,/Status is current/);assert.match(u.node('coverage-history').textContent,/1 unconfirmed.*7 health telemetry loss observations.*3 worker reports failed/);assert.match(u.node('telemetry').textContent,/3 worker reports failed/);});
+@@ -17 +17 @@ test('future clock samples produce consistent badges and retain uncertain report
+-test('unsampled sessions and summary loss units are explicit',async()=>{const u=ui();u.login();const s=snapshot();s.reporters=[{clean:false,updated_at:1}];s.unclosed_sessions=4;s.telemetry_dropped=8;await u.respond(s);assert.match(u.node('coverage-history').textContent,/1 sampled unclosed sessions without a current heartbeat/);assert.match(u.node('coverage-history').textContent,/3 unclosed sessions outside the recent sample/);assert.match(u.node('telemetry').textContent,/8 health summary loss observations \(at least\)/);assert.doesNotMatch(u.node('telemetry').textContent,/capture updates lost/);});
++test('unsampled sessions and summary loss units are explicit',async()=>{const u=ui();u.login();const s=snapshot();s.reporters=[{clean:false,updated_at:1}];s.unclosed_sessions=4;s.telemetry_dropped=8;await u.respond(s);assert.match(u.node('coverage-history').textContent,/1 sampled unclosed sessions without a current heartbeat/);assert.match(u.node('coverage-history').textContent,/3 unclosed sessions outside the recent sample/);assert.match(u.node('telemetry').textContent,/8 health telemetry loss observations \(at least\)/);assert.doesNotMatch(u.node('telemetry').textContent,/capture updates lost/);});
+diff --git a/tests/test_revert_v2.py b/tests/test_revert_v2.py
+index 37618e8..c22a7d7 100644
+--- a/tests/test_revert_v2.py
++++ b/tests/test_revert_v2.py
+@@ -3,0 +4,5 @@ import unittest
++import tempfile
++import subprocess
++import sys
++import time
++import os
+@@ -19,0 +25,34 @@ class Results(unittest.TestCase):
++class Execution(unittest.TestCase):
++    def test_export_isolated_including_untracked_and_rejects_symlink(self):
++        with tempfile.TemporaryDirectory() as tmp:
++            root=Path(tmp)/'source'; root.mkdir()
++            subprocess.run(['git','init','-q',str(root)],check=True)
++            (root/'tracked').write_text('original')
++            subprocess.run(['git','add','tracked'],cwd=root,check=True)
++            (root/'untracked').write_text('new')
++            dest=Path(tmp)/'export'; dest.mkdir()
++            runner.export(root,dest,None)
++            self.assertEqual((dest/'untracked').read_text(),'new')
++            (dest/'tracked').write_text('changed')
++            self.assertEqual((root/'tracked').read_text(),'original')
++            if os.name=='posix':
++                (root/'link').symlink_to(root/'tracked')
++                with self.assertRaises(ValueError):
++                    runner.export(root,Path(tmp)/'rejected',None)
++    @unittest.skipUnless(os.name=='posix','requires POSIX process groups')
++    def test_timeout_stops_descendant_writes(self):
++        with tempfile.TemporaryDirectory() as tmp:
++            ticks=Path(tmp)/'ticks'
++            child="import time; from pathlib import Path; p=Path("+repr(str(ticks))+ ");\nwhile True:\n p.open('a').write('x'); time.sleep(.02)"
++            parent="import subprocess,sys,time; subprocess.Popen([sys.executable,'-c',"+repr(child)+"]); time.sleep(30)"
++            with self.assertRaises(subprocess.TimeoutExpired):
++                runner.run_process([sys.executable,'-c',parent],tmp,1)
++            self.assertTrue(ticks.exists(),'descendant must actually run')
++            size=ticks.stat().st_size; time.sleep(.15)
++            self.assertEqual(ticks.stat().st_size,size,'timeout left test descendant running')
++    def test_process_exit_status_is_preserved(self):
++        with tempfile.TemporaryDirectory() as tmp:
++            result=runner.run_process([sys.executable,'-c',"print('not ok 1 - named'); raise SystemExit(7)"],tmp,3)
++            self.assertEqual(result.returncode,7)
++            self.assertEqual(runner.parse_result('node','named',result.stdout,result.returncode),({'named'},{'named'}))
++
+diff --git a/web/operations/app.js b/web/operations/app.js
+index 491501b..a8620b8 100644
+--- a/web/operations/app.js
++++ b/web/operations/app.js
+@@ -23 +23 @@ function render(s){snapshot=s;const w=s.worker,q=w?.queue;const now=Date.now()/1
+-  $('gaps').textContent=count(s.unconfirmed);$('attempts').textContent=count(s.attempts);$('telemetry').textContent=count(s.telemetry_dropped)+' health summary loss observations (at least) · '+count(w?.telemetry_failures)+' worker reports failed';
++  $('gaps').textContent=count(s.unconfirmed);$('attempts').textContent=count(s.attempts);$('telemetry').textContent=count(s.telemetry_dropped)+' health telemetry loss observations (at least) · '+count(w?.telemetry_failures)+' worker reports failed';
+@@ -34 +34 @@ function render(s){snapshot=s;const w=s.worker,q=w?.queue;const now=Date.now()/1
+-  if(s.telemetry_dropped)history.push(count(s.telemetry_dropped)+' health summary loss observations (at least)');
++  if(s.telemetry_dropped)history.push(count(s.telemetry_dropped)+' health telemetry loss observations (at least)');

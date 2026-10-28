@@ -1,0 +1,15 @@
+Source export and logs: /Users/m/code/kan-tools/kan/.worktrees/kan-v2-health-reliability/.local-state/reversion/4c2b474c9ad5432c894d374764b8ed38
+note: untracked and therefore NOT reverted: ['.design/reviews/kan-v2-health-reliability-2026-10-18.md', '.design/reviews/kan-v2-health-reliability-2026-10-18.txt', '.design/reviews/kan-v2-health-reliability-mutations.txt']
+What would be reverted (worktree):
+  skipped .design/kan-v2-operations-polish.md (not in --include)
+  reverting scripts/revert_v2.py: 6/6 hunk(s)
+  reverting src/evidence_operations.rs: 5/6 hunk(s) (1 test-side hunk(s) kept in place)
+  skipped tests/operations_ui.test.cjs (not in --include)
+  skipped tests/test_revert_v2.py (not in --include)
+  reverting web/operations/app.js: 2/2 hunk(s)
+
+DEMONSTRATED — failed under revert: node::summary_loss_units
+
+Paste into the commit message:
+
+    Demonstrated-by: revert=HEAD tests=node::summary_loss_units outcome=DEMONSTRATED

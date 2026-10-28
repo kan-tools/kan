@@ -8,9 +8,10 @@ use rusqlite::{params, Connection, OpenFlags, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use std::{
     collections::BTreeMap,
+    hash::{Hash, Hasher},
     path::Path,
     sync::{
-        atomic::{AtomicU64, Ordering},
+        atomic::{AtomicU64, AtomicUsize, Ordering},
         mpsc, Arc, Mutex,
     },
     time::{Duration, SystemTime, UNIX_EPOCH},
@@ -285,13 +286,34 @@ fn dominates(new: &Health, old: &Health) -> bool {
         && old.status.is_none_or(|s| new.status == Some(s))
         && old.outcome.is_none_or(|o| new.outcome == Some(o))
 }
+fn reserve_attempt(count: &AtomicUsize) -> bool {
+    let mut current = count.load(Ordering::Relaxed);
+    for _ in 0..64 {
+        if current >= 256 {
+            return false;
+        }
+        match count.compare_exchange_weak(
+            current,
+            current + 1,
+            Ordering::Relaxed,
+            Ordering::Relaxed,
+        ) {
+            Ok(_) => return true,
+            Err(observed) => {
+                current = observed;
+                std::hint::spin_loop();
+            }
+        }
+    }
+    false
+}
 #[derive(Default)]
 struct PendingHealth {
     revision: u64,
-    entries: BTreeMap<String, (u64, Health)>,
+    entries: BTreeMap<String, (u64, Arc<Health>)>,
 }
 impl PendingHealth {
-    fn offer(&mut self, health: &Health) -> bool {
+    fn offer(&mut self, health: &Health, count: &AtomicUsize) -> bool {
         if !valid_health(health) {
             return false;
         }
@@ -299,28 +321,103 @@ impl PendingHealth {
             if !dominates(health, old) {
                 return false;
             }
-        } else if self.entries.len() >= 256 {
-            return false;
         }
         let Some(revision) = self.revision.checked_add(1) else {
             return false;
         };
+        if !self.entries.contains_key(health.attempt.as_str()) && !reserve_attempt(count) {
+            return false;
+        }
         self.revision = revision;
         self.entries
-            .insert(health.attempt.clone(), (revision, health.clone()));
+            .insert(health.attempt.clone(), (revision, Arc::new(health.clone())));
         true
     }
-    fn batch(&self) -> Vec<(u64, Health)> {
+    fn batch(&self) -> Vec<(u64, Arc<Health>)> {
         self.entries.values().cloned().collect()
     }
-    fn finish(&mut self, attempt: &str, revision: u64) {
+    fn finish(&mut self, attempt: &str, revision: u64, count: &AtomicUsize) {
         if self
             .entries
             .get(attempt)
             .is_some_and(|(current, _)| *current == revision)
         {
             self.entries.remove(attempt);
+            count.fetch_sub(1, Ordering::Relaxed);
         }
+    }
+}
+
+struct HealthBuffer {
+    shards: [Mutex<PendingHealth>; 64],
+    count: AtomicUsize,
+}
+impl Default for HealthBuffer {
+    fn default() -> Self {
+        Self {
+            shards: std::array::from_fn(|_| Mutex::new(PendingHealth::default())),
+            count: AtomicUsize::new(0),
+        }
+    }
+}
+impl HealthBuffer {
+    fn shard(&self, h: &Health) -> usize {
+        let mut hash = std::collections::hash_map::DefaultHasher::new();
+        h.attempt.hash(&mut hash);
+        hash.finish() as usize % self.shards.len()
+    }
+    fn batch(&self) -> Vec<(usize, u64, Arc<Health>)> {
+        self.shards
+            .iter()
+            .enumerate()
+            .flat_map(|(i, p)| {
+                p.lock()
+                    .expect("health buffer poisoned")
+                    .batch()
+                    .into_iter()
+                    .map(move |(r, h)| (i, r, h))
+            })
+            .collect()
+    }
+    fn finish(&self, shard: usize, attempt: &str, revision: u64) {
+        self.shards[shard]
+            .lock()
+            .expect("health buffer poisoned")
+            .finish(attempt, revision, &self.count);
+    }
+}
+
+// Bounded CPU work only: never wait for a lock holder to be scheduled. Shared
+// observations keep the writer's batch copy short. A stalled holder still causes
+// one visible lost-summary observation after the finite admission budget.
+const ADMISSION_TRIES: usize = 512;
+fn offer_pending(pending: &HealthBuffer, h: &Health) -> bool {
+    if !valid_health(h) {
+        return false;
+    }
+    let shard = &pending.shards[pending.shard(h)];
+    bounded_admission(|| match shard.try_lock() {
+        Ok(mut p) => Some(p.offer(h, &pending.count)),
+        Err(std::sync::TryLockError::Poisoned(_)) => Some(false),
+        Err(std::sync::TryLockError::WouldBlock) => None,
+    })
+}
+fn bounded_admission(mut attempt: impl FnMut() -> Option<bool>) -> bool {
+    for _ in 0..ADMISSION_TRIES {
+        if let Some(result) = attempt() {
+            return result;
+        }
+        std::hint::spin_loop();
+    }
+    false
+}
+
+fn admit_or_count_loss(pending: &HealthBuffer, dropped: &AtomicU64, h: &Health) -> bool {
+    if offer_pending(pending, h) {
+        true
+    } else {
+        dropped.fetch_add(1, Ordering::Relaxed);
+        false
     }
 }
 
@@ -358,7 +455,7 @@ fn reporter_inner(
             .is_some_and(|j| j.session(&id, 0, false).is_err()),
     );
     let (tx, rx) = mpsc::sync_channel::<()>(1);
-    let pending = Arc::new(Mutex::new(PendingHealth::default()));
+    let pending = Arc::new(HealthBuffer::default());
     let writer_pending = pending.clone();
     let dropped = Arc::new(AtomicU64::new(initial_loss));
     let losses = dropped.clone();
@@ -380,20 +477,14 @@ fn reporter_inner(
                         .ok();
                 }
             }
-            // Clone one bounded batch under the memory lock; no database I/O or
-            // callback is ever executed while holding that lock.
-            let batch = writer_pending
-                .lock()
-                .expect("health buffer poisoned")
-                .batch();
-            for (revision, h) in batch {
+            // Snapshot one bounded batch through separate short shard locks.
+            // Database I/O never holds an admission lock.
+            let batch = writer_pending.batch();
+            for (shard, revision, h) in batch {
                 if journal.as_mut().is_none_or(|j| j.record(&h).is_err()) {
                     losses.fetch_add(1, Ordering::Relaxed);
                 }
-                writer_pending
-                    .lock()
-                    .expect("health buffer poisoned")
-                    .finish(&h.attempt, revision);
+                writer_pending.finish(shard, &h.attempt, revision);
                 if heartbeat.elapsed() >= Duration::from_millis(500) {
                     if let Some(j) = &journal {
                         let _ = j.session(&id, losses.load(Ordering::Relaxed), false);
@@ -409,9 +500,7 @@ fn reporter_inner(
             }
         })?;
     let callback = Arc::new(move |h: &Health| {
-        let admitted = pending.try_lock().is_ok_and(|mut p| p.offer(h));
-        if !admitted {
-            dropped.fetch_add(1, Ordering::Relaxed);
+        if !admit_or_count_loss(&pending, &dropped, h) {
             return;
         }
         // A full wake channel already guarantees a pending wake, not lost data.
@@ -631,7 +720,13 @@ mod tests {
         use std::sync::atomic::AtomicBool;
         static BLOCKED: AtomicBool = AtomicBool::new(false);
         static RELEASE: AtomicBool = AtomicBool::new(false);
+        static RECORD: AtomicBool = AtomicBool::new(false);
+        static HEARTBEAT: AtomicBool = AtomicBool::new(false);
         fn hold_writer(_: i32) -> bool {
+            if !RECORD.load(Ordering::SeqCst) {
+                HEARTBEAT.store(true, Ordering::SeqCst);
+                return false;
+            }
             BLOCKED.store(true, Ordering::SeqCst);
             while !RELEASE.load(Ordering::SeqCst) {
                 std::thread::sleep(Duration::from_millis(1));
@@ -647,6 +742,8 @@ mod tests {
         let _release = ReleaseOnDrop;
         BLOCKED.store(false, Ordering::SeqCst);
         RELEASE.store(false, Ordering::SeqCst);
+        RECORD.store(false, Ordering::SeqCst);
+        HEARTBEAT.store(false, Ordering::SeqCst);
         let dir = tempfile::tempdir().unwrap();
         let spool = dir.path().join("queue");
         let path = dir.path().join("health");
@@ -660,10 +757,26 @@ mod tests {
         )
         .unwrap();
         let journal = Journal::create(&path, &spool).unwrap();
+        journal.conn.trace_v2(
+            rusqlite::trace::TraceEventCodes::SQLITE_TRACE_STMT,
+            Some(|event| {
+                if let rusqlite::trace::TraceEvent::Stmt(_, "BEGIN DEFERRED") = event {
+                    RECORD.store(true, Ordering::SeqCst);
+                }
+            }),
+        );
         journal.conn.busy_handler(Some(hold_writer)).unwrap();
         let (report, guard) = reporter(journal).unwrap();
         let lock = Connection::open(&path).unwrap();
         lock.execute_batch("BEGIN EXCLUSIVE").unwrap();
+        // Force the timeout heartbeat to encounter the lock first. It must not
+        // satisfy the record barrier, even if the caller is descheduled.
+        let heartbeat_deadline = std::time::Instant::now() + Duration::from_secs(3);
+        while !HEARTBEAT.load(Ordering::SeqCst) && std::time::Instant::now() < heartbeat_deadline {
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        assert!(HEARTBEAT.load(Ordering::SeqCst));
+        assert!(!BLOCKED.load(Ordering::SeqCst));
         let mut h = Health {
             attempt: format!("{:064x}", 0),
             observer: crate::evidence_capture::Observer::Collector,
@@ -713,6 +826,105 @@ mod tests {
             snapshot.telemetry_dropped, 1,
             "only the contradiction is lost; coalescing is not dropped evidence"
         );
+    }
+    #[test]
+    fn admission_retries_transient_contention_but_stops_at_budget() {
+        let mut calls = 0;
+        assert!(bounded_admission(|| {
+            calls += 1;
+            (calls == 4).then_some(true)
+        }));
+        assert_eq!(calls, 4, "brief contention must be retried");
+        calls = 0;
+        assert!(!bounded_admission(|| {
+            calls += 1;
+            None
+        }));
+        assert_eq!(
+            calls, 512,
+            "admission must stop at its documented finite budget"
+        );
+        calls = 0;
+        assert!(!bounded_admission(|| {
+            calls += 1;
+            Some(false)
+        }));
+        assert_eq!(calls, 1, "a semantic refusal must not be retried");
+    }
+    #[test]
+    fn contended_admission_is_bounded_and_counts_one_summary() {
+        let pending = HealthBuffer::default();
+        let dropped = AtomicU64::new(7);
+        let h = Health {
+            attempt: format!("{:064x}", 9),
+            observer: crate::evidence_capture::Observer::Collector,
+            observed: 1,
+            locally_queued: 1,
+            unconfirmed: 0,
+            recording_gap: false,
+            remote_acknowledged: false,
+            status: Some(200),
+            outcome: Some(crate::evidence_capture::Outcome::Completed),
+        };
+        let held = pending.shards[pending.shard(&h)].lock().unwrap();
+        let start = std::time::Instant::now();
+        assert!(!admit_or_count_loss(&pending, &dropped, &h));
+        assert!(start.elapsed() < Duration::from_millis(100));
+        assert_eq!(dropped.load(Ordering::Relaxed), 8);
+        drop(held);
+        assert!(admit_or_count_loss(&pending, &dropped, &h));
+        assert_eq!(dropped.load(Ordering::Relaxed), 8);
+        assert_eq!(pending.batch()[0].2.outcome, h.outcome);
+    }
+    #[test]
+    fn sharded_admission_is_independent_and_globally_bounded() {
+        let buffer = HealthBuffer::default();
+        let make = |i| Health {
+            attempt: format!("{i:064x}"),
+            observer: crate::evidence_capture::Observer::Collector,
+            observed: 1,
+            locally_queued: 1,
+            unconfirmed: 0,
+            recording_gap: false,
+            remote_acknowledged: false,
+            status: None,
+            outcome: None,
+        };
+        let first = make(0);
+        let held = buffer.shards[buffer.shard(&first)].lock().unwrap();
+        let different = (1..256)
+            .map(make)
+            .find(|h| buffer.shard(h) != buffer.shard(&first))
+            .unwrap();
+        assert!(
+            offer_pending(&buffer, &different),
+            "another attempt's held shard must not block admission"
+        );
+        drop(held);
+        for i in 0..256 {
+            assert!(offer_pending(&buffer, &make(i)));
+        }
+        assert_eq!(buffer.count.load(Ordering::Relaxed), 256);
+        assert!(!offer_pending(&buffer, &make(1001)));
+        let (shard, old, mut h) = buffer
+            .batch()
+            .into_iter()
+            .find(|(_, _, h)| h.attempt == first.attempt)
+            .unwrap();
+        Arc::make_mut(&mut h).observed += 1;
+        Arc::make_mut(&mut h).locally_queued += 1;
+        assert!(offer_pending(&buffer, &h));
+        buffer.finish(shard, &h.attempt, old);
+        assert_eq!(buffer.count.load(Ordering::Relaxed), 256);
+        let current = buffer
+            .batch()
+            .into_iter()
+            .find(|(_, _, item)| item.attempt == h.attempt)
+            .unwrap()
+            .1;
+        buffer.finish(shard, &h.attempt, current);
+        assert_eq!(buffer.count.load(Ordering::Relaxed), 255);
+        assert!(offer_pending(&buffer, &make(1001)));
     }
     #[test]
     fn worker_checkpoint_retry_is_idempotent_after_uncertain_commit() {

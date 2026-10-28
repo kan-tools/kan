@@ -1,0 +1,24 @@
+
+running 1 test
+test evidence_operations::tests::burst_keeps_final_cumulative_summary_and_terminal_gap ... FAILED
+
+failures:
+
+---- evidence_operations::tests::burst_keeps_final_cumulative_summary_and_terminal_gap stdout ----
+
+thread 'evidence_operations::tests::burst_keeps_final_cumulative_summary_and_terminal_gap' (8528386) panicked at src/evidence_operations.rs:623:9:
+assertion `left == right` failed
+  left: (257, 256, 1)
+ right: (1002, 1001, 1)
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    evidence_operations::tests::burst_keeps_final_cumulative_summary_and_terminal_gap
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 60 filtered out; finished in 3.66s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-health-reliability/.local-state/reversion/1ce5b1168b394ba7aab5fb450aee141f)
+    Finished `test` profile [unoptimized] target(s) in 5.56s
+     Running unittests src/lib.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-gateway/target/debug/deps/kan-d59ef2014058b9af)
+error: test failed, to rerun pass `--lib`

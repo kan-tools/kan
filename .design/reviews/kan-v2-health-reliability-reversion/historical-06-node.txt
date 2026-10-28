@@ -1,0 +1,32 @@
+TAP version 13
+# Subtest: future clock samples produce consistent badges and retain uncertain reporter history
+not ok 1 - future clock samples produce consistent badges and retain uncertain reporter history
+  ---
+  duration_ms: 13.508917
+  type: 'test'
+  location: '/Users/m/code/kan-tools/kan/.worktrees/kan-v2-health-reliability/.local-state/reversion/1ce5b1168b394ba7aab5fb450aee141f/tests/operations_ui.test.cjs:15:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    The input did not match the regular expression /1 unclosed sessions without a current heartbeat/. Input:
+    
+    '1 unconfirmed capture observations'
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+  actual: '1 unconfirmed capture observations'
+  operator: 'match'
+  stack: |-
+    TestContext.<anonymous> (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-health-reliability/.local-state/reversion/1ce5b1168b394ba7aab5fb450aee141f/tests/operations_ui.test.cjs:15:316)
+    async Test.run (node:internal/test_runner/test:1069:7)
+    async startSubtestAfterBootstrap (node:internal/test_runner/harness:332:3)
+  ...
+1..1
+# tests 1
+# suites 0
+# pass 0
+# fail 1
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 46.410625
