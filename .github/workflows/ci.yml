@@ -28,9 +28,9 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo build --workspace --all-targets
       - run: cargo test --workspace
-      - run: cargo test --features v2-storage --test evidence_contract --test evidence_store --test migration_preflight --test surface_conformance
+      - run: cargo test --features v2-service --test evidence_contract --test evidence_store --test evidence_service --test evidence_http --test migration_preflight --test recovery_cli --test migration_harness --test surface_conformance
       - run: cargo clippy --workspace --all-targets -- -D warnings
-      - run: cargo clippy --features v2-storage --lib --bin kan-v2 --test evidence_contract --test evidence_store --test migration_preflight -- -D warnings
+      - run: cargo clippy --features v2-service --all-targets -- -D warnings
       - run: cargo fmt --all -- --check
 
   # THE DECLARED MSRV IS ONLY WORTH DECLARING IF SOMETHING CHECKS IT.
