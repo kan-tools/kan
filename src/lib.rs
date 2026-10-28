@@ -32,6 +32,8 @@ pub mod evidence_recovery_commitment;
 pub mod evidence_recovery_member;
 #[cfg(feature = "v2-storage")]
 pub mod evidence_recovery_observation;
+#[cfg(feature = "v2-storage")]
+pub mod evidence_recovery_replay;
 #[cfg(feature = "v2-crypto")]
 pub mod evidence_restore;
 #[cfg(feature = "v2-storage")]

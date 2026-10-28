@@ -1,0 +1,2 @@
+45 32
+['profile2-initial-loss', 'profile2-restored-failure-observed', 'profile2-external-prefix-and-extension', 'profile3-initial-loss', 'profile3-restored-failure-observed', 'profile3-external-prefix-and-extension', 'greedy-32-plus-2-loss-partition', 'later-candidate-keeps-earlier-intent-history', 'partial-copy-retained-no-publication', 'failed-intent-remains-unobserved', 'partial-membership-restoration-does-not-promote-source-authority', 'verified-copy-recipe-staged-restoration', 'original-object-basis-survives-restoration']

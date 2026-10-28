@@ -1,0 +1,25 @@
+author control external-checkpoint: KILLED-ACCEPTANCE exit=101
+--- require(checkpoint_seen, "external checkpoint absent")?
++++ require(true || checkpoint_seen, "external checkpoint absent")?
+
+
+running 1 test
+test rollback_before_external_checkpoint_and_foreign_checkpoint_refuse ... FAILED
+
+failures:
+
+failures:
+    rollback_before_external_checkpoint_and_foreign_checkpoint_refuse
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 9 filtered out; finished in 0.10s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-recovery-replay/.local-state/reviews/recovery-replay)
+    Finished `test` profile [unoptimized] target(s) in 7.45s
+     Running tests/evidence_recovery_replay.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_recovery_replay-4eb126a2c0172bbe)
+
+thread 'rollback_before_external_checkpoint_and_foreign_checkpoint_refuse' (10192737) panicked at tests/evidence_recovery_replay.rs:231:5:
+assertion `left == right` failed
+  left: None
+ right: Some(Invalid("external checkpoint absent"))
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+error: test failed, to rerun pass `--test evidence_recovery_replay`

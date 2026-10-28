@@ -1,0 +1,7 @@
+scopeB control empty-request-cid: KILLED-SEMANTIC exit=101 test=empty_service_request_cid_refuses_without_an_original
+scopeB control retain-issuer-length: KILLED-SEMANTIC exit=101 test=cp11_basis_deterministic
+scopeB control request-bound-edge: KILLED-SEMANTIC exit=101 test=cp01_request_length_edges_without_bytes
+scopeB whole reversion (cd0a9ff runtime) named regression: KILLED-SEMANTIC exit=101
+scopeB whole reversion affected suites: exit=101 failed=['test independently_constructed_python_members_match_commitments_losses_and_refusals ... FAILED', 'test result: FAILED. 15 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.19s', 'test empty_service_request_cid_refuses_without_an_original ... FAILED', 'test rp14_hash_valid_bytes_with_false_signed_length ... FAILED', 'test result: FAILED. 21 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.43s']
+restored via git show b52aa48: sha256 ok
+scopeB restored named regression exit=0

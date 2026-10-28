@@ -1,0 +1,5 @@
+cargo 1.96.1 (356927216 2026-06-26)
+rustc 1.96.1 (31fca3adb 2026-06-26)
+CARGO_TARGET_DIR=/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target
+     Removed 945 files, 243.9MiB total
+exit=0

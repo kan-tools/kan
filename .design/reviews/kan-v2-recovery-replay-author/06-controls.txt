@@ -1,0 +1,12 @@
+DEMONSTRATED: member-commitment
+DEMONSTRATED: frontier
+DEMONSTRATED: loss-partition
+DEMONSTRATED: historical-restorations
+DEMONSTRATED: intent-output
+DEMONSTRATED: intent-citation
+DEMONSTRATED: terminal-attempt
+DEMONSTRATED: external-checkpoint
+DEMONSTRATED: partial-candidate-length
+DEMONSTRATED: restoration-basis
+DEMONSTRATED: virtual-output-writer
+11 compiled semantic controls killed; restored suite passed.
