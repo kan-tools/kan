@@ -769,7 +769,13 @@ const PERSISTENCE_MUTATION_SITES: &[(&str, &str, &str, usize)] = &[
         "src/evidence_workspace.rs",
         "write_new_owner_only",
         "EvidenceWorkspace",
-        2,
+        3,
+    ),
+    (
+        "src/evidence_workspace.rs",
+        "set_permissions",
+        "Container",
+        1,
     ),
     (
         "src/evidence_workspace.rs",

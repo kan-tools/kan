@@ -65,6 +65,13 @@ cleanup handoff. New deterministic descriptor-duplication, independent-reader,
 cleanup and error-path regressions await remote CI. The local OS primitive
 reproduces close-only descriptor retention; the failing CI descriptor provenance
 was not traced. The matrix bot's `ea0dac3` measurement conversion is preserved.
+At `20bbf0e`, all three new lock regressions and the original erasure reopen
+test passed. Qualification instead caught two synthetic fixture writes bypassing
+the persistence facade: surface-conformance and strict Clippy rejected them. The
+follow-up routes both writes through existing typed capabilities and records their
+exact call counts, without exemptions or weakened checks; remote validation of
+that correction is pending. All 19 browser groups still passed.
+
 
 ### Completion checklist
 

@@ -813,7 +813,14 @@ mod lease_tests {
     fn workspace_fixture() -> (tempfile::TempDir, std::path::PathBuf) {
         use std::os::unix::fs::PermissionsExt;
         let directory = tempfile::tempdir().unwrap();
-        std::fs::set_permissions(directory.path(), std::fs::Permissions::from_mode(0o700)).unwrap();
+        // Synthetic fixture container, not a production workspace mutation.
+        // surface-write: container:workspace
+        crate::persistence::set_permissions(
+            crate::persistence::SurfaceWrite::Container,
+            directory.path(),
+            std::fs::Permissions::from_mode(0o700),
+        )
+        .unwrap();
         let path = directory.path().join("workspace.sqlite");
         (directory, path)
     }
@@ -866,7 +873,14 @@ mod lease_tests {
         let (_directory, path) = workspace_fixture();
         let owner = MaintenanceLease::acquire(&path, true).unwrap();
         let inherited = owner.0.file.try_clone().unwrap();
-        std::fs::write(sidecar(&path, "-journal"), b"interrupted").unwrap();
+        // Deliberately incomplete journal exercises refusal and lease cleanup.
+        // surface-write: evidence-workspace:database-journal
+        crate::persistence::write_new_owner_only(
+            crate::persistence::SurfaceWrite::EvidenceWorkspace,
+            &sidecar(&path, "-journal"),
+            b"interrupted",
+        )
+        .unwrap();
         assert!(matches!(
             Workspace::open_locked(&path, signer(), [8; 32], owner.retain(), false),
             Err(Failure::Unavailable)
