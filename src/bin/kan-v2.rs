@@ -1,4 +1,4 @@
-//! Experimental archive maintenance and migration preflight; no live cutover.
+//! Experimental archive, durable delivery and raw snapshot tools; no live cutover.
 use clap::{Parser, Subcommand};
 use kan::{
     evidence_store::{Ledger, RecoveryReader},
@@ -7,13 +7,31 @@ use kan::{
 use std::path::PathBuf;
 
 #[derive(Parser)]
-#[command(about = "Experimental kan v2 archive maintenance and read-only migration preflight")]
+#[command(about = "Experimental kan v2 archive and durable delivery tools")]
 struct Cli {
     #[command(subcommand)]
     command: Command,
 }
 #[derive(Subcommand)]
 enum Command {
+    /// Pin an explicit v1 source inventory and destination without importing.
+    #[cfg(feature = "v2-crypto")]
+    ImportPlan {
+        #[command(flatten)]
+        options: ImportOptions,
+    },
+    /// Queue a bounded batch of a pinned raw snapshot; never sends or cuts over.
+    #[cfg(feature = "v2-crypto")]
+    ImportV1 {
+        #[command(flatten)]
+        options: ImportOptions,
+        #[arg(long)]
+        expected_plan: String,
+        #[arg(long)]
+        key: PathBuf,
+        #[arg(long, default_value_t = 128, value_parser = clap::value_parser!(u16).range(1..=1024))]
+        limit: u16,
+    },
     /// Create a new queue for one explicit scope, writer and destination.
     SpoolInit {
         spool: PathBuf,
@@ -135,11 +153,71 @@ enum Command {
     },
 }
 
+#[cfg(feature = "v2-crypto")]
+#[derive(clap::Args)]
+struct ImportOptions {
+    source: PathBuf,
+    #[arg(long)]
+    spool: PathBuf,
+    /// Explicit lineage token, 32 bytes of lowercase hex; never inferred from names.
+    #[arg(long)]
+    source_id: String,
+    #[arg(long)]
+    recipient: String,
+    #[arg(long, value_enum, default_value = "workspace")]
+    selection: ImportSelection,
+}
+#[cfg(feature = "v2-crypto")]
+#[derive(Clone, Copy, clap::ValueEnum)]
+enum ImportSelection {
+    Workspace,
+    Store,
+    Identity,
+}
+#[cfg(feature = "v2-crypto")]
+fn import_plan(
+    options: ImportOptions,
+) -> Result<(kan::evidence_import::Plan, kan::evidence_spool::Spool), Box<dyn std::error::Error>> {
+    let mut spool = kan::evidence_spool::Spool::open(&options.spool)?;
+    let selection = match options.selection {
+        ImportSelection::Workspace => kan::evidence_import::Selection::Workspace,
+        ImportSelection::Store => kan::evidence_import::Selection::Store,
+        ImportSelection::Identity => kan::evidence_import::Selection::Identity,
+    };
+    let plan = kan::evidence_import::Plan::build(
+        &options.source,
+        selection,
+        fixed_hex::<32>(&options.source_id)?,
+        fixed_hex::<32>(&options.recipient)?,
+        &mut spool,
+    )?;
+    Ok((plan, spool))
+}
+
 fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
 fn run() -> Result<(), Box<dyn std::error::Error>> {
     match Cli::parse().command {
+        #[cfg(feature = "v2-crypto")]
+        Command::ImportPlan { options } => {
+            let (plan, mut spool) = import_plan(options)?;
+            print_json(
+                &serde_json::json!({"plan": plan.summary(), "progress": plan.progress(&mut spool)?}),
+            )?;
+        }
+        #[cfg(feature = "v2-crypto")]
+        Command::ImportV1 {
+            options,
+            expected_plan,
+            key,
+            limit,
+        } => {
+            let signer = service_identity(&key)?;
+            let (plan, mut spool) = import_plan(options)?;
+            let progress = plan.enqueue(&expected_plan, &mut spool, &signer, usize::from(limit))?;
+            print_json(&serde_json::to_value(progress)?)?;
+        }
         Command::SpoolInit {
             spool,
             scope,
