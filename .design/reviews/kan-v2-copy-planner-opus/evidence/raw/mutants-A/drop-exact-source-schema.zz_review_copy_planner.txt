@@ -1,0 +1,30 @@
+
+running 8 tests
+test ra1_noncanonical_and_hostile_plans ... ok
+test ra2_author_negative_vector_reasons ... ok
+test ra3_digest_matches_independent_oracles_on_richer_fixture ... ok
+test ra4_mixed_historical_issuers_refuse ... ok
+test ra5_unsupported_schema_and_profiles_refuse_without_writes ... FAILED
+test ra6_failure_handling_is_closed_and_labelled ... ok
+test ra7_pinning_reserved_writer_and_backup_substitution ... ok
+test ra8_audit_cost_scaling ... ok
+
+failures:
+
+---- ra5_unsupported_schema_and_profiles_refuse_without_writes stdout ----
+RA5 extra-index: None
+
+thread 'ra5_unsupported_schema_and_profiles_refuse_without_writes' (9613697) panicked at tests/zz_review_copy_planner.rs:253:9:
+extra-index accepted
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    ra5_unsupported_schema_and_profiles_refuse_without_writes
+
+test result: FAILED. 7 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 25.86s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-copy-upgrade/.local-state/reviews/copy-planner)
+    Finished `test` profile [unoptimized] target(s) in 0.40s
+     Running tests/zz_review_copy_planner.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/zz_review_copy_planner-103957df795f3682)
+error: test failed, to rerun pass `--test zz_review_copy_planner`

@@ -16,6 +16,8 @@ pub mod evidence;
 pub mod evidence_attestation;
 #[cfg(feature = "v2-crypto")]
 pub mod evidence_capture;
+#[cfg(feature = "v2-storage")]
+pub mod evidence_copy_plan;
 #[cfg(feature = "v2-crypto")]
 pub mod evidence_crypto;
 #[cfg(feature = "v2-crypto")]

@@ -1,0 +1,57 @@
+I reviewed all four scopes in this session, without delegating, and wrote none of the code. A, B and C get APPROVE WITH FOLLOW-UPS and D gets APPROVE. Nothing I found blocks. Two things need attention first:
+- **C-F1 (Scope C):** profile 2 still accepts a copied history with no plan. Decide this before any profile-3 destination write.
+- **A-F1 (Scope A):** removing the owner-pin check from `confirm` goes unnoticed by every committed test.
+
+**Integrity checks:**
+- The export matches `../copy-planner-identity.json` and the git tree of 8244375 byte for byte (1868/1868), both before and after. The only extra file is `north-star.json`.
+- All three diffs and `.stat` files exactly match the ranges `e0e2e64..8244375`, `7ab1afa..e0e2e64` and `7126848..1c72b50`.
+- I ran `cargo clean -p kan` first. Every source file I mutated was restored and its hash re-checked.
+- No processes of mine are left running.
+
+**Scope A — copy-plan codec and source planner: APPROVE WITH FOLLOW-UPS**
+- **What I reproduced:** all 94 tests pass, strict Clippy and fmt pass, the plan vectors regenerate identically, and all 9 author controls fail the test they name.
+- **Independent checks:**
+  - My own CBOR encoder reproduces all 5 positive vectors and their archive IDs.
+  - 22 malformed plans are refused at the right check: bad key order, non-minimal integers, duplicate keys, non-canonical did:keys, wrong CID types.
+  - My own digest oracle (no repo code, sorting done in Python) matches Rust and the author's oracle on a 33-object fixture.
+  - Mixed historical issuers, extra schema objects and profile 2/3 files are all refused, and refusals leave the main database unchanged.
+  - Corrupt, oversized and missing objects refuse cleanly without panics.
+- **The 642f8ba indexed-read change is sound.** It runs in the same pinned transaction after every row has already been read and hash-checked. At 800 records it saves no measurable time.
+- **A-F1 (medium):** removing `plan.check_archive` from `confirm` survives every committed suite. The author's wrong-pin assertion only fails because the source had already changed. My RA9 test (wrong pin, unchanged source) catches it and should be committed.
+- **A-F2:** dropping the exact-schema check is caught only by my RA5 test.
+- **A-F3:** the negative vectors only assert "it errors", not why.
+
+**Scope B — lifecycle corrections: APPROVE WITH FOLLOW-UPS**
+- B-F1 through B-F5 are all closed. The 36-test claim is 11 lifecycle + 6 `recovery_cli` + 19 surface tests, and all 10 controls are demonstrated.
+- I also mutated each of the two restored error-context sites on its own; both were caught.
+- Two small leftovers in the same class:
+  - **B-R1:** the `evidence-db:archive.sqlite` rows in the surface catalog (TSV lines 74–76) still name only `Ledger`, although profile 2 writes that file too.
+  - **B-R2:** the legacy `verify` label `structural-closure` isn't pinned by any test.
+
+**Scope C — final profile-3 contract: APPROVE WITH FOLLOW-UPS**
+- C1–C6 are all addressed in the final text.
+- On C3, yes: the profile-3 schema can be frozen as the profile-2 tables plus `upgrade_plan` and `upgrade_objects`, with no descriptor fields.
+- **C-F1 (decide before the first destination write):** profile 2's audit still accepts a retained-verified prefix with no plan (`attested.rs:190-205`; the test at `tests/evidence_attested_store.rs:466-475` calls it "the allowed upgrade shape"). That is exactly the plan-less unfinished copy profile 3 was created to rule out. My recommendation is to make profile 2 admitted-only now, while no production profile-2 archives exist.
+- **C-F2 (for the bundle checkpoint):** if someone back-fills a bundle member's missing blobs, the standalone opener would accept it as ready for capture. The bundle's physical format must prevent that.
+- **C-F3/C-F4 (low):** two things need stating — how a later object that shares a CID with an original object is attributed, and how the profile-3 opener is configured.
+
+**Scope D — UI regression follow-ups: APPROVE**
+- **F1–F3:**
+  - RP1–RP12 are an exact 12,478-byte prefix of the preserved reviewer probes.
+  - The preserved file is the original reviewer's write plus their own documented one-line fix.
+  - RP13 is deterministic.
+  - All 49 operations checks and 83 checks on the CI Node line pass.
+- **F4:** all 11 UI mutants fail a named test. The timeout helper killed a synthetic grandchild, and stopped the real A13 hang at 20 s with no orphans (the previous review found two). A timeout aborts the run instead of counting as a pass.
+- **F5:** the UPa–UPi file hashes identically in commit 3f4b403 and in the export.
+- `app.js` is unchanged. Node stubs are not browser testing; the real-browser matrix and file-download checks remain open.
+
+**Not run:**
+- the full 310-test suite (no finding justified it)
+- Linux CI
+- a real browser
+- power-loss testing
+- release-mode timings
+
+Three of my early probe attempts failed because of my own bugs (vacuous git check, writer-chain fixture, quoting). They're kept in the evidence with the reasons.
+
+Everything is in `review-evidence/`: `REPORT.txt` (with its `.sha256`), `COMMANDS.txt`, the probes and the raw logs.

@@ -1,0 +1,55 @@
+*   8244375 Merge branch 'feat/kan-v2-proof-lifecycle' into feat/kan-v2-copy-upgrade
+|\  
+| * e0e2e64 Record lifecycle review corrections and current qualification state
+| *   2e462a2 Merge branch 'feat/kan-v2-collection-build' into feat/kan-v2-proof-lifecycle
+| |\  
+| | * 1c72b50 Preserve fresh restart review and close named UI regression gaps
+* | | 405fb9d Merge branch 'feat/kan-v2-proof-lifecycle' into feat/kan-v2-copy-upgrade
+|\| | 
+| * | 9aca45d Restore recovery diagnostics and pin lifecycle claims and catalog rules
+| * | 3f4b403 Preserve independent overview lifecycle and migration-design review
+* | | 4ec4698 Record copy-source qualification and resolve migration trust contracts
+* | | da12652 Challenge source request signatures and exact manifest binding
+* | | 8e26870 Merge branch 'feat/kan-v2-proof-lifecycle' into feat/kan-v2-copy-upgrade
+|\| | 
+| * | ca53c1d Cover exact standalone schema and precommit proof rejection
+* | | 1fda5d4 Specify copy batch ordering and exact resume boundaries
+* | | 1cfa593 Merge branch 'feat/kan-v2-proof-lifecycle' into feat/kan-v2-copy-upgrade
+|\| | 
+| * | 3471ada Merge branch 'feat/kan-v2-collection-build' into feat/kan-v2-proof-lifecycle
+| |\| 
+| | * 7126848 Demonstrate abort-aware UI regression sensitivity
+* | | 4dca223 Specify nonmutating source planning and explicit derived recovery
+* | | cf63da5 Merge branch 'feat/kan-v2-proof-lifecycle' into feat/kan-v2-copy-upgrade
+|\| | 
+| * | 5489b64 Merge branch 'feat/kan-v2-collection-build' into feat/kan-v2-proof-lifecycle
+| |\| 
+| | * 94763e5 Run independent abort-aware operations UI probes in CI
+* | | 65ca967 Merge branch 'feat/kan-v2-proof-lifecycle' into feat/kan-v2-copy-upgrade
+|\| | 
+| * | 629af33 Merge branch 'feat/kan-v2-collection-build' into feat/kan-v2-proof-lifecycle
+| |\| 
+| | * 5667fc9 fix(v2): repaint overview samples after service restart
+| * | 8f31d10 test(v2): record authenticated overview browser state matrix
+* | | 642f8ba Avoid repeated source scans after pinned full audit
+* | | 4cb1f1c docs(v2): bind original object inventory and frozen-source cutover semantics
+* | | 6ee17c5 fix(v2): bind staged objects into owner copy source plans
+* | | 77079a3 test(v2): actually replace the same-frontier receipt fixture
+* | | a87cea9 feat(v2): draft pinned legacy source verification for copy plans
+* | | 3aec393 feat(v2): draft canonical owner copy-plan commitments
+|/ /  
+* | 7ab1afa test(v2): qualify proof lifecycle and preserve mutation evidence
+* | 5b0bb97 Merge branch 'feat/kan-v2-collection-build' into feat/kan-v2-proof-lifecycle
+|\| 
+| * 262cad3 fix(v2): qualify overview contention and cached sample semantics
+| * 5868ead test: encode hostile health fixture counters as SQLite integers
+| * 046fa51 v2: isolate overview parsing from live health writes and preserve actions
+* | 6324e9f test(v2): retain WAL frames during proof rebuild qualification
+* | f9285c2 test: distinguish retained WAL data from empty coordination files
+* | 694e644 v2: draft proof-preserving archive lifecycle and owner CLI
+|/  
+*   67c1263 Merge branch 'feat/kan-v2-proof-storage' into feat/kan-v2-collection-build
+|\  
+| * a1007a6 v2: preserve storage review and incorporate hostile retry regressions
+* | 3367e28 v2: add bounded collection overview and dashboard refresh
+|/  

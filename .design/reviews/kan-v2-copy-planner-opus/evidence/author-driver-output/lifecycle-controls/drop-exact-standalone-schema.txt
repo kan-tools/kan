@@ -1,0 +1,22 @@
+
+running 1 test
+test standalone_proof_verification_and_backup_refuse_undeclared_schema ... FAILED
+
+failures:
+
+---- standalone_proof_verification_and_backup_refuse_undeclared_schema stdout ----
+
+thread 'standalone_proof_verification_and_backup_refuse_undeclared_schema' (9621628) panicked at tests/evidence_attested_lifecycle.rs:274:9:
+standalone verification must refuse extra schema: CREATE TABLE undeclared_notes(body BLOB NOT NULL)
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    standalone_proof_verification_and_backup_refuse_undeclared_schema
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 10 filtered out; finished in 0.18s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-copy-upgrade/.local-state/reviews/copy-planner)
+    Finished `test` profile [unoptimized] target(s) in 6.71s
+     Running tests/evidence_attested_lifecycle.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_attested_lifecycle-02231a6624d7c1e3)
+error: test failed, to rerun pass `--test evidence_attested_lifecycle`

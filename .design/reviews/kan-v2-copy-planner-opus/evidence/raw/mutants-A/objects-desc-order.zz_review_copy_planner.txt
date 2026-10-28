@@ -1,0 +1,32 @@
+
+running 8 tests
+test ra1_noncanonical_and_hostile_plans ... ok
+test ra2_author_negative_vector_reasons ... ok
+test ra3_digest_matches_independent_oracles_on_richer_fixture ... FAILED
+test ra4_mixed_historical_issuers_refuse ... ok
+test ra5_unsupported_schema_and_profiles_refuse_without_writes ... ok
+test ra6_failure_handling_is_closed_and_labelled ... ok
+test ra7_pinning_reserved_writer_and_backup_substitution ... ok
+test ra8_audit_cost_scaling ... ok
+
+failures:
+
+---- ra3_digest_matches_independent_oracles_on_richer_fixture stdout ----
+RA3 rust=470420b5ea744cce67017b0f2266eb27a20f4dafb61649f89c3c9c8e7c3ee774 reviewer=712b23eff1217e3405a5c958c16ba5d60cce41a5d82172dc9d7be7c0bc7f5a27 author=712b23eff1217e3405a5c958c16ba5d60cce41a5d82172dc9d7be7c0bc7f5a27 commits=8 objects=33
+
+thread 'ra3_digest_matches_independent_oracles_on_richer_fixture' (9616599) panicked at tests/zz_review_copy_planner.rs:183:5:
+assertion `left == right` failed
+  left: "470420b5ea744cce67017b0f2266eb27a20f4dafb61649f89c3c9c8e7c3ee774"
+ right: "712b23eff1217e3405a5c958c16ba5d60cce41a5d82172dc9d7be7c0bc7f5a27"
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    ra3_digest_matches_independent_oracles_on_richer_fixture
+
+test result: FAILED. 7 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 26.37s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-copy-upgrade/.local-state/reviews/copy-planner)
+    Finished `test` profile [unoptimized] target(s) in 0.42s
+     Running tests/zz_review_copy_planner.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/zz_review_copy_planner-103957df795f3682)
+error: test failed, to rerun pass `--test zz_review_copy_planner`

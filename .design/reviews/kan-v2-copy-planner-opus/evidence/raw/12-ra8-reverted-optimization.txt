@@ -1,0 +1,14 @@
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-copy-upgrade/.local-state/reviews/copy-planner)
+    Finished `test` profile [unoptimized] target(s) in 6.97s
+     Running tests/zz_review_copy_planner.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/zz_review_copy_planner-103957df795f3682)
+
+running 1 test
+RA8 records=100 open=342.871625ms confirm=345.954833ms
+RA8 records=200 open=689.685167ms confirm=687.541208ms
+RA8 records=400 open=1.379256542s confirm=1.391334084s
+RA8 records=800 open=2.77113575s confirm=2.799535333s
+test ra8_audit_cost_scaling ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 7 filtered out; finished in 24.25s
+
+exit=0

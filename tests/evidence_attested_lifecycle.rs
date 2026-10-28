@@ -414,6 +414,15 @@ fn owner_cli_requires_all_pins_and_reports_exact_proof_lifecycle() {
             .unwrap()
     }
     let t = tempfile::tempdir().unwrap();
+    let legacy = t.path().join("legacy");
+    drop(Ledger::create(&legacy).unwrap());
+    let verified = run(&["verify", legacy.join("archive.sqlite").to_str().unwrap()]);
+    assert!(verified.status.success());
+    let json: serde_json::Value = serde_json::from_slice(&verified.stdout).unwrap();
+    assert_eq!(json["verification"], "structural-closure");
+    assert_eq!(json["cryptographic_admission"], "not-verified");
+    assert_eq!(json["historical_completeness"], "not-verified");
+    assert_eq!(json["writable_admission"], "not-checked");
     let root = t.path().join("source");
     let pins = [
         "--proof-archive",

@@ -1,0 +1,45 @@
+All commands ran from the export root unless noted. Environment as supplied:
+CARGO_TARGET_DIR=<shared>, CARGO_BUILD_JOBS=4, CARGO_INCREMENTAL=0.
+
+Identity and ranges
+  python3 -I review-evidence/verify_identity.py . ../copy-planner-identity.json  -> raw/identity-before.json, raw/90-identity-after.json
+  python3 -I review-evidence/verify_git.py 8244375... .                         -> raw/git-tree-check.txt, raw/91-git-tree-after.txt
+  sh review-evidence/find_ranges.sh                                              -> raw/diff-ranges.txt
+  git diff --shortstat <range> vs the supplied .stat files                       (inline, all equal)
+
+Build and tests
+  cargo clean -p kan                                                             -> raw/01-clean.txt
+  cargo test --features v2-crypto --test evidence_copy_plan --test evidence_copy_source --test evidence_attested_lifecycle
+        --test evidence_attested_store --test evidence_attested_followups --test evidence_store --test surface_conformance
+                                                                                 -> raw/02
+  cargo clippy --features v2-crypto --all-targets -- -D warnings                 -> raw/03
+  cargo fmt --all -- --check                                                     -> raw/04
+  python3 -I .design/tools/copy_plan_vectors.py --check                          -> raw/05
+  cargo test --features v2-crypto --test recovery_cli                            -> raw/33
+  node --test tests/{library_ui,operations_ui,operations_review_ui,operations_restart_review,theme_ui}.test.cjs -> raw/41
+  node --test tests/{operations_ui,operations_review_ui,operations_restart_review}.test.cjs                    -> raw/42
+
+Scope A probes
+  python3 -I review-evidence/probes/noncanonical_plans.py .design/fixtures/copy-plan-v1.json > probes/noncanonical_plans.json
+  python3 -I review-evidence/probes/uncompressed_did.py ...   (appends 2 vectors)
+  cp probes/zz_review_copy_planner.rs tests/; REVIEW_PLANS=... REVIEW_ORACLE=... \
+     cargo test --features v2-crypto --test zz_review_copy_planner -- --nocapture --test-threads=1
+                                                                                 -> raw/10 (failed, probe bugs), raw/11, raw/15-*
+  RA8 with the 642f8ba optimization reverted (one-line edit, then restored)      -> raw/12
+  python3 scripts/copy_plan_negative_controls.py                                 -> raw/13
+  python3 -I review-evidence/probes/mutate_scopeA.py <export> <out>              -> raw/14, raw/mutants-A/
+  python3 -I -c '<re-encode the 5 positives with the reviewer encoder>'          -> raw/16
+
+Scope B
+  python3 scripts/attested_lifecycle_negative_controls.py                        -> raw/31
+  python3 -I review-evidence/probes/mutate_scopeB.py <export> <out>              -> raw/32, raw/mutants-B/
+
+Scope D
+  python3 scripts/operations_review_negative_controls.py                         -> raw/43
+  python3 -I review-evidence/probes/timeout_helper_probe.py <export> <out>       -> raw/44 (raw/44a is a failed quoting attempt)
+  provenance: git show 3f4b403:<path> | shasum; transcript diff of ui-restart.jsonl (inline, in the report)
+
+Hygiene
+  restore checks: shasum -c raw/20-,30-,40-*.sha256 after every mutation batch
+  scope-narrowing grep -> raw/50; destination grep -> raw/51
+  process listing -> raw/00, raw/92

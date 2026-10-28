@@ -1,0 +1,60 @@
+✔ RP1: restart, same job/manifest/built_at/totals, only a source row digest differs -> source list repaints (15.55125ms)
+✔ RP2: restart, same job/manifest/built_at, only totals differ -> totals repaint (1.232166ms)
+✔ RP3: restart, same everything except the sealed source set (generation added) -> coverage + sources repaint (1.210916ms)
+✔ RP4: lock -> relogin -> load returns the SAME cached sample -> body is repainted, not left blank (1.416958ms)
+✔ RP5: restart observed via last:null in between, then identical-looking sample -> body repainted (1.056625ms)
+✔ RP6: the 8 s timeout labels "timed out", retains prior sample, and releases the request slot (1.031833ms)
+✔ RP7: a queued action does not leak across lock/relogin into the next session (1.14075ms)
+✔ RP8: Build preempts a poll whose headers arrived but whose body is still streaming (1.4665ms)
+✔ RP9: valid A, invalid reply, then valid B (same job/manifest) -> B repaints (0.954792ms)
+✔ RP10: identical sample repeated: neither summary, coverage nor sources are rewritten (no announce churn) (1.0025ms)
+RP11 summary rewrites after key reorder: 1
+✔ RP11 (informational): same sample re-serialised with different key order re-renders but shows identical content (0.907291ms)
+RP12 key bytes at 1024 sources: 485784 10 distinct renders ms: 24.0
+✔ RP12: bounds - 1024 server-shaped sources render; key work is small; 1025 sources are rejected (27.048292ms)
+✔ RP13: a queued Cancel is dispatched once and then removed (0.907833ms)
+✔ UPa: a poll aborted by a preempting Build never labels the view as timed out/failed (15.719417ms)
+✔ UPb: after a service restart, a new sample with the same job number and manifest must repaint totals (1.325958ms)
+✔ UPc: lock with a queued action dispatches nothing and repaints nothing afterwards (0.812458ms)
+UPd dispatched actions: ["/api/overview/refresh","/api/overview/refresh"]
+✔ UPd: Build, Cancel, Build while an action is in flight: only the last queued action is sent (1.091916ms)
+✔ UPe: a failing action still dispatches the queued action and keeps the prior-sample label (0.864166ms)
+✔ UPf: superseded label survives later overview polls and a failed status poll (0.939917ms)
+✔ UPg: future-dated sample says its clock is ahead, not "0s old" (0.6345ms)
+✔ UPh: relogin after lock ignores the old session's late action reply (0.800792ms)
+✔ UPi: after a Build preempts a poll, a following Cancel is still queued (one action in flight) (0.774791ms)
+✔ auth is header-only; gap filtering and untrusted values use text (15.021083ms)
+✔ late authenticated response cannot unlock a locked view (0.782584ms)
+✔ missing/stale data and HTTP failure cannot look healthy (0.686625ms)
+✔ absent and stale capture reporters remain explicitly unknown (0.873042ms)
+✔ fresh active sessions are current while historical losses remain visible (0.699667ms)
+✔ delivery retries, unsampled unclosed sessions and future clocks cannot look current (0.83775ms)
+✔ future clock samples produce consistent badges and retain uncertain reporter history (0.666208ms)
+✔ unsampled sessions and summary loss units are explicit (0.564958ms)
+✔ journal capacity is independent, sticky and never an exact coverage claim (0.867208ms)
+✔ unsupported status version retains visibly disconnected values (0.920875ms)
+✔ search is sample-bounded and inspection preserves exact untrusted identifiers (0.70875ms)
+✔ locking clears rendered private metadata and closes the inspector (0.49875ms)
+✔ reporter and attempt limits warn before exhaustion and preserve partial recording semantics (0.657291ms)
+✔ future persistence timestamps stay unknown (0.583916ms)
+✔ polling preserves the focused attempt and inspector close returns to the replacement row (0.665916ms)
+✔ unchanged notices are not announced again on every poll (0.570375ms)
+✔ overview refresh is explicit authenticated POST with exact large counters (0.793625ms)
+✔ lock clears overview and prevents a late result from repainting (0.900958ms)
+✔ failed or limited refresh labels the prior sample explicitly (0.6725ms)
+✔ overview rejects malformed source lists and unsafe numeric counters before rendering (1.511333ms)
+✔ build preempts an in-flight overview poll and ignores its stale reply (0.508042ms)
+✔ cancel preempts a poll while preserving server action order (0.555167ms)
+✔ a second action is queued behind an unfinished action, then dispatched (0.844917ms)
+✔ cached overview shows its age and becomes visibly superseded after rotation (0.618875ms)
+✔ invalid overview replies label retained totals and restart clears them (0.551167ms)
+✔ late overview transport errors cannot repaint after lock (0.467333ms)
+✔ a reused job number after restart cannot retain old overview totals (0.570959ms)
+ℹ tests 49
+ℹ suites 0
+ℹ pass 49
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 8064.2415

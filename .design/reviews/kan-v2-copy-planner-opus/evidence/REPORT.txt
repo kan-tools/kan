@@ -1,0 +1,474 @@
+FRESH INDEPENDENT REVIEW - four separate scopes at frozen export 82443759fefb25b8465d4dc585d37f1ae6b6464d
+Reviewer: Claude Code, Opus 5.5 (claude-opus-5-5), fresh session, in-session, no delegation or subagents.
+Independence: I wrote none of the code under review. Each claim below comes from code I read or
+commands I ran in this export. Per the brief there were no kan/day reads or writes
+(day#168/kan#197), so adversarial-review Step 7 recording was skipped. Git-first evidence is
+kept here instead. Date 2026-10-19.
+
+VERDICTS (separate, not blended)
+  A  copy-plan codec + read-only source planner (e0e2e64..8244375):  APPROVE WITH FOLLOW-UPS
+  B  lifecycle corrections ca53c1d/9aca45d (7ab1afa..e0e2e64):         APPROVE WITH FOLLOW-UPS
+  C  final profile-3 copy/resume contract, destination readiness:     APPROVE WITH FOLLOW-UPS
+     (C-F1 must be decided in the first profile-3 storage slice, before any destination write)
+  D  UI regression/harness follow-ups (7126848..1c72b50):             APPROVE
+No roadmap completion, parent AC closure, browser qualification, bundle readiness, production
+migration or cutover is claimed or implied.
+
+==============================================================================================
+0. NORTH STAR
+north-star.json -> telos/raw-data-and-projections:
+  - Decision bafyreied3rk...: "Raw attested data is retained in full and never collapsed in the
+    store. Every simplification ... is a determined projection computed on demand ..."
+  - Observation bafyreicakl3...: "THIS TELOS DECLARES NO WITNESSES, DELIBERATELY."
+I added no witnesses. The two trust-excluded claims ("excluded_by_trust": 2) were not
+reconstructed. The telos is InTensionWith telos/performance-at-scale.
+How each scope serves it:
+  - A: a recipe that commits to every original byte, including staged objects, and refuses
+    rather than relabels.
+  - B: honest provenance/completeness labels.
+  - C: copy completeness is derived, never a stored flag; loss observations are kept separate.
+  - D: a stale projection is never shown under a fresh label.
+The tension with performance is disclosed: repeated full audits (A, C5) and full-sample UI keys (D).
+
+==============================================================================================
+1. IDENTITY / HYGIENE (raw/)
+- Before and after, the export matches ../copy-planner-identity.json: 1868/1868 files, no
+  mismatch or missing file (identity-before.json, 90-identity-after.json).
+- It is also byte-identical to the git tree of 8244375, checked against blob SHA-1
+  (git-tree-check.txt, 91-git-tree-after.txt). The only extra file is the supplied north-star.json.
+  A first git check returned "0 entries" because ls-tree was cwd-relative. It was vacuous, not a
+  pass, and was redone with --full-tree.
+- Each supplied diff equals `git diff <range> -- . ':(exclude).design/reviews'` byte for byte
+  (diff-ranges.txt), and each .stat total equals git --shortstat:
+  - copy-planner = e0e2e64..8244375 (38 files)
+  - lifecycle-followup = 7ab1afa..e0e2e64 (225 files)
+  - ui-test-followup = 7126848..1c72b50 (77 files)
+  The complete ranges were supplied.
+- Build hygiene:
+  - `cargo clean -p kan` first: removed 879 files, 254.4 MiB.
+  - Shared CARGO_TARGET_DIR, CARGO_BUILD_JOBS=4, one heavy job at a time.
+  - Compile lines show this export's path.
+- Mutated sources were restored and SHA-256 re-verified after every batch
+  (20-/30-/40-*.sha256 checked after each run).
+- The temporary probe tests/zz_review_copy_planner.rs was removed; an identical copy is in probes/.
+- The author drivers created <export>/.local-state. Its output was moved to
+  author-driver-output/ and the directory removed.
+- No owned processes remain (92-processes-after.txt). Only pre-existing day/kan mcp processes
+  (present before the review, 00-processes-before.txt) are listed.
+- Synthetic fixtures only. No production key or archive, install, download, .lake/Lean/Mathlib,
+  deploy, merge or git write.
+
+COMMANDS RUN (raw/)
+02 targeted: cargo test --features v2-crypto across 7 targets -> 94 passed
+   (3 plan, 8 source, 11 lifecycle, 10 attested store, 9 follow-ups, 34 legacy store, 19 surface).
+   Matches the author.
+03 cargo clippy --features v2-crypto --all-targets -- -D warnings: exit 0.
+04 cargo fmt --all -- --check: exit 0.
+05 python3 .design/tools/copy_plan_vectors.py --check: 5 positives, 33 negatives; the fixture
+   regenerates identically.
+10/11/15 reviewer Scope A probes. 10 is a failed first run caused by my probe bugs, kept with
+   the reason below. 11 is 8/8 pass; 15 is 9/9 pass plus a mutant run.
+12 RA8 with the 642f8ba optimization reverted.
+13 scripts/copy_plan_negative_controls.py: 9/9 DEMONSTRATED; restored tests pass.
+14 reviewer Scope A mutants (probes/mutate_scopeA.py), attributed per suite.
+16 all 5 positive vectors re-encoded by an independent reviewer CBOR encoder.
+31 scripts/attested_lifecycle_negative_controls.py: 10/10 DEMONSTRATED; restored tests pass.
+32 reviewer Scope B mutants (probes/mutate_scopeB.py).
+33 recovery_cli: 6 passed. Author's "36 targeted" = 11 lifecycle + 6 recovery_cli + 19 surface.
+41 node CI line (5 files): 83/83. 42 operations (3 files): 49/49. Node v24.1.0.
+43 scripts/operations_review_negative_controls.py: 11/11 DEMONSTRATED; restored 49 pass.
+44 F4 timeout probe. 44a is a failed first attempt (my quoting bug; the grandchild never started).
+50 scope-narrowing grep over added diff lines.
+Not run:
+  - the full 310-test compatibility list (no new finding justified it)
+  - Linux CI, MSRV, default-feature Clippy
+  - a real browser
+  - power-loss or fsync testing
+  - release-mode timings
+
+Unsuccessful attempts kept, with reasons:
+  - 10-scopeA-probes-run1: my RA3/RA8 fixtures reused position 0 per writer, giving Conflict.
+    My RA5 also compared all sidecars: the only "change" was creation of an empty -wal and a -shm,
+    which are declared coordination surfaces, while main-DB bytes were identical. RA5 was refined
+    to compare main DB + non-empty WAL (the declared boundary) and to print sidecar deltas.
+  - 44a: my nested-quoting bug.
+  - The vacuous first git-tree check above.
+
+==============================================================================================
+SCOPE A - COPY-PLAN CODEC AND READ-ONLY SOURCE PLANNER (e0e2e64..8244375)
+
+Read:
+  - src/evidence_copy_plan.rs (all 170 lines)
+  - src/evidence_store/copy_upgrade.rs (all 132)
+  - evidence_store.rs RecoveryReader::open/record/read_object, Ledger::read_object,
+    check_write_profile, verify_contents (:168-240, :643-706, :748-760, :997-1104)
+  - evidence_service.rs verify_retained_request/manifest/SignedRequest::decode (:222-420)
+  - both test files, both Python tools, the fixture and the control driver
+
+What holds, with evidence:
+
+Authority:
+- Plan::decode is structural only. Its docs and type say so: it cannot construct a PlannedCopy.
+- PlannedCopy::open requires all of the following before emitting a plan:
+  - the exact profile-1 schema (check_write_profile(false))
+  - the full verify_contents audit
+  - for every record:
+    - exactly one manifest entry
+    - verify_retained_request: canonical JSON, a P-256/K-256 request signature, receipt binds
+      the manifest, receipt.issuer == author(request.audience), and the manifest recomputed from
+      the signed bytes equals the stored manifest bytes
+    - request.audience == H and request.scope == target scope
+- So mixed receipt issuers and foreign scopes are refused transitively. RA4 raw-committed a
+  record admitted under a second issuer: refused for either H.
+
+Canonicalisation:
+- canonical_value re-encodes and byte-compares (evidence.rs:144-158). Fields are closed; CIDs
+  must be CIDv1/dag-cbor/sha2-256/32 (evidence.rs:361-369).
+- RA1: 22 vectors from my own CBOR encoder (no shared reference code). All hostile ones refuse at
+  the intended layer:
+  - lexical, insertion and reversed key orders
+  - non-minimal ints (1- and 8-byte width, through and recipe)
+  - an indefinite map, a duplicate key, a float
+  - did with fragment, uppercase multibase, trailing space
+  - sha-512 tip, tag 42 without the 0x00 prefix
+  - long digest, empty nonce, negative recipe
+  - uncompressed-point P-256 did:key, refused by the 56..80 length bound
+- Canonical and empty-source plans are accepted.
+- My encoder reproduces all 5 positive vectors byte for byte, with matching archive IDs (16).
+
+Archive ID:
+- SHA-256("tools.kan.archive.copy-plan.v1\0" || exact plan bytes), confirmed independently.
+
+Owner pin:
+- confirm checks the pin first (copy_upgrade.rs:114).
+- RA9: a wrong pin on an UNCHANGED source refuses ("copy-plan owner archive mismatch"), and a
+  sibling plan with a fresh nonce cannot use another plan's pin.
+
+H vs C:
+- C must be P-256 (author control allow-current-k256 demonstrated). H accepts any key that
+  atrium parses (K-256 positive vector).
+
+Fully audited pinned source / exact confirmation:
+- RecoveryReader runs "PRAGMA query_only=ON; BEGIN;" and pins on check_profile
+  (author control unpin-source-transaction demonstrated).
+- RA7: planning beside a RESERVED writer with uncommitted rows succeeds in 6.5 ms, and the rows
+  are invisible.
+- A held planner's snapshot survives a later admission. Fresh confirm then refuses.
+- The same-frontier receipt change refuses (author test + control ignore-receipts-in-source-digest
+  and confirm-frontier-only).
+
+Whole original object inventory:
+- The digest frames commits(through) and objects(count), as designed (lines 581-589).
+- RA3: on 8 commits (2 interleaved writer chains) plus 25 staged objects (33 objects), three
+  digests are equal:
+  - the Rust digest
+  - my independent oracle (probes/reviewer_source_digest.py: own CBOR decoder, Python-side sort,
+    no ORDER BY)
+  - the author's oracle
+  712b23ef...5a27 for all three.
+- Mutants objects-desc-order and omit-object-length are killed by both oracle tests.
+
+Byte/WAL invariance:
+- The author test pins main DB + retained WAL bytes for open and confirm.
+- RA5: on 7 refusal paths main-DB bytes are unchanged. Only an empty -wal and a -shm appear;
+  these are the declared evidence-recovery-source coordination surfaces.
+
+Source substitution:
+- The recipe is content-addressed, not file-identity-addressed.
+- RA7: a byte backup of the original frontier confirms the same recipe, and an independent
+  archive with identical content yields the same digest. That is correct by design: identical
+  bytes are the same source.
+- Different content at the same frontier refuses: receipt change, staged object, later
+  admission.
+
+Unsupported schema/record:
+- RA5: extra index, trigger, view and table refuse with "unsupported writable archive schema".
+- user_version 2 or 3, a foreign application_id and a real profile-2 attested archive refuse
+  with "unknown database profile".
+
+Failure handling:
+- RA6: all of the following refuse with labelled errors in 2-5 ms, with no panic:
+  - a flipped request byte
+  - a deleted request object (FK)
+  - a 5 MiB staged object written with CHECK disabled
+  - a 9 MiB object (SQLITE_LIMIT_LENGTH "string or blob too big")
+  - a non-CID key
+  - a sequence gap
+  - group-readable permissions
+  - a symlink
+- An invalid owner issuer refuses before a nonexistent path is touched.
+
+Indexed-read optimization (642f8ba, one line):
+- reader.read_object (NOT INDEXED key scan) became Ledger::read_object (indexed seek plus rehash).
+- It is sound: it runs in the same pinned transaction after verify_contents has materialized and
+  size/hash-checked every objects row, with integrity_check ok.
+  - In a WITHOUT ROWID index b-tree every entry, interior or leaf, is visited once by that scan,
+    so a seek cannot reach an unaudited row.
+  - The connection's 8 MiB SQLITE_LIMIT_LENGTH still applies.
+- RA8 timing, debug build, 2 KiB payloads:
+  - open/confirm is linear: 100 -> 0.33 s, 200 -> 0.67 s, 400 -> 1.36 s, 800 -> 2.74 s
+  - with the optimization reverted (12): 2.77 s at 800
+  - P-256 verification dominates at this size. The optimization is a large-n guard and no test
+    pins it, which is acceptable for a performance change.
+
+Repeated-audit cost:
+- confirm is a full re-audit, about 3.4 ms/record in debug, on every invocation. This is
+  disclosed (design lines 755-762). No bounded hostile-reader claim is made, and the inherited
+  integrity_check/materialization limit stays explicit.
+- No destination writer, profile-3 schema or CLI migration exists (raw/51): src/ has no
+  upgrade_plan/upgrade_objects; the only references are the lib.rs and evidence_store.rs module
+  registrations, and src/bin uses neither module.
+
+Findings (Scope A)
+A-F1 [MEDIUM, test gap on a central binding] Removing `plan.check_archive(expected_archive)?` from
+     PlannedCopy::confirm (copy_upgrade.rs:114) survives every committed suite (14).
+     - The author's `confirm(&db,&plan,&[0;32]).is_err()` (evidence_copy_source.rs:116) is vacuous:
+       by then the source has already changed, so it fails for that reason.
+     - The control ignore-owner-archive mutates check_archive itself, not the confirm call.
+     - The code is correct today (RA9 passes). Only reviewer RA9 kills the mutant (15).
+     - Follow-up: commit RA9's wrong-pin-on-unchanged-source assertion.
+A-F2 [LOW-MEDIUM, test gap] Removing check_write_profile(false) from PlannedCopy::open survives the
+     author suites; only reviewer RA5 kills it.
+     - Consequence: extra triggers, indexes or views would be planned. They are inert under
+       query_only, but the claim "requires the exact healthy legacy schema" (design line 576) is
+       unpinned.
+A-F3 [LOW, evidence precision] malformed_or_unsupported_plans_refuse asserts only is_err().
+     - RA2 shows each of the 33 fails at its intended check today, but nothing pins that.
+     - The fixture's "labelled" negatives carry names, not expected error classes.
+     - None of the 33 is noncanonically encoded: all are produced by the canonical encoder, apart
+       from trailing, truncated and over-bound bytes.
+     - Follow-up: add expected-error classes and a few non-canonical-encoding vectors (RA1).
+A-F4 [LOW] The author oracle sorts objects with SQL `ORDER BY cid`, the same mechanism as Rust.
+     It is not an independent check of lexical order; my Python-sorted oracle agrees (RA3).
+     The author fixture has only 2 objects.
+A-F5 [INFO] Two checks are defence in depth. Both mutants survive every suite, including mine:
+     - es.len()!=1 is equivalent: verify_retained_request's recomputed one-entry manifest
+       already forces it.
+     - the did canonical round-trip has no reachable counterexample within the 56..80 bound.
+A-F6 [INFO] copy_source_digest.py is not a standalone CI step. It runs inside
+     evidence_copy_source, which needs python3 on PATH; CI has it.
+
+Verdict A: APPROVE WITH FOLLOW-UPS.
+- The codec and planner do what the design says.
+- I found no authority, canonicalisation, pinning, invariance, substitution or failure-handling
+  defect.
+- Every claimed test count and all 9 controls reproduced.
+- Follow-ups A-F1..A-F3 are test pins for behaviour that is correct today.
+- Residuals:
+  - the inherited offline integrity_check/materialization limit
+  - quadratic cost across many tiny resumes, disclosed
+  - coordination sidecars created on planning, declared
+
+==============================================================================================
+SCOPE B - LIFECYCLE REVIEW CORRECTIONS (ca53c1d, 9aca45d; judged against prior B-F1..B-F5)
+
+Production diff: src/bin/kan-v2.rs only (+11/-2, error context). Catalog: 8 TSV rows plus one
+RULE_EVIDENCE entry. No proof schema, attested.rs or admission change (git diff src/ in 7ab1afa..e0e2e64).
+
+B-F1 RESOLVED.
+- New test: a corrupt envelope makes rebuild refuse, and the output has user_version 0 and
+  0 tables.
+- The control drop-precommit-proof-audit is demonstrated.
+- Note: Connection::open(&output) in the test would create the file if absent, so it does not
+  distinguish "never created" from "rolled back". Both are acceptable outcomes, and the mutant
+  (committed profile) is still caught.
+B-F2 RESOLVED.
+- An extra table and an extra index are refused by Archive::verify_file and by backup.
+- The control drop-exact-standalone-schema (attested.rs:297) is demonstrated.
+B-F3 RESOLVED.
+- recover pins historical_completeness=not-verified and independent_backup=false.
+- verify pins cryptographic_admission=proof-purpose-dependent and writable_admission=not-checked.
+- The controls for BM4/BM5 are demonstrated.
+- My extra mutants are also killed (32): backup independent_backup=true and
+  writable_admission="checked".
+B-F4 RESOLVED for both profiles (kan-v2.rs:962-976).
+- The test covers a missing source with and without pins: no output, and stderr contains
+  "cannot read recovery source" plus the path.
+- My one-sided mutants (drop only the profile-2 context, or only the legacy context) are each
+  killed (32).
+B-F5 RESOLVED for the named rows.
+- The evidence-backup:* and evidence-recovery*:* rows now name
+  {Ledger|RecoveryReader, attested::Recovery, attested::Archive} with
+  validate:profile-selected-evidence-lifecycle.
+- That rule maps to tests/evidence_attested_lifecycle.rs.
+
+Execution:
+- 11 lifecycle + 6 recovery_cli + 19 surface = 36 pass. Strict Clippy passes.
+- 10/10 author controls are demonstrated with named failures; restored tests pass (31).
+
+Residuals (new, LOW, outside the named B-F set):
+B-R1 The live evidence-db:archive.sqlite / -wal / -shm rows (TSV :74-76) still name only Ledger
+     with validate:opaque-evidence-store, although attested::Archive::create/open write that same
+     file for profile 2. This is the same catalog-precision class as B-F5.
+B-R2 The legacy verify "verification":"structural-closure" label is unpinned: a mutant claiming
+     "payloads-writer-requests-and-issuer-proofs" for profile 1 survives lifecycle and
+     recovery_cli (32). This is pre-existing.
+
+Verdict B: APPROVE WITH FOLLOW-UPS.
+- All five prior findings are closed with assertion-backed tests and demonstrated controls.
+- No production behaviour changed beyond restoring diagnostics.
+- B-R1 and B-R2 are small catalog and label pins in the same class.
+- I did not re-review the already approved broad lifecycle; no new evidence warranted it.
+
+==============================================================================================
+SCOPE C - FINAL PROFILE-3 COPY/RESUME CONTRACT (design readiness for destination implementation)
+
+Read: the whole design (765 lines), including every later section — draft codec, source
+planner, original-object inventory, destination execution order, and cold-review decisions C1-C6.
+
+C1 RESOLVED (lines 697-706).
+- The exact unsigned plan bytes are a retained private artifact, with a separate out-of-band
+  pin. Create and resume both require artifact + pin and verify the commitment before inspecting
+  or creating output.
+- An empty interrupted file has no plan authority, and a lost artifact never permits re-planning.
+- Initialization commits schema, identity and plan atomically (line 655).
+- The artifact's CLI write surface is declared as future work.
+C2 RESOLVED as a stated limitation (708-714).
+- One admitting destination per recipe. Local locks do not prevent cross-host forks. A backup is
+  read-only until an explicit takeover. Reuse is never independent provisioning. No
+  anti-equivocation is claimed.
+C4 RESOLVED (716-722).
+- archive_identity == (plan.archive_id(), plan.target().scope, plan.target().issuer), and recipe
+  1 / source 1 / target 3 are checked at every opener against explicit owner configuration.
+- The binding is never inferred from the stored plan, and a changed plan is invalid even if each
+  proof verifies.
+C5 RESOLVED (755-762).
+- Framing is explicit; the Python oracles agree with Rust (A/RA3).
+- The repeated full-audit cost is disclosed, including quadratic cost across tiny invocations.
+- A digest-only resume needs its own trust proof.
+C6 RESOLVED (763-765), and code-enforced today: entry count plus verify_retained_request (A).
+C3 RESOLVED for the LOGICAL schemas (724-753).
+- Profile 3 adds only upgrade_plan and upgrade_objects. Observations and resolutions go to a
+  separately versioned copy-local recovery bundle with an append-only ledger.
+- Line 729-730 explicitly supersedes the earlier "with the profile-2 implementation"
+  instruction, and lines 312-319 and 383-390 were rewritten to agree. The remaining
+  "destination profile 2" text (113-119) is explicitly superseded at 496-497.
+- Answer to the question asked: YES. This permits freezing a copy-only profile-3 logical schema
+  (profile-2 tables + upgrade_plan + upgrade_objects) without any descriptor or resolution fields
+  in profile 2 or 3, subject to C-F1.
+- The original-object membership table (610-635) binds staged objects after later admission:
+  - completion and later audits recompute sourceDigest from the planned record prefix plus the
+    immutable inventory, both of which are present in the destination
+  - no FK that could destroy inventory metadata
+  - copied staged blobs carry no fabricated admission
+
+Unresolved ambiguities found
+C-F1 [REQUIRED before the first profile-3 destination write; binding] Profile 2 still accepts a
+     plan-less retained-verified prefix.
+     - The profile-2 full audit (attested.rs:190-205) accepts a contiguous retained-verified
+       prefix from one H followed by admitted rows.
+     - tests/evidence_attested_store.rs:466-475 pins that as "the allowed upgrade shape", and
+       design line 416 still states it for profile 2.
+     - Since 489-497 make profile 3 the ONLY copy target and reject "inferring an unfinished copy
+       from whichever records happen to exist", a profile-2 file with a retained-verified prefix
+       is exactly that:
+       - a partial or complete copy with no recipe
+       - no derivable completion
+       - yet writable and capture-ready
+     - Minting one needs C's key (no raw API issues proofs), so this is an owner-side or bug
+       class, not an external attack. But it leaves two meanings of "copied archive".
+     - Decide explicitly, cheaply now because no production profile-2 archives exist:
+       - recommended: profile 2 refuses retained-verified, so it is admitted-only, and that test
+         is re-pointed to profile 3
+       - or: document that profile-2 retained-verified rows are permitted and how their
+         completeness is labelled
+     - Also say which profile RetryImported (lines 348-358) targets; it can now only be profile 3.
+C-F2 [FOLLOW-UP for the dedicated bundle checkpoint; not blocking profile 3]
+     - The bundle's archive member has an exact logical profile, so at file level it is
+       indistinguishable from a standalone archive.
+     - If its missing blobs are back-filled, the standalone writable opener (payload-complete =>
+       accepted) would treat it as capture-ready. That contradicts "Merely filling missing blobs
+       ... never activates capture" (751) unless the physical encoding prevents standalone
+       selection, for example by encapsulation or a distinct file identity the standalone
+       configuration cannot name.
+     - Also define "complete standalone output" for a member that was an INCOMPLETE profile-3
+       copy: it is payload-complete but not copy-complete. The output then becomes another
+       same-ID physical copy under C2's single-writer rule.
+C-F3 [LOW, specify] The original-object inventory partition is undefined when a later admission
+     references an object whose CID is already in upgrade_objects: content addressing dedupes it
+     in `objects`. State that the original inventory is never re-attributed and that
+     later-object validation tolerates shared CIDs.
+C-F4 [LOW, specify] The profile-3 opener configuration is undefined. Either an explicit profile
+     selection is required (cf. line 484 "never guesses profile 2 from disk"), or user_version
+     detection under the same three pins is allowed.
+     - Detection appears safe: a profile-2 random ID cannot equal SHA-256(plan), and the
+       profile-2 exact schema refuses profile 3. But it should be stated.
+     - The "explicit takeover" of a backup (711) also has no defined mechanism.
+
+Verdict C: APPROVE WITH FOLLOW-UPS (destination implementation readiness only).
+- C1-C6 are all addressed in the final text, and C3 is resolved as a separate copy-local bundle
+  format, so the profile-3 logical schema can be frozen.
+- C-F1 must be decided in the first profile-3 storage slice, before any destination writes;
+  otherwise profile 2 keeps a second, planless meaning of "upgraded".
+- C-F2 belongs to the bundle checkpoint.
+- No whole bundle readiness is approved.
+
+==============================================================================================
+SCOPE D - REGRESSION/HARNESS FOLLOW-UPS AFTER 7126848 (7126848..1c72b50)
+
+Production: web/operations/app.js has an empty diff in range. sha256 650596...5f56 equals
+7126848's blob.
+
+F1-F3 RESOLVED.
+- tests/operations_restart_review.test.cjs begins with the preserved
+  evidence/probes/restart_review_probes.test.cjs as an EXACT byte prefix: 12,478 bytes,
+  sha f1bb86a1..., equal to import-provenance.json.
+- I traced that preserved file to the original reviewer transcript (ui-restart.jsonl). It is the
+  original Write plus the reviewer's own documented one-line harness fix (the respondHeaders
+  export), with no other delta.
+- RP13 adds a deterministic assertion: a queued Cancel is dispatched once and the log equals
+  [refresh, cancel].
+- CI runs the file. Results: 49/49 operations checks, 83/83 on the CI Node line.
+F4 RESOLVED.
+- 11/11 author UI mutants are demonstrated with a named AssertionError (43). This includes
+  queued-action-repeats (A13), now killed by RP13's assertion rather than a hang.
+- run_bounded uses start_new_session plus killpg(SIGKILL).
+- My probe (44) used the author's real helper:
+  - A synthetic child -> grandchild heartbeat tree raised "timed out; process group stopped; not
+    a demonstrated assertion" at 2.0 s. The grandchild is dead and its heartbeat stopped.
+  - The real A13 mutant under the OLD real-timer suite (the one that previously hung and left two
+    orphans) was stopped at 20 s, with zero `node --test` processes remaining.
+  - A timeout aborts the driver; it is never counted as demonstrated.
+F5 RESOLVED.
+- import-provenance.json names commit 3f4b403 and the path
+  .design/reviews/kan-v2-overview-lifecycle-opus/evidence/probes/zz_review_operations_ui.test.cjs.
+- `git show 3f4b403:<path>`, the preserved file and tests/operations_review_ui.test.cjs all hash
+  to 524c30f5....
+- The unmodified prior REPORT.txt matches its .sha256 (f7b78289...).
+- Complete range diffs were supplied for this review.
+Residual (not a follow-up): the driver's `test in log` check is weak, since test names always
+print. It is backed by a nonzero exit, the presence of AssertionError and a single-test name
+pattern ("RP1:" is colon-anchored, so it never selects RP10-RP13).
+Not claimed and not verified:
+  - Node stubs are not browser qualification.
+  - The pre-fix real-browser matrix and actual file-delivery qualification remain separate and open.
+
+Verdict D: APPROVE.
+- Every prior follow-up F1-F5 is closed with verified bytes, provenance, assertions and a working
+  process-group timeout.
+- No production code changed.
+
+==============================================================================================
+SCOPE NARROWING (Step 4; raw/50)
+34 hits. All are pre-named and recorded, for example:
+  - "future CLI must durably write"
+  - "future digest-only resume optimization needs its own trust proof"
+  - "Deployment and live cutover remain separately authorized"
+  - "(proposed; not implemented)"
+  - "Fresh review remains required"
+All are separable. None narrows the hard part of these scopes. Legitimate.
+
+FORBIDDEN PATTERNS (Step 5; derived from CLAUDE.md)
+- No fold change and no subject destruction. The planner is query_only and never erases.
+- Staged objects are preserved, not dropped (A).
+- No fabricated provenance: no proof minting in A, and staged blobs get no admission (C).
+- No persisted projection: copy completeness is derived (C). The UI key is in memory only (D).
+- Persistence/surface: B updates TSV and RULE_EVIDENCE together. B-R1 is a precision residual.
+- The v2 operator UI is owner-authorized, with no new authority.
+
+LIMITS
+- Bounded, hand-chosen mutants and probes; no fuzzing.
+- Debug timings on one Apple-silicon host.
+- No Linux CI, real browser or power-loss testing.
+- I trusted SQLite's documented NOT INDEXED/rowid and b-tree semantics for the optimization
+  argument.

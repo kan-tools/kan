@@ -1,0 +1,22 @@
+
+running 1 test
+test structurally_healthy_raw_archives_cannot_bypass_request_authentication ... FAILED
+
+failures:
+
+---- structurally_healthy_raw_archives_cannot_bypass_request_authentication stdout ----
+
+thread 'structurally_healthy_raw_archives_cannot_bypass_request_authentication' (9610543) panicked at tests/evidence_copy_source.rs:366:9:
+planner must authenticate source requests and exact manifests: invalid-signature
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    structurally_healthy_raw_archives_cannot_bypass_request_authentication
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 7 filtered out; finished in 0.17s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-copy-upgrade/.local-state/reviews/copy-planner)
+    Finished `test` profile [unoptimized] target(s) in 6.73s
+     Running tests/evidence_copy_source.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_copy_source-b92f66d790c08427)
+error: test failed, to rerun pass `--test evidence_copy_source`
