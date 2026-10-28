@@ -31,6 +31,7 @@ pub enum SurfaceWrite {
     GitTree,
     Overlay,
     Sqlite,
+    EvidenceSpool,
     EvidenceArchive,
     EvidenceBackup,
     EvidenceRecovery,
@@ -59,6 +60,7 @@ impl SurfaceWrite {
         Self::GitTree,
         Self::Overlay,
         Self::Sqlite,
+        Self::EvidenceSpool,
         Self::EvidenceArchive,
         Self::EvidenceBackup,
         Self::EvidenceRecovery,
@@ -119,6 +121,12 @@ impl SurfaceWrite {
                 "overlay:LOCK",
             ],
             Self::Sqlite => &["sqlite:meta"],
+            Self::EvidenceSpool => &[
+                "evidence-spool:database",
+                "evidence-spool:database-wal",
+                "evidence-spool:database-shm",
+                "evidence-spool:database-journal",
+            ],
             Self::EvidenceArchive => &[
                 "evidence-crypto:chunk",
                 "evidence-service:request",

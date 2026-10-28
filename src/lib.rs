@@ -38,3 +38,6 @@ pub mod surface;
 pub mod transport;
 pub mod uri;
 pub mod workspace;
+
+#[cfg(feature = "v2-storage")]
+pub mod evidence_spool;
