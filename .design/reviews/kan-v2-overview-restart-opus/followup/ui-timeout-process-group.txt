@@ -1,0 +1,1 @@
+Timeout raises rather than counting a mutation kill; child process-group heartbeat stopped. Synthetic fixture removed.

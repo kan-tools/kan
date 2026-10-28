@@ -1,0 +1,267 @@
+Independent implementation review: 67c1263 against 9f1dffa
+  Scope A: bounded collection overview (3367e28)
+  Scope B: storage-review follow-up corrections/regressions (a1007a6), merged in 67c1263
+Reviewer: Claude Code, Opus 5.5 (claude-opus-5-5), in-session, no delegation, no subagents.
+Independence: I wrote none of this code. No kan/day reads or writes (user rule; adversarial-review
+Step 7 recording skipped). North star: supplied north-star.json -> telos/raw-data-and-projections
+(live, deliberately unwitnessed; InTensionWith telos/performance-at-scale). This work serves it
+by keeping totals a disposable, labelled projection over retained observations.
+
+VERDICTS
+  Scope A (collection overview):         APPROVE WITH FOLLOW-UPS  (O1 is a required code fix)
+  Scope B (storage follow-up corrections): APPROVE                  (correction round only)
+Prior approval of 9f1dffa was not relied on; every Scope B change was re-audited and re-mutated.
+
+==============================================================================================
+EXPORT / RANGE IDENTITY
+- Export (.local-state/reviews/overview) vs `git archive 67c1263` in the enclosing worktree:
+  identical except the harness-supplied untracked north-star.json, before AND after the review
+  (raw/export-vs-archive.diff.txt, raw/export-vs-archive-after.txt). All 1,503 export files
+  byte-identical to the pre-review manifest afterwards (raw/manifest-diff.txt is empty).
+- ../overview-change.diff == `git diff 9f1dffa 67c1263 -- . ':(exclude).design/reviews'`
+  (byte-identical). It is NOT the full range diff: the 70 .design/reviews/ evidence files are
+  omitted. Recorded in raw/supplied-diff-identity.txt.
+- Merge 67c1263: the only manual resolution versus `git merge-tree` is the CI cargo-test line,
+  correctly the union (evidence_attested_followups + evidence_operations_overview). No other
+  merge edits (raw/14-merge-check.txt).
+
+COMMANDS RUN (shared CARGO_TARGET_DIR, CARGO_BUILD_JOBS=4, one heavy job at a time)
+02 cargo clean -p kan: removed 823 files (243.3 MiB); everything below compiled from this export.
+03 overview Rust: evidence_operations 22, evidence_operations_collection 9,
+   evidence_operations_overview 8 (+1 ignored manual browser fixture), surface_conformance 19
+   = 58 pass. Matches author.
+04 storage Rust: evidence_attested_followups 8, evidence_attested_store 10 (+ surface 19 above
+   = the author's 37), plus evidence_attestation 7, evidence_store 34, evidence_service 11. All pass.
+05 Node: operations 20, library 30, theme 4 = 54 pass. Matches author.
+06 cargo clippy --features v2-crypto --all-targets -- -D warnings: exit 0.
+07 cargo fmt --all -- --check: exit 0.
+08-11,15 reviewer probes (see PROBES). 09/09b release-profile contention runs.
+12/16 29 reviewer compiled/semantic mutants (probes/mutate.py; logs in mutants/, mutants-batch2/;
+   verdicts re-derived from logs by probes/reclassify.py -> SUMMARY-reclassified.txt because the
+   first driver pass mislabelled cargo's "error: test failed" as a compile error).
+17 author's scripts/overview_negative_controls.py rerun on the final code: 6/6 DEMONSTRATED,
+   restored checks pass (author-controls-rerun/). Author's saved originals == git archive 67c1263.
+18 restored tree: 54 Rust (overview 8, collection 9, followups 8, store 10, surface 19) + 54 Node pass.
+Not run: full CI list, MSRV, default-feature Clippy, oracle Python checks, real browser (I did not
+re-drive a browser; author screenshots inspected), fsync/power-loss, multi-process stress.
+
+==============================================================================================
+SCOPE A - COLLECTION OVERVIEW
+
+What holds (verified by execution, not by reading the author's tests):
+- Complete typed scans: every attempts/sessions/worker/control row is read; summary columns are
+  cross-checked against the body; Health is deny_unknown_fields; negative integers, BLOB bodies,
+  id/body mismatch, bad clean flags, empty/oversized session ids, malformed worker and foreign
+  binding all refuse (PO4: 12 hostile active-row cases; PO4b: 3 invalid unique-attempt cases).
+- Binding/snapshot: manifest bytes pinned by digest and rechecked before publish (OM4 killed by
+  author membership test); per-journal binding check (OM7 killed).
+- Whole-row chronological dominance via the existing `dominates`; sealed order matters (OM10
+  killed); an incomparable row is a Conflict, never a component maximum (PO6); conflicts are
+  classified and labelled "conflicting cumulative observations" with no published total (PO5).
+- Session dedup (OM14 killed), nondecreasing drops / no reopen (OM9 killed), checked sums for
+  attempts and sessions (PO10 overflow; OM13 killed only by PO10).
+- Collection shared lock held for the whole build; rotation refuses meanwhile (author test).
+- No writes: direct build, Manager refresh and real CLI leave every collection file's name, size,
+  mode, mtime and SHA-256 unchanged; no -journal/-shm/.lock created (PO2). A missing generation
+  lock file refuses and is not created (PO3; OM2 killed only by PO3).
+- Memory: accounting is safe. PM1 (counting global allocator, 70k distinct attempts, 1k sessions,
+  3 generations): peak Rust-heap growth 26.0 MB vs 108.7 MB accounted; limits of 24/32/48/64 MiB
+  all refuse "capacity reached: memory" with peaks of 0.9-6.7 MB. SQLite's allocator not counted.
+- Single worker / cancellation: duplicate refresh returns the same job; refresh during a
+  cancelling build never admits a second build; cancelled builds never publish (PO8; OM8 killed).
+- Memory-only polling: /api/overview returns the published sample with manifest.json deleted (PO9).
+- HTTP surface: 15 hostile cases all return the expected code (PO9): 401 for missing, lowercase
+  or duplicated bearer and for unauthenticated bodies; 403 for a wrong Host or a foreign Origin;
+  405 for POST status, PUT, query string, trailing slash and GET actions; 400 for chunked empty
+  bodies, any body, and a body on cancel. OM11 (Transfer-Encoding check) is killed only by PO9.
+- u64 totals as exact decimal strings: 2^64-9 serialises exactly (PO7; OM12 killed); UI uses
+  BigInt (UM5 killed).
+- Browser lifecycle: lock clears and late success cannot repaint (author; UM4 killed); a late
+  transport ERROR after lock cannot repaint (UP1; UM2 killed only by UP1); relogin ignores the old
+  response and can load again (UP4); failed/limited/cancelled refresh label the prior sample
+  (author + UP6; UM1 killed).
+- Restart: Manager::new starts "unavailable" with no last sample; no persisted surface (PO2).
+
+FINDINGS (Scope A)
+O1 [MEDIUM - design-required qualification not met; REQUIRED code fix]
+   The active snapshot holds its rollback-journal read transaction while parsing every body,
+   serialising each row twice (digest + cost) and hashing: src/evidence_operations/projection.rs
+   scan_projection, `let tx = self.conn.unchecked_transaction()?` (line 42) through
+   `tx.commit()?` (line 132), with per-row serde/hash in between. Journals use
+   journal_mode=DELETE (evidence_operations.rs:138) and writers have busy_timeout 100 ms
+   (evidence_operations.rs:242); the health writer counts any record error as a loss
+   (evidence_operations.rs:799-801).
+   Evidence: debug, 60,021-row/25.4 MB active generation: read held 1.28-1.30 s; 8/8 and 9/9
+   concurrent health writes failed "database is locked" (PO1, raw/08). Release, 72,021 rows/
+   30.6 MB (within the 32 MiB profile): active scans 108-259 ms; writer stalls up to 158 ms vs
+   17 ms control; 4/10 refreshes themselves failed "database is locked" (PO1b, raw/09b). No writer
+   loss was observed in release on this Apple-silicon host, but the margin against 100 ms is
+   hardware-dependent and already exceeded by the observed stalls.
+   This contradicts the design ("Copy only typed row values into bounded memory, then end the
+   SQLite transaction promptly"; "Qualification must prove that active capture still proceeds")
+   and docs/V2-OPERATIONS.md ("promptly releases their SQLite transaction ... Active health
+   writers continue"). The author's pinned_active_snapshot_... test writes only AFTER
+   Boundary::ActiveRead, i.e. after commit, so it cannot fail on this.
+   Not a BLOCK: evidence capture (encrypted queue) is unaffected, health losses are counted in the
+   lower-bound telemetry, and refresh is explicit and owner-triggered. Fix in code: copy raw
+   column values (budget-accounted) inside the transaction, commit, then parse/validate/digest
+   outside it. Add a regression that writes during the scan of a near-ceiling journal and
+   asserts zero writer errors and a bounded hold. Narrowing the doc claim does not close O1.
+O2 [LOW-MEDIUM] Contention, rotation-in-progress and other I/O errors all surface as
+   "source invalid or unavailable" (Manager error mapping in overview.rs). Under a continuously
+   writing health thread about 40% of refreshes fail with wording that suggests source damage.
+   Distinguish busy/in-use from invalid.
+O3 [LOW-MEDIUM, UI] Build and Cancel clicks are silently ignored while any overview request,
+   including the 5-second background poll, is in flight. Cause: web/operations/app.js:119 loadOverview
+   `if(!token||overviewBusy)return;`. Shown by UP2 and UP3, which fail on baseline. A dropped
+   Cancel leaves the operator believing cancellation was requested. The window grows over an
+   authenticated tunnel.
+O4 [LOW-MEDIUM, claims] Accounting is about 4x conservative, at roughly 1.3 KB accounted per
+   distinct attempt (PM1). The default 128 MiB budget therefore runs out at about 85k distinct
+   attempts. The documented "250,000 distinct attempts" ceiling can never be reached: one full
+   32 MiB generation (~75k rows) fits, but two full generations of distinct attempts do not.
+   Either state the effective bound or calibrate the accounting with a heap-measurement
+   regression like PM1. The current behaviour is safe: it fails closed as capacity-limited.
+O5 [LOW-MEDIUM, AC-3/AC-5 labeling] A sample fetched by "Load last sample" renders exactly like
+   a fresh build ("Overview completed"); its age shows only through the absolute build time.
+   - The UI does not compare the sample's active generation with the current one, although
+     /api/status already reports it in journal.scope.
+   - AC-5's "superseded" state does not exist in Published.state.
+   - An invalid response after a valid sample keeps the prior totals on screen beside "Invalid
+     overview snapshot.", without the "Prior sample retained" label (UP5).
+O6 [LOW, regression gaps] The author suite does not kill:
+   - OM2 (missing lock-file check; without it the projection would create a .lock file)
+   - OM3 (scan valid_health; invalid unique rows would be summed)
+   - OM11 (Transfer-Encoding refusal)
+   - OM13 (checked session sum)
+   - UM2 (generation guard on the error path)
+   OM1 (post-read sealed rehash), OM5 (sealed worker suppression) and OM6 (sealed sidecar
+   refusal) also survive my probes. The post-read rehash has no deterministic test seam.
+   Incorporate PO2, PO3, PO4b, PO5 (failure classes), PO9, PO10 and UP1.
+O7 [LOW, evidence wording] The design's "Rust and real-browser qualification are complete for
+   this checkpoint" overstates the coverage:
+   - The real browser covered only completed + lock. Building, capacity-limited, failed and
+     cancelled were exercised only through Node with synthetic responses.
+   - Overview connection limits are untested.
+   - The design's own active-capture qualification was not performed (O1).
+
+SCOPE NARROWING (Step 4, raw/13-scope-narrowing-grep.txt)
+- "first profile" limits (named before implementation, in the design): legitimate, but the
+  headline 250k number is unreachable (O4).
+- "This experimental build still requires the recorded independent review and browser
+  qualification before cutover": legitimate.
+- "real-browser qualification are complete for this checkpoint": overstated (O7).
+- Out of Scope (search, adapters, admin, external-memory accelerator): named in the design before
+  the build; legitimate. The full frontend roadmap is not required here.
+Forbidden patterns (Step 5): no persisted projection or new file surface (PO2); no fold change;
+no subject destruction; no owner mutation reachable from refresh (PO9 + Manager calls only build);
+the v2 operator UI is explicitly authorised in CLAUDE.md. Tension with telos/performance-at-scale:
+every refresh rescans and hashes the whole collection (up to 1,024 x 32 MiB x 2). This is
+disclosed and explicit-only, and acceptable for this checkpoint.
+
+PARENT ACs (.design/kan-v2-collection-overview.md)
+  AC-1 MET on this evidence: dedup totals, conflicting observer/regression/terminal/overflow
+       refusal (PO5 classes), author's no-deduplication control demonstrated on the final code.
+  AC-2 MET on this evidence: hash/binding/missing/membership refusal, rotation refused on the held
+       lock or after publication with an old frontier, byte and metadata identity (PO2).
+  AC-3 OPEN: the Rust frontier is pinned and correct; in the UI, "visibly old" rests only on the
+       absolute build time (O5).
+  AC-4 OPEN: the design's active-capture qualification fails under load (O1); connection limits
+       for the overview routes are untested. One-build admission, cancellation and memory/
+       identity limits are met.
+  AC-5 OPEN: the real browser covered only completed and lock; there is no "superseded" state;
+       Build/Cancel clicks can be dropped (O3). CLI and the no-owner-mutation property are met.
+  AC-6 OPEN until the runbook claim in O1 is corrected and the O1 fix receives its own fresh
+       review. Restart with no persisted projection is met; this report is the fresh Opus review
+       of 67c1263.
+
+==============================================================================================
+SCOPE B - STORAGE FOLLOW-UP CORRECTIONS (a1007a6)
+
+Mapping of prior findings (.design/reviews/kan-v2-proof-storage-opus/REPORT.txt) to this round:
+- F1 (four untested checks): P3, P4, P5a, P5b and P7 are incorporated in
+  tests/evidence_attested_followups.rs. Apart from rustfmt formatting, they match the prior
+  probes; P4 is tightened to assert Failure::Conflict. Re-mutated on 67c1263, the committed
+  tests now kill:
+  - RM1 retry envelope compare -> p3
+  - RM2 retry receipt recheck -> p4
+  - RM3 single historical issuer -> p5b
+  - RM4 P-256 binding -> p7
+  (SM2-SM5)
+- F2 (Invalid on a receipt race): src/evidence_store/attested.rs:337-344 maps the retry receipt
+  re-verification failure to Error::Conflict("retry receipt changed"). Reverting it (SM1) is
+  killed by p4's named Conflict assertion. Mapping every verify_at error there to Conflict is
+  acceptable: the caller's retry re-enters the full audit, which reports real corruption as
+  Corrupt.
+- F6 (set_limit errors ignored): attested.rs:222-225 (create) and 233-236 (open) now use `?`, as
+  the recovery reader at evidence_store.rs:183 already did. Correct. SM8 survives because a
+  set_limit failure cannot be produced without fault injection. That is expected, not a gap
+  in this round.
+- F7 (mislabelled signature mutation): the author's case is honestly renamed "statement". The
+  new p2 flips a byte inside the 64-byte signature (it asserts the 0x58 0x40 CBOR header) and
+  asserts "invalid attestation chain".
+- F5/NC5 (uncatalogued index): database_columns_match_independent_surface_catalog now enumerates
+  the indexes of archive_identity and attestations. Replaying NC5 (SM6) is killed by that test.
+  The claim "no index currently exists beyond INTEGER PRIMARY KEY row coordinates" holds: the
+  catalog passes with no index rows. NC1, raw SQL on attestations (SM7), still survives, as the
+  design now says ("Global SQL mutation enforcement remains open under AC-5").
+- F3: AC-3 is reworded to "logical record/schema writes", with an explicit statement that
+  released openers may checkpoint an existing WAL. This is a recorded, legitimate qualification:
+  released binaries cannot be changed. It was decided, not drifted into.
+- F8: the RFC 4 text now describes the separately reviewed experimental checkpoint. Accurate.
+- F4, F9, F10 and F11 and the F6 materialisation limit are disclosed as prerequisites in the
+  design's "Storage review follow-ups" section. They remain open and are not created by this
+  round.
+- CI runs evidence_attested_followups (v2-crypto implies v2-storage, so the cfg gate compiles).
+Residual (low, optional hardening): SM9, an index on a LEGACY table (commits) added by the
+profile-2 schema, survives every suite. The new catalog check covers only the two proof tables,
+which is exactly what the design text claims. Extending the enumeration to every table in a
+profile-2 database would make AC-5's "every new stored field and index" self-enforcing.
+
+PARENT ACs (.design/kan-v2-evidence-availability.md): all of AC-1..AC-6 remain OPEN. This
+round strengthens AC-2's storage evidence and part of AC-5 (proof-table indexes); it adds no RPC,
+reader, upgrade, backup/recovery or UI behaviour.
+
+==============================================================================================
+MUTANTS (29 reviewer + 6 author reruns). KILLED means it compiled and a named test failed.
+Overview Rust (14):
+  - killed by the author suite: OM4, OM7, OM8, OM9, OM10, OM12, OM14
+  - killed only by reviewer probes: OM2 (PO3), OM3 (PO4b), OM11 (PO9), OM13 (PO10)
+  - survived: OM1, OM5, OM6
+Overview UI (5):
+  - killed by the author suite: UM1, UM3, UM4, UM5
+  - killed only by a reviewer probe: UM2 (UP1)
+Storage (9):
+  - killed by the committed follow-up tests: SM1-SM6
+  - survived: SM7 (disclosed open), SM8 (untestable), SM9 (residual above)
+Author negative controls (6): all DEMONSTRATED again on the final code.
+Probes PO1, PO1b, UP2 and UP3 fail on baseline; they are excluded from kill attribution and
+recorded as findings O1 and O3.
+
+PROBES (review-evidence/probes/; run temporarily from tests/ and removed afterwards)
+  zz_review_overview_probe.rs: PO1, PO1b, PO2-PO10, PO4b
+  zz_review_overview_alloc.rs: PM1 (counting allocator)
+  zz_review_operations_ui.test.cjs: UP1-UP6 (the harness lines are copied verbatim from the
+    author's test)
+  mutate.py, reclassify.py
+All fixtures are synthetic (generated identities, temp directories). No production keys or
+archives were used.
+
+HYGIENE
+- Every mutated source file was restored to its exact SHA-256 (raw/10-mutation-targets-before.sha256
+  re-verified after each batch).
+- The author's control script created .local-state/ inside the export. Its output was copied to
+  author-controls-rerun/ and the directory was removed.
+- No owned processes or listeners remain (raw/19 vs raw/00: the same pre-existing PIDs).
+- My /tmp scratch is removed.
+- The shared target now also holds stale reviewer test binaries and release-profile artifacts
+  from the PO1/PO1b runs. They are inert, and the shared target was not copied or deleted.
+- No kan/day writes, .lake/Lean/Mathlib, install, deploy or merge.
+
+LIMITS
+- Mutation sets are bounded samples; there was no fuzzing.
+- Contention timings come from one Apple-silicon host. Production hardware can be slower, which
+  worsens O1.
+- PM1 does not count SQLite's own allocations.
+- No browser was driven by me; the "superseded"/age findings come from code and harness behaviour.
+- Process death, power loss and multi-process races were not tested for the overview.

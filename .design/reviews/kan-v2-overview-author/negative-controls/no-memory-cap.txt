@@ -1,0 +1,22 @@
+
+running 1 test
+test bounds_cancellation_and_checked_sum_never_publish_partial_totals ... FAILED
+
+failures:
+
+---- bounds_cancellation_and_checked_sum_never_publish_partial_totals stdout ----
+
+thread 'bounds_cancellation_and_checked_sum_never_publish_partial_totals' (9429066) panicked at tests/evidence_operations_overview.rs:301:79:
+called `Result::unwrap_err()` on an `Ok` value: Overview { version: 1, coverage: "observations-only", capture_completeness: "unknown", built_at: 1792399328, manifest_sha256: "5316dd707f684f5a6caa9c2a896f2e6f9b0c223e4de7252945a1f7e1f8896b82", active: "4d050c68af0e88369d5847307044d127", sources: [Source { generation: "688edc0f384e30b28e5d88a724f38be0", sealed_sha256: Some("4d783c14426e702f8f533bd433821e70805c678041a85987a4671430693676a8"), snapshot: Scan { started_at: 1792399328, finished_at: 1792399328, digest: "68996e2926abc25940b1a6ec7e70f469644c4d0e145452561d625b6ee3b5ddba", worker: None, exhausted_observed: Some(false) } }, Source { generation: "8fcd14620baa9045dbe2f08b59d966da", sealed_sha256: Some("ef9cad4d3308df133d784b05cdb7ca00c5fe50a632f3bfbd5be086ce061193e3"), snapshot: Scan { started_at: 1792399328, finished_at: 1792399328, digest: "22d4319da8543ef262a6f60b2fc92a6efbf58c087e6121956c29e0057a8c03de", worker: None, exhausted_observed: Some(false) } }, Source { generation: "4d050c68af0e88369d5847307044d127", sealed_sha256: None, snapshot: Scan { started_at: 1792399328, finished_at: 1792399328, digest: "74a91ec2d433469d9fe1e992609994f916391690f1473e3cb844ca49928c8808", worker: None, exhausted_observed: Some(false) } }], totals: Totals { attempts: 1, sessions: 1, observed: 3, locally_queued: 2, unconfirmed: 1, attempts_with_gaps: 1, telemetry_dropped_lower_bound: 8, unclosed_sessions: 0 }, accounted_bytes: 16783564, memory_limit: 16777216 }
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    bounds_cancellation_and_checked_sum_never_publish_partial_totals
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 8 filtered out; finished in 0.70s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-collection-build)
+    Finished `test` profile [unoptimized] target(s) in 6.91s
+     Running tests/evidence_operations_overview.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_operations_overview-60b870fdbabb93d8)
+error: test failed, to rerun pass `--test evidence_operations_overview`

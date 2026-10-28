@@ -1,0 +1,3 @@
+OM3-drop-valid-health-in-scan: KILLED exit=101 author_failed=[] all_failed=['po4b_invalid_unique_active_attempt_is_refused_not_summed']
+SM9-uncatalogued-index-on-legacy-table-in-profile2: SURVIVED exit=0 author_failed=[] all_failed=[]
+exit=0

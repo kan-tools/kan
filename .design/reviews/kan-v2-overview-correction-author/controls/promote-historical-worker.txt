@@ -1,0 +1,22 @@
+
+running 1 test
+test historical_worker_is_hashed_but_not_promoted_to_current_health ... FAILED
+
+failures:
+
+---- historical_worker_is_hashed_but_not_promoted_to_current_health stdout ----
+
+thread 'historical_worker_is_hashed_but_not_promoted_to_current_health' (9511628) panicked at tests/evidence_operations_overview.rs:308:5:
+assertion failed: first.sources[0].snapshot.worker.is_none()
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    historical_worker_is_hashed_but_not_promoted_to_current_health
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 14 filtered out; finished in 0.72s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-collection-build)
+    Finished `test` profile [unoptimized] target(s) in 6.99s
+     Running tests/evidence_operations_overview.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_operations_overview-60b870fdbabb93d8)
+error: test failed, to rerun pass `--test evidence_operations_overview`

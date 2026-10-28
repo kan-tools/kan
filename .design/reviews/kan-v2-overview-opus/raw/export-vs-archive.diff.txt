@@ -1,0 +1,2 @@
+Only in .: north-star.json
+exit=1

@@ -1,0 +1,13 @@
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-collection-build/.local-state/reviews/overview)
+    Finished `release` profile [optimized] target(s) in 1.59s
+     Running tests/zz_review_overview_probe.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/release/deps/zz_review_overview_probe-d0a37e498fc66f6e)
+
+running 1 test
+PO1b active bytes=30564352
+PO1b builds=false elapsed_ms=1510 active_scan_ms=[] writes ok=106 err=0 max_write_ms=17
+PO1b builds=true elapsed_ms=1754 active_scan_ms=["ok:136ms", "ok:113ms", "ok:113ms", "ok:108ms", "ok:259ms", "err@145ms:database is locked", "err@139ms:database is locked", "ok:135ms", "err@142ms:database is locked", "err@135ms:database is locked"] writes ok=75 err=0 max_write_ms=158
+test po1b_continuous_health_writer_across_repeated_builds ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 10 filtered out; finished in 3.96s
+
+exit=0

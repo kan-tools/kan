@@ -1,0 +1,72 @@
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-collection-build/.local-state/reviews/overview)
+    Finished `test` profile [unoptimized] target(s) in 0.51s
+     Running tests/zz_review_overview_alloc.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/zz_review_overview_alloc-4f54ad81decb38a6)
+
+running 1 test
+test pm1_rust_heap_peak_stays_within_accounted_and_configured_bounds ... PM1 limit=134217728 peak_rust_heap_delta=26037129 ok accounted=108670049 (rows=91892833)
+PM1 limit=25165824 peak_rust_heap_delta=940284 err Some("collection overview capacity reached: memory")
+PM1 limit=33554432 peak_rust_heap_delta=1878524 err Some("collection overview capacity reached: memory")
+PM1 limit=50331648 peak_rust_heap_delta=3754940 err Some("collection overview capacity reached: memory")
+PM1 limit=67108864 peak_rust_heap_delta=6679996 err Some("collection overview capacity reached: memory")
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 8.53s
+
+     Running tests/zz_review_overview_probe.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/zz_review_overview_probe-dec8c6c0e6f0c961)
+
+running 10 tests
+test po10_session_counter_overflow_refuses ... ok
+test po1_health_writer_commits_while_large_active_scan_runs ... PO1 active journal bytes=25452544
+PO1 build=Ok(60021) active_scan_ms=1301 writes_during_scan ok=0 err=9 max_write_ms=151 errors={"database is locked"}
+
+thread 'po1_health_writer_commits_while_large_active_scan_runs' (9453054) panicked at tests/zz_review_overview_probe.rs:231:5:
+assertion `left == right` failed: health writer lost 9 observations while the overview held the active read transaction (1301 ms)
+  left: 9
+ right: 0
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+test po2_build_changes_no_collection_file_or_metadata ... ok
+test po3_missing_generation_lock_refuses_without_creating_it ... ok
+test po4_hostile_active_rows_refuse_publication ... PO4 arith: invalid
+PO4 acked: invalid
+PO4 unknown-field: invalid
+PO4 id-mismatch: invalid
+PO4 blob-body: invalid
+PO4 negative-updated: invalid
+PO4 session-empty: invalid
+PO4 session-clean-2: invalid
+PO4 session-negative: invalid
+PO4 session-long: invalid
+PO4 worker-malformed: invalid
+PO4 binding-foreign: invalid
+ok
+test po5_conflicts_are_classified_and_manager_labels_them ... ok
+test po6_incomparable_rows_refuse_instead_of_componentwise_max ... ok
+test po7_u64_totals_beyond_i64_are_exact_decimal_strings ... ok
+test po8_cancel_then_refresh_does_not_start_concurrent_build ... ok
+test po9_dashboard_overview_routes_refuse_hostile_requests ... PO9 no-auth-get: 401
+PO9 no-auth-post-body: 401
+PO9 lowercase-bearer: 401
+PO9 double-auth: 401
+PO9 wrong-host: 403
+PO9 foreign-origin: 403
+PO9 post-status-route: 405
+PO9 put-refresh: 405
+PO9 query-refresh: 405
+PO9 slash-refresh: 405
+PO9 get-cancel: 405
+PO9 chunked-empty: 400
+PO9 body: 400
+PO9 cancel-body: 400
+PO9 status-ok: 200
+ok
+
+failures:
+
+failures:
+    po1_health_writer_commits_while_large_active_scan_runs
+
+test result: FAILED. 9 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 19.42s
+
+error: test failed, to rerun pass `--test zz_review_overview_probe`
+exit=101

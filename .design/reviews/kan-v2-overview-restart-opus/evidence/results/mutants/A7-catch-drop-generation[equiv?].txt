@@ -1,0 +1,84 @@
+# mutant A7-catch-drop-generation[equiv?]
+# before: 'catch(e){if(current===generation&&serial===overviewSerial){'
+# after:  'catch(e){if(serial===overviewSerial){'
+
+## suite author exit=0
+✔ auth is header-only; gap filtering and untrusted values use text (13.616625ms)
+✔ late authenticated response cannot unlock a locked view (0.587ms)
+✔ missing/stale data and HTTP failure cannot look healthy (0.52875ms)
+✔ absent and stale capture reporters remain explicitly unknown (0.5375ms)
+✔ fresh active sessions are current while historical losses remain visible (0.505708ms)
+✔ delivery retries, unsampled unclosed sessions and future clocks cannot look current (0.573583ms)
+✔ future clock samples produce consistent badges and retain uncertain reporter history (0.6275ms)
+✔ unsampled sessions and summary loss units are explicit (0.588209ms)
+✔ journal capacity is independent, sticky and never an exact coverage claim (0.714375ms)
+✔ unsupported status version retains visibly disconnected values (0.809792ms)
+✔ search is sample-bounded and inspection preserves exact untrusted identifiers (0.624833ms)
+✔ locking clears rendered private metadata and closes the inspector (0.472125ms)
+✔ reporter and attempt limits warn before exhaustion and preserve partial recording semantics (0.61925ms)
+✔ future persistence timestamps stay unknown (0.491333ms)
+✔ polling preserves the focused attempt and inspector close returns to the replacement row (0.618917ms)
+✔ unchanged notices are not announced again on every poll (0.541125ms)
+✔ overview refresh is explicit authenticated POST with exact large counters (0.720708ms)
+✔ lock clears overview and prevents a late result from repainting (0.770042ms)
+✔ failed or limited refresh labels the prior sample explicitly (0.546416ms)
+✔ overview rejects malformed source lists and unsafe numeric counters before rendering (1.511417ms)
+✔ build preempts an in-flight overview poll and ignores its stale reply (0.505708ms)
+✔ cancel preempts a poll while preserving server action order (0.4995ms)
+✔ a second action is queued behind an unfinished action, then dispatched (0.522125ms)
+✔ cached overview shows its age and becomes visibly superseded after rotation (0.882834ms)
+✔ invalid overview replies label retained totals and restart clears them (0.698542ms)
+✔ late overview transport errors cannot repaint after lock (0.48325ms)
+✔ a reused job number after restart cannot retain old overview totals (0.624583ms)
+ℹ tests 27
+ℹ suites 0
+ℹ pass 27
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 58.109833
+
+## suite imported exit=0
+✔ UPa: a poll aborted by a preempting Build never labels the view as timed out/failed (13.320875ms)
+✔ UPb: after a service restart, a new sample with the same job number and manifest must repaint totals (1.380458ms)
+✔ UPc: lock with a queued action dispatches nothing and repaints nothing afterwards (0.807167ms)
+UPd dispatched actions: ["/api/overview/refresh","/api/overview/refresh"]
+✔ UPd: Build, Cancel, Build while an action is in flight: only the last queued action is sent (0.862542ms)
+✔ UPe: a failing action still dispatches the queued action and keeps the prior-sample label (0.729208ms)
+✔ UPf: superseded label survives later overview polls and a failed status poll (0.892833ms)
+✔ UPg: future-dated sample says its clock is ahead, not "0s old" (0.550458ms)
+✔ UPh: relogin after lock ignores the old session's late action reply (0.700209ms)
+✔ UPi: after a Build preempts a poll, a following Cancel is still queued (one action in flight) (0.735166ms)
+ℹ tests 9
+ℹ suites 0
+ℹ pass 9
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 8059.653667
+
+## suite review exit=0
+✔ RP1: restart, same job/manifest/built_at/totals, only a source row digest differs -> source list repaints (15.034583ms)
+✔ RP2: restart, same job/manifest/built_at, only totals differ -> totals repaint (1.055625ms)
+✔ RP3: restart, same everything except the sealed source set (generation added) -> coverage + sources repaint (0.979916ms)
+✔ RP4: lock -> relogin -> load returns the SAME cached sample -> body is repainted, not left blank (1.221708ms)
+✔ RP5: restart observed via last:null in between, then identical-looking sample -> body repainted (0.892708ms)
+✔ RP6: the 8 s timeout labels "timed out", retains prior sample, and releases the request slot (0.82475ms)
+✔ RP7: a queued action does not leak across lock/relogin into the next session (0.865375ms)
+✔ RP8: Build preempts a poll whose headers arrived but whose body is still streaming (1.27775ms)
+✔ RP9: valid A, invalid reply, then valid B (same job/manifest) -> B repaints (0.7695ms)
+✔ RP10: identical sample repeated: neither summary, coverage nor sources are rewritten (no announce churn) (0.889083ms)
+RP11 summary rewrites after key reorder: 1
+✔ RP11 (informational): same sample re-serialised with different key order re-renders but shows identical content (0.77525ms)
+RP12 key bytes at 1024 sources: 485784 10 distinct renders ms: 22.2
+✔ RP12: bounds - 1024 server-shaped sources render; key work is small; 1025 sources are rejected (24.877875ms)
+ℹ tests 12
+ℹ suites 0
+ℹ pass 12
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 82.097666

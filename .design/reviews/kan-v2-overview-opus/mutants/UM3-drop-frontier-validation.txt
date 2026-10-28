@@ -1,0 +1,51 @@
+✔ auth is header-only; gap filtering and untrusted values use text (13.428917ms)
+✔ late authenticated response cannot unlock a locked view (0.545458ms)
+✔ missing/stale data and HTTP failure cannot look healthy (0.578875ms)
+✔ absent and stale capture reporters remain explicitly unknown (0.570167ms)
+✔ fresh active sessions are current while historical losses remain visible (0.65775ms)
+✔ delivery retries, unsampled unclosed sessions and future clocks cannot look current (0.7285ms)
+✔ future clock samples produce consistent badges and retain uncertain reporter history (0.77675ms)
+✔ unsampled sessions and summary loss units are explicit (0.552125ms)
+✔ journal capacity is independent, sticky and never an exact coverage claim (0.774708ms)
+✔ unsupported status version retains visibly disconnected values (0.581166ms)
+✔ search is sample-bounded and inspection preserves exact untrusted identifiers (0.921833ms)
+✔ locking clears rendered private metadata and closes the inspector (0.538917ms)
+✔ reporter and attempt limits warn before exhaustion and preserve partial recording semantics (0.590084ms)
+✔ future persistence timestamps stay unknown (0.428459ms)
+✔ polling preserves the focused attempt and inspector close returns to the replacement row (0.621292ms)
+✔ unchanged notices are not announced again on every poll (0.574208ms)
+✔ overview refresh is explicit authenticated POST with exact large counters (0.789834ms)
+✔ lock clears overview and prevents a late result from repainting (0.739625ms)
+✔ failed or limited refresh labels the prior sample explicitly (0.491625ms)
+✖ overview rejects malformed source lists and unsafe numeric counters before rendering (1.903709ms)
+✔ UP1 transport error from a pre-lock overview request cannot repaint a locked view (13.422667ms)
+✔ UP4 relogin after lock ignores the old response and can load again (1.262292ms)
+UP5 state= "Invalid overview snapshot." summary= "1 distinct attempts · 3 observed · 2 locally queued · 1 unconfirmed · 1 attempts with gaps · 1 reporter sessions · at least 8 dropped telemetry observations · 0 unclosed sessions"
+✔ UP5 invalid response after a valid sample keeps prior totals but states invalid (behaviour record) (1.226625ms)
+✔ UP6 cancelled refresh labels the retained prior sample (0.8175ms)
+ℹ tests 24
+ℹ suites 0
+ℹ pass 23
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 55.013542
+
+✖ failing tests:
+
+test at tests/operations_ui.test.cjs:34:1
+✖ overview rejects malformed source lists and unsafe numeric counters before rendering (1.903709ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  
+  1 !== 0
+  
+      at TestContext.<anonymous> (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-collection-build/.local-state/reviews/overview/tests/operations_ui.test.cjs:34:454)
+      at async Test.run (node:internal/test_runner/test:1069:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:752:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 1,
+    expected: 0,
+    operator: 'strictEqual'
+  }

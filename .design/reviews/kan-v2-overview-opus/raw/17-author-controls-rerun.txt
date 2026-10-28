@@ -1,0 +1,8 @@
+DEMONSTRATED: no-deduplication
+DEMONSTRATED: no-dominance
+DEMONSTRATED: no-sealed-hash
+DEMONSTRATED: no-memory-cap
+DEMONSTRATED: no-cancellation
+DEMONSTRATED: late-overview-repaint
+Five compiled Rust mutants and one UI mutant fail; restored checks pass.
+exit=0

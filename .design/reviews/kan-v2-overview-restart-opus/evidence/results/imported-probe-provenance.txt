@@ -1,0 +1,8 @@
+imported sha256 524c30f5b1de2816a57932f06676050a59bee5bb15e846ef251e662f494f05b3 len 9448
+Search for an original UPa-UPi probe file outside the export:
+$ grep -rl --include='*.cjs' 'UPb: after a service restart' reviews/ | grep -v /ui-restart/  -> (no files)
+$ grep -l UPb reviews/*.jsonl -> overview.jsonl, ui-restart.jsonl
+overview.jsonl: only occurrence is line 635, an assistant 'thinking' block; no Write/Edit/Bash tool call carries the probe text.
+-rw-------@ 1 m  staff  2 Oct 19 02:24 /Users/m/code/kan-tools/kan/.worktrees/kan-v2-collection-build/.local-state/reviews/overview.exit
+0
+Conclusion: byte-identity of tests/operations_review_ui.test.cjs with the prior reviewer's original is UNVERIFIABLE from this review's readable inputs.

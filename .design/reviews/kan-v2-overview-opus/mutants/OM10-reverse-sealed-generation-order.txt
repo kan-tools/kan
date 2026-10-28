@@ -1,0 +1,132 @@
+
+running 9 tests
+test overview_browser_fixture ... ignored, manual synthetic browser fixture; explicit output path required
+test published_polling_is_memory_only_and_cancel_preserves_prior_sample ... FAILED
+test pinned_active_snapshot_releases_sqlite_before_history_and_blocks_rotation ... FAILED
+test cumulative_rows_are_deduplicated_without_rewriting_sources ... FAILED
+test bounds_cancellation_and_checked_sum_never_publish_partial_totals ... FAILED
+test real_cli_returns_same_typed_totals ... FAILED
+test changed_missing_sources_binding_and_membership_fail_visibly ... ok
+test dashboard_overview_requires_auth_and_cannot_mutate_owner_history ... FAILED
+test intermediate_regressions_conflicting_observers_and_terminals_refuse_publication ... ok
+
+failures:
+
+---- published_polling_is_memory_only_and_cancel_preserves_prior_sample stdout ----
+
+thread 'published_polling_is_memory_only_and_cancel_preserves_prior_sample' (9469457) panicked at tests/evidence_operations_overview.rs:354:5:
+assertion `left == right` failed
+  left: "failed"
+ right: "completed"
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- pinned_active_snapshot_releases_sqlite_before_history_and_blocks_rotation stdout ----
+
+thread '<unnamed>' (9469506) panicked at tests/evidence_operations_overview.rs:269:10:
+called `Result::unwrap()` on an `Err` value: Conflict
+
+thread 'pinned_active_snapshot_releases_sqlite_before_history_and_blocks_rotation' (9469456) panicked at tests/evidence_operations_overview.rs:278:27:
+called `Result::unwrap()` on an `Err` value: Any { .. }
+
+---- cumulative_rows_are_deduplicated_without_rewriting_sources stdout ----
+
+thread 'cumulative_rows_are_deduplicated_without_rewriting_sources' (9469453) panicked at tests/evidence_operations_overview.rs:96:81:
+called `Result::unwrap()` on an `Err` value: Conflict
+
+---- bounds_cancellation_and_checked_sum_never_publish_partial_totals stdout ----
+
+thread 'bounds_cancellation_and_checked_sum_never_publish_partial_totals' (9469451) panicked at tests/evidence_operations_overview.rs:331:5:
+assertion failed: matches!(error.downcast_ref::<Failure>(), Some(Failure::Overflow))
+
+---- real_cli_returns_same_typed_totals stdout ----
+
+thread 'real_cli_returns_same_typed_totals' (9469458) panicked at tests/evidence_operations_overview.rs:419:5:
+error: operations overview failed: collection observations conflict
+
+
+---- dashboard_overview_requires_auth_and_cannot_mutate_owner_history stdout ----
+
+thread 'dashboard_overview_requires_auth_and_cannot_mutate_owner_history' (9469454) panicked at tests/evidence_operations_overview.rs:516:9:
+{"job":1,"last":null,"last_job":null,"reason":"conflicting cumulative observations","state":"failed","version":1}
+
+
+failures:
+    bounds_cancellation_and_checked_sum_never_publish_partial_totals
+    cumulative_rows_are_deduplicated_without_rewriting_sources
+    dashboard_overview_requires_auth_and_cannot_mutate_owner_history
+    pinned_active_snapshot_releases_sqlite_before_history_and_blocks_rotation
+    published_polling_is_memory_only_and_cancel_preserves_prior_sample
+    real_cli_returns_same_typed_totals
+
+test result: FAILED. 2 passed; 6 failed; 1 ignored; 0 measured; 0 filtered out; finished in 7.80s
+
+
+running 9 tests
+test po8_cancel_then_refresh_does_not_start_concurrent_build ... ok
+test po3_missing_generation_lock_refuses_without_creating_it ... ok
+test po6_incomparable_rows_refuse_instead_of_componentwise_max ... ok
+test po10_session_counter_overflow_refuses ... FAILED
+test po7_u64_totals_beyond_i64_are_exact_decimal_strings ... FAILED
+test po2_build_changes_no_collection_file_or_metadata ... FAILED
+test po5_conflicts_are_classified_and_manager_labels_them ... ok
+test po4_hostile_active_rows_refuse_publication ... ok
+test po9_dashboard_overview_routes_refuse_hostile_requests ... FAILED
+
+failures:
+
+---- po10_session_counter_overflow_refuses stdout ----
+
+thread 'po10_session_counter_overflow_refuses' (9469592) panicked at tests/zz_review_overview_probe.rs:554:5:
+assertion `left == right` failed
+  left: "conflict"
+ right: "overflow"
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- po7_u64_totals_beyond_i64_are_exact_decimal_strings stdout ----
+
+thread 'po7_u64_totals_beyond_i64_are_exact_decimal_strings' (9469598) panicked at tests/zz_review_overview_probe.rs:392:23:
+called `Result::unwrap()` on an `Err` value: Conflict
+
+---- po2_build_changes_no_collection_file_or_metadata stdout ----
+
+thread 'po2_build_changes_no_collection_file_or_metadata' (9469593) panicked at tests/zz_review_overview_probe.rs:243:23:
+called `Result::unwrap()` on an `Err` value: Conflict
+
+---- po9_dashboard_overview_routes_refuse_hostile_requests stdout ----
+PO9 no-auth-get: 401
+PO9 no-auth-post-body: 401
+PO9 lowercase-bearer: 401
+PO9 double-auth: 401
+PO9 wrong-host: 403
+PO9 foreign-origin: 403
+PO9 post-status-route: 405
+PO9 put-refresh: 405
+PO9 query-refresh: 405
+PO9 slash-refresh: 405
+PO9 get-cancel: 405
+PO9 chunked-empty: 400
+PO9 body: 400
+PO9 cancel-body: 400
+PO9 status-ok: 200
+
+thread 'po9_dashboard_overview_routes_refuse_hostile_requests' (9469600) panicked at tests/zz_review_overview_probe.rs:507:9:
+{"version":1,"state":"failed","job":1,"reason":"conflicting cumulative observations","last_job":null,"last":null}
+
+
+failures:
+    po10_session_counter_overflow_refuses
+    po2_build_changes_no_collection_file_or_metadata
+    po7_u64_totals_beyond_i64_are_exact_decimal_strings
+    po9_dashboard_overview_routes_refuse_hostile_requests
+
+test result: FAILED. 5 passed; 4 failed; 0 ignored; 0 measured; 2 filtered out; finished in 12.84s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-collection-build/.local-state/reviews/overview)
+    Finished `test` profile [unoptimized] target(s) in 6.84s
+     Running tests/evidence_operations_overview.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_operations_overview-60b870fdbabb93d8)
+error: test failed, to rerun pass `--test evidence_operations_overview`
+     Running tests/zz_review_overview_probe.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/zz_review_overview_probe-dec8c6c0e6f0c961)
+error: test failed, to rerun pass `--test zz_review_overview_probe`
+error: 2 targets failed:
+    `--test evidence_operations_overview`
+    `--test zz_review_overview_probe`

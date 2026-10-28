@@ -1,0 +1,151 @@
+# mutant A11-queued-never-dispatched
+# before: 'if(queued)loadOverview(queued);'
+# after:  ''
+
+## suite author exit=1
+✔ auth is header-only; gap filtering and untrusted values use text (13.625917ms)
+✔ late authenticated response cannot unlock a locked view (0.638041ms)
+✔ missing/stale data and HTTP failure cannot look healthy (0.552583ms)
+✔ absent and stale capture reporters remain explicitly unknown (0.548458ms)
+✔ fresh active sessions are current while historical losses remain visible (0.522583ms)
+✔ delivery retries, unsampled unclosed sessions and future clocks cannot look current (0.575625ms)
+✔ future clock samples produce consistent badges and retain uncertain reporter history (0.620042ms)
+✔ unsampled sessions and summary loss units are explicit (0.557792ms)
+✔ journal capacity is independent, sticky and never an exact coverage claim (0.69575ms)
+✔ unsupported status version retains visibly disconnected values (0.828834ms)
+✔ search is sample-bounded and inspection preserves exact untrusted identifiers (0.565875ms)
+✔ locking clears rendered private metadata and closes the inspector (0.445083ms)
+✔ reporter and attempt limits warn before exhaustion and preserve partial recording semantics (0.539416ms)
+✔ future persistence timestamps stay unknown (0.404125ms)
+✔ polling preserves the focused attempt and inspector close returns to the replacement row (0.658375ms)
+✔ unchanged notices are not announced again on every poll (0.546708ms)
+✔ overview refresh is explicit authenticated POST with exact large counters (0.962125ms)
+✔ lock clears overview and prevents a late result from repainting (0.680042ms)
+✔ failed or limited refresh labels the prior sample explicitly (0.612292ms)
+✔ overview rejects malformed source lists and unsafe numeric counters before rendering (1.386167ms)
+✔ build preempts an in-flight overview poll and ignores its stale reply (0.483584ms)
+✔ cancel preempts a poll while preserving server action order (0.462959ms)
+✖ a second action is queued behind an unfinished action, then dispatched (0.701459ms)
+✔ cached overview shows its age and becomes visibly superseded after rotation (0.967333ms)
+✔ invalid overview replies label retained totals and restart clears them (0.685458ms)
+✔ late overview transport errors cannot repaint after lock (0.423459ms)
+✔ a reused job number after restart cannot retain old overview totals (0.595458ms)
+ℹ tests 27
+ℹ suites 0
+ℹ pass 26
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 58.118417
+
+✖ failing tests:
+
+test at tests/operations_ui.test.cjs:38:1
+✖ a second action is queued behind an unfinished action, then dispatched (0.701459ms)
+  TypeError [Error]: Cannot read properties of undefined (reading 'url')
+      at TestContext.<anonymous> (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-collection-build/.local-state/reviews/ui-restart/tests/operations_ui.test.cjs:38:397)
+      at async Test.run (node:internal/test_runner/test:1069:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:752:7)
+
+## suite imported exit=1
+✔ UPa: a poll aborted by a preempting Build never labels the view as timed out/failed (13.236792ms)
+✔ UPb: after a service restart, a new sample with the same job number and manifest must repaint totals (1.247875ms)
+✔ UPc: lock with a queued action dispatches nothing and repaints nothing afterwards (0.841209ms)
+UPd dispatched actions: ["/api/overview/refresh"]
+✖ UPd: Build, Cancel, Build while an action is in flight: only the last queued action is sent (1.266375ms)
+✖ UPe: a failing action still dispatches the queued action and keeps the prior-sample label (1.038458ms)
+✔ UPf: superseded label survives later overview polls and a failed status poll (0.953666ms)
+✔ UPg: future-dated sample says its clock is ahead, not "0s old" (0.578125ms)
+✔ UPh: relogin after lock ignores the old session's late action reply (0.597958ms)
+✖ UPi: after a Build preempts a poll, a following Cancel is still queued (one action in flight) (0.6095ms)
+ℹ tests 9
+ℹ suites 0
+ℹ pass 6
+ℹ fail 3
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 48.388292
+
+✖ failing tests:
+
+test at tests/operations_review_ui.test.cjs:50:1
+✖ UPd: Build, Cancel, Build while an action is in flight: only the last queued action is sent (1.266375ms)
+  AssertionError [ERR_ASSERTION]: observed queue semantics
+  + actual - expected
+  
+    [
+      '/api/overview/refresh',
+  -   '/api/overview/refresh'
+    ]
+  
+      at TestContext.<anonymous> (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-collection-build/.local-state/reviews/ui-restart/tests/operations_review_ui.test.cjs:56:9)
+      at async Test.run (node:internal/test_runner/test:1069:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:752:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: [ '/api/overview/refresh' ],
+    expected: [ '/api/overview/refresh', '/api/overview/refresh' ],
+    operator: 'deepStrictEqual'
+  }
+
+test at tests/operations_review_ui.test.cjs:59:1
+✖ UPe: a failing action still dispatches the queued action and keeps the prior-sample label (1.038458ms)
+  AssertionError [ERR_ASSERTION]: queued cancel dispatched after failure
+  + actual - expected
+  
+  + undefined
+  - '/api/overview/cancel'
+  
+      at TestContext.<anonymous> (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-collection-build/.local-state/reviews/ui-restart/tests/operations_review_ui.test.cjs:65:9)
+      at async Test.run (node:internal/test_runner/test:1069:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:752:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: undefined,
+    expected: '/api/overview/cancel',
+    operator: 'strictEqual'
+  }
+
+test at tests/operations_review_ui.test.cjs:96:1
+✖ UPi: after a Build preempts a poll, a following Cancel is still queued (one action in flight) (0.6095ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  + actual - expected
+  
+  + undefined
+  - '/api/overview/cancel'
+  
+      at TestContext.<anonymous> (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-collection-build/.local-state/reviews/ui-restart/tests/operations_review_ui.test.cjs:104:9)
+      at async Test.run (node:internal/test_runner/test:1069:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:752:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: undefined,
+    expected: '/api/overview/cancel',
+    operator: 'strictEqual'
+  }
+
+## suite review exit=0
+✔ RP1: restart, same job/manifest/built_at/totals, only a source row digest differs -> source list repaints (14.036375ms)
+✔ RP2: restart, same job/manifest/built_at, only totals differ -> totals repaint (0.988875ms)
+✔ RP3: restart, same everything except the sealed source set (generation added) -> coverage + sources repaint (0.967667ms)
+✔ RP4: lock -> relogin -> load returns the SAME cached sample -> body is repainted, not left blank (1.216041ms)
+✔ RP5: restart observed via last:null in between, then identical-looking sample -> body repainted (0.908375ms)
+✔ RP6: the 8 s timeout labels "timed out", retains prior sample, and releases the request slot (0.770875ms)
+✔ RP7: a queued action does not leak across lock/relogin into the next session (0.87875ms)
+✔ RP8: Build preempts a poll whose headers arrived but whose body is still streaming (1.103917ms)
+✔ RP9: valid A, invalid reply, then valid B (same job/manifest) -> B repaints (1.03775ms)
+✔ RP10: identical sample repeated: neither summary, coverage nor sources are rewritten (no announce churn) (0.879792ms)
+RP11 summary rewrites after key reorder: 1
+✔ RP11 (informational): same sample re-serialised with different key order re-renders but shows identical content (0.690042ms)
+RP12 key bytes at 1024 sources: 485784 10 distinct renders ms: 22.7
+✔ RP12: bounds - 1024 server-shaped sources render; key work is small; 1025 sources are rejected (25.184416ms)
+ℹ tests 12
+ℹ suites 0
+ℹ pass 12
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 76.860083
