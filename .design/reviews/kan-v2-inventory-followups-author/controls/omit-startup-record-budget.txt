@@ -1,0 +1,22 @@
+
+running 1 test
+test startup_item_budget_counts_each_metadata_record_before_accepting_a_snapshot ... FAILED
+
+failures:
+
+---- startup_item_budget_counts_each_metadata_record_before_accepting_a_snapshot stdout ----
+
+thread 'startup_item_budget_counts_each_metadata_record_before_accepting_a_snapshot' (9847591) panicked at tests/evidence_inventory.rs:1067:14:
+called `Option::unwrap()` on a `None` value
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    startup_item_budget_counts_each_metadata_record_before_accepting_a_snapshot
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 17 filtered out; finished in 0.21s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-degraded-inventory)
+    Finished `test` profile [unoptimized] target(s) in 7.02s
+     Running tests/evidence_inventory.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_inventory-c64c1fa4419bff69)
+error: test failed, to rerun pass `--test evidence_inventory`

@@ -1,0 +1,14 @@
+$ cargo test --features v2-crypto --test evidence_inventory inventory_large_rows_stay_below_the_materialization_memory_ceiling -- --exact --nocapture
+    Finished `test` profile [unoptimized] target(s) in 0.25s
+     Running tests/evidence_inventory.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_inventory-c64c1fa4419bff69)
+
+running 1 test
+object: {"exit": 0, "peak_bytes": 10649600, "stdout": "\nrunning 1 test\ntest inventory_large_row_worker ... ok\n\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 14 filtered out; finished in 0.02s\n\n", "stderr": ""}
+
+manifest: {"exit": 0, "peak_bytes": 10076160, "stdout": "\nrunning 1 test\ntest inventory_large_row_worker ... ok\n\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 14 filtered out; finished in 0.00s\n\n", "stderr": ""}
+
+test inventory_large_rows_stay_below_the_materialization_memory_ceiling ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 14 filtered out; finished in 0.98s
+
+exit=0

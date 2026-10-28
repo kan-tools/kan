@@ -1,0 +1,557 @@
+diff --git a/.design/kan-v2-degraded-inventory.md b/.design/kan-v2-degraded-inventory.md
+index a67d01e..6a1aa84 100644
+--- a/.design/kan-v2-degraded-inventory.md
++++ b/.design/kan-v2-degraded-inventory.md
+@@ -81,2 +81,3 @@ this first implementation does not claim indexed large-archive page latency.
+-A lookup with no object at its expected CID is missing. An existing bounded object
+-with an invalid length or hash is corrupt. A SQLite error, invalid metadata or
++A lookup with no object at its expected CID is missing. An existing object with a non-BLOB SQL storage class, invalid length or hash
++is corrupt. Test the storage class before evaluating length or materializing
++bytes; corrupt TEXT can otherwise allocate a large value or fail an entire page. A SQLite error, invalid metadata or
+@@ -150,0 +152,11 @@ cross-host non-equivocation or persistent rollback protection.
++
++
++### Adapter lifetime and cancellation obligations
++
++The inventory pins a read transaction until its handle is dropped. In WAL mode a
++long-lived handle prevents checkpoint progress beyond that snapshot and can grow
++the WAL while capture continues. The later RPC/job adapter must enforce bounded
++handle lifetime, explicit expiration/reopen, and cancellation of abandoned work;
++it cannot retain one inventory forever as an invisible server cache. Map both
++explicit budget/cancellation errors and SQLite OperationInterrupted to a bounded
++operation failure, without reporting empty results or missing payloads.
+diff --git a/.design/kan-v2-evidence-availability.md b/.design/kan-v2-evidence-availability.md
+index 657d121..1220103 100644
+--- a/.design/kan-v2-evidence-availability.md
++++ b/.design/kan-v2-evidence-availability.md
+@@ -991,0 +992,21 @@ review are required before this correction is accepted.
++
++
++### Recovery-ledger placement refinement from C review
++
++The separate observer authority and append-only recovery history specified above
++remain required. KNB1 places that history in the same outer SQLite file as its
++encapsulated member, in separate canonical observations and restoration tables,
++rather than a second independently opened ledger file. This is one transaction
++boundary for creation/restoration and preserved whole-bundle backup custody.
++The owner checkpoint remains separately retained; publication creates a different
++standalone file and therefore still has explicit cross-file uncertainty. No
++standalone API may ignore the observations or open an extracted member implicitly.
++
++Partial profile-3 bundles remain retained and inspectable but cannot publish a
++complete archive in the first KNB1 protocol. With the full pinned original source
++available, an explicit owner restart uses the reviewed source-copy workflow with
++a new nonce/archive identity, records the old bundle/checkpoint as job provenance,
++and retains that bundle and all its history. In-bundle metadata continuation is
++an additional protocol requirement before that capability can be exposed; blob
++restoration never invents missing records. Track this capability in the full
++recovery roadmap rather than claiming it from the initial bundle writer.
+diff --git a/.design/kan-v2-recovery-bundle-codec.md b/.design/kan-v2-recovery-bundle-codec.md
+index dc225a3..751e257 100644
+--- a/.design/kan-v2-recovery-bundle-codec.md
++++ b/.design/kan-v2-recovery-bundle-codec.md
+@@ -69,0 +70 @@ a malformed key, duplicate logical key, unreadable SQL cell, unknown schema or
++non-BLOB object cell (including TEXT with identical encoded bytes), or
+@@ -83 +84,4 @@ not just a high-water sequence. For empty history both are null.
+-All digests below are 32-byte M1 values. All attempt IDs are owner-generated
++All digests below are 32 bytes; `member` uses M1, `output` uses O1, and
++`restorations` uses R1. O1 has exactly M1 framing with the initial domain replaced
++by ASCII `tools.kan.recovery.output.v1` followed by a zero byte. It commits to the
++fully verified selected output rather than the original damaged member. All attempt IDs are owner-generated
+@@ -92,2 +96,2 @@ with both links null iff `through=0`. Nonempty links have DAG-CBOR/SHA256 codec.
+-  length from authenticated metadata/membership or null only for a profile-2
+-  staged/orphan object without an authenticated length. `state` is `missing` or
++  length from authenticated metadata/membership or null only for an unreferenced
++  staged/orphan object without an authenticated length, in either profile. `state` is `missing` or
+@@ -95 +99 @@ with both links null iff `through=0`. Nonempty links have DAG-CBOR/SHA256 codec.
+-- `restored`: `{cid, length, candidate}`. `candidate` is the raw/SHA256 CID of the
++- `restored`: `{member: digest, cid, length, candidate}`. `candidate` is the raw/SHA256 CID of the
+@@ -101 +105,2 @@ with both links null iff `through=0`. Nonempty links have DAG-CBOR/SHA256 codec.
+-  frontier}`. The second digest is R1 below. Exactly one unresolved intent per
++  output: digest, frontier}`. `output` is the expected O1 of the deterministic
++  selected standalone output, checked before signing intent. The second digest is R1 below. Exactly one unresolved intent per
+@@ -104,2 +109,2 @@ with both links null iff `through=0`. Nonempty links have DAG-CBOR/SHA256 codec.
+-  cites the exact prior intent statement. `output` is M1 of the fully verified
+-  standalone output, using selected valid objects and unchanged original metadata.
++  cites the exact prior intent statement. `output` is O1 of the fully verified
++  standalone output, must equal the cited intent output commitment, using selected valid objects and unchanged original metadata.
+@@ -121,3 +126,51 @@ text lexical order are `F(binary CID) || N(length) || F(candidate bytes)`.
+-Only candidates selected for the publication attempt enter R1. Each must verify
+-against its content address and all known expected lengths. No unsigned selection
+-list can substitute a different candidate after the intent is committed.
++R1 includes every candidate with a matching restored observation strictly before
++that intent's sequence. There is no optional unsigned selection list. Each must
++verify against its content address and all known expected lengths. A verifier
++replays the chain to reconstruct this exact historical set; candidates appended
++after the intent never enter its R1. A different candidate set requires a new
++attempt and intent. This makes restart verification independent of a lost job
++process or an externally remembered subset.
++
++The virtual standalone output contains exactly the union of original object
++keys, authenticated record object references and original membership keys.
++Every key needs verified bytes of all known expected lengths: use its verified
++restoration candidate from this R1 set when present, otherwise its valid original
++bytes. A still-missing/corrupt key refuses publication, including staged/orphan
++keys. Never drop a corrupt orphan to make verification pass, add an unreferenced
++new object, or use a candidate recorded after the intent. Recompute expected
++output O1 from this deterministic union and unchanged records/plan/membership; both intent and
++publication-observed must equal it and the original metadata frontier. The normal
++standalone verifier still independently validates all signatures and profile
++completion. A partial profile-3 member has no KNB1 publication operation; it stays
++a retained recovery artifact until a separate metadata-extension design exists.
++
++## Exact initial loss coverage
++
++Derive one expected coordinate for each `(occurrence sequence, object CID)` in
++member metadata. A shared CID used by two occurrences yields two distinct
++coordinates, not a collapsed history. Add a null-occurrence coordinate for each
++original membership key or original object key that has no occurrence reference;
++never add a second null entry for a CID already represented by occurrences.
++All authenticated lengths for a CID must agree or creation refuses. The expected
++length is that agreed value, or null only for an unreferenced original object
++without an authenticated length.
++
++Sample each coordinate against the original member objects. Missing rows produce
++missing entries; wrong length/hash produces corrupt entries; available entries
++produce no unavailable event. Non-BLOB cells refuse creation under the M1 rule.
++Sort occurrence entries first by ascending numeric sequence then canonical CID
++text; sort null entries last by canonical CID text. No duplicate coordinate is
++allowed. The concatenation of creation's unavailable events must equal this exact
++ordered loss vector: omissions, extra entries, duplicate entries, conflicting
++states or altered expected lengths refuse verification.
++
++These events occur immediately after created, before restoration/publication.
++Partition greedily into the largest consecutive prefix of at most 32 entries
++whose canonical signed envelope fits 16 KiB; signatures have fixed 64-byte width.
++No empty event is permitted. Empty loss coverage means created alone. Verifiers
++recompute the same vector and partition; an unavailable event after that initial
++coverage is invalid. Damage to the physical bundle after creation is an integrity
++failure against its fixed M1, not permission to rewrite member bytes or insert a
++new claim that retrospectively changes the initial sample. Preserve such media
++and recover the bundle from verified backups; arbitrary forensic repair remains
++outside KNB1.
+@@ -181,2 +234,3 @@ Creation's single publication transaction includes a created event plus enough
+-unavailable events to cover every unavailable expected occurrence and every
+-corrupt retained staged/orphan row. Missing orphans with no surviving expected
++unavailable events to cover every unavailable expected occurrence, every
++missing/corrupt original-membership key (including unreferenced staged objects),
++and every corrupt retained orphan row. Missing orphans with no surviving expected
+@@ -192,0 +247,19 @@ is claimed.
++
++### Checkpoints and multiple completed outputs
++
++Several attempt IDs may each reach publication-observed. Each creates a separate
++physical standalone output with the member's logical archive identity; none
++activates a service. The owner must select exactly one live writer and fence the
++others through the separately authorized activation workflow. The bundle cannot
++promise that privileged manual configuration obeyed that workflow.
++
++Every successful mutation/job result returns the verified observation frontier
++(sequence plus statement CID and full binding), including a committed failure
++observation. The owner verifies and durably retains it outside the bundle before
++advancing the recovery UI's independently checkpointed status. On restart the
++owner supplies the latest retained checkpoint; valid extensions are reported
++separately until retained. A tail truncated after the latest external checkpoint
++is not detectable. The online observer key can attribute new statements but does
++not itself provide an independent tamper-evidence or non-equivocation witness.
++An uncertain response may require explicit inspection and checkpoint advancement;
++do not derive the external pin from the bundle being verified.
+diff --git a/.design/kan-v2-recovery-bundles.md b/.design/kan-v2-recovery-bundles.md
+index 4c30f6b..64b76a1 100644
+--- a/.design/kan-v2-recovery-bundles.md
++++ b/.design/kan-v2-recovery-bundles.md
+@@ -58 +58 @@ The namespace contains:
+-| `bundle_identity` | singleton: bundle ID, observer DID, member logical profile, original archive/scope/issuer pins, initial member commitment and source frontier |
++| `bundle_identity` | singleton: bundle ID, observer DID, member logical profile and original archive/scope/issuer pins; commitment/frontier live in the signed created event |
+@@ -60,4 +60,3 @@ The namespace contains:
+-| `member_commits` | exact manifest/receipt bytes with reconstructed disposable lookup coordinates |
+-| `member_attestations` | exact stored proof envelopes; never newly issued |
+-| `member_upgrade_plan` | exact canonical profile-3 plan, absent for profile 2 |
+-| `member_upgrade_objects` | exact original membership and lengths, absent for profile 2 |
++| `member_records` | exact manifest/receipt/proof bytes together by occurrence sequence; never newly issued |
++| `member_plan` | exact canonical profile-3 plan, absent for profile 2 |
++| `member_membership` | exact original membership and lengths, absent for profile 2 |
+@@ -84 +83,3 @@ but are not exposed as authorized browser occurrences without metadata membershi
+-Use canonical DAG-CBOR `{v:1,kind:"recovery-observation",body}` and a closed
++The codec appendix is the single proposed wire definition. Use its flat canonical
++DAG-CBOR statement with `version`, `domain`, full pinned context, sequence,
++previous, `sampledAt`, `event` and event-specific `body`, inside the closed
+@@ -85,0 +87 @@ Use canonical DAG-CBOR `{v:1,kind:"recovery-observation",body}` and a closed
++There is no alternative `v/kind/body` statement wrapper.
+@@ -90 +92 @@ safe-integer sequence/time. No reuse of service admission signature domains.
+-Every body commits to bundle ID, logical archive ID/profile/scope/issuer, observer,
++Every statement commits to bundle ID, logical archive ID/profile/scope/issuer, observer,
+@@ -128 +130,2 @@ fsync the file and parent before reporting success. A failed/oversized job retai
+-an unrecognized output and source. Work budgets are explicit instance/owner
++an unrecognized output and source. Non-BLOB source object cells refuse creation rather than being cast to bytes.
++Work budgets are explicit instance/owner
+@@ -144,3 +147,15 @@ chosen payloads, current writer signatures, issuer proofs, original plan/members
+-and structural constraints. Partial profile-3 copies must first be completed by
+-the reviewed source-copy workflow; restored blobs alone do not invent missing
+-metadata or satisfy an incomplete source recipe.
++and structural constraints. A partial profile-3 member is retained and inspectable but is ineligible for
++standalone publication in KNB1. Its immutable member cannot gain missing metadata
++through blob restoration. The owner can use the existing source-copy workflow
++on a separately retained complete original source to create a different verified
++output using a new nonce and hence a new archive ID; retain the old bundle and
++its entire observation history, with the owner job recording the original bundle
++ID/checkpoint as a provenance reference. That is not publication from this partial
++bundle and must not be reported
++as such. Completing a partial member inside its bundle would require a separately
++reviewed append-only metadata-extension protocol, which KNB1 does not provide.
++This limitation is visible in the job/UI capability result, not a repair guess.
++
++Publication deterministically selects the candidate set recorded before its
++intent, as specified by R1 in the codec appendix. Later restorations require a
++new attempt and cannot silently alter an old selection.
+diff --git a/scripts/inventory_negative_controls.py b/scripts/inventory_negative_controls.py
+index e2fc063..c80740f 100644
+--- a/scripts/inventory_negative_controls.py
++++ b/scripts/inventory_negative_controls.py
+@@ -10 +10 @@ CASES = [
+-    ('indexed-large-row-materialization', 'SELECT length(bytes) FROM objects NOT INDEXED WHERE +cid=?', 'SELECT length(bytes) FROM objects WHERE cid=?', 'inventory_large_rows_stay_below_the_materialization_memory_ceiling'),
++    ('indexed-large-row-materialization', "SELECT CASE WHEN typeof(bytes)='blob' THEN length(bytes) ELSE -1 END FROM objects NOT INDEXED WHERE +cid=?", "SELECT CASE WHEN typeof(bytes)='blob' THEN length(bytes) ELSE -1 END FROM objects WHERE cid=?", 'inventory_large_rows_stay_below_the_materialization_memory_ceiling'),
+diff --git a/src/evidence_store/inventory.rs b/src/evidence_store/inventory.rs
+index c0f17ff..046bd4d 100644
+--- a/src/evidence_store/inventory.rs
++++ b/src/evidence_store/inventory.rs
+@@ -457,0 +458,3 @@ fn payload(
++    // Check the stored SQLite type before computing length: TEXT length can
++    // materialize an oversized corrupt cell and counts characters, not bytes.
++    // A wrong payload storage class is local payload corruption, not a page error.
+@@ -460 +463 @@ fn payload(
+-            "SELECT length(bytes) FROM objects NOT INDEXED WHERE +cid=?",
++            "SELECT CASE WHEN typeof(bytes)='blob' THEN length(bytes) ELSE -1 END FROM objects NOT INDEXED WHERE +cid=?",
+@@ -596,0 +600,120 @@ mod tests {
++
++    #[test]
++    fn page_installs_vm_limits_after_startup_removes_its_handler() {
++        let temp = tempfile::tempdir().unwrap();
++        let issuer = crate::sign::Identity::generate();
++        let writer = crate::sign::Identity::generate();
++        let binding = attested::Binding {
++            archive: [2; 32],
++            scope: [1; 32],
++            issuer: issuer.did().to_string(),
++        };
++        let root = temp.path().join("archive");
++        let mut archive = attested::Archive::create(&root, binding.clone()).unwrap();
++        let bytes = service::SignedRequest::sign(
++            service::Request {
++                version: 1,
++                scope: service::hex(&binding.scope),
++                principal: writer.did().to_string(),
++                audience: issuer.did().to_string(),
++                expires: None,
++                command: service::Command::Append {
++                    id: service::hex(&[1; 16]),
++                    position: 0,
++                    previous: None,
++                    ciphertext: service::hex(b"fixture"),
++                },
++            },
++            &writer,
++        )
++        .unwrap()
++        .bytes()
++        .unwrap();
++        archive
++            .admit(
++                &bytes,
++                &issuer,
++                &service::Grant {
++                    principal: writer.did().to_string(),
++                    append: true,
++                    inventory: true,
++                },
++                100,
++            )
++            .unwrap();
++        drop(archive);
++        let work = || Budget {
++            items: 100,
++            metadata_bytes: 1024 * 1024,
++            duration: Duration::from_secs(60),
++            cancelled: Arc::new(AtomicBool::new(false)),
++        };
++        let a = Inventory::open(
++            &root.join("archive.sqlite"),
++            Profile::Admitted,
++            binding,
++            work(),
++        )
++        .unwrap();
++        // Test-only in-memory workload injection after successful real startup:
++        // no main database mutation or millions of fixture rows on disk. The
++        // recursive view makes the ordinary page payload lookup unyielding.
++        let conn = &a.reader.ledger.conn;
++        conn.execute_batch("PRAGMA query_only=OFF; CREATE TEMP VIEW objects AS WITH RECURSIVE n(x) AS (VALUES(1) UNION ALL SELECT x+1 FROM n WHERE x<1000000000) SELECT 'probe-'||x AS cid,x'01' AS bytes FROM n; PRAGMA query_only=ON;").unwrap();
++        for cancel in [false, true] {
++            let mut budget = work();
++            if !cancel {
++                budget.duration = Duration::from_millis(20);
++            }
++            let flag = budget.cancelled.clone();
++            let interrupt = conn.get_interrupt_handle();
++            let (done, wait) = std::sync::mpsc::channel();
++            let watchdog = std::thread::spawn(move || {
++                if wait.recv_timeout(Duration::from_secs(3)).is_err() {
++                    interrupt.interrupt();
++                    true
++                } else {
++                    false
++                }
++            });
++            let cancellation = cancel.then(|| {
++                std::thread::spawn(move || {
++                    std::thread::sleep(Duration::from_millis(20));
++                    flag.store(true, Ordering::Relaxed);
++                })
++            });
++            let result = a.page(
++                None,
++                PageBudget {
++                    rows: 1,
++                    record_bytes: 1024 * 1024,
++                    payload_bytes: MAX_CHUNK,
++                },
++                budget,
++            );
++            let _ = done.send(());
++            let fallback = watchdog.join().unwrap();
++            if let Some(t) = cancellation {
++                t.join().unwrap();
++            }
++            assert!(!fallback, "page did not install its production VM callback");
++            assert!(
++                matches!(result,Err(Error::Sql(rusqlite::Error::SqliteFailure(e,_))) if e.code==rusqlite::ErrorCode::OperationInterrupted)
++            );
++        }
++        conn.progress_handler(0, None::<fn() -> bool>).unwrap();
++        conn.execute_batch("PRAGMA query_only=OFF; DROP VIEW temp.objects; PRAGMA query_only=ON;")
++            .unwrap();
++        let page = a
++            .page(
++                None,
++                PageBudget {
++                    rows: 1,
++                    record_bytes: 1024 * 1024,
++                    payload_bytes: MAX_CHUNK,
++                },
++                work(),
++            )
++            .unwrap();
++        assert_eq!(page.records[0].availability, Availability::Available);
++    }
+diff --git a/tests/evidence_inventory.rs b/tests/evidence_inventory.rs
+index b81251a..a43ef95 100644
+--- a/tests/evidence_inventory.rs
++++ b/tests/evidence_inventory.rs
+@@ -619 +619 @@ fn inventory_large_rows_stay_below_the_materialization_memory_ceiling() {
+-    for kind in ["object", "manifest"] {
++    for kind in ["object", "text-object", "manifest"] {
+@@ -630,0 +631,6 @@ fn inventory_large_rows_stay_below_the_materialization_memory_ceiling() {
++        } else if kind == "text-object" {
++            c.execute(
++                "UPDATE objects SET bytes=replace(hex(zeroblob(50331648)),'0','x') WHERE cid=?",
++                [f.id(1)],
++            )
++            .unwrap();
+@@ -984,0 +991,197 @@ fn empty_admitted_and_incomplete_retained_snapshots_do_not_claim_copy_readiness(
++
++#[test]
++fn wrong_sql_payload_types_are_corrupt_without_failing_healthy_neighbours() {
++    for profile in [Profile::Admitted, Profile::Copied] {
++        for index in [1, 2] {
++            for expression in ["CAST(bytes AS TEXT)", "123", "1.25"] {
++                let t = tempfile::tempdir().unwrap();
++                let f = fixture(t.path(), profile);
++                let before = f.open();
++                let old = before.page(None, page_budget(), budget()).unwrap();
++                let selected = &old
++                    .records
++                    .iter()
++                    .find(|r| r.record.sequence == index as u64 + 1)
++                    .unwrap()
++                    .selection;
++                let c = rusqlite::Connection::open(f.db()).unwrap();
++                c.execute(
++                    &format!("UPDATE objects SET bytes={expression} WHERE cid=?"),
++                    [f.id(index)],
++                )
++                .unwrap();
++                drop(c);
++                // Fresh source cannot accept even byte-identical TEXT after selection.
++                assert!(matches!(
++                    inventory::source(
++                        &f.db(),
++                        f.profile,
++                        f.binding.clone(),
++                        selected,
++                        service::MAX_REQUEST,
++                        budget()
++                    )
++                    .unwrap(),
++                    Source::Unavailable(Availability::Corrupt)
++                ));
++                drop(before);
++                let restarted = f.open();
++                let page = restarted.page(None, page_budget(), budget()).unwrap();
++                assert_eq!(page.records.len(), 3);
++                for row in page.records {
++                    let expected = if row.record.sequence == index as u64 + 1 {
++                        Availability::Corrupt
++                    } else {
++                        Availability::Available
++                    };
++                    assert_eq!(row.availability, expected);
++                    if expected == Availability::Available {
++                        assert!(matches!(
++                            inventory::source(
++                                &f.db(),
++                                f.profile,
++                                f.binding.clone(),
++                                &row.selection,
++                                service::MAX_REQUEST,
++                                budget()
++                            )
++                            .unwrap(),
++                            Source::Available { .. }
++                        ));
++                    }
++                }
++            }
++        }
++    }
++}
++
++#[test]
++fn startup_item_budget_counts_each_metadata_record_before_accepting_a_snapshot() {
++    let t = tempfile::tempdir().unwrap();
++    let f = fixture(t.path(), Profile::Admitted);
++    let mut limited = budget();
++    limited.items = 2;
++    assert_eq!(
++        Inventory::open(&f.db(), f.profile, f.binding.clone(), limited)
++            .err()
++            .unwrap()
++            .to_string(),
++        "invalid input: inventory audit budget exhausted"
++    );
++    let mut exact = budget();
++    exact.items = 3;
++    assert_eq!(
++        Inventory::open(&f.db(), f.profile, f.binding.clone(), exact)
++            .unwrap()
++            .frontier()
++            .through,
++        3
++    );
++}
++
++#[test]
++fn single_bit_blob_to_text_serial_type_damage_remains_browsable() {
++    // Regression derived from independent Opus probe_b5, whose two unsuccessful
++    // fixture attempts and final raw probe remain in the preserved review.
++    for profile in [Profile::Admitted, Profile::Copied] {
++        let t = tempfile::tempdir().unwrap();
++        let f = fixture(t.path(), profile);
++        let c = rusqlite::Connection::open(f.db()).unwrap();
++        c.execute_batch("PRAGMA journal_mode=DELETE; VACUUM;")
++            .unwrap();
++        drop(c);
++        let id = f.id(1);
++        let n = f.requests[1].len() as u64;
++        let varint = |v: u64| {
++            assert!(v < 16384);
++            if v >= 128 {
++                vec![0x80 | (v >> 7) as u8, (v & 0x7f) as u8]
++            } else {
++                vec![v as u8]
++            }
++        };
++        let mut pattern = varint(2 * id.len() as u64 + 13);
++        pattern.extend(varint(2 * n + 12));
++        let serial_end = pattern.len();
++        pattern.extend(id.as_bytes());
++        let original = std::fs::read(f.db()).unwrap();
++        let mut damaged = original.clone();
++        let hits: Vec<_> = damaged
++            .windows(pattern.len())
++            .enumerate()
++            .filter(|(_, w)| *w == pattern)
++            .map(|(i, _)| i)
++            .collect();
++        assert_eq!(hits.len(), 1);
++        damaged[hits[0] + serial_end - 1] ^= 1;
++        assert_eq!(
++            original
++                .iter()
++                .zip(&damaged)
++                .filter(|(a, b)| a != b)
++                .count(),
++            1
++        );
++        std::fs::write(f.db(), &damaged).unwrap();
++        let c = rusqlite::Connection::open(f.db()).unwrap();
++        assert_eq!(
++            c.query_row(
++                "SELECT typeof(bytes) FROM objects WHERE cid=?",
++                [&id],
++                |r| r.get::<_, String>(0)
++            )
++            .unwrap(),
++            "text"
++        );
++        drop(c);
++        let a = f.open();
++        let first = a
++            .page(
++                None,
++                PageBudget {
++                    rows: 1,
++                    ..page_budget()
++                },
++                budget(),
++            )
++            .unwrap();
++        assert_eq!(first.records[0].availability, Availability::Available);
++        let rest = a
++            .page(first.next.as_ref(), page_budget(), budget())
++            .unwrap();
++        assert_eq!(
++            rest.records
++                .iter()
++                .map(|r| (r.record.sequence, r.availability))
++                .collect::<Vec<_>>(),
++            vec![(2, Availability::Corrupt), (1, Availability::Available)]
++        );
++        assert!(rest.next.is_none());
++        assert!(matches!(
++            inventory::source(
++                &f.db(),
++                f.profile,
++                f.binding.clone(),
++                &rest.records[0].selection,
++                service::MAX_REQUEST,
++                budget()
++            )
++            .unwrap(),
++            Source::Unavailable(Availability::Corrupt)
++        ));
++        assert!(matches!(
++            inventory::source(
++                &f.db(),
++                f.profile,
++                f.binding.clone(),
++                &rest.records[1].selection,
++                service::MAX_REQUEST,
++                budget()
++            )
++            .unwrap(),
++            Source::Available { .. }
++        ));
++        drop(a);
++        assert_eq!(std::fs::read(f.db()).unwrap(), damaged);
++    }
++}

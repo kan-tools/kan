@@ -161,3 +161,19 @@ follow-ups. Its12 probes plus an author queue-repeat regression are now in CI;
 provenance are in `.design/reviews/kan-v2-overview-restart-opus/`. The production
 fix has not changed after that review. The broader browser matrix was collected
 before the restart fix; actual file download delivery remains unverified.
+
+## Recovery and reconstruction checkpoint (2026-10-19)
+
+Fresh actual Opus 5.5 session f4340dd8-27d1-4af5-9a11-982f98a676d0 reviewed
+frozen 7b44429 (PR #297): migration pre-open correction APPROVE; inventory
+corrections APPROVE WITH FOLLOW-UPS; recovery direction and pure decoder APPROVE
+WITH FOLLOW-UPS. Inventory adapter lifetime/WAL and interruption mapping remain
+required. Decoder strictness and explicit format decisions are being qualified
+before consumers. No parent frontend or reconstruction AC is complete.
+
+The recovery design now names the four residual design points: external-only
+restart provenance; forensic recovery for non-BLOB/unrepresentable cells;
+publication blocked by unrecoverable staged/orphan keys; and custody checks before
+any SQLite open. These owner-visible limitations must survive into job/API/UI
+behavior. DDL, wire fixtures, codec, writer, RPC and browser acceptance remain
+separate work; full sessions/search/annotations/views/day/admin stay on the roadmap.

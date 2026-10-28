@@ -1,0 +1,83 @@
+$ cargo test --features v2-crypto --test evidence_copy_destination --test zz_review_probe --no-fail-fast
+
+running 32 tests
+test copy_death_child ... ok
+test initialization_death_child ... ok
+test independent_sqlite_inventory_matches_the_copy_surface_catalog ... ok
+test admission_rechecks_original_membership_after_staging_under_writer_transaction ... ok
+test later_admission_can_share_an_original_staged_object_without_changing_membership ... ok
+test incomplete_copy_backup_remains_incomplete_and_resume_rejects_wrong_object_length ... ok
+test empty_record_history_is_incomplete_until_all_staged_objects_are_copied ... ok
+test concurrent_owner_batches_revalidate_under_the_writer_transaction ... ok
+test owner_cli_copy_preconditions_refuse_without_creating_output ... ok
+test owner_cli_plan_paths_cannot_be_sqlite_files_or_sidecars ... ok
+test owner_recipe_refusals_happen_before_destination_creation ... ok
+test owner_recipe_signer_and_profile_are_required_before_mutation ... ok
+test bounded_copy_preserves_original_bytes_and_acknowledged_proofs_before_new_admission ... ok
+test rebuild_death_child ... ok
+test pinned_wal_source_copies_its_original_snapshot_and_later_confirmation_refuses ... ok
+test plan_custody_refuses_sqlite_families_before_opening_or_writing ... FAILED
+test profile3_rejects_mixed_historical_issuers_with_a_specific_reason ... ok
+test owner_cli_pins_private_recipe_and_explicit_profile_through_lifecycle ... ok
+test profile3_rejects_retained_after_admission_and_admission_inside_original_prefix ... ok
+test sidecar_hardlink_identity_is_rejected_even_with_an_unrelated_plan_name ... ok
+test resume_refuses_self_consistent_foreign_object_prefix_before_advancing ... ok
+test unicode_reserved_plan_suffix_is_refused_even_before_any_sidecar_exists ... ok
+test interrupted_initialization_requires_explicit_resume_with_retained_recipe ... ok
+test resume_refuses_valid_foreign_receipt_prefix_before_signing_more_proofs ... ok
+test unicode_source_sidecar_plan_is_refused_before_a_fresh_sqlite_reader_can_consume_it ... ok
+test unicode_sidecar_aliases_refuse_before_copy_resume_and_preserve_the_plan ... ok
+test rebuild_repairs_derived_columns_and_keeps_authoritative_copy_bytes ... ok
+test byte_budget_never_splits_objects_or_admits_before_complete_source ... ok
+test profile3_schema_drift_refuses_open_verify_resume_and_stale_handle_backup ... ok
+test rebuild_refuses_lost_or_replaced_authoritative_evidence_without_publishing_profile ... ok
+test rebuild_process_death_publishes_all_copy_authority_or_no_profile ... ok
+test every_copy_transaction_boundary_resumes_without_replacing_acknowledged_bytes ... ok
+
+failures:
+
+---- plan_custody_refuses_sqlite_families_before_opening_or_writing stdout ----
+
+thread 'plan_custody_refuses_sqlite_families_before_opening_or_writing' (9825873) panicked at tests/evidence_copy_destination.rs:1079:10:
+called `Result::unwrap_err()` on an `Ok` value: ()
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    plan_custody_refuses_sqlite_families_before_opening_or_writing
+
+test result: FAILED. 31 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 7.14s
+
+
+running 8 tests
+test probe_a2_backup_and_rebuild_refuse_aliases ... ok
+test probe_b5_single_bit_serial_type_flip_on_disk ... ok
+test probe_b2_unrelated_object_row_damage_blast_radius ... ok
+test probe_a1_all_observed_fs_aliases_refused_by_real_entry_points ... ok
+test probe_b4_profile3_admitted_suffix_and_snapshot_isolation ... ok
+test probe_b1_text_typed_payload_classification ... ok
+test probe_a3_cli_copy_plan_existing_alias_output_is_preserved ... ok
+test probe_b3_page_scan_latency_and_production_cancellation ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.55s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-degraded-inventory/.local-state/reviews/inventory)
+warning: variable does not need to be mutable
+   --> tests/zz_review_probe.rs:145:9
+    |
+145 |     let mut a = copied::Archive::create(
+    |         ----^
+    |         |
+    |         help: remove this `mut`
+    |
+    = note: `#[warn(unused_mut)]` (part of `#[warn(unused)]`) on by default
+
+warning: `kan` (test "zz_review_probe") generated 1 warning (run `cargo fix --test "zz_review_probe" -p kan` to apply 1 suggestion)
+    Finished `test` profile [unoptimized] target(s) in 7.06s
+     Running tests/evidence_copy_destination.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_copy_destination-3ab9695f6c2b8977)
+error: test failed, to rerun pass `--test evidence_copy_destination`
+     Running tests/zz_review_probe.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/zz_review_probe-5ac9d0272f6d8948)
+error: 1 target failed:
+    `--test evidence_copy_destination`
+
+exit=101 elapsed=16.4s

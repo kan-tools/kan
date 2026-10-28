@@ -22,7 +22,7 @@ categories = ["command-line-utilities", "development-tools"]
 [features]
 # Draft RFC 4 reference API. No production caller or stable wire promise.
 evidence-contract = []
-v2-storage = ["evidence-contract", "rusqlite/backup", "rusqlite/limits"]
+v2-storage = ["evidence-contract", "rusqlite/backup", "rusqlite/limits", "rusqlite/hooks"]
 v2-service = ["v2-storage", "dep:hyper", "dep:hyper-util", "dep:http-body-util", "dep:reqwest", "tokio/net", "tokio/time", "tokio/sync"]
 v2-crypto = ["v2-service", "dep:hpke", "dep:rustls", "dep:tokio-rustls", "tokio/io-std", "tokio/signal"]
 

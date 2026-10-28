@@ -1,0 +1,22 @@
+
+running 1 test
+test evidence_store::inventory::tests::page_installs_vm_limits_after_startup_removes_its_handler ... FAILED
+
+failures:
+
+---- evidence_store::inventory::tests::page_installs_vm_limits_after_startup_removes_its_handler stdout ----
+
+thread 'evidence_store::inventory::tests::page_installs_vm_limits_after_startup_removes_its_handler' (9847350) panicked at src/evidence_store/inventory.rs:698:13:
+page did not install its production VM callback
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    evidence_store::inventory::tests::page_installs_vm_limits_after_startup_removes_its_handler
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 78 filtered out; finished in 3.11s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-degraded-inventory)
+    Finished `test` profile [unoptimized] target(s) in 6.15s
+     Running unittests src/lib.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/kan-480f4f845bac8ec9)
+error: test failed, to rerun pass `--lib`

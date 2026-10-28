@@ -1,0 +1,8 @@
+FAILED METHOD (retained): 00b/99b used `git hash-object --no-filters --stdin-paths` with relative paths from
+inside the export. Git resolved those paths against the PARENT worktree root, not the export. At 00b the
+parent worktree still equalled 2f6a309 (0 mismatches); by 99b another session had committed 994c63b and
+edited five files in the parent worktree, so 99b reported 5 "mismatches" that concern the parent worktree,
+not the export. Neither 00b nor 99b is evidence about export bytes. The authoritative checks are
+verify_identity.py (SHA-256 of export files vs manifest) and 99d (absolute export paths).
+Also: BSD patch -R wrote src/evidence_store.rs.orig (byte-identical to the frozen file, sha256
+7761f41a...); it was deleted after the run.

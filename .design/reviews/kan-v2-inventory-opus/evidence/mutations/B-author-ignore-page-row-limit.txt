@@ -1,0 +1,49 @@
+$ cargo test --features v2-crypto --test evidence_inventory --no-fail-fast
+
+running 15 tests
+test inventory_large_row_worker ... ok
+test issuer_attested_available_metadata_does_not_replace_original_writer_verification ... ok
+test descending_pages_and_budgets_preserve_exact_frontiers ... FAILED
+test empty_admitted_and_incomplete_retained_snapshots_do_not_claim_copy_readiness ... ok
+test read_only_inventory_preserves_main_and_retained_wal_bytes ... ok
+test byte_limited_pages_and_wrong_context_cursors_never_report_false_coverage ... FAILED
+test complete_retained_metadata_requires_exact_original_inventory_and_recipe ... ok
+test oversized_payload_is_classified_by_length_without_full_materialization ... ok
+test selected_valid_same_height_proof_replacement_is_rejected ... ok
+test maximum_service_request_is_available_under_the_metadata_allocation_limit ... ok
+test source_rechecks_current_payload_and_selected_metadata_in_a_fresh_transaction ... ok
+test inventory_purpose_checks_pin_specific_refusals_before_recipe_digest_checks ... ok
+test inventory_large_rows_stay_below_the_materialization_memory_ceiling ... ok
+test missing_and_corrupt_tip_or_middle_remain_visible_after_restart_with_healthy_neighbours ... ok
+test owner_schema_and_metadata_failures_are_never_unavailable_badges ... ok
+
+failures:
+
+---- descending_pages_and_budgets_preserve_exact_frontiers stdout ----
+
+thread 'descending_pages_and_budgets_preserve_exact_frontiers' (9828969) panicked at tests/evidence_inventory.rs:334:9:
+assertion `left == right` failed
+  left: 3
+ right: 1
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- byte_limited_pages_and_wrong_context_cursors_never_report_false_coverage stdout ----
+
+thread 'byte_limited_pages_and_wrong_context_cursors_never_report_false_coverage' (9828967) panicked at tests/evidence_inventory.rs:816:5:
+assertion failed: other.open().page(first.next.as_ref(), page_budget(), budget()).is_err()
+
+
+failures:
+    byte_limited_pages_and_wrong_context_cursors_never_report_false_coverage
+    descending_pages_and_budgets_preserve_exact_frontiers
+
+test result: FAILED. 13 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5.41s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-degraded-inventory/.local-state/reviews/inventory)
+    Finished `test` profile [unoptimized] target(s) in 7.23s
+     Running tests/evidence_inventory.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_inventory-c64c1fa4419bff69)
+error: test failed, to rerun pass `--test evidence_inventory`
+error: 1 target failed:
+    `--test evidence_inventory`
+
+exit=101 elapsed=13.0s

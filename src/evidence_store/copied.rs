@@ -78,7 +78,7 @@ fn configured(binding: &attested::Binding, plan: &Plan) -> Result<()> {
     }
     Ok(())
 }
-fn stored_plan(conn: &Connection, binding: &attested::Binding) -> Result<Plan> {
+pub(super) fn stored_plan(conn: &Connection, binding: &attested::Binding) -> Result<Plan> {
     let count: i64 = conn.query_row("SELECT count(*) FROM upgrade_plan", [], |r| r.get(0))?;
     let (length, bytes): (i64, Vec<u8>) = conn.query_row(
         "SELECT length(envelope),substr(envelope,1,4096) FROM upgrade_plan WHERE singleton=1",

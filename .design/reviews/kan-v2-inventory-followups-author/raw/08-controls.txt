@@ -1,0 +1,5 @@
+DEMONSTRATED: omit-payload-storage-class
+DEMONSTRATED: omit-page-vm-configuration
+DEMONSTRATED: omit-startup-record-budget
+DEMONSTRATED: indexed-large-row-materialization
+4 controls; restored integration and VM suites passed.
