@@ -459,8 +459,16 @@ impl Inventory {
     }
     /// Transfer the same pinned, metadata-audited transaction to offline restore.
     /// This is not payload verification or permission to modify its source.
-    pub(crate) fn into_recovery(self) -> RecoveryReader {
-        self.reader
+    pub(crate) fn into_recovery(self) -> Result<RecoveryReader> {
+        // The audit uses a tighter metadata allocation bound. Payload recovery
+        // must accept valid objects up to MAX_CHUNK, without reopening the
+        // source or losing the audited transaction. Keep recovery's existing
+        // finite SQLite bound and its independent length/CID checks.
+        self.reader.ledger.conn.set_limit(
+            rusqlite::limits::Limit::SQLITE_LIMIT_LENGTH,
+            RECOVERY_SQLITE_LENGTH_LIMIT,
+        )?;
+        Ok(self.reader)
     }
     /// Metadata/inventory commitment only; not payload completeness or admission readiness.
     pub fn recipe_metadata_match(&self) -> Option<bool> {

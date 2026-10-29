@@ -415,7 +415,7 @@ pub fn restore_proof(
         },
     )?;
     restore_reader(
-        inventory.into_recovery(),
+        inventory.into_recovery()?,
         destination,
         pins,
         Some(binding),

@@ -1,5 +1,7 @@
 # Kan 2.0.0-beta.1 release candidate
 
+
+**Publication held (2026-10-29):** the isolated real-data rehearsal found a proof-restore payload-limit defect, three unfinished imports and an unexecuted URI comparison path. Targeted repairs, retained-copy validation and review must pass before publication approval. Earlier synthetic gates do not waive these findings.
 Updated 2026-10-28. **Qualified candidate; unpublished.** The owner authorized
 executing this plan, including the sequenced stack merges and final-main
 qualification, on 2026-10-28. Tag push, registry publication, deployment and live

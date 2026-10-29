@@ -67,6 +67,26 @@ The full all-writer matrix remains a prepublication gate. Tag/publication approv
 live deployment and migration remain separate. Earlier completion-table positions
 below are historical snapshots superseded by the retained qualification/reviews.
 
+### Real local-data rehearsal — 2026-10-29
+
+The isolated enkidu rehearsal of 107 selected sources (including worktrees and
+backup copies) blocks publication despite the earlier synthetic gates. Sixty-six
+sources passed byte restoration, 36 proof restores hit SQLite's inherited 256 KiB
+metadata limit, three imports exceeded the rehearsal's 30-minute budget, and two
+selections were empty. Originals and remote baselines were verified unchanged.
+Seven clone activations passed; 57 refused uninterpreted repository semantics;
+all applicable rollbacks passed. Refusal is not authorization to discard evidence.
+
+The targeted repair restores the existing bounded recovery payload limit only
+when transferring the audited inventory transaction to offline restoration.
+Admitted/copied regression coverage uses a payload above the metadata bound and
+requires corrupted ciphertext refusal. Metadata auditing, CID verification and
+source immutability remain required. Qualification and targeted review are pending.
+The read-side rehearsal helper also needs trust selection before enumerating URI
+samples; its first pass ran zero comparisons, so URI equivalence is not established.
+Timeout diagnostics and validation reuse retained disposable copies and backups;
+no live migration, publication or automatic main merge is authorized by this repair.
+
 ### Completion checklist
 
 Mark a row complete only when its backend, shared API/CLI where applicable, human
