@@ -167,6 +167,37 @@ persistence helper, with an immediate annotation and independent mutation count.
 The production guard and all lock/security assertions are unchanged. The new
 lease regressions still require a remote runtime pass.
 
+### Recovery review follow-ups and advisory-lock audit — 2026-10-30
+
+`64616d7` passed all 56 checks, 19 browser groups, four substantive jobs,
+packaged builds and all installation modes. All five recovery CLI tests and
+three key-history lease tests passed. The actual isolated command drill recovered
+one selected disposable key from offhost copies and restored 1,961 retained files
+(123,387,890 bytes) with original keys unavailable. The exact source and binary,
+mounts, refusal diagnostics and unchanged backup were independently checked.
+Actual Opus 5.5 review returned **APPROVE WITH FOLLOW-UPS**, without blockers.
+This qualifies one representative key/archive recovery, not whole-instance,
+multi-epoch, all-source or production credential custody.
+
+The owner authorized a bounded cleanup and remaining-lock audit before separate
+merge approval. Recovery now rejects non-UTF-8 output paths before writes, labels
+input errors, and documents digest authenticity and trusted-ancestor assumptions.
+CLI refusal assertions include specific errors and no success output; package
+checks cover hex-encoded secrets. A production-write-path regression covers a
+package appearing after preflight, retaining the secret and refusing reuse.
+
+The audit found close-only holders in policy history, erasure history, backup
+inspection, backup purge and migration coordination, plus a legacy log guard
+constructed too late for fence-check errors. Their deliberate ownership now ends
+with explicit unlock, including moves, errors and task-result disposal. Existing
+shared/exclusive acquisition and purge upgrades remain intact. Deterministic
+regressions cover inherited descriptors, independent readers, moved/error owners,
+replacement locks and legacy fence-check failure. See
+[the audit](../docs/ADVISORY-LOCK-AUDIT.md). Test-only fixture permissions remain
+explicitly inventoried through the Container facade. No formats, admission rules,
+authority or retry policy changed. Current remote CI and a focused actual review
+are still required; these new tests have not been run locally.
+
 ### Completion checklist
 
 Mark a row complete only when its backend, shared API/CLI where applicable, human

@@ -3,6 +3,7 @@
 use crate::{
     evidence_proof_service::Binding,
     evidence_service::{self as service, Failure, Grant},
+    file_lease::FileLease,
     sign::Identity,
 };
 use serde::{Deserialize, Serialize};
@@ -45,7 +46,7 @@ pub struct Record {
     pub signature: String,
 }
 pub struct Current {
-    _lease: std::fs::File,
+    _lease: FileLease,
     record: Record,
 }
 impl Current {
@@ -54,7 +55,7 @@ impl Current {
     }
 }
 pub struct Snapshot {
-    _lease: std::fs::File,
+    _lease: FileLease,
     pub history: Vec<Record>,
     pub tip: Option<String>,
 }
@@ -149,7 +150,7 @@ impl Access {
             .map_err(invalid)?;
         Ok(())
     }
-    fn lease(&self, exclusive: bool) -> Result<std::fs::File> {
+    fn lease(&self, exclusive: bool) -> Result<FileLease> {
         self.validate()?;
         let path = self.directory.join("LOCK");
         private(&path, false, 0)?;
@@ -160,12 +161,12 @@ impl Access {
             fs4::FileExt::try_lock_shared(&file)
         }
         .map_err(|_| Failure::Unavailable)?;
-        Ok(file)
+        Ok(FileLease(file))
     }
     pub fn read(&self) -> Result<Snapshot> {
         self.read_locked(self.lease(false)?)
     }
-    fn read_locked(&self, lease: std::fs::File) -> Result<Snapshot> {
+    fn read_locked(&self, lease: FileLease) -> Result<Snapshot> {
         let mut names = Vec::new();
         let mut pending = 0;
         for entry in std::fs::read_dir(&self.directory).map_err(invalid)? {
@@ -429,4 +430,71 @@ fn normalize(mut grants: Vec<Grant>) -> Result<Vec<Grant>> {
     }
     grants.sort_by(|a, b| a.principal.cmp(&b.principal));
     Ok(grants)
+}
+
+#[cfg(all(test, unix))]
+mod lease_tests {
+    use super::*;
+    fn access(directory: &Path) -> Access {
+        use std::os::unix::fs::PermissionsExt;
+        // Test-only fixture: real custody requires a private directory.
+        // surface-write: container:workspace
+        crate::persistence::set_permissions(
+            crate::persistence::SurfaceWrite::Container,
+            directory,
+            std::fs::Permissions::from_mode(0o700),
+        )
+        .unwrap();
+        let owner = Identity::generate().did().to_string();
+        let access = Access {
+            directory: directory.to_owned(),
+            binding: Binding {
+                profile: crate::evidence_proof_service::Profile::Admitted,
+                archive: service::hex(&[2; 32]),
+                scope: service::hex(&[1; 32]),
+                issuer: owner.clone(),
+            },
+            owner,
+            minimum: None,
+        };
+        access.initialize().unwrap();
+        access
+    }
+    #[test]
+    fn snapshot_ownership_retains_independent_readers_and_releases_inherited_descriptor() {
+        let dir = tempfile::tempdir().unwrap();
+        let access = access(dir.path());
+        let first = access.read().unwrap();
+        let inherited = first._lease.0.try_clone().unwrap();
+        let other = access.read().unwrap();
+        drop(first);
+        assert!(matches!(access.lease(true), Err(Failure::Unavailable)));
+        drop(other);
+        let replacement = access.lease(true).unwrap();
+        drop(inherited);
+        assert!(matches!(access.read(), Err(Failure::Unavailable)));
+        drop(replacement);
+        access.read().unwrap();
+    }
+    #[test]
+    fn rejected_history_releases_moved_lease_but_not_an_independent_reader() {
+        let dir = tempfile::tempdir().unwrap();
+        let access = access(dir.path());
+        let other = access.read().unwrap();
+        let lease = access.lease(false).unwrap();
+        let inherited = lease.0.try_clone().unwrap();
+        let mut unsupported = access.clone();
+        unsupported.minimum = Some(service::hex(&[9; 32]));
+        assert!(matches!(
+            unsupported.read_locked(lease),
+            Err(Failure::AccessLimited)
+        ));
+        assert!(matches!(access.lease(true), Err(Failure::Unavailable)));
+        drop(other);
+        let replacement = access.lease(true).unwrap();
+        drop(inherited);
+        assert!(matches!(access.read(), Err(Failure::Unavailable)));
+        drop(replacement);
+        access.read().unwrap();
+    }
 }

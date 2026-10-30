@@ -42,6 +42,8 @@ pub mod evidence_restore;
 pub mod evidence_service;
 #[cfg(feature = "v2-storage")]
 pub mod evidence_store;
+#[cfg(feature = "v2-storage")]
+mod file_lease;
 pub mod fold;
 pub mod git;
 pub mod identity;

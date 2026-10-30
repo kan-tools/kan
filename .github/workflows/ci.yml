@@ -166,6 +166,13 @@ jobs:
           cargo test --features v2-crypto --lib evidence_operations::tests
           cargo test --features v2-crypto --lib evidence_workspace::lease_tests
           cargo test --features v2-crypto --lib evidence_keys::lease_tests
+          cargo test --features v2-crypto --lib file_lease::lease_tests
+          cargo test --features v2-crypto --lib evidence_policy::lease_tests
+          cargo test --features v2-crypto --lib evidence_erasure_history::lease_tests
+          cargo test --features v2-crypto --lib store::log::lease_tests
+          cargo test --features v2-crypto --lib evidence_library::owner::migration::lease_tests
+          cargo test --features v2-crypto --lib evidence_library::owner::backup_purge::lease_tests
+          cargo test --features v2-crypto --lib evidence_recovery_setup::recovery_tests
       - id: check_36_evidence_operations_projection_tests
         continue-on-error: ${{ github.event_name == 'workflow_dispatch' && inputs.collect_all }}
         run: cargo test --features v2-crypto --lib evidence_operations::projection::tests
@@ -425,6 +432,10 @@ jobs:
           else
             cargo test --no-default-features --features kan-v1 ${{ github.event_name == 'workflow_dispatch' && inputs.collect_all && '--no-fail-fast' || '' }} --test keychain_identity --test at_rest_guards --test keychain_one_door
           fi
+        timeout-minutes: 45
+
+      - name: Advisory lock lifetime regressions (macOS)
+        run: cargo test --features v2-crypto --lib lease_tests
         timeout-minutes: 45
 
   diagnostic_summary:

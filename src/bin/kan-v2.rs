@@ -1437,13 +1437,19 @@ fn run(#[allow(unused_mut)] mut cli: Cli) -> Result<(), Box<dyn std::error::Erro
                     package,
                     recovery_key,
                 } => {
-                    let binding = serde_json::from_slice(&bounded_read(
-                        std::fs::File::open(binding)?,
-                        65536,
-                    )?)?;
+                    let binding = serde_json::from_slice(
+                        &bounded_read(
+                            std::fs::File::open(binding)
+                                .map_err(|e| format!("recovery binding input: {e}"))?,
+                            65536,
+                        )
+                        .map_err(|e| format!("recovery binding input: {e}"))?,
+                    )
+                    .map_err(|e| format!("recovery binding JSON: {e}"))?;
                     kan::evidence_recovery_setup::setup(
                         binding,
-                        &service_identity(&signing_key)?,
+                        &service_identity(&signing_key)
+                            .map_err(|e| format!("recovery signing key: {e}"))?,
                         &recipient_key,
                         &expected_recipient,
                         &package,

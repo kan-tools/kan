@@ -561,6 +561,14 @@ const PERSISTENCE_MODULES: &[&str] = &[
     "src/workspace.rs",
 ];
 const PERSISTENCE_MUTATION_SITES: &[(&str, &str, &str, usize)] = &[
+    // Test-only private custody fixtures, included in exact source inventory.
+    ("src/evidence_policy.rs", "set_permissions", "Container", 1),
+    (
+        "src/evidence_erasure_history.rs",
+        "set_permissions",
+        "Container",
+        1,
+    ),
     (
         "src/evidence_recovery_setup.rs",
         "write_new_owner_only",

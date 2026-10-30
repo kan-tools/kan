@@ -264,9 +264,10 @@ pub struct Log {
 
 /// Holds the exclusive write lock for as long as it is alive.
 ///
-/// `flock` is released by the OS when the file descriptor closes, so a
-/// crashed or killed writer cannot leave the log permanently locked — which
-/// is the property an `O_EXCL` lockfile would not have given us.
+/// Explicit owner drop unlocks even when a raw descriptor was inherited.
+/// On process death the OS releases the lock when its last descriptor closes;
+/// an inheriting process can prolong that crash-time lifetime. Unlike an
+/// `O_EXCL` sentinel, no stale file alone represents ownership.
 struct WriteGuard {
     file: std::fs::File,
 }
@@ -445,6 +446,27 @@ impl LogSurface {
 }
 
 impl WriteGuard {
+    fn check_unfenced(self, lock_path: &Path) -> std::io::Result<Self> {
+        let directory = lock_path
+            .parent()
+            .ok_or_else(|| std::io::Error::other("missing log directory"))?;
+        let workspace_fence = directory
+            .parent()
+            .filter(|p| p.file_name().is_some_and(|n| n == ".kan"))
+            .map(|p| p.join("V2_FENCE"));
+        if directory.join("V2_FENCE").try_exists()?
+            || workspace_fence
+                .map(|p| p.try_exists())
+                .transpose()?
+                .unwrap_or(false)
+        {
+            return Err(std::io::Error::other(
+                "v1 writes fenced for Kan v2 migration; use owner rollback to resume",
+            ));
+        }
+        Ok(self)
+    }
+
     /// Explicit release, so the lock's lifetime is visible at the call site
     /// rather than resting on where a binding happens to drop.
     fn release(self) {
@@ -454,8 +476,8 @@ impl WriteGuard {
 
 impl Drop for WriteGuard {
     fn drop(&mut self) {
-        // Best-effort: closing the descriptor releases the lock regardless,
-        // so a failure here cannot strand it.
+        // Explicitly unlock: close alone can retain the lock through an inherited
+        // descriptor. This guard is also held during fence checks.
         let _ = fs4::FileExt::unlock(&self.file);
     }
 }
@@ -1040,31 +1062,15 @@ impl Log {
         // `fs4`'s blocking `lock()` on a `std::fs::File`, moved off the async
         // runtime: it parks the calling thread until the lock is available,
         // which would stall other tasks on a shared worker thread.
-        let file = tokio::task::spawn_blocking(move || -> std::io::Result<std::fs::File> {
+        let file = tokio::task::spawn_blocking(move || -> std::io::Result<WriteGuard> {
             let file = surface.open_lock(&lock_path)?;
             fs4::FileExt::lock(&file)?;
-            let directory = lock_path
-                .parent()
-                .ok_or_else(|| std::io::Error::other("missing log directory"))?;
-            let workspace_fence = directory
-                .parent()
-                .filter(|p| p.file_name().is_some_and(|n| n == ".kan"))
-                .map(|p| p.join("V2_FENCE"));
-            if directory.join("V2_FENCE").try_exists()?
-                || workspace_fence
-                    .map(|p| p.try_exists())
-                    .transpose()?
-                    .unwrap_or(false)
-            {
-                return Err(std::io::Error::other(
-                    "v1 writes fenced for Kan v2 migration; use owner rollback to resume",
-                ));
-            }
-            Ok(file)
+            let guard = WriteGuard { file };
+            guard.check_unfenced(&lock_path)
         })
         .await
         .expect("lock task panicked")?;
-        Ok(WriteGuard { file })
+        Ok(file)
     }
 
     /// Rebuild in-memory state from disk if another process has moved `HEAD`
@@ -2146,5 +2152,30 @@ mod claim_collection_migration_tests {
             Log::open_or_create(&path, &identity).await,
             Err(Error::BadSignature)
         ));
+    }
+}
+
+#[cfg(all(test, unix))]
+mod lease_tests {
+    use super::*;
+    #[test]
+    fn fence_check_error_releases_inherited_lock_before_replacement() {
+        let path = tempfile::NamedTempFile::new().unwrap();
+        let file = std::fs::File::open(path.path()).unwrap();
+        fs4::FileExt::try_lock(&file).unwrap();
+        let owner = WriteGuard { file };
+        let inherited = owner.file.try_clone().unwrap();
+        // A regular file cannot be the log's parent directory: try_exists must
+        // fail. Exercise the actual post-acquisition fence-check error path.
+        assert!(owner.check_unfenced(&path.path().join("LOCK")).is_err());
+        let replacement = std::fs::File::open(path.path()).unwrap();
+        fs4::FileExt::try_lock(&replacement).unwrap();
+        let replacement = WriteGuard { file: replacement };
+        drop(inherited);
+        let reader = std::fs::File::open(path.path()).unwrap();
+        assert!(fs4::FileExt::try_lock_shared(&reader).is_err());
+        drop(replacement);
+        fs4::FileExt::try_lock(&reader).unwrap();
+        drop(WriteGuard { file: reader });
     }
 }

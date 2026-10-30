@@ -54,7 +54,15 @@ Successful JSON output includes `package_sha256`, the public recipients and
 `key_recovery_verified: true`. Retain that SHA-256 pin independently, for example
 in your recovery inventory. It authenticates the exact package; reading the pin
 only from a possibly replaced package provides no independent protection.
-Private keys are never printed or accepted as inline CLI values.
+Output paths must be UTF-8; unsupported paths are rejected before any files are
+written. Private keys are never printed or accepted as inline CLI values.
+
+Use directories controlled by the intended account, beneath trusted ancestors.
+The command checks canonical paths, immediate-parent privacy, file permissions,
+single links and inode consistency. It does not verify directory uid ownership
+or every ancestor's writability, and it does not defend against a malicious
+same-uid process or an attacker replacing ancestors between checks and opens.
+Protect those locations with account isolation and storage access controls.
 
 The command writes and synchronizes the secret first, then the package. A failed
 or interrupted invocation can leave a secret or partial package. It retains these
@@ -83,7 +91,13 @@ kan recovery verify \
 ```
 
 Verification is read-only. It checks the exact package digest, signed record chain,
-archive binding, recovery recipient and recovered private/public correspondence.
+internal agreement of its owner, archive binding and recovery recipient, and
+recovered private/public correspondence. Those values come from the package;
+verification does not compare them with a separately configured archive. The
+independently retained SHA-256 pin authenticates the exact package you accepted
+at setup. Keep that pin in a trusted record independent of the package: replacing
+both package and pin is outside this verification guarantee. Check setup's public
+metadata against your archive configuration before retaining the pin.
 Missing/wrong secrets, changed signatures, malformed or oversized packages,
 symlinks, multiply linked files and permissive file permissions refuse recovery.
 A successful result does not prove independent storage or archive restoration;

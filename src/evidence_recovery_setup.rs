@@ -24,6 +24,9 @@ fn digest(bytes: &[u8]) -> String {
 // Explicit canonical paths and existing private directories avoid creating an
 // unexpected tree or following a symlink in the output's ancestry.
 fn parent(path: &Path) -> Result<PathBuf> {
+    if path.to_str().is_none() {
+        return Err("recovery paths must be UTF-8; no files were written".into());
+    }
     if !cfg!(unix)
         || !path.is_absolute()
         || path.file_name().is_none()
@@ -86,7 +89,7 @@ fn read_package(path: &Path) -> Result<Vec<u8>> {
     Ok(bytes)
 }
 fn checked(package: &Path, secret: &Path, expected: &str) -> Result<(RecoveryPackage, [u8; 32])> {
-    let bytes = read_package(package)?;
+    let bytes = read_package(package).map_err(|e| format!("recovery package: {e}"))?;
     if digest(&bytes) != expected {
         return Err(
             "recovery package does not match the independently retained SHA-256 pin".into(),
@@ -105,9 +108,11 @@ fn checked(package: &Path, secret: &Path, expected: &str) -> Result<(RecoveryPac
         recovery_recipient: p.recovery_recipient.clone(),
         minimum: p.tip.clone(),
     };
-    access.verify_package(&p)?;
-    parent(secret)?;
-    let recovery = crypto::read_private_key(secret)?;
+    access
+        .verify_package(&p)
+        .map_err(|e| format!("recovery package signature or binding: {e}"))?;
+    parent(secret).map_err(|e| format!("recovery secret parent: {e}"))?;
+    let recovery = crypto::read_private_key(secret).map_err(|e| format!("recovery secret: {e}"))?;
     let key = p.records[0].change.unlock(&recovery)?;
     Ok((p, key))
 }
@@ -128,8 +133,8 @@ pub fn setup(
     package: &Path,
     secret: &Path,
 ) -> Result<Value> {
-    let package_parent = new_path(package)?;
-    let secret_parent = new_path(secret)?;
+    let package_parent = new_path(package).map_err(|e| format!("recovery package output: {e}"))?;
+    let secret_parent = new_path(secret).map_err(|e| format!("recovery secret output: {e}"))?;
     if package_parent.starts_with(&secret_parent) || secret_parent.starts_with(&package_parent) {
         return Err(
             "package and recovery secret need separate, non-nested private directories".into(),
@@ -144,7 +149,8 @@ pub fn setup(
             return Err("package and secret directories alias".into());
         }
     }
-    let key = crypto::read_private_key(recipient_key)?;
+    let key = crypto::read_private_key(recipient_key)
+        .map_err(|e| format!("operational recipient key: {e}"))?;
     if hex(&crypto::public_key(&key)?) != expected_recipient {
         return Err("selected key does not match the expected archive recipient".into());
     }
@@ -156,22 +162,14 @@ pub fn setup(
     }
     let bytes = serde_json::to_vec_pretty(&p)?;
     let sha = digest(&bytes);
-    // Write the secret first: if a later step fails, retain it and the partial
-    // package for diagnosis. Never overwrite an existing secret or package.
-    // surface-write: evidence-keys:recovery-secret
-    crate::persistence::write_new_owner_only(
-        crate::persistence::SurfaceWrite::EvidenceKeys,
-        secret,
-        &recovery,
-    )?;
-    fs::File::open(&secret_parent)?.sync_all()?;
-    // surface-write: evidence-keys:recovery-package
-    crate::persistence::write_new_owner_only(
-        crate::persistence::SurfaceWrite::EvidenceKeys,
+    write_pair(
         package,
+        &package_parent,
+        secret,
+        &secret_parent,
+        &recovery,
         &bytes,
     )?;
-    fs::File::open(&package_parent)?.sync_all()?;
     let (verified, readback) = checked(package, secret, &sha)?;
     if readback != key {
         return Err("written recovery package changed the selected key".into());
@@ -193,7 +191,7 @@ pub fn verify(package: &Path, secret: &Path, expected: &str) -> Result<Value> {
     Ok(summary(&p, expected))
 }
 pub fn restore(package: &Path, secret: &Path, expected: &str, output: &Path) -> Result<Value> {
-    let output_parent = new_path(output)?;
+    let output_parent = new_path(output).map_err(|e| format!("recovered key output: {e}"))?;
     let (p, key) = checked(package, secret, expected)?;
     // surface-write: evidence-keys:recovered-recipient-key
     crate::persistence::write_new_owner_only(
@@ -209,4 +207,73 @@ pub fn restore(package: &Path, secret: &Path, expected: &str, output: &Path) -> 
     report["status"] = json!("restored-to-new-file");
     report["output"] = json!(output);
     Ok(report)
+}
+
+// Preflight belongs to setup; create-new is still authoritative if a path changes
+// after preflight. Keep interrupted outputs, including on package creation failure.
+fn write_pair(
+    package: &Path,
+    package_parent: &Path,
+    secret: &Path,
+    secret_parent: &Path,
+    recovery: &[u8; 32],
+    bytes: &[u8],
+) -> Result<()> {
+    // Write the secret first: if a later step fails, retain it and the partial
+    // package for diagnosis. Never overwrite an existing secret or package.
+    // surface-write: evidence-keys:recovery-secret
+    crate::persistence::write_new_owner_only(
+        crate::persistence::SurfaceWrite::EvidenceKeys,
+        secret,
+        recovery,
+    )?;
+    fs::File::open(secret_parent)?.sync_all()?;
+    // surface-write: evidence-keys:recovery-package
+    crate::persistence::write_new_owner_only(
+        crate::persistence::SurfaceWrite::EvidenceKeys,
+        package,
+        bytes,
+    )?;
+    fs::File::open(package_parent)?.sync_all()?;
+    Ok(())
+}
+
+#[cfg(all(test, unix))]
+mod recovery_tests {
+    use super::*;
+
+    #[test]
+    fn package_creation_failure_retains_secret_and_never_reuses_partial_outputs() {
+        let dir = tempfile::tempdir().unwrap();
+        let package = tempfile::NamedTempFile::new_in(dir.path()).unwrap();
+        let secret = dir.path().join("secret");
+        // Models a package appearing after setup's preflight. Real create-new
+        // must fail after the secret was durably written; no production fault hook.
+        let error = write_pair(
+            package.path(),
+            dir.path(),
+            &secret,
+            dir.path(),
+            &[7; 32],
+            b"package",
+        )
+        .unwrap_err();
+        assert_eq!(
+            error.downcast_ref::<std::io::Error>().unwrap().kind(),
+            std::io::ErrorKind::AlreadyExists
+        );
+        assert_eq!(fs::read(&secret).unwrap(), [7; 32]);
+        assert!(fs::read(package.path()).unwrap().is_empty());
+        assert!(write_pair(
+            package.path(),
+            dir.path(),
+            &secret,
+            dir.path(),
+            &[8; 32],
+            b"other"
+        )
+        .is_err());
+        assert_eq!(fs::read(&secret).unwrap(), [7; 32]);
+        assert!(fs::read(package.path()).unwrap().is_empty());
+    }
 }

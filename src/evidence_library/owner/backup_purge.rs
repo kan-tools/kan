@@ -1,6 +1,7 @@
 //! Explicit purge of one verified completed backup output. Authorization and
 //! progress stay in the encrypted owner journal; no source archive is modified.
 use super::*;
+use crate::file_lease::FileLease;
 use std::{
     io::Read,
     time::{Duration, Instant},
@@ -19,7 +20,7 @@ pub struct Plan {
 fn unavailable<E>(_: E) -> Failure {
     Failure::Unavailable
 }
-fn private_file(path: &Path) -> Result<std::fs::File, Failure> {
+fn private_file(path: &Path) -> Result<FileLease, Failure> {
     let meta = std::fs::symlink_metadata(path).map_err(|e| {
         if e.kind() == std::io::ErrorKind::NotFound {
             Failure::Missing
@@ -41,7 +42,8 @@ fn private_file(path: &Path) -> Result<std::fs::File, Failure> {
     // macOS coordinates flock with SQLite's locks: hold a shared lock while
     // opening read-only verification, then upgrade after that connection closes.
     fs4::FileExt::try_lock_shared(&file).map_err(|_| Failure::Conflict)?;
-    same_file(path, &file)?;
+    let file = FileLease(file);
+    same_file(path, &file.0)?;
     Ok(file)
 }
 fn same_file(path: &Path, file: &std::fs::File) -> Result<(), Failure> {
@@ -59,7 +61,7 @@ fn same_file(path: &Path, file: &std::fs::File) -> Result<(), Failure> {
     }
     Ok(())
 }
-fn inspected(path: &Path, binding: &Binding) -> Result<(std::fs::File, String, String), Failure> {
+fn inspected(path: &Path, binding: &Binding) -> Result<(FileLease, String, String), Failure> {
     let mut file = private_file(path)?;
     // A completed backup is a standalone snapshot. Never destroy an active
     // SQLite database or discard a pending journal to make it appear complete.
@@ -87,15 +89,15 @@ fn inspected(path: &Path, binding: &Binding) -> Result<(std::fs::File, String, S
         if Instant::now() >= deadline {
             return Err(Failure::Unavailable);
         }
-        let n = file.read(&mut buffer).map_err(unavailable)?;
+        let n = file.0.read(&mut buffer).map_err(unavailable)?;
         if n == 0 {
             break;
         }
         hash.update(&buffer[..n]);
         bytes = bytes.checked_add(n as u64).ok_or(Failure::Unavailable)?;
     }
-    same_file(path, &file)?;
-    if file.metadata().map_err(unavailable)?.len() != bytes {
+    same_file(path, &file.0)?;
+    if file.0.metadata().map_err(unavailable)?.len() != bytes {
         return Err(Failure::Conflict);
     }
     Ok((file, bytes.to_string(), service::hex(&hash.finalize())))
@@ -300,7 +302,7 @@ fn sync(path: &Path) -> Result<(), Failure> {
         .and_then(|f| f.sync_all())
         .map_err(unavailable)
 }
-fn matches(plan: &Plan, path: &Path) -> Result<std::fs::File, Failure> {
+fn matches(plan: &Plan, path: &Path) -> Result<FileLease, Failure> {
     let (file, bytes, hash) = inspected(path, &plan.binding)?;
     if bytes != plan.bytes || hash != plan.sha256 {
         return Err(Failure::Conflict);
@@ -332,8 +334,8 @@ fn purge(plan: &Plan, id: &str, journal: &Workspace) -> Result<Value, Failure> {
             return Err(Failure::Conflict);
         }
         let held = matches(plan, &plan.database)?;
-        fs4::FileExt::try_lock(&held).map_err(|_| Failure::Conflict)?;
-        same_file(&plan.database, &held)?;
+        fs4::FileExt::try_lock(&held.0).map_err(|_| Failure::Conflict)?;
+        same_file(&plan.database, &held.0)?;
         // surface-write: evidence-backup:archive.sqlite,evidence-backup-purge:backup.sqlite
         crate::persistence::rename(
             crate::persistence::SurfaceWrite::EvidenceBackupPurge,
@@ -347,13 +349,13 @@ fn purge(plan: &Plan, id: &str, journal: &Workspace) -> Result<Value, Failure> {
     }
     let removed = if exists(&staged)? {
         let held = matches(plan, &staged)?;
-        fs4::FileExt::try_lock(&held).map_err(|_| Failure::Conflict)?;
+        fs4::FileExt::try_lock(&held.0).map_err(|_| Failure::Conflict)?;
         journal.put(
             "owner-result",
             &format!("backup-purge:{id}:verified"),
             json!({"job":id,"sha256":plan.sha256,"bytes":plan.bytes}),
         )?;
-        same_file(&staged, &held)?;
+        same_file(&staged, &held.0)?;
         // surface-write: evidence-backup-purge:backup.sqlite
         crate::persistence::remove_file(
             crate::persistence::SurfaceWrite::EvidenceBackupPurge,
@@ -374,4 +376,27 @@ fn purge(plan: &Plan, id: &str, journal: &Workspace) -> Result<Value, Failure> {
         "staging":directory,"source_archive":"retained","other_backups":"not-assessed","recovery_keys":"retained",
         "physical_or_cryptographic_erasure":"not-claimed"}),
     )
+}
+
+#[cfg(all(test, unix))]
+mod lease_tests {
+    use super::*;
+    #[test]
+    fn private_backup_lease_preserves_reader_then_upgrades_and_releases() {
+        let path = tempfile::NamedTempFile::new().unwrap();
+        let first = private_file(path.path()).unwrap();
+        let inherited = first.0.try_clone().unwrap();
+        let other = private_file(path.path()).unwrap();
+        drop(first);
+        let probe = std::fs::File::open(path.path()).unwrap();
+        assert!(fs4::FileExt::try_lock(&probe).is_err());
+        fs4::FileExt::try_lock(&other.0).unwrap();
+        let replacement = other;
+        drop(inherited);
+        assert!(private_file(path.path()).is_err());
+        drop(replacement);
+        fs4::FileExt::try_lock(&probe).unwrap();
+        drop(FileLease(probe));
+        private_file(path.path()).unwrap();
+    }
 }

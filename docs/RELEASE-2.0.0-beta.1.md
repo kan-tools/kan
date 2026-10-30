@@ -1,6 +1,16 @@
 # Kan 2.0.0-beta.1 release candidate
 
-**Publication held:** proof-restore repair `26c0dd4` passed retained-copy validation and narrow review; follow-up revision `2ab3d6d` passed 56 checks, 19 browser groups, all substantive CI jobs and package/install gates. The owner selected file-based recovery and requested dedicated `kan recovery setup/verify/restore` commands. That new command, its isolated recovery drill and narrow review remain in qualification. Current qualification found a key-history lease lifetime failure during interoperability restore; explicit owner-drop release and deterministic shared/exclusive descriptor regressions are being qualified. The exact CI descriptor provenance is untraced. Earlier URI equivalence covers two authentic drill contexts, not universal semantic migration readiness. Repair merge/final-main gates and separate publication approval remain outstanding.
+**Publication held:** proof-restore repair and dedicated recovery setup at
+`64616d7` passed qualification, the representative isolated archive/key drill,
+and actual narrow review (**APPROVE WITH FOLLOW-UPS**). The owner approved bounded
+recovery cleanup and an audit of remaining advisory-lock ownership. That pass
+repairs close-only policy/erasure/backup/purge/migration holders and the legacy
+writer's pre-guard fence-error path; remote qualification and focused review are
+pending. Prior CI descriptor provenance and the 343 ms capture observation remain
+untraced. URI equivalence covers two authentic drill contexts, and recovery covers
+one representative key/archive, not universal semantic migration or production
+key custody. Separate repair merge approval, final-main gates and exact publication
+approval remain outstanding.
 
 Updated 2026-10-28. **Qualified candidate; unpublished.** The owner authorized
 executing this plan, including the sequenced stack merges and final-main
