@@ -146,6 +146,19 @@ observed 343 ms against its 200 ms limit. That timing cause remains unresolved;
 its production path and assertions remain unchanged for the next qualification.
 The retained failure evidence is not a pass or a waived gate.
 
+At `9af145d`, lint and the unchanged capture timing test passed; the earlier
+343 ms observation remains unexplained. Push CI passed, while collect-all passed
+55/56 checks and 19 browser groups but failed key-history restore with
+`Unavailable` in the recovery CLI interoperability test. Key history still used
+close-only leases. The repair gives each snapshot a nonclonable unlock-on-drop
+guard, preserving independently acquired readers. Three deterministic Unix
+regressions cover shared/exclusive inherited descriptors, independent reader
+exclusion, error cleanup and replacement lock ownership. A local OS primitive
+reproduced close-only retention, but CI descriptor provenance was not traced.
+No timing assertion, retry or recovery guard is relaxed. Remote qualification,
+the actual-command drill and the narrow review (including lease lifetime) remain
+required before acceptance.
+
 ### Completion checklist
 
 Mark a row complete only when its backend, shared API/CLI where applicable, human

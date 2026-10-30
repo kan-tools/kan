@@ -165,6 +165,7 @@ jobs:
         run: |
           cargo test --features v2-crypto --lib evidence_operations::tests
           cargo test --features v2-crypto --lib evidence_workspace::lease_tests
+          cargo test --features v2-crypto --lib evidence_keys::lease_tests
       - id: check_36_evidence_operations_projection_tests
         continue-on-error: ${{ github.event_name == 'workflow_dispatch' && inputs.collect_all }}
         run: cargo test --features v2-crypto --lib evidence_operations::projection::tests
