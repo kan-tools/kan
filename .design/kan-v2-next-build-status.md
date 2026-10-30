@@ -81,9 +81,21 @@ The targeted repair restores the existing bounded recovery payload limit only
 when transferring the audited inventory transaction to offline restoration.
 Admitted/copied regression coverage uses a payload above the metadata bound and
 requires corrupted ciphertext refusal. Metadata auditing, CID verification and
-source immutability remain required. Qualification and targeted review are pending.
-The read-side rehearsal helper also needs trust selection before enumerating URI
-samples; its first pass ran zero comparisons, so URI equivalence is not established.
+source immutability remain required. Repair `26c0dd4` passed collect-all
+`40897154398` (56 checks, 19 browser groups), push CI `40896510041`, and the
+independent narrow Opus 5.5 review with nonblocking follow-ups. Retained evidence
+is under `.local-state/qualification-26c0dd4` and
+`.local-state/local-migration-rehearsal-20261028/repair-evidence.json`.
+All 36 failed restores and three interrupted imports completed on retained copies;
+seven CAR baselines were rechecked. All 46 comparisons preserved selected bytes,
+native reader results and baseline hashes. Clone checks finalized 39 sources,
+activated 23, refused 16 without uninterpreted-evidence acceptance, and rolled
+back all 39. These are not live migrations or a universal semantic-equivalence claim.
+The corrected read-side helper attempted nine URI comparisons, all refused for
+missing Git context. Two CAR views exceeded presentation bounds. Authentic-context
+URI qualification, independent backup and intended key storage remain separate
+readiness checks. Test precision, WAL evidence and refused-route assertions are
+being strengthened without changing production recovery behavior.
 Timeout diagnostics and validation reuse retained disposable copies and backups;
 no live migration, publication or automatic main merge is authorized by this repair.
 
