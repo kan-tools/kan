@@ -3646,11 +3646,22 @@ fn proof_import_restore_recovers_large_payloads_and_refuses_corruption() {
             let refused = output.path().join(format!("oversized-{length}"));
             let error = kan::evidence_restore::restore_proof(&f.db(), &refused, &pins, &binding)
                 .unwrap_err();
-            assert!(
-                matches!(error, kan::evidence_restore::Error::Store(
-                kan::evidence_store::Error::Corrupt(ref cid)) if cid == &large_cid),
-                "{error}"
-            );
+            if length <= kan::evidence_store::MAX_CHUNK * 2 {
+                assert!(
+                    matches!(error, kan::evidence_restore::Error::Store(
+                    kan::evidence_store::Error::Corrupt(ref cid)) if cid == &large_cid),
+                    "{profile:?}, {length} bytes: {error}"
+                );
+            } else {
+                // SQLite rejects a row beyond its 8 MiB allocation ceiling
+                // before the application can return a CID-specific error.
+                assert!(
+                    matches!(error, kan::evidence_restore::Error::Store(
+                    kan::evidence_store::Error::Sql(rusqlite::Error::SqliteFailure(ref code, _)))
+                        if code.code == rusqlite::ErrorCode::TooBig),
+                    "{profile:?}, {length} bytes: {error}"
+                );
+            }
             assert!(!refused.join("report.json").exists());
             assert_eq!(source_records(&f.db()), oversized);
         }

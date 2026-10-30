@@ -91,11 +91,33 @@ seven CAR baselines were rechecked. All 46 comparisons preserved selected bytes,
 native reader results and baseline hashes. Clone checks finalized 39 sources,
 activated 23, refused 16 without uninterpreted-evidence acceptance, and rolled
 back all 39. These are not live migrations or a universal semantic-equivalence claim.
-The corrected read-side helper attempted nine URI comparisons, all refused for
-missing Git context. Two CAR views exceeded presentation bounds. Authentic-context
-URI qualification, independent backup and intended key storage remain separate
-readiness checks. Test precision, WAL evidence and refused-route assertions are
-being strengthened without changing production recovery behavior.
+The initial read-side helper's nine URI attempts refused missing Git context.
+A retained-copy follow-up supplied authentic Git bundles and the matching
+proof-authenticated public identity history for the two prior-drill sources.
+With identical native log-author trust on both sides, all nine sampled claim IDs
+and four judgments match (including one trust exclusion and unknown scope
+admission throughout). This does not establish namespace readiness for originals
+that lack inception. Earlier refusals and the differing-trust comparison remain
+retained; two CAR views still exceed presentation bounds.
+
+All seven earlier successful CAR cases were re-restored, with matching bytes and
+unchanged backups/baselines. All 16 previously refused activations preserved the
+old route before rollback; all rollbacks passed without accepting uninterpreted
+semantics. A representative 248 MiB encrypted backup was copied to gilgamesh's
+separate physical disk, hashed, returned to a fresh isolated environment on
+enkidu and restored without its source/live archive/writer key: 1,961 files and
+123,387,890 bytes matched the retained manifest. Disposable recovery keys were
+used; intended production key custody and a fresh physical recovery host remain
+unqualified. This is not an off-host backup of every source.
+
+Test follow-ups cover precise corruption errors and unchanged main DB plus
+uncheckpointed WAL. SHM is transient reader coordination, not immutable source
+records. CI at `2d1d302` exposed an incorrect oversized-row error expectation:
+SQLite's 8 MiB ceiling refuses with `TooBig` before a CID-specific error. The test
+correction pins that exact refusal separately from the smaller corrupt object;
+current qualification remains pending. Production recovery behavior is unchanged.
+Private follow-up evidence is retained in
+`.local-state/local-migration-rehearsal-20261028/followups-evidence.json`.
 Timeout diagnostics and validation reuse retained disposable copies and backups;
 no live migration, publication or automatic main merge is authorized by this repair.
 

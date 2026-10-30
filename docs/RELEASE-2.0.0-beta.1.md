@@ -1,6 +1,6 @@
 # Kan 2.0.0-beta.1 release candidate
 
-**Publication held (2026-10-29):** the proof-restore repair `26c0dd4` passed CI, retained-copy validation of all 36 failures and three interrupted imports, and narrow independent review with nonblocking follow-ups. Nine URI attempts remain unverified because the snapshots omitted Git context. Authentic-context semantics, independent backup, intended key-storage qualification and final-main gates remain before separate publication approval. Earlier synthetic gates do not waive these limits.
+**Publication held:** proof-restore repair `26c0dd4` passed CI, retained-copy validation and narrow review. Follow-ups now include seven additional restores, 16 refused-route checks, nine matching URI/four-judgment comparisons across two authentic drill contexts, and a representative restore from an independently stored backup copy. Most original sources lack inception; these results do not establish universal semantic migration readiness. The strengthened regression's exact SQLite oversized-row refusal is being qualified. Intended production key custody, repair merge/final-main gates and separate publication approval remain outstanding.
 
 Updated 2026-10-28. **Qualified candidate; unpublished.** The owner authorized
 executing this plan, including the sequenced stack merges and final-main
