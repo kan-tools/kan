@@ -114,3 +114,6 @@ mod evidence_control_index;
 
 #[cfg(feature = "v2-crypto")]
 pub mod evidence_keys;
+
+#[cfg(feature = "v2-crypto")]
+pub mod evidence_recovery_setup;

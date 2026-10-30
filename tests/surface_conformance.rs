@@ -33,6 +33,7 @@ const RULE_EVIDENCE: &[(&str, &str)] = &[
     ("workspace-erasure", "tests/evidence_workspace.rs"),
     ("signed-erasure-custody", "tests/evidence_attested_store.rs"),
     ("wrapped-key-epochs", "tests/evidence_keys.rs"),
+    ("recipient-recovery-setup", "tests/recovery_setup_cli.rs"),
     (
         "signed-owner-policy",
         "tests/support/proof_service_tests.rs",
@@ -537,6 +538,7 @@ const PERSISTENCE_PATH_EXPRESSIONS: &[(&str, &str, &str)] = &[
     ("src/workspace.rs", "\"; \"", "not a path"),
 ];
 const PERSISTENCE_MODULES: &[&str] = &[
+    "src/evidence_recovery_setup.rs",
     "src/evidence_control_index.rs",
     "src/evidence_keys.rs",
     "src/evidence_policy.rs",
@@ -559,6 +561,12 @@ const PERSISTENCE_MODULES: &[&str] = &[
     "src/workspace.rs",
 ];
 const PERSISTENCE_MUTATION_SITES: &[(&str, &str, &str, usize)] = &[
+    (
+        "src/evidence_recovery_setup.rs",
+        "write_new_owner_only",
+        "EvidenceKeys",
+        3,
+    ),
     (
         "src/evidence_library/owner/migration.rs",
         "write_new_owner_only",
@@ -1694,7 +1702,7 @@ fn every_persistence_facade_call_is_independently_inventoried() {
         if module == "src/persistence.rs" {
             assert_eq!(
                 format!("{:x}", Sha256::digest(source.as_bytes())),
-                "6dac89c692b3fbe46205528538e3598aabc5f5eb1427fbec5fcf56655e0b8e45",
+                "ca28589c289345784a752a70b55584ceda9e9227f8f71cfbec5ea29fe6541cb5",
                 "the raw-mutation facade changed; review and update its committed implementation digest together with facade-call negative controls"
             );
             assert!(

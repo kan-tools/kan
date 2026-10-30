@@ -1,6 +1,6 @@
 # Kan 2.0.0-beta.1 release candidate
 
-**Publication held:** proof-restore repair `26c0dd4` passed CI, retained-copy validation and narrow review. Follow-ups now include seven additional restores, 16 refused-route checks, nine matching URI/four-judgment comparisons across two authentic drill contexts, and a representative restore from an independently stored backup copy. Most original sources lack inception; these results do not establish universal semantic migration readiness. The strengthened regression's exact SQLite oversized-row refusal is being qualified. Intended production key custody, repair merge/final-main gates and separate publication approval remain outstanding.
+**Publication held:** proof-restore repair `26c0dd4` passed retained-copy validation and narrow review; follow-up revision `2ab3d6d` passed 56 checks, 19 browser groups, all substantive CI jobs and package/install gates. The owner selected file-based recovery and requested dedicated `kan recovery setup/verify/restore` commands. That new command, its isolated recovery drill and narrow review remain in qualification. Earlier URI equivalence covers two authentic drill contexts, not universal semantic migration readiness. Repair merge/final-main gates and separate publication approval remain outstanding.
 
 Updated 2026-10-28. **Qualified candidate; unpublished.** The owner authorized
 executing this plan, including the sequenced stack merges and final-main

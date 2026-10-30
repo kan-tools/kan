@@ -870,6 +870,8 @@ for owner inspection. Key rotation and payload erasure remain separate operation
 
 ### Encryption epoch rotation and wrapped key recovery
 
+For a single existing archive recipient key, [dedicated recovery setup](V2-RECOVERY.md) creates a signed encrypted backup and separate recovery secret without changing this active epoch history.
+
 A `key-history` owner target manages a separate signed, append-only key directory.
 Provision an existing absolute directory with mode 0700 and an independent,
 32-byte recovery credential file with mode 0600. Pin its public recipient in an

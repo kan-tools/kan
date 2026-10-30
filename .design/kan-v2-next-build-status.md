@@ -114,12 +114,29 @@ Test follow-ups cover precise corruption errors and unchanged main DB plus
 uncheckpointed WAL. SHM is transient reader coordination, not immutable source
 records. CI at `2d1d302` exposed an incorrect oversized-row error expectation:
 SQLite's 8 MiB ceiling refuses with `TooBig` before a CID-specific error. The test
-correction pins that exact refusal separately from the smaller corrupt object;
-current qualification remains pending. Production recovery behavior is unchanged.
+correction pins that exact refusal separately from the smaller corrupt object.
+Revision `2ab3d6d` passed all 56 checks, 19 browser groups, four substantive jobs,
+both packaged builds and all three install modes. Production recovery behavior
+is unchanged.
 Private follow-up evidence is retained in
 `.local-state/local-migration-rehearsal-20261028/followups-evidence.json`.
 Timeout diagnostics and validation reuse retained disposable copies and backups;
 no live migration, publication or automatic main merge is authorized by this repair.
+
+### Dedicated recovery setup — owner decision, 2026-10-30
+
+The owner selected the protected-file approach with a separate recovery copy and
+requested a dedicated setup command. `kan recovery setup` wraps one explicitly
+selected existing archive recipient key using the existing signed key-recovery
+format, generates a separate recovery secret and verifies written outputs.
+`recovery verify` checks retained copies against an independently retained digest;
+`recovery restore` writes a new private key file without activation. No original
+credentials are changed. This is one-key recovery, not a whole-instance backup or
+a new multi-epoch authority. See [the runbook](../docs/V2-RECOVERY.md).
+The implementation, real CLI failure/recovery tests and persistence-surface
+inventory are in qualification; a narrow independent review and a disposable
+command-based backup/restore drill remain before claiming this new setup ready.
+Main merge, release and live migration retain separate approval boundaries.
 
 ### Completion checklist
 

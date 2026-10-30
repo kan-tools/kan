@@ -618,6 +618,46 @@ pub struct RecoveryPackage {
     pub tip: Option<String>,
     pub records: Vec<Record>,
 }
+impl RecoveryPackage {
+    /// Back up one explicitly selected existing recipient without changing any
+    /// active epoch history or routing. Uses the existing signed package format.
+    pub fn for_existing_key(
+        binding: Binding,
+        signer: &Identity,
+        private: &[u8; 32],
+        recovery: &[u8; 32],
+    ) -> Result<Self> {
+        binding.owner_binding()?;
+        let wrapped = crate::evidence_crypto::seal(recovery, &wrapping_scope(&binding)?, private)
+            .map_err(invalid)?;
+        let record = Record::sign(
+            Change {
+                version: 1,
+                binding: binding.clone(),
+                owner: signer.did().to_string(),
+                recovery_recipient: service::hex(recovery),
+                sequence: "0".into(),
+                previous: None,
+                nonce: service::hex(&rand::random::<[u8; 32]>()),
+                recorded_at: crate::evidence_operations::now().to_string(),
+                recipient: service::hex(
+                    &crate::evidence_crypto::public_key(private).map_err(invalid)?,
+                ),
+                wrapped: service::hex(&wrapped),
+                origin: None,
+            },
+            signer,
+        )?;
+        Ok(Self {
+            version: "kan-key-recovery/1".into(),
+            binding,
+            owner: signer.did().to_string(),
+            recovery_recipient: service::hex(recovery),
+            tip: Some(record.id()?),
+            records: vec![record],
+        })
+    }
+}
 impl Change {
     /// Verify recovery custody and public/private correspondence before use.
     pub fn unlock(&self, private: &[u8; 32]) -> Result<[u8; 32]> {
