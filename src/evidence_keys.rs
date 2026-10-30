@@ -717,6 +717,15 @@ mod lease_tests {
     use super::*;
 
     fn access(directory: &Path) -> Access {
+        use std::os::unix::fs::PermissionsExt;
+        // Synthetic fixture container must satisfy the real private-directory contract.
+        // surface-write: container:workspace
+        crate::persistence::set_permissions(
+            crate::persistence::SurfaceWrite::Container,
+            directory,
+            std::fs::Permissions::from_mode(0o700),
+        )
+        .unwrap();
         let owner = Identity::generate().did().to_string();
         let access = Access {
             directory: directory.to_owned(),

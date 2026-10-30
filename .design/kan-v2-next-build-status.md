@@ -159,6 +159,14 @@ No timing assertion, retry or recovery guard is relaxed. Remote qualification,
 the actual-command drill and the narrow review (including lease lifetime) remain
 required before acceptance.
 
+At `2177b5b`, all five recovery CLI tests and 19 browser groups passed, as
+did 55/56 checks. The three new lease tests stopped at fixture initialization:
+`tempfile` directories use default process permissions, while key history requires
+owner-only access. Their fixture now sets 0700 through the typed Container
+persistence helper, with an immediate annotation and independent mutation count.
+The production guard and all lock/security assertions are unchanged. The new
+lease regressions still require a remote runtime pass.
+
 ### Completion checklist
 
 Mark a row complete only when its backend, shared API/CLI where applicable, human

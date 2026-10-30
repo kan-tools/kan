@@ -748,6 +748,7 @@ const PERSISTENCE_MUTATION_SITES: &[(&str, &str, &str, usize)] = &[
         2,
     ),
     ("src/evidence_keys.rs", "rename", "EvidenceKeys", 1),
+    ("src/evidence_keys.rs", "set_permissions", "Container", 1),
     (
         "src/evidence_policy.rs",
         "write_new_owner_only",
