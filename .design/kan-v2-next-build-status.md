@@ -138,6 +138,14 @@ inventory are in qualification; a narrow independent review and a disposable
 command-based backup/restore drill remain before claiming this new setup ready.
 Main merge, release and live migration retain separate approval boundaries.
 
+Initial recovery-command qualification at `b27fc59` passed all five new CLI
+tests, 19 browser groups, package/install gates and 54 of 56 checks. The fixture
+used a disallowed raw file-opening type; it now uses the existing private-file
+persistence helper, with no lint exemption. A separate capture contention check
+observed 343 ms against its 200 ms limit. That timing cause remains unresolved;
+its production path and assertions remain unchanged for the next qualification.
+The retained failure evidence is not a pass or a waived gate.
+
 ### Completion checklist
 
 Mark a row complete only when its backend, shared API/CLI where applicable, human

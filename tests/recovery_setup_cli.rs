@@ -4,21 +4,18 @@ use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::{
     fs,
-    io::Write,
-    os::unix::fs::{OpenOptionsExt, PermissionsExt},
+    os::unix::fs::PermissionsExt,
     path::{Path, PathBuf},
     process::{Command, Output},
 };
 
 fn private_file(path: &Path, bytes: &[u8]) {
-    fs::OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .mode(0o600)
-        .open(path)
-        .unwrap()
-        .write_all(bytes)
-        .unwrap();
+    kan::persistence::write_new_owner_only(
+        kan::persistence::SurfaceWrite::EvidenceKeys,
+        path,
+        bytes,
+    )
+    .unwrap();
 }
 fn sha(bytes: &[u8]) -> String {
     hex(&Sha256::digest(bytes))
