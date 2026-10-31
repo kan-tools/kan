@@ -3122,7 +3122,6 @@ async fn owner_backup_purge_is_exact_scoped_and_resumes_staged_copies() {
 fn imported_claim_frames(audience: u8) -> (String, Vec<Vec<u8>>, Vec<u8>) {
     use atproto_dasl::Ipld;
     use kan::claim::v1::{Anchor, AuthorId, Claim, ClaimBody, ClaimContent, SubjectRef};
-    use sha2::{Digest, Sha256};
     let content = ClaimContent {
         author: AuthorId {
             did: identity(6).did().to_string(),
@@ -3165,6 +3164,10 @@ fn imported_claim_frames(audience: u8) -> (String, Vec<Vec<u8>>, Vec<u8>) {
     varint(cid.to_bytes().len() + block.len(), &mut car);
     car.extend(cid.to_bytes());
     car.extend(block);
+    imported_raw_frames(audience, car)
+}
+fn imported_raw_frames(audience: u8, car: Vec<u8>) -> (String, Vec<Vec<u8>>, Vec<u8>) {
+    use sha2::{Digest, Sha256};
     let hash = service::hex(&Sha256::digest(&car));
     let document=serde_json::to_vec(&json!({"profile":1,"source_id":service::hex(&[44;32]),"selection":"store","recipient":service::hex(&kan::evidence_crypto::public_key(&PRIVATE).unwrap()),"route":{"scope":service::hex(&[1;32]),"writer":identity(6).did().as_str(),"audience":identity(audience).did().as_str()},"inventory":{"selected_inventory_complete":true,"notices":[],"files":[{"path":"repo.car","length":car.len(),"sha256":hash}]},"files":[{"path":"repo.car","length":car.len(),"sha256":hash,"chunks":[{"length":car.len(),"sha256":hash}]}]})).unwrap();
     let mut h = Sha256::new();
@@ -3531,6 +3534,138 @@ async fn owner_import_pins_source_batches_exact_retry_and_preserves_originals() 
     );
     ui.stop().await;
     server.stop().await;
+}
+
+#[test]
+fn proof_import_restore_recovers_large_payloads_and_refuses_corruption() {
+    use sha2::{Digest, Sha256};
+    fn source_records(path: &std::path::Path) -> Vec<Option<Vec<u8>>> {
+        // WAL bytes are source records too. SHM is transient SQLite reader
+        // coordination, which the read-only recovery capability may initialize.
+        [
+            path.to_path_buf(),
+            std::path::PathBuf::from(format!("{}-wal", path.display())),
+        ]
+        .iter()
+        .map(|p| match std::fs::read(p) {
+            Ok(bytes) => Some(Sha256::digest(bytes).to_vec()),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
+            Err(e) => panic!("source record read failed: {e}"),
+        })
+        .collect()
+    }
+    for profile in [Profile::Admitted, Profile::Copied] {
+        let dir = private_workspace_directory();
+        let output = private_workspace_directory();
+        // Above the inventory's 256 KiB metadata bound, below the bounded import
+        // chunk size. Restoration preserves opaque bytes, not CAR semantics.
+        let payload: Vec<u8> = (0..384 * 1024 + 17).map(|i| (i % 251) as u8).collect();
+        let (plan, frames, expected) =
+            imported_raw_frames(if profile == Profile::Admitted { 8 } else { 7 }, payload);
+        let f = fixture_requests(dir.path(), profile, |n, a, p| {
+            import_request(n, a, p, &plan, &frames[n as usize], false)
+        });
+        let binding = super::super::binding(&f);
+        let writer = identity(6).did().to_string();
+        let pins = kan::evidence_restore::Pins {
+            expected_plan: &plan,
+            scope: [1; 32],
+            writer: &writer,
+            recipient_private: PRIVATE,
+            max_records: 100,
+        };
+        // Keep a real uncheckpointed WAL alive across both successful and
+        // refused recovery; do not mistake main-file equality for immutability.
+        let sql = rusqlite::Connection::open(f.db()).unwrap();
+        sql.execute_batch("PRAGMA journal_mode=WAL; PRAGMA wal_autocheckpoint=0;")
+            .unwrap();
+        let large_cid: String = sql
+            .query_row(
+                "SELECT cid FROM objects WHERE length(bytes)>262144",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(
+            sql.execute("UPDATE objects SET bytes=bytes WHERE cid=?", [&large_cid])
+                .unwrap(),
+            1
+        );
+        let before = source_records(&f.db());
+        assert!(before[1].is_some(), "exercise an existing source WAL");
+        let restored = output.path().join("large");
+        let report =
+            kan::evidence_restore::restore_proof(&f.db(), &restored, &pins, &binding).unwrap();
+        assert_eq!(
+            std::fs::read(restored.join("files/repo.car")).unwrap(),
+            expected
+        );
+        assert_eq!(report["verified_selected_file_bytes"], true);
+        assert_eq!(report["signed_requests_verified"], true);
+        assert_eq!(report["server_attestation"], true);
+        assert_eq!(report["ready_for_cutover"], false);
+        assert_eq!(source_records(&f.db()), before);
+
+        assert_eq!(
+            sql.execute(
+                "UPDATE objects SET bytes=zeroblob(length(bytes)) WHERE length(bytes)>262144",
+                []
+            )
+            .unwrap(),
+            1
+        );
+        let damaged = source_records(&f.db());
+        let refused = output.path().join("corrupt");
+        let error =
+            kan::evidence_restore::restore_proof(&f.db(), &refused, &pins, &binding).unwrap_err();
+        assert!(
+            matches!(error, kan::evidence_restore::Error::Store(
+            kan::evidence_store::Error::Corrupt(ref cid)) if cid == &large_cid),
+            "{error}"
+        );
+        assert!(!refused.join("report.json").exists());
+        assert_eq!(source_records(&f.db()), damaged);
+
+        // Hostile rows bypass schema checks. Recovery must refuse both an
+        // object just over MAX_CHUNK and one larger than its SQLite read bound.
+        sql.execute_batch("PRAGMA ignore_check_constraints=ON;")
+            .unwrap();
+        for length in [
+            kan::evidence_store::MAX_CHUNK + 1,
+            kan::evidence_store::MAX_CHUNK * 2 + 1,
+        ] {
+            assert_eq!(
+                sql.execute(
+                    "UPDATE objects SET bytes=zeroblob(?) WHERE cid=?",
+                    rusqlite::params![length as i64, &large_cid]
+                )
+                .unwrap(),
+                1
+            );
+            let oversized = source_records(&f.db());
+            let refused = output.path().join(format!("oversized-{length}"));
+            let error = kan::evidence_restore::restore_proof(&f.db(), &refused, &pins, &binding)
+                .unwrap_err();
+            if length <= kan::evidence_store::MAX_CHUNK * 2 {
+                assert!(
+                    matches!(error, kan::evidence_restore::Error::Store(
+                    kan::evidence_store::Error::Corrupt(ref cid)) if cid == &large_cid),
+                    "{profile:?}, {length} bytes: {error}"
+                );
+            } else {
+                // SQLite rejects a row beyond its 8 MiB allocation ceiling
+                // before the application can return a CID-specific error.
+                assert!(
+                    matches!(error, kan::evidence_restore::Error::Store(
+                    kan::evidence_store::Error::Sql(rusqlite::Error::SqliteFailure(ref code, _)))
+                        if code.code == rusqlite::ErrorCode::TooBig),
+                    "{profile:?}, {length} bytes: {error}"
+                );
+            }
+            assert!(!refused.join("report.json").exists());
+            assert_eq!(source_records(&f.db()), oversized);
+        }
+    }
 }
 
 #[tokio::test]

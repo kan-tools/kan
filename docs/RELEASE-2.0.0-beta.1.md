@@ -1,5 +1,17 @@
 # Kan 2.0.0-beta.1 release candidate
 
+**Publication held:** proof-restore repair and dedicated recovery setup at
+`64616d7` passed qualification, the representative isolated archive/key drill,
+and actual narrow review (**APPROVE WITH FOLLOW-UPS**). The owner approved bounded
+recovery cleanup and an audit of remaining advisory-lock ownership. That pass
+repairs close-only policy/erasure/backup/purge/migration holders and the legacy
+writer's pre-guard fence-error path; remote qualification and focused review are
+pending. Prior CI descriptor provenance and the 343 ms capture observation remain
+untraced. URI equivalence covers two authentic drill contexts, and recovery covers
+one representative key/archive, not universal semantic migration or production
+key custody. Separate repair merge approval, final-main gates and exact publication
+approval remain outstanding.
+
 Updated 2026-10-28. **Qualified candidate; unpublished.** The owner authorized
 executing this plan, including the sequenced stack merges and final-main
 qualification, on 2026-10-28. Tag push, registry publication, deployment and live

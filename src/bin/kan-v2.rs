@@ -84,8 +84,62 @@ impl ProofOptions {
         }
     }
 }
+#[cfg(feature = "v2-crypto")]
+#[derive(clap::Args)]
+struct RecoveryInput {
+    /// Existing encrypted recipient-key package in a private directory.
+    #[arg(long)]
+    package: PathBuf,
+    /// Existing raw 32-byte recovery secret in an owner-only file.
+    #[arg(long)]
+    recovery_key: PathBuf,
+    /// SHA-256 retained independently when setup created the package.
+    #[arg(long)]
+    expected_sha256: String,
+}
+#[cfg(feature = "v2-crypto")]
+#[derive(Subcommand)]
+enum RecoveryCommand {
+    /// Back up one existing archive decryption key; leaves credentials/routing unchanged.
+    Setup {
+        /// JSON proof binding: profile, archive, scope and issuer.
+        #[arg(long)]
+        binding: PathBuf,
+        #[arg(long)]
+        signing_key: PathBuf,
+        #[arg(long)]
+        recipient_key: PathBuf,
+        /// Expected public X25519 recipient, copied from the archive configuration.
+        #[arg(long)]
+        expected_recipient: String,
+        /// NEW encrypted package file in an existing private directory.
+        #[arg(long)]
+        package: PathBuf,
+        /// NEW raw recovery secret file in a separate existing private directory.
+        #[arg(long)]
+        recovery_key: PathBuf,
+    },
+    /// Verify retained package and secret without writing or exposing private keys.
+    Verify {
+        #[command(flatten)]
+        input: RecoveryInput,
+    },
+    /// Recover the selected recipient into a NEW owner-only file; never activates it.
+    Restore {
+        #[command(flatten)]
+        input: RecoveryInput,
+        #[arg(long)]
+        output: PathBuf,
+    },
+}
 #[derive(Subcommand)]
 enum Command {
+    /// Set up, verify or restore a file-based recipient-key recovery package.
+    #[cfg(feature = "v2-crypto")]
+    Recovery {
+        #[command(subcommand)]
+        command: RecoveryCommand,
+    },
     /// Pin a fully verified legacy source in a NEW private recipe artifact.
     CopyPlan {
         database: PathBuf,
@@ -1371,6 +1425,52 @@ fn run(#[allow(unused_mut)] mut cli: Cli) -> Result<(), Box<dyn std::error::Erro
                 kan::evidence_delivery::decrypt_request(&request, &private, &scope, &writer)?;
             use std::io::Write;
             std::io::stdout().lock().write_all(&plaintext)?;
+        }
+        #[cfg(feature = "v2-crypto")]
+        Command::Recovery { command } => {
+            let result = match command {
+                RecoveryCommand::Setup {
+                    binding,
+                    signing_key,
+                    recipient_key,
+                    expected_recipient,
+                    package,
+                    recovery_key,
+                } => {
+                    let binding = serde_json::from_slice(
+                        &bounded_read(
+                            std::fs::File::open(binding)
+                                .map_err(|e| format!("recovery binding input: {e}"))?,
+                            65536,
+                        )
+                        .map_err(|e| format!("recovery binding input: {e}"))?,
+                    )
+                    .map_err(|e| format!("recovery binding JSON: {e}"))?;
+                    kan::evidence_recovery_setup::setup(
+                        binding,
+                        &service_identity(&signing_key)
+                            .map_err(|e| format!("recovery signing key: {e}"))?,
+                        &recipient_key,
+                        &expected_recipient,
+                        &package,
+                        &recovery_key,
+                    )?
+                }
+                RecoveryCommand::Verify { input } => kan::evidence_recovery_setup::verify(
+                    &input.package,
+                    &input.recovery_key,
+                    &input.expected_sha256,
+                )?,
+                RecoveryCommand::Restore { input, output } => {
+                    kan::evidence_recovery_setup::restore(
+                        &input.package,
+                        &input.recovery_key,
+                        &input.expected_sha256,
+                        &output,
+                    )?
+                }
+            };
+            print_json(&result)?;
         }
         #[cfg(feature = "v2-crypto")]
         Command::InitKeyHistory { config } => {

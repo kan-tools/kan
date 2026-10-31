@@ -140,9 +140,10 @@ pub fn inspect(
         return Err(Failure::Invalid);
     }
     let fingerprint = identity(&before)?;
-    let mut file = std::fs::File::open(path).map_err(bad)?;
+    let file = std::fs::File::open(path).map_err(bad)?;
     fs4::FileExt::try_lock_shared(&file).map_err(|_| Failure::Conflict)?;
-    if identity(&file.metadata().map_err(bad)?)? != fingerprint {
+    let mut file = crate::file_lease::FileLease(file);
+    if identity(&file.0.metadata().map_err(bad)?)? != fingerprint {
         return Err(Failure::Conflict);
     }
     match binding.profile {
@@ -173,13 +174,13 @@ pub fn inspect(
     let mut hash = Sha256::new();
     let mut bytes = 0u64;
     let mut buffer = [0u8; 65536];
-    while let n @ 1.. = file.read(&mut buffer).map_err(bad)? {
+    while let n @ 1.. = file.0.read(&mut buffer).map_err(bad)? {
         hash.update(&buffer[..n]);
         bytes = bytes.checked_add(n as u64).ok_or(Failure::Invalid)?;
     }
     standalone(path)?;
     if bytes != before.len()
-        || identity(&file.metadata().map_err(bad)?)? != fingerprint
+        || identity(&file.0.metadata().map_err(bad)?)? != fingerprint
         || identity(&std::fs::symlink_metadata(path).map_err(bad)?)? != fingerprint
     {
         return Err(Failure::Conflict);

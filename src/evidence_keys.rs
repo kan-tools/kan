@@ -81,8 +81,17 @@ pub struct Record {
     pub change: Change,
     pub signature: String,
 }
+// File close alone can leave flock held by an inherited/duplicated descriptor.
+// A snapshot owns its lease; independent readers acquire independent leases.
+// Do not clone the guard: release belongs to this deliberate owner's lifetime.
+struct KeyLease(std::fs::File);
+impl Drop for KeyLease {
+    fn drop(&mut self) {
+        let _ = fs4::FileExt::unlock(&self.0);
+    }
+}
 pub struct Snapshot {
-    _lease: std::fs::File,
+    _lease: KeyLease,
     pub history: Vec<Record>,
     pub tip: Option<String>,
 }
@@ -209,7 +218,7 @@ impl Access {
             .map_err(invalid)?;
         Ok(())
     }
-    fn lease(&self, exclusive: bool) -> Result<std::fs::File> {
+    fn lease(&self, exclusive: bool) -> Result<KeyLease> {
         self.validate()?;
         let path = self.directory.join("LOCK");
         let before = private(&path, false, 0)?;
@@ -221,12 +230,12 @@ impl Access {
             fs4::FileExt::try_lock_shared(&file)
         }
         .map_err(|_| Failure::Unavailable)?;
-        Ok(file)
+        Ok(KeyLease(file))
     }
     pub fn read(&self) -> Result<Snapshot> {
         self.read_locked(self.lease(false)?)
     }
-    fn read_locked(&self, lease: std::fs::File) -> Result<Snapshot> {
+    fn read_locked(&self, lease: KeyLease) -> Result<Snapshot> {
         let mut names = Vec::new();
         let mut pending = 0;
         for entry in std::fs::read_dir(&self.directory).map_err(invalid)? {
@@ -618,6 +627,46 @@ pub struct RecoveryPackage {
     pub tip: Option<String>,
     pub records: Vec<Record>,
 }
+impl RecoveryPackage {
+    /// Back up one explicitly selected existing recipient without changing any
+    /// active epoch history or routing. Uses the existing signed package format.
+    pub fn for_existing_key(
+        binding: Binding,
+        signer: &Identity,
+        private: &[u8; 32],
+        recovery: &[u8; 32],
+    ) -> Result<Self> {
+        binding.owner_binding()?;
+        let wrapped = crate::evidence_crypto::seal(recovery, &wrapping_scope(&binding)?, private)
+            .map_err(invalid)?;
+        let record = Record::sign(
+            Change {
+                version: 1,
+                binding: binding.clone(),
+                owner: signer.did().to_string(),
+                recovery_recipient: service::hex(recovery),
+                sequence: "0".into(),
+                previous: None,
+                nonce: service::hex(&rand::random::<[u8; 32]>()),
+                recorded_at: crate::evidence_operations::now().to_string(),
+                recipient: service::hex(
+                    &crate::evidence_crypto::public_key(private).map_err(invalid)?,
+                ),
+                wrapped: service::hex(&wrapped),
+                origin: None,
+            },
+            signer,
+        )?;
+        Ok(Self {
+            version: "kan-key-recovery/1".into(),
+            binding,
+            owner: signer.did().to_string(),
+            recovery_recipient: service::hex(recovery),
+            tip: Some(record.id()?),
+            records: vec![record],
+        })
+    }
+}
 impl Change {
     /// Verify recovery custody and public/private correspondence before use.
     pub fn unlock(&self, private: &[u8; 32]) -> Result<[u8; 32]> {
@@ -660,5 +709,94 @@ impl ReaderAccess {
             return Err(Failure::AccessLimited);
         }
         self.history.read()?.unlock(&private)
+    }
+}
+
+#[cfg(all(test, unix))]
+mod lease_tests {
+    use super::*;
+
+    fn access(directory: &Path) -> Access {
+        use std::os::unix::fs::PermissionsExt;
+        // Synthetic fixture container must satisfy the real private-directory contract.
+        // surface-write: container:workspace
+        crate::persistence::set_permissions(
+            crate::persistence::SurfaceWrite::Container,
+            directory,
+            std::fs::Permissions::from_mode(0o700),
+        )
+        .unwrap();
+        let owner = Identity::generate().did().to_string();
+        let access = Access {
+            directory: directory.to_owned(),
+            binding: Binding {
+                profile: crate::evidence_proof_service::Profile::Admitted,
+                archive: service::hex(&[2; 32]),
+                scope: service::hex(&[1; 32]),
+                issuer: owner.clone(),
+            },
+            owner,
+            recovery_recipient: service::hex(&[3; 32]),
+            minimum: None,
+        };
+        access.initialize().unwrap();
+        access
+    }
+
+    #[test]
+    fn snapshot_drop_releases_inherited_descriptor_but_preserves_other_reader() {
+        let dir = tempfile::tempdir().unwrap();
+        let access = access(dir.path());
+        let first = access.read().unwrap();
+        let inherited = first._lease.0.try_clone().unwrap();
+        let second = access.read().unwrap();
+        assert!(matches!(access.lease(true), Err(Failure::Unavailable)));
+        drop(first);
+        assert!(matches!(access.lease(true), Err(Failure::Unavailable)));
+        drop(second);
+        let replacement = access.lease(true).unwrap();
+        assert!(matches!(access.read(), Err(Failure::Unavailable)));
+        drop(inherited);
+        assert!(matches!(access.lease(true), Err(Failure::Unavailable)));
+        drop(replacement);
+        access.read().unwrap();
+    }
+
+    #[test]
+    fn exclusive_lease_releases_despite_inherited_descriptor() {
+        let dir = tempfile::tempdir().unwrap();
+        let access = access(dir.path());
+        let owner = access.lease(true).unwrap();
+        let inherited = owner.0.try_clone().unwrap();
+        assert!(matches!(access.read(), Err(Failure::Unavailable)));
+        assert!(matches!(access.lease(true), Err(Failure::Unavailable)));
+        drop(owner);
+        let replacement = access.lease(true).unwrap();
+        drop(inherited);
+        assert!(matches!(access.read(), Err(Failure::Unavailable)));
+        drop(replacement);
+        access.lease(true).unwrap();
+    }
+
+    #[test]
+    fn rejected_snapshot_releases_lease_without_releasing_independent_reader() {
+        let dir = tempfile::tempdir().unwrap();
+        let access = access(dir.path());
+        let other = access.read().unwrap();
+        let lease = access.lease(false).unwrap();
+        let inherited = lease.0.try_clone().unwrap();
+        let mut unsupported = access.clone();
+        unsupported.minimum = Some(service::hex(&[9; 32]));
+        assert!(matches!(
+            unsupported.read_locked(lease),
+            Err(Failure::AccessLimited)
+        ));
+        assert!(matches!(access.lease(true), Err(Failure::Unavailable)));
+        drop(other);
+        let replacement = access.lease(true).unwrap();
+        drop(inherited);
+        assert!(matches!(access.read(), Err(Failure::Unavailable)));
+        drop(replacement);
+        access.read().unwrap();
     }
 }

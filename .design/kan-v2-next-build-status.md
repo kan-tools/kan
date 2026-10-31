@@ -67,6 +67,137 @@ The full all-writer matrix remains a prepublication gate. Tag/publication approv
 live deployment and migration remain separate. Earlier completion-table positions
 below are historical snapshots superseded by the retained qualification/reviews.
 
+### Real local-data rehearsal — 2026-10-29
+
+The isolated enkidu rehearsal of 107 selected sources (including worktrees and
+backup copies) blocks publication despite the earlier synthetic gates. Sixty-six
+sources passed byte restoration, 36 proof restores hit SQLite's inherited 256 KiB
+metadata limit, three imports exceeded the rehearsal's 30-minute budget, and two
+selections were empty. Originals and remote baselines were verified unchanged.
+Seven clone activations passed; 57 refused uninterpreted repository semantics;
+all applicable rollbacks passed. Refusal is not authorization to discard evidence.
+
+The targeted repair restores the existing bounded recovery payload limit only
+when transferring the audited inventory transaction to offline restoration.
+Admitted/copied regression coverage uses a payload above the metadata bound and
+requires corrupted ciphertext refusal. Metadata auditing, CID verification and
+source immutability remain required. Repair `26c0dd4` passed collect-all
+`40897154398` (56 checks, 19 browser groups), push CI `40896510041`, and the
+independent narrow Opus 5.5 review with nonblocking follow-ups. Retained evidence
+is under `.local-state/qualification-26c0dd4` and
+`.local-state/local-migration-rehearsal-20261028/repair-evidence.json`.
+All 36 failed restores and three interrupted imports completed on retained copies;
+seven CAR baselines were rechecked. All 46 comparisons preserved selected bytes,
+native reader results and baseline hashes. Clone checks finalized 39 sources,
+activated 23, refused 16 without uninterpreted-evidence acceptance, and rolled
+back all 39. These are not live migrations or a universal semantic-equivalence claim.
+The initial read-side helper's nine URI attempts refused missing Git context.
+A retained-copy follow-up supplied authentic Git bundles and the matching
+proof-authenticated public identity history for the two prior-drill sources.
+With identical native log-author trust on both sides, all nine sampled claim IDs
+and four judgments match (including one trust exclusion and unknown scope
+admission throughout). This does not establish namespace readiness for originals
+that lack inception. Earlier refusals and the differing-trust comparison remain
+retained; two CAR views still exceed presentation bounds.
+
+All seven earlier successful CAR cases were re-restored, with matching bytes and
+unchanged backups/baselines. All 16 previously refused activations preserved the
+old route before rollback; all rollbacks passed without accepting uninterpreted
+semantics. A representative 248 MiB encrypted backup was copied to gilgamesh's
+separate physical disk, hashed, returned to a fresh isolated environment on
+enkidu and restored without its source/live archive/writer key: 1,961 files and
+123,387,890 bytes matched the retained manifest. Disposable recovery keys were
+used; intended production key custody and a fresh physical recovery host remain
+unqualified. This is not an off-host backup of every source.
+
+Test follow-ups cover precise corruption errors and unchanged main DB plus
+uncheckpointed WAL. SHM is transient reader coordination, not immutable source
+records. CI at `2d1d302` exposed an incorrect oversized-row error expectation:
+SQLite's 8 MiB ceiling refuses with `TooBig` before a CID-specific error. The test
+correction pins that exact refusal separately from the smaller corrupt object.
+Revision `2ab3d6d` passed all 56 checks, 19 browser groups, four substantive jobs,
+both packaged builds and all three install modes. Production recovery behavior
+is unchanged.
+Private follow-up evidence is retained in
+`.local-state/local-migration-rehearsal-20261028/followups-evidence.json`.
+Timeout diagnostics and validation reuse retained disposable copies and backups;
+no live migration, publication or automatic main merge is authorized by this repair.
+
+### Dedicated recovery setup — owner decision, 2026-10-30
+
+The owner selected the protected-file approach with a separate recovery copy and
+requested a dedicated setup command. `kan recovery setup` wraps one explicitly
+selected existing archive recipient key using the existing signed key-recovery
+format, generates a separate recovery secret and verifies written outputs.
+`recovery verify` checks retained copies against an independently retained digest;
+`recovery restore` writes a new private key file without activation. No original
+credentials are changed. This is one-key recovery, not a whole-instance backup or
+a new multi-epoch authority. See [the runbook](../docs/V2-RECOVERY.md).
+The implementation, real CLI failure/recovery tests and persistence-surface
+inventory are in qualification; a narrow independent review and a disposable
+command-based backup/restore drill remain before claiming this new setup ready.
+Main merge, release and live migration retain separate approval boundaries.
+
+Initial recovery-command qualification at `b27fc59` passed all five new CLI
+tests, 19 browser groups, package/install gates and 54 of 56 checks. The fixture
+used a disallowed raw file-opening type; it now uses the existing private-file
+persistence helper, with no lint exemption. A separate capture contention check
+observed 343 ms against its 200 ms limit. That timing cause remains unresolved;
+its production path and assertions remain unchanged for the next qualification.
+The retained failure evidence is not a pass or a waived gate.
+
+At `9af145d`, lint and the unchanged capture timing test passed; the earlier
+343 ms observation remains unexplained. Push CI passed, while collect-all passed
+55/56 checks and 19 browser groups but failed key-history restore with
+`Unavailable` in the recovery CLI interoperability test. Key history still used
+close-only leases. The repair gives each snapshot a nonclonable unlock-on-drop
+guard, preserving independently acquired readers. Three deterministic Unix
+regressions cover shared/exclusive inherited descriptors, independent reader
+exclusion, error cleanup and replacement lock ownership. A local OS primitive
+reproduced close-only retention, but CI descriptor provenance was not traced.
+No timing assertion, retry or recovery guard is relaxed. Remote qualification,
+the actual-command drill and the narrow review (including lease lifetime) remain
+required before acceptance.
+
+At `2177b5b`, all five recovery CLI tests and 19 browser groups passed, as
+did 55/56 checks. The three new lease tests stopped at fixture initialization:
+`tempfile` directories use default process permissions, while key history requires
+owner-only access. Their fixture now sets 0700 through the typed Container
+persistence helper, with an immediate annotation and independent mutation count.
+The production guard and all lock/security assertions are unchanged. The new
+lease regressions still require a remote runtime pass.
+
+### Recovery review follow-ups and advisory-lock audit — 2026-10-30
+
+`64616d7` passed all 56 checks, 19 browser groups, four substantive jobs,
+packaged builds and all installation modes. All five recovery CLI tests and
+three key-history lease tests passed. The actual isolated command drill recovered
+one selected disposable key from offhost copies and restored 1,961 retained files
+(123,387,890 bytes) with original keys unavailable. The exact source and binary,
+mounts, refusal diagnostics and unchanged backup were independently checked.
+Actual Opus 5.5 review returned **APPROVE WITH FOLLOW-UPS**, without blockers.
+This qualifies one representative key/archive recovery, not whole-instance,
+multi-epoch, all-source or production credential custody.
+
+The owner authorized a bounded cleanup and remaining-lock audit before separate
+merge approval. Recovery now rejects non-UTF-8 output paths before writes, labels
+input errors, and documents digest authenticity and trusted-ancestor assumptions.
+CLI refusal assertions include specific errors and no success output; package
+checks cover hex-encoded secrets. A production-write-path regression covers a
+package appearing after preflight, retaining the secret and refusing reuse.
+
+The audit found close-only holders in policy history, erasure history, backup
+inspection, backup purge and migration coordination, plus a legacy log guard
+constructed too late for fence-check errors. Their deliberate ownership now ends
+with explicit unlock, including moves, errors and task-result disposal. Existing
+shared/exclusive acquisition and purge upgrades remain intact. Deterministic
+regressions cover inherited descriptors, independent readers, moved/error owners,
+replacement locks and legacy fence-check failure. See
+[the audit](../docs/ADVISORY-LOCK-AUDIT.md). Test-only fixture permissions remain
+explicitly inventoried through the Container facade. No formats, admission rules,
+authority or retry policy changed. Current remote CI and a focused actual review
+are still required; these new tests have not been run locally.
+
 ### Completion checklist
 
 Mark a row complete only when its backend, shared API/CLI where applicable, human

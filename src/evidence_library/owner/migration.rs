@@ -257,24 +257,10 @@ impl Config {
     ) -> Result<Value> {
         // Serialize this controller and source writers. Locks are nonblocking;
         // a busy source produces a visible retry rather than an unbounded job.
-        let mut locks = Vec::new();
-        for path in std::iter::once(self.state.join("LOCK"))
-            .chain(self.stores().into_iter().map(|p| p.join("LOCK")))
-        {
-            if path
-                .symlink_metadata()
-                .is_ok_and(|m| m.file_type().is_symlink())
-            {
-                return Err("symlink lock refused".into());
-            }
-            // surface-write: evidence-migration:control
-            let lock = crate::persistence::open_lock_file(
-                crate::persistence::SurfaceWrite::EvidenceMigration,
-                &path,
-            )?;
-            fs4::FileExt::try_lock(&lock)?;
-            locks.push(lock);
-        }
+        let _locks = acquire_locks(
+            std::iter::once(self.state.join("LOCK"))
+                .chain(self.stores().into_iter().map(|p| p.join("LOCK"))),
+        )?;
         let (current, candidate) = self.routes()?;
         if contract["migration"]["client_sha256"] != digest(&current)
             || contract["migration"]["candidate_sha256"] != digest(&candidate)
@@ -474,5 +460,51 @@ impl Config {
         Ok(
             json!({"ready_for_cutover":true,"routing":"candidate installed; restart clients","live_checkpoint_read":"authorized and verified","source_writers_fenced":true,"final_plan":plan.id(),"reconciliation":{"verified_files":reconciled["verified_files"],"verified_bytes":reconciled["verified_bytes"],"current_source_matches":reconciled["current_source_matches"],"recovered_selected_bytes_match":reconciled["recovered_selected_bytes_match"]},"semantics":semantics,"backup":backup,"recovery":recovery,"originals":"retained","rollback_config":prior,"v2_post_cutover_writes":"remain in v2 if rolled back"}),
         )
+    }
+}
+
+fn acquire_locks(
+    paths: impl IntoIterator<Item = PathBuf>,
+) -> Result<Vec<crate::file_lease::FileLease>> {
+    let mut locks = Vec::new();
+    for path in paths {
+        if path
+            .symlink_metadata()
+            .is_ok_and(|m| m.file_type().is_symlink())
+        {
+            return Err("symlink lock refused".into());
+        }
+        // surface-write: evidence-migration:control
+        let lock = crate::persistence::open_lock_file(
+            crate::persistence::SurfaceWrite::EvidenceMigration,
+            &path,
+        )?;
+        fs4::FileExt::try_lock(&lock)?;
+        locks.push(crate::file_lease::FileLease(lock));
+    }
+    Ok(locks)
+}
+
+#[cfg(all(test, unix))]
+mod lease_tests {
+    use super::*;
+    #[test]
+    fn migration_lock_set_releases_on_drop_and_partial_acquisition_failure() {
+        let first = tempfile::NamedTempFile::new().unwrap();
+        let second = tempfile::NamedTempFile::new().unwrap();
+        let paths = || vec![first.path().to_owned(), second.path().to_owned()];
+        let locks = acquire_locks(paths()).unwrap();
+        let inherited = locks[0].0.try_clone().unwrap();
+        assert!(acquire_locks(paths()).is_err());
+        drop(locks);
+        let second_owner = acquire_locks([second.path().to_owned()]).unwrap();
+        // First acquisition succeeds; second is busy. The partial set must drop.
+        assert!(acquire_locks(paths()).is_err());
+        let replacement = acquire_locks([first.path().to_owned()]).unwrap();
+        drop(inherited);
+        assert!(acquire_locks([first.path().to_owned()]).is_err());
+        drop(replacement);
+        drop(second_owner);
+        acquire_locks(paths()).unwrap();
     }
 }

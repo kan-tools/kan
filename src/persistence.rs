@@ -289,6 +289,9 @@ impl SurfaceWrite {
                 "evidence-keys:LOCK",
                 "evidence-keys:.pending-*",
                 "evidence-keys:epoch-*.json",
+                "evidence-keys:recovery-package",
+                "evidence-keys:recovery-secret",
+                "evidence-keys:recovered-recipient-key",
             ],
             Self::EvidenceErasureHistory => &[
                 "evidence-erasure-history:LOCK",
