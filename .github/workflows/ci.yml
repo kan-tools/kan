@@ -68,7 +68,9 @@ jobs:
         run: python3 tests/test_revert_v2.py
       - id: check_07_test_capture_claude_hook
         continue-on-error: ${{ github.event_name == 'workflow_dispatch' && inputs.collect_all }}
-        run: python3 tests/test_capture_claude_hook.py
+        run: |
+          python3 tests/test_capture_claude_hook.py
+          python3 tests/test_kan_project.py
       - id: diagnostic_report_tests
         continue-on-error: ${{ github.event_name == 'workflow_dispatch' && inputs.collect_all }}
         run: |
@@ -129,7 +131,9 @@ jobs:
         run: python3 scripts/check_gateway_global_cap.py
       - id: check_24_check_v2_supervision
         continue-on-error: ${{ github.event_name == 'workflow_dispatch' && inputs.collect_all }}
-        run: python3 scripts/check_v2_supervision.py target/debug/kan
+        run: |
+          python3 scripts/check_v2_supervision.py target/debug/kan
+          python3 scripts/check_project_capture.py target/debug/kan
       - id: check_25_evidence_recovery_commitment_polling_tests
         continue-on-error: ${{ github.event_name == 'workflow_dispatch' && inputs.collect_all }}
         run: cargo test --features v2-crypto --lib evidence_recovery_commitment::polling_tests
@@ -437,6 +441,18 @@ jobs:
       - name: Advisory lock lifetime regressions (macOS)
         run: cargo test --features v2-crypto --lib lease_tests
         timeout-minutes: 45
+
+      - name: Project capture and typed MCP (macOS)
+        run: |
+          cargo build --locked --bin kan
+          python3 -m pip install cryptography==46.0.3
+          python3 scripts/check_project_capture.py target/debug/kan
+        timeout-minutes: 20
+      - uses: actions/upload-artifact@v4
+        with:
+          name: kan-agent-usability-macos-${{ github.sha }}
+          path: target/debug/kan
+          if-no-files-found: error
 
   diagnostic_summary:
     name: Diagnostic qualification result

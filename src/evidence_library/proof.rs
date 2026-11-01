@@ -29,6 +29,20 @@ pub struct Readers {
     workers: std::sync::Arc<tokio::sync::Semaphore>,
 }
 impl Readers {
+    pub(super) fn has_proof_sources(&self) -> bool {
+        !self.proof.is_empty()
+    }
+    pub(super) fn occurrence_reference(
+        &self,
+        source: &str,
+        record: Value,
+    ) -> Result<Value, Failure> {
+        let reader = self.selected(source)?;
+        let record: proof::Occurrence =
+            serde_json::from_value(record).map_err(|_| Failure::Corrupt)?;
+        let reference = proof::Reference::new(reader.binding(), &record);
+        Ok(json!({"reference":reference,"uri":reference.canonical_uri()?}))
+    }
     pub fn new(
         legacy: Option<legacy::Reader>,
         proofs: Vec<proof::Reader>,

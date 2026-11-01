@@ -6,9 +6,11 @@ import json
 from pathlib import Path
 import subprocess
 import sys
+import time
 
 
-def run(args, raw):
+def run(args, raw, observation=None):
+    observation = observation if observation is not None else {}
     event = json.loads(raw)
     session = event.get("session_id")
     if not isinstance(session, str) or not session:
@@ -20,20 +22,28 @@ def run(args, raw):
                "--key", args.key, "--recipient", args.recipient, "--session", session]
 
     def capture(extra, data=None):
+        timeout = args.timeout
+        if getattr(args, 'deadline', None) is not None:
+            timeout = min(timeout, args.deadline - time.monotonic())
+            if timeout <= 0:
+                raise TimeoutError('capture budget exhausted')
         result = subprocess.run(command + extra, input=data, capture_output=True,
-                                timeout=args.timeout, check=False)
+                                timeout=timeout, check=False)
         if result.returncode:
             # Do not echo captured content, credentials, or subprocess errors.
             raise RuntimeError("capture command failed")
         report = json.loads(result.stdout)
         if report.get("health", {}).get("recording_gap"):
             raise RuntimeError("capture spool could not retain all frames")
+        return {"health": report.get("health"),
+                "durability": report.get("durability"),
+                "remote_acknowledged": report.get("remote_acknowledged", False)}
 
     # Preserve the exact hook bytes, including whitespace; a hook with a trailing
     # newline is already JSONL. No reserialization of original evidence.
-    capture([], raw)
+    observation['hook'] = capture([], raw)
     if event.get("hook_event_name") in {
-        "Stop", "SessionEnd", "PreCompact", "PostCompact", "SubagentStop"
+        "Stop", "SessionEnd", "PreCompact", "PostCompact", "SubagentStop", "KanFinalSnapshot"
     }:
         key = "agent_transcript_path" if event.get("hook_event_name") == "SubagentStop" else "transcript_path"
         named = event.get(key)
@@ -46,7 +56,8 @@ def run(args, raw):
         resolved = path.resolve(strict=True)
         if path.is_symlink() or not resolved.is_relative_to(root) or not resolved.is_file():
             raise ValueError("transcript outside configured root")
-        capture(["--input", str(resolved)])
+        observation['transcript'] = capture(["--input", str(resolved)])
+    return observation
 
 
 def main():

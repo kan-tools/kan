@@ -1112,6 +1112,10 @@ client connections or startup limits requires an explicit service restart.
 
 ### Agent access over MCP
 
+For the typed common read tools and maintained project-scoped capture integration,
+see [Project capture and decoded retrieval](V2-PROJECT-CAPTURE.md). These entry
+points require the agent-usability build; released beta.1 predates them.
+
 Use the same explicit Reader configuration and signing key as the CLI/Library:
 
 ```sh

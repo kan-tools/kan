@@ -650,16 +650,23 @@ enum Command {
         #[command(flatten)]
         proof: ProofOptions,
     },
-    /// Make and verify a consistent local backup into a new file.
+    /// Back up an archive DIRECTORY into a new standalone SQLite FILE.
     Backup {
+        #[arg(value_name = "ARCHIVE_DIR")]
         archive: PathBuf,
+        #[arg(value_name = "NEW_DATABASE_FILE")]
         destination: PathBuf,
         #[command(flatten)]
         proof: ProofOptions,
     },
-    /// Read exact canonical record bytes despite damaged derived lookups.
-    ReadRecord { database: PathBuf, sequence: u64 },
-    /// Read and hash-check one opaque object using an offline key scan.
+    /// Read unsigned profile-1 canonical records from a database FILE.
+    /// Admitted/copied profiles require the authenticated Library proof reader.
+    ReadRecord {
+        #[arg(value_name = "DATABASE_FILE")]
+        database: PathBuf,
+        sequence: u64,
+    },
+    /// Read one unsigned profile-1 object from a database FILE by offline scan.
     ReadObject { database: PathBuf, cid: String },
     /// Rebuild derived data into a NEW file; retain the source and any failed output.
     Recover {
@@ -1977,6 +1984,9 @@ fn run(#[allow(unused_mut)] mut cli: Cli) -> Result<(), Box<dyn std::error::Erro
             destination,
             proof,
         } => {
+            if archive.is_file() {
+                return Err("backup source must be an archive DIRECTORY containing archive.sqlite, not the database file; example: kan backup /path/archive /path/new-backup.sqlite (with the archive's explicit proof options)".into());
+            }
             let copy_profile = proof.copy_profile;
             let binding = proof.binding()?;
             let attested = binding.is_some();
@@ -2011,6 +2021,7 @@ fn run(#[allow(unused_mut)] mut cli: Cli) -> Result<(), Box<dyn std::error::Erro
             );
         }
         Command::ReadRecord { database, sequence } => {
+            unsigned_database_input(&database)?;
             let record = RecoveryReader::open(&database)
                 .and_then(|reader| reader.record(sequence))
                 .map_err(|e| {
@@ -2031,6 +2042,7 @@ fn run(#[allow(unused_mut)] mut cli: Cli) -> Result<(), Box<dyn std::error::Erro
             );
         }
         Command::ReadObject { database, cid } => {
+            unsigned_database_input(&database)?;
             let id = cid
                 .parse()
                 .map_err(|e| format!("invalid ciphertext CID: {e}"))?;
@@ -2107,6 +2119,25 @@ fn run(#[allow(unused_mut)] mut cli: Cli) -> Result<(), Box<dyn std::error::Erro
     Ok(())
 }
 
+/// Header inspection supplies guidance only. It never selects a storage profile
+/// or bypasses RecoveryReader's complete file/schema/permission checks.
+fn unsigned_database_input(path: &std::path::Path) -> Result<(), Box<dyn std::error::Error>> {
+    use std::io::Read;
+    if path.is_dir() {
+        return Err("this command requires a database FILE, e.g. /path/archive/archive.sqlite; archive directories are inputs to backup and service commands".into());
+    }
+    let Ok(mut file) = std::fs::File::open(path) else {
+        return Ok(());
+    };
+    let mut header = [0u8; 64];
+    if file.read_exact(&mut header).is_ok() && &header[..16] == b"SQLite format 3\0" {
+        let profile = u32::from_be_bytes(header[60..64].try_into()?);
+        if matches!(profile, 2 | 3) {
+            return Err("read-record/read-object support unsigned profile 1 only; this is an admitted or copied proof archive. Use the authenticated Library proof-page/proof-source API with its explicit binding and reader credentials, or verify DATABASE_FILE with explicit --proof-archive/--proof-scope/--proof-issuer options. The file is not reinterpreted as profile 1".into());
+        }
+    }
+    Ok(())
+}
 fn print_json(value: &serde_json::Value) -> std::io::Result<()> {
     use std::io::Write;
     let mut out = std::io::stdout().lock();

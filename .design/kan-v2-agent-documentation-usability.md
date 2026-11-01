@@ -2,14 +2,15 @@
 
 ## Summary
 
-Draft next-beta scope, grounded in the owner's 2026-11-01 feedback and the real
+Owner-authorized design/build scope (2026-11-01), grounded in the feedback and real
 prof-comm documentation pilot. Make bounded, decoded evidence retrieval and
 project-scoped capture usable without bespoke launchers or guessed request fields.
 Keep research moving through the existing concise Day/v1 record while this path
 is improved. Full Day compatibility is a separate prerequisite for replacing v1.
 
-This is a design checkpoint, not implementation acceptance, a version bump,
-publication authority, or permission to change live credentials or capture routes.
+The owner authorized design and build of this plan. This is not implementation
+acceptance, a version bump, publication authority, or permission to change live
+credentials or capture routes.
 Process recording follows the existing Git-first day#168 / kan#197 exception;
 Day validation and claim backfill remain pending, rather than assumed complete.
 
@@ -193,11 +194,20 @@ Preserve project originals, private credentials, failed receipts and prior revie
 
 ## Open Questions
 
-The public integration command spelling and project-config file location remain
-implementation-design choices to settle before exposing a supported contract.
-The first beta can improve unsupported-profile diagnostics without broadening
-offline record-reader capabilities; any added admitted/copied reader needs its
-own explicit proof semantics and targeted controls.
+The maintained entry point is `scripts/kan-project.py --config ABSOLUTE_FILE`
+with check/start/stop/hook/finalize/health/claude-settings operations. Configuration
+is always explicitly selected, with authorized worktree and transcript roots;
+there is no automatic global installation or guessed directory encoding.
+
+Typed read tools cover catalog, discovery, decoded selected/attempt content,
+decoded session content and portable-reference reads. The advanced shared API
+remains available for audit and optional operations. Opaque signed objects are
+copied verbatim, not reconstructed by an agent. Tool help exposes schemas and
+examples, with read/write/owner separation unchanged.
+
+This build improves unsupported-profile diagnostics without broadening offline
+record-reader capabilities. An admitted/copied record-reader extension is deferred
+until its separate proof semantics are needed; no silent profile fallback is added.
 
 ## Separate Day compatibility gate
 

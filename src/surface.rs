@@ -19,6 +19,13 @@ impl SurfaceValue {
 /// Experimental v2 artifacts; schema columns are also inspected from SQLite in feature tests.
 /// Profile-2 backup/rebuild preserves these same proof fields; no lifecycle side store exists.
 pub const EVIDENCE_VALUES: &[SurfaceValue] = &[
+    SurfaceValue::new("project-capture:config", "*"),
+    SurfaceValue::new("project-capture:health.jsonl", "*"),
+    SurfaceValue::new("project-capture:services.json", "*"),
+    SurfaceValue::new("project-capture:services.json.new", "*"),
+    SurfaceValue::new("project-capture:operation.lock", "*"),
+    SurfaceValue::new("project-capture:readiness-request.json", "*"),
+    SurfaceValue::new("project-capture:service-logs", "*"),
     SurfaceValue::new("evidence-control-index:serving.sqlite", "*"),
     SurfaceValue::new("evidence-control-index:serving.sqlite-journal", "*"),
     SurfaceValue::new("evidence-control-index:CURRENT", "*"),
