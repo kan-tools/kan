@@ -135,7 +135,7 @@ with tempfile.TemporaryDirectory(prefix='kan-project-qualification-') as temp:
     recipient_private = put(root / 'recipient.key', recipient_key.private_bytes(serialization.Encoding.Raw, serialization.PrivateFormat.Raw, serialization.NoEncryption()))
     recipient = recipient_key.public_key().public_bytes(serialization.Encoding.Raw, serialization.PublicFormat.Raw).hex()
     archive_id, scope = '15' * 32, '16' * 32
-    binding = put(root / 'binding.json', {'archive': archive_id, 'scope': scope, 'issuer': issuer})
+    binding = put(root / 'binding.json', {'profile': 'admitted', 'archive': archive_id, 'scope': scope, 'issuer': issuer})
     grants = put(root / 'grants.json', [{'principal': writer, 'append': True, 'inventory': False}, {'principal': reader, 'append': False, 'inventory': True}])
     reserved = [socket.socket(), socket.socket()]
     try:
@@ -215,6 +215,16 @@ with tempfile.TemporaryDirectory(prefix='kan-project-qualification-') as temp:
         client.close()
         client = None
         print(json.dumps({'qualification': 'project-capture-and-typed-mcp', 'status': 'passed', 'captured_records': count, 'decoded_decision_and_citations': True, 'fresh_client_recovery_readback': True, 'backup_verification': verified['verification'], 'fixture': 'synthetic, same-host, no production key-custody claim'}))
+    except BaseException:
+        # This runner creates only synthetic fixtures. Retain bounded actual
+        # startup diagnostics in CI before its disposable directory is cleaned.
+        for role in ['serve-admitted', 'serve-proof']:
+            log = root / 'runtime' / (role + '.log')
+            if log.exists():
+                with log.open('rb') as stream:
+                    stream.seek(max(0, log.stat().st_size - 4096))
+                    print(role + ' synthetic-fixture diagnostic: ' + stream.read(4096).decode(errors='replace'), file=sys.stderr)
+        raise
     finally:
         if client is not None:
             client.proc.terminate()
