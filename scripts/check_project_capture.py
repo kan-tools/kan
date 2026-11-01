@@ -176,6 +176,7 @@ with tempfile.TemporaryDirectory(prefix='kan-project-qualification-') as temp:
         assert {'kan_v2_catalog', 'kan_v2_help', 'kan_v2_discover', 'kan_v2_content', 'kan_v2_session', 'kan_v2_reference'} <= names
         assert 'kan_v2_owner' not in names and 'kan_v2_write' not in names
         schemas = {t['name']: t['inputSchema'] for t in tools}
+        assert all(s.get('type') == 'object' for s in schemas.values()), 'every advertised MCP root must be an object'
         assert schemas['kan_v2_discover']['properties']['source']['type'] == 'string'
         assert 'query' not in schemas['kan_v2_discover']['properties']
         bad = client.call('kan_v2_content', {'source': 'selected', 'selections': []}, False)

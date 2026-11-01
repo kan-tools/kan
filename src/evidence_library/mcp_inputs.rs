@@ -149,29 +149,34 @@ pub(super) fn schema<T: JsonSchema>() -> Value {
 
 /// The parameter wrapper advertises the typed shape but defers deserialization
 /// to our value-free error handler. Framework serde errors may quote bad values.
-// schemars' `with` is a Rust type string, so keep these explicit rather than
-// constructing its attribute through macro stringification.
-#[derive(Deserialize, Serialize, JsonSchema)]
-#[serde(transparent)]
-pub(super) struct EmptyInput(#[schemars(with = "Empty")] pub Value);
-#[derive(Deserialize, Serialize, JsonSchema)]
-#[serde(transparent)]
-pub(super) struct DiscoverInput(#[schemars(with = "Discover")] pub Value);
-#[derive(Deserialize, Serialize, JsonSchema)]
-#[serde(transparent)]
-pub(super) struct ContentInput(#[schemars(with = "Content")] pub Value);
-#[derive(Deserialize, Serialize, JsonSchema)]
-#[serde(transparent)]
-pub(super) struct SessionInput(#[schemars(with = "Session")] pub Value);
-#[derive(Deserialize, Serialize, JsonSchema)]
-#[serde(transparent)]
-pub(super) struct ReferenceInput(#[schemars(with = "Reference")] pub Value);
-#[derive(Deserialize, Serialize, JsonSchema)]
-#[serde(transparent)]
-pub(super) struct HelpInput(#[schemars(with = "Help")] pub Value);
-#[derive(Deserialize, Serialize, JsonSchema)]
-#[serde(transparent)]
-pub(super) struct AdvancedInput(#[schemars(with = "Advanced")] pub Value);
+// Delegate the root schema directly. A derived transparent `with` wrapper can
+// emit only a root $ref, which rmcp rejects: inputSchema must itself be an object.
+// Deserialization still accepts Value so only our value-free parser reports errors.
+macro_rules! input {
+    ($wrapper:ident, $shape:ty) => {
+        #[derive(Deserialize, Serialize)]
+        #[serde(transparent)]
+        pub(super) struct $wrapper(pub Value);
+        impl JsonSchema for $wrapper {
+            fn schema_name() -> std::borrow::Cow<'static, str> {
+                <$shape>::schema_name()
+            }
+            fn schema_id() -> std::borrow::Cow<'static, str> {
+                <$shape>::schema_id()
+            }
+            fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
+                <$shape>::json_schema(generator)
+            }
+        }
+    };
+}
+input!(EmptyInput, Empty);
+input!(DiscoverInput, Discover);
+input!(ContentInput, Content);
+input!(SessionInput, Session);
+input!(ReferenceInput, Reference);
+input!(HelpInput, Help);
+input!(AdvancedInput, Advanced);
 
 pub(super) fn parse<T: DeserializeOwned + JsonSchema>(raw: Value) -> Result<T, Value> {
     serde_json::from_value(raw.clone()).map_err(|_| {
@@ -273,6 +278,23 @@ fn mismatch(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn every_parameter_schema_passes_the_actual_mcp_root_validator() {
+        fn check<T: JsonSchema + 'static>() {
+            let schema = rmcp::handler::server::common::schema_for_input::<
+                rmcp::handler::server::wrapper::Parameters<T>,
+            >()
+            .expect("advertised MCP input schema must validate at server startup");
+            assert_eq!(schema["type"], "object");
+        }
+        check::<EmptyInput>();
+        check::<DiscoverInput>();
+        check::<ContentInput>();
+        check::<SessionInput>();
+        check::<ReferenceInput>();
+        check::<HelpInput>();
+        check::<AdvancedInput>();
+    }
     #[test]
     fn invalid_fields_are_actionable_without_echoing_supplied_values() {
         for raw in [

@@ -445,8 +445,9 @@ jobs:
       - name: Project capture and typed MCP (macOS)
         run: |
           cargo build --locked --bin kan
-          python3 -m pip install cryptography==46.0.3
-          python3 scripts/check_project_capture.py target/debug/kan
+          python3 -m venv "$RUNNER_TEMP/kan-project-python"
+          "$RUNNER_TEMP/kan-project-python/bin/python" -m pip install cryptography==46.0.3
+          "$RUNNER_TEMP/kan-project-python/bin/python" scripts/check_project_capture.py target/debug/kan
         timeout-minutes: 20
       - uses: actions/upload-artifact@v4
         with:
