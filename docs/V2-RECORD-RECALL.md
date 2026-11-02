@@ -187,6 +187,8 @@ copied digest fail. A retained interrupted/failed job is not automatically retri
 A report ID identifies a run, not an accepted decision. Readback does not require
 provider configuration and calls no model. It reports requested/returned models,
 recipe, inputs/source URIs, availability, usage or its absence, and coverage.
+Report input references and text fragments both paginate under the normal 12 KiB budget. `inputs_count` and `blocks_count` name the total manifest and fragment counts; each page carries only its visible `inputs` and `blocks`. Follow `next` with unchanged report ID to retain both completely. Input numbers in the generated text refer to the stable selected manifest. An indivisible over-budget reference refuses explicitly.
+
 Report text/citations need review. Explicit promotion inherits original input
 citations and the retained result CID; edits and later corrections do not replace
 the original report. A captured instruction cannot grant tools or promotion.

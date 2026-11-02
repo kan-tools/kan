@@ -32,6 +32,48 @@ fn fragments(text: &str) -> Vec<String> {
     }
     out
 }
+// Input references are bounded rows too, never an unbounded repeated header.
+fn report_page(mut value: Value, cursor: Option<Value>) -> Result<Value, ContentError> {
+    let query = json!({"id": value["id"]});
+    let mut rows = Vec::new();
+    for (field, kind) in [("inputs", "input"), ("blocks", "block")] {
+        let values = value
+            .as_object_mut()
+            .and_then(|m| m.remove(field))
+            .and_then(|v| v.as_array().cloned())
+            .ok_or(Failure::Corrupt)?;
+        value[format!("{field}_count")] = json!(values.len());
+        rows.extend(values.into_iter().map(|v| json!({"kind":kind,"value":v})));
+        value[field] = json!([]);
+    }
+    value["entries"] = json!(rows);
+    value["input_coverage"] = json!("Input references and text fragments both paginate. Follow next to retain the complete selected manifest and report; input numbers remain stable across pages.");
+    let mut page = crate::evidence_library::mcp::pages::list(value, "entries", &query, cursor)
+        .map_err(|e| match e {
+            crate::evidence_library::mcp::pages::Error::Cursor => {
+                ContentError::Read(Failure::Invalid)
+            }
+            crate::evidence_library::mcp::pages::Error::Limited => ContentError::Limited,
+            _ => ContentError::Read(Failure::Corrupt),
+        })?;
+    let entries = page
+        .as_object_mut()
+        .and_then(|m| m.remove("entries"))
+        .and_then(|v| v.as_array().cloned())
+        .ok_or(Failure::Corrupt)?;
+    for row in entries {
+        let field = match row["kind"].as_str() {
+            Some("input") => "inputs",
+            Some("block") => "blocks",
+            _ => return Err(Failure::Corrupt.into()),
+        };
+        page[field]
+            .as_array_mut()
+            .ok_or(Failure::Corrupt)?
+            .push(row["value"].clone());
+    }
+    Ok(page)
+}
 impl Readers {
     async fn extract_draft(
         &self,
@@ -201,11 +243,68 @@ impl Readers {
             blocks.push(json!({"state":if output.is_some() {"No readable model text; inspect retained job result and failure state."} else {"No result yet; pending or interrupted. Report reading never retries a provider call."}}));
         }
         let value = json!({"version":"kan-derived-report/1","id":id,"recipe":job["preview"]["recipe"],"requested_model":job["preview"]["model"],"returned_model":output.as_ref().map(|o|o["parsed"]["model"].clone()),"state":output.as_ref().map_or(json!("pending-or-interrupted; inspect job status"),|o|o["state"].clone()),"blocks":blocks,"inputs":inputs,"usage":output.as_ref().map(|o|o["parsed"]["usage"].clone()),"usage_state":if output.as_ref().is_some_and(|o|!o["parsed"]["usage"].is_null()) {"provider-reported; not a billing receipt"} else {"unavailable"},"coverage":"Only the exact selected input manifest. Model claims and citations need review; this is not complete capture or an accepted decision.","promotion":"not-performed; explicit authored operation required"});
-        crate::evidence_library::mcp::pages::list(value, "blocks", &json!({"id":id}), cursor)
-            .map_err(|e| match e {
-                crate::evidence_library::mcp::pages::Error::Cursor => Failure::Invalid.into(),
-                crate::evidence_library::mcp::pages::Error::Limited => ContentError::Limited,
-                _ => Failure::Corrupt.into(),
-            })
+        report_page(value, cursor)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn report_pages_preserve_all_eight_large_references_and_unicode_without_repeating_header() {
+        let inputs: Vec<Value> = (0..8).map(|n| json!({"input":n,"source":"source","uri":format!("kan://{}-{}",n,"a".repeat(2200)),"availability":if n==6 {"key-unavailable"}else{"available"}})).collect();
+        let text = "é🙂 bounded report ".repeat(1000);
+        let blocks: Vec<Value> = fragments(&text)
+            .into_iter()
+            .enumerate()
+            .map(|(n, t)| json!({"block":0,"fragment":n,"text":t}))
+            .collect();
+        let full = json!({"id":"a".repeat(64),"recipe":{"instructions":"x".repeat(1200)},"inputs":inputs,"blocks":blocks,"state":"succeeded"});
+        let original = full.clone();
+        assert!(serde_json::to_vec(&full["inputs"]).unwrap().len() > 12 * 1024);
+        let first = report_page(full.clone(), None).unwrap();
+        let next = first["next"].clone();
+        assert!(!next.is_null());
+        let mut cursor = None;
+        let mut seen = Vec::new();
+        let mut joined = String::new();
+        let mut pages = 0;
+        loop {
+            let page = report_page(full.clone(), cursor).unwrap();
+            assert!(serde_json::to_vec(&page).unwrap().len() <= 12 * 1024);
+            assert_eq!(page["inputs_count"], 8);
+            seen.extend(page["inputs"].as_array().unwrap().iter().cloned());
+            for block in page["blocks"].as_array().unwrap() {
+                joined.push_str(block["text"].as_str().unwrap());
+            }
+            pages += 1;
+            assert!(pages < 100);
+            if page["next"].is_null() {
+                break;
+            }
+            cursor = Some(page["next"].clone());
+        }
+        assert_eq!(seen, inputs);
+        assert_eq!(joined, text);
+        assert!(pages > 1);
+        assert_eq!(full, original);
+        let mut changed = full.clone();
+        changed["inputs"][6]["availability"] = json!("available");
+        assert!(matches!(
+            report_page(changed, Some(next.clone())),
+            Err(ContentError::Read(Failure::Invalid))
+        ));
+        let mut changed = full.clone();
+        changed["id"] = json!("b".repeat(64));
+        assert!(matches!(
+            report_page(changed, Some(next)),
+            Err(ContentError::Read(Failure::Invalid))
+        ));
+        let mut oversized = full;
+        oversized["inputs"][0]["uri"] = json!("x".repeat(20000));
+        assert!(matches!(
+            report_page(oversized, None),
+            Err(ContentError::Limited)
+        ));
     }
 }

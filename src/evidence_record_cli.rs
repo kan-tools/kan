@@ -661,6 +661,14 @@ fn print_report(value: Value, json_output: bool) -> Result<()> {
         println!("{}", serde_json::to_string(&value)?);
     } else {
         println!("Report {} — {}", value["id"], value["state"]);
+        for input in value["inputs"].as_array().ok_or("invalid report inputs")? {
+            println!(
+                "Input {} — {}: {}",
+                input["input"],
+                input["availability"],
+                input["uri"].as_str().unwrap_or("unavailable")
+            );
+        }
         for block in value["blocks"].as_array().ok_or("invalid report")? {
             if let Some(text) = block["text"].as_str() {
                 print!("{text}");

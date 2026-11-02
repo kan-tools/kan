@@ -160,7 +160,9 @@ jobs:
           cargo test --features v2-crypto --lib evidence_library::proof::records
       - id: check_32_evidence_library_proof_analysis_adapters
         continue-on-error: ${{ github.event_name == 'workflow_dispatch' && inputs.collect_all }}
-        run: cargo test --features v2-crypto --lib evidence_library::proof::analysis
+        run: |
+          cargo test --features v2-crypto --lib evidence_library::proof::analysis
+          cargo test --features v2-crypto --lib evidence_library::proof::reports
       - id: check_33_evidence_library_mcp
         continue-on-error: ${{ github.event_name == 'workflow_dispatch' && inputs.collect_all }}
         run: cargo test --features v2-crypto --lib evidence_library::mcp

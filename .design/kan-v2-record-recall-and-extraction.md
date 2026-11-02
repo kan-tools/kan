@@ -373,3 +373,16 @@ are updated for the approved profile-scoped recording surface: v2 recognizes
 `observe`, requires an explicit profile, and must leave a detected legacy store
 untouched. Legacy-only `publish` remains refused by v2. These boundaries require
 remote qualification; fixing source or passing formatting is not runtime proof.
+
+
+### Real comparative trial finding — paginated report references
+
+The Sonnet5.5 Claude Code extraction actually succeeded over seven frozen working
+records, but its normal report read refused the 12 KiB budget. Input URI metadata
+was repeated outside the paginated text field, so seven references could make
+every page oversized. The correction paginates input references and text together
+under one query/evidence-bound presentation cursor, preserving their stable input
+numbers, all references, availability and complete text. Current authorization is
+still rechecked for every page. The original successful job/result is retained;
+qualification must read it without invoking extraction again. The fresh derived
+reader and independent review remain pending until that changed code qualifies.

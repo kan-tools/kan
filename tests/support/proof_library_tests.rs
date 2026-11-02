@@ -9002,6 +9002,7 @@ async fn bundled_extraction_decodes_tool_inputs_and_report_read_does_not_call_or
     let ui = Ui::start(base()).await;
     let mut cursor = Value::Null;
     let mut joined = String::new();
+    let mut report_inputs = Vec::new();
     let mut pages = 0;
     loop {
         let page = ui
@@ -9010,7 +9011,8 @@ async fn bundled_extraction_decodes_tool_inputs_and_report_read_does_not_call_or
         assert!(serde_json::to_vec(&page).unwrap().len() <= 12288);
         assert_eq!(page["returned_model"], "returned-synthetic-model");
         assert_eq!(page["requested_model"], "requested-synthetic-model");
-        assert_eq!(page["inputs"].as_array().unwrap().len(), 3);
+        assert_eq!(page["inputs_count"], 3);
+        report_inputs.extend(page["inputs"].as_array().unwrap().iter().cloned());
         for block in page["blocks"].as_array().unwrap() {
             joined.push_str(block["text"].as_str().unwrap());
         }
@@ -9022,6 +9024,12 @@ async fn bundled_extraction_decodes_tool_inputs_and_report_read_does_not_call_or
         }
     }
     assert_eq!(joined, report_text);
+    assert_eq!(report_inputs.len(), 3);
+    for (n, input) in report_inputs.iter().enumerate() {
+        assert_eq!(input["input"], n);
+        assert_eq!(input["availability"], "available");
+        assert!(input["uri"].as_str().is_some_and(|s| s.starts_with("kan:")));
+    }
     assert!(pages > 1);
     assert_eq!(requests.lock().unwrap().len(), 1);
     let edited = json!({"source":source,"verb":"decide","subject":"project/reviewed","text":"Edited, human-reviewed conclusion, still uncertain.","derived_from":[id]});
