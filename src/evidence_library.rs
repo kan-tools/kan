@@ -110,6 +110,10 @@ pub enum Query {
         #[serde(default)]
         wait: bool,
     },
+    ReportInput {
+        id: String,
+        input: usize,
+    },
     Report {
         id: String,
         cursor: Option<serde_json::Value>,
@@ -304,6 +308,7 @@ async fn query(reader: &Reader, query: Query) -> Result<Vec<u8>, ContentError> {
         | Query::AnnotationTriggers { .. }
         | Query::ExtractPlan { .. }
         | Query::ExtractRun { .. }
+        | Query::ReportInput { .. }
         | Query::Report { .. }
         | Query::AnalysisPreview { .. }
         | Query::AnalysisSubmit { .. }

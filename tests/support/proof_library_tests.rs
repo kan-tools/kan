@@ -9023,11 +9023,33 @@ async fn bundled_extraction_decodes_tool_inputs_and_report_read_does_not_call_or
             break;
         }
     }
+    ui.call(json!({"action":"report-input","id":id,"input":8}), 400)
+        .await;
+    ui.call(json!({"action":"report-input","id":id,"input":3}), 400)
+        .await;
     assert_eq!(joined, report_text);
     assert_eq!(report_inputs.len(), 3);
     for (n, input) in report_inputs.iter().enumerate() {
         assert_eq!(input["input"], n);
         assert_eq!(input["availability"], "available");
+        let locator = ui
+            .call(json!({"action":"report-input","id":id,"input":n}), 200)
+            .await;
+        assert_eq!(
+            locator["reference_request"],
+            json!({"report":{"id":id,"input":n}})
+        );
+        assert_eq!(locator["uri"], input["uri"]);
+        let resolved = ui
+            .call(
+                json!({"action":"resolve-capture-uri","uri":locator["uri"]}),
+                200,
+            )
+            .await;
+        assert_eq!(
+            resolved["record"]["sequence"],
+            rows[rows.len() - 1 - n]["sequence"]
+        );
         let uri = input["uri"].as_str().unwrap();
         let reference = kan::evidence_reader::proof::Reference::from_uri(uri).unwrap();
         assert_eq!(reference.canonical_uri().unwrap(), uri);
@@ -9082,6 +9104,8 @@ async fn bundled_extraction_decodes_tool_inputs_and_report_read_does_not_call_or
         .replace_grants(vec![])
         .unwrap();
     ui.call(json!({"action":"report","id":id}), 403).await;
+    ui.call(json!({"action":"report-input","id":id,"input":0}), 403)
+        .await;
     assert_eq!(requests.lock().unwrap().len(), 1);
     ui.stop().await;
     provider.abort();

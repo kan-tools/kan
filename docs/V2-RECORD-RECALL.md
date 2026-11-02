@@ -189,6 +189,8 @@ provider configuration and calls no model. It reports requested/returned models,
 recipe, inputs/source URIs, availability, usage or its absence, and coverage.
 Report input references and text fragments both paginate under the normal 12 KiB budget. `inputs_count` and `blocks_count` name the total manifest and fragment counts; each page carries only its visible `inputs` and `blocks`. Follow `next` with unchanged report ID to retain both completely. Input numbers in the generated text refer to the stable selected manifest. An indivisible over-budget reference refuses explicitly.
 
+Report inputs also return a compact `reference_request`, such as `{"report":{"id":"...","input":4}}`. Pass it directly to `kan_v2_reference`, then follow its cursor with the same handle. This avoids copying a long portable URI. The report id/input number is a locator, not a read capability: every use rechecks the report sources through the existing authenticated readers, requires no provider configuration and makes no model call. Exact portable URIs remain supported.
+
 Report text/citations need review. Explicit promotion inherits original input
 citations and the retained result CID; edits and later corrections do not replace
 the original report. A captured instruction cannot grant tools or promotion.

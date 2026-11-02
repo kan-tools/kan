@@ -182,20 +182,13 @@ impl Readers {
             json!({"version":"kan-extraction-job/1","id":result["job"]["id"],"state":result["state"],"report":{"tool":"kan_v2_report","id":result["job"]["id"]},"promotion":"not-performed"}),
         )
     }
-    pub(super) async fn report(
+    // A report handle is a locator only: rebind EVERY source under current
+    // access on every use, exactly as the report view does, without an Engine.
+    async fn report_inputs(
         &self,
-        id: String,
-        cursor: Option<Value>,
-    ) -> Result<Value, ContentError> {
-        if id.len() != 64 || crate::evidence_service::unhex(&id, 32).is_err() {
-            return Err(Failure::Invalid.into());
-        }
-        let workspace = self.workspace()?;
-        let job = workspace
-            .get("analysis-job", &id)?
-            .ok_or(Failure::AccessLimited)?;
-        let draft: analysis::Draft =
-            serde_json::from_value(job["draft"].clone()).map_err(|_| Failure::Corrupt)?;
+        draft: &analysis::Draft,
+        id: &str,
+    ) -> Result<Vec<Value>, ContentError> {
         let mut inputs = Vec::new();
         for (n, cite) in draft.cites.iter().enumerate() {
             let (_, source) = self
@@ -222,8 +215,45 @@ impl Readers {
                 &cite.source,
                 serde_json::to_value(record).map_err(|_| Failure::Corrupt)?,
             )?;
-            inputs.push(json!({"input":n,"source":cite.source,"uri":reference["uri"],"availability":availability}));
+            inputs.push(json!({"input":n,"source":cite.source,"uri":reference["uri"],"availability":availability,"reference_request":{"report":{"id":id,"input":n}}}));
         }
+        Ok(inputs)
+    }
+    pub(super) async fn report_input(
+        &self,
+        id: String,
+        input: usize,
+    ) -> Result<Value, ContentError> {
+        if id.len() != 64 || crate::evidence_service::unhex(&id, 32).is_err() || input >= 8 {
+            return Err(Failure::Invalid.into());
+        }
+        let job = self
+            .workspace()?
+            .get("analysis-job", &id)?
+            .ok_or(Failure::AccessLimited)?;
+        let draft: analysis::Draft =
+            serde_json::from_value(job["draft"].clone()).map_err(|_| Failure::Corrupt)?;
+        let inputs = self.report_inputs(&draft, &id).await?;
+        inputs
+            .get(input)
+            .cloned()
+            .ok_or_else(|| Failure::Invalid.into())
+    }
+    pub(super) async fn report(
+        &self,
+        id: String,
+        cursor: Option<Value>,
+    ) -> Result<Value, ContentError> {
+        if id.len() != 64 || crate::evidence_service::unhex(&id, 32).is_err() {
+            return Err(Failure::Invalid.into());
+        }
+        let workspace = self.workspace()?;
+        let job = workspace
+            .get("analysis-job", &id)?
+            .ok_or(Failure::AccessLimited)?;
+        let draft: analysis::Draft =
+            serde_json::from_value(job["draft"].clone()).map_err(|_| Failure::Corrupt)?;
+        let inputs = self.report_inputs(&draft, &id).await?;
         let output = workspace.get("analysis-result", &id)?;
         let mut blocks = Vec::new();
         if let Some(result) = &output {
@@ -252,7 +282,7 @@ mod tests {
     use super::*;
     #[test]
     fn report_pages_preserve_all_eight_large_references_and_unicode_without_repeating_header() {
-        let inputs: Vec<Value> = (0..8).map(|n| json!({"input":n,"source":"source","uri":format!("kan://{}-{}",n,"a".repeat(2200)),"availability":if n==6 {"key-unavailable"}else{"available"}})).collect();
+        let inputs: Vec<Value> = (0..8).map(|n| json!({"input":n,"source":"source","uri":format!("kan://{}-{}",n,"a".repeat(2200)),"reference_request":{"report":{"id":"b".repeat(64),"input":n}},"availability":if n==6 {"key-unavailable"}else{"available"}})).collect();
         let text = "é🙂 bounded report ".repeat(1000);
         let blocks: Vec<Value> = fragments(&text)
             .into_iter()

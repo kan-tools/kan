@@ -214,6 +214,7 @@ fn mutates(request: &Query) -> bool {
         Query::AnnotationTriggers { retry, .. } => *retry,
         Query::AnalysisJob { cancel, .. } => *cancel,
         Query::ExtractPlan { .. }
+        | Query::ReportInput { .. }
         | Query::Report { .. }
         | Query::RecordPreview { .. }
         | Query::Recall { .. }
@@ -444,7 +445,7 @@ impl Server {
         self.decoded_page(result, None, &query, args.cursor, Value::Null)
     }
     #[tool(
-        description = "Resolve an exact portable kan+capture occurrence URI under current access, then read its decoded content with citations. A URI identifies evidence, not authority. A single occurrence may be an incomplete capture; use discovery plus attempt content for broader reconstruction. Returns 12 KiB decoded pages: copy next into cursor with the same URI. Raw bytes are available only through the advanced audit API.",
+        description = "Resolve a small report/input handle from reference_request (preferred for report citations), or an exact portable kan+capture occurrence URI, under current access, then read its decoded content with citations. A URI identifies evidence, not authority. A single occurrence may be an incomplete capture; use discovery plus attempt content for broader reconstruction. Returns 12 KiB decoded pages: copy next into cursor with the same report/input handle or URI. Raw bytes are available only through the advanced audit API.",
         annotations(read_only_hint = true)
     )]
     async fn kan_v2_reference(
@@ -455,17 +456,46 @@ impl Server {
             Ok(a) => a,
             Err(e) => return e,
         };
-        if verified::Reference::from_uri(&args.uri).is_err() {
+        if let Err(problem) = args.validate_selector() {
+            return CallToolResult::structured_error(problem);
+        }
+        let uri = match (&args.report, args.uri.is_empty()) {
+            (Some(report), true) => {
+                let result = self
+                    .library(
+                        json!({"action":"report-input","id":report.id,"input":report.input}),
+                        false,
+                    )
+                    .await;
+                if result.is_error == Some(true) {
+                    return result;
+                }
+                let Some(uri) = result
+                    .structured_content
+                    .as_ref()
+                    .and_then(|v| v["uri"].as_str())
+                    .map(str::to_owned)
+                else {
+                    return error("corrupt");
+                };
+                uri
+            }
+            (None, false) => args.uri.clone(),
+            _ => {
+                return CallToolResult::structured_error(inputs::invalid(
+                    "arguments",
+                    "exactly one uri or report input reference",
+                ))
+            }
+        };
+        if verified::Reference::from_uri(&uri).is_err() {
             return CallToolResult::structured_error(inputs::invalid(
                 "arguments.uri",
                 "exact returned kan+capture://v1/occurrence URI",
             ));
         }
         let resolved = self
-            .library(
-                json!({"action":"resolve-capture-uri","uri":args.uri}),
-                false,
-            )
+            .library(json!({"action":"resolve-capture-uri","uri":uri}), false)
             .await;
         if resolved.is_error == Some(true) {
             return resolved;

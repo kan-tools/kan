@@ -196,6 +196,7 @@ impl Readers {
                 nonce,
                 wait,
             } => self.extract_run(selection, preview, nonce, wait).await?,
+            Query::ReportInput { id, input } => self.report_input(id, input).await?,
             Query::Report { id, cursor } => self.report(id, cursor).await?,
             Query::AnalysisPreview { draft } => self.analysis_preview(draft).await?,
             Query::AnalysisSubmit {

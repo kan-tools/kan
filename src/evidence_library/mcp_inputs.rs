@@ -97,12 +97,49 @@ pub(super) struct Session {
 }
 #[derive(Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
+pub(super) struct ReportReference {
+    /// Existing derived report id; not a grant or provider request.
+    #[schemars(length(min = 64, max = 64))]
+    pub id: String,
+    /// Stable input number from that report, zero-based.
+    #[schemars(range(min = 0, max = 7))]
+    pub input: usize,
+}
+#[derive(Deserialize, Serialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub(super) struct Reference {
     /// Exact kan+capture://v1/occurrence URI returned by Kan. It identifies
     /// evidence, not a grant; resolution checks current access again.
+    #[serde(default)]
     pub uri: String,
+    /// Prefer the exact small reference_request returned by a report input.
+    /// Use exactly one of uri or report; current access is rechecked.
+    pub report: Option<ReportReference>,
     #[schemars(with = "Option<std::collections::BTreeMap<String, Value>>")]
     pub cursor: Option<Value>,
+}
+impl Reference {
+    pub fn validate_selector(&self) -> Result<(), Value> {
+        match (&self.report, self.uri.is_empty()) {
+            (Some(report), true) => {
+                if report.id.len() != 64 || !report.id.bytes().all(|b| b.is_ascii_hexdigit()) {
+                    return Err(invalid("arguments.report.id", "64 hexadecimal characters"));
+                }
+                if report.input >= 8 {
+                    return Err(invalid(
+                        "arguments.report.input",
+                        "an input number from 0 to 7",
+                    ));
+                }
+                Ok(())
+            }
+            (None, false) => Ok(()),
+            _ => Err(invalid(
+                "arguments",
+                "exactly one uri or report input reference",
+            )),
+        }
+    }
 }
 #[derive(Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -187,7 +224,7 @@ impl Tool {
             Self::Session => {
                 json!({"identity":{"writer":"copy verified writer","observer":"collector","scheme":"claude-code-header","session":"copy claimed session"},"attempts":[{"source":"copy scope.id","pin":{"request":"copy complete returned pin","reply":{}},"selections":[{"body":{},"signature":"copy complete record.selection"}]}]})
             }
-            Self::Reference => json!({"uri":"copy exact returned kan+capture URI"}),
+            Self::Reference => json!({"report":{"id":"copy report.id","input":0}}),
         }
     }
 }
@@ -377,6 +414,30 @@ fn mismatch(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn report_reference_selectors_are_exclusive_bounded_and_value_free() {
+        let id = "a".repeat(64);
+        for raw in [
+            json!({"uri":"exact returned URI"}),
+            json!({"report":{"id":id,"input":7}}),
+        ] {
+            assert!(parse::<Reference>(raw).unwrap().validate_selector().is_ok());
+        }
+        for raw in [
+            json!({}),
+            json!({"uri":"private-secret","report":{"id":id,"input":0}}),
+            json!({"report":{"id":"private-secret","input":0}}),
+            json!({"report":{"id":id,"input":8}}),
+            json!({"report":{"id":id,"input":0,"private-secret":"private-secret"}}),
+        ] {
+            let problem = match parse::<Reference>(raw) {
+                Ok(args) => args.validate_selector().unwrap_err(),
+                Err(problem) => problem,
+            };
+            assert_eq!(problem["error"], "invalid-request");
+            assert!(!problem.to_string().contains("private-secret"));
+        }
+    }
     #[test]
     fn every_parameter_schema_passes_the_actual_mcp_root_validator() {
         fn check<T: JsonSchema + 'static>() {

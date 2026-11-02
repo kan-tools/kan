@@ -386,3 +386,19 @@ numbers, all references, availability and complete text. Current authorization i
 still rechecked for every page. The original successful job/result is retained;
 qualification must read it without invoking extraction again. The fresh derived
 reader and independent review remain pending until that changed code qualifies.
+
+
+### Real fresh report-reader finding — compact input locators
+
+The fresh Sonnet reader recovered the source revision/hash, decision, rationale
+and uncertainty through two normal report pages, then changed one character while
+copying a 1064-character capture URI for a supporting read. The altered reference
+correctly failed verification; the reader disclosed that it had not checked the
+underlying source. Preserve that original partial result. REQ-11's compact common
+path now includes report-id/input-number locators through the existing typed
+reference tool/shared action. These are not cached grants: every page rebinds all
+report sources under current access before the ordinary reference/content read.
+The report text, original frozen inputs and single provider result stay unchanged.
+After remote qualification, continue only that same reader explicitly on the
+changed interface within its original remaining spend allocation; do not rerun
+authoring, extraction or a fresh inference unchanged.
