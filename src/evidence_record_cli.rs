@@ -546,11 +546,11 @@ pub fn run(command: Command) -> Result<()> {
             analysis,
         } => {
             let p = Profile::load(&base.profile)?;
-            return Ok(tokio::runtime::Runtime::new()?.block_on(library::serve_mcp(
+            return tokio::runtime::Runtime::new()?.block_on(library::serve_mcp(
                 p.open(analysis)?,
                 writes,
                 false,
-            ))?);
+            ));
         }
     };
     let profile = Profile::load(&base.profile)?;

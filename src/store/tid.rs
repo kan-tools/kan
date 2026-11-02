@@ -16,7 +16,7 @@
 
 const ENCODE_ALPHABET: &[u8; 32] = b"234567abcdefghijklmnopqrstuvwxyz";
 
-fn encode(mut value: u64) -> String {
+pub(crate) fn encode(mut value: u64) -> String {
     let mut chars = [0u8; 13];
     for slot in chars.iter_mut().rev() {
         *slot = ENCODE_ALPHABET[(value & 0x1f) as usize];

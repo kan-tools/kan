@@ -46,11 +46,21 @@ def main():
                 assert run(binary, "--version").strip() == f"{name} {version}"
                 help_text = run(binary, "--help")
                 assert f"Usage: {name} " in help_text, help_text
-                supported, refused = (("library", "observe") if name == "kan"
+                supported, refused = (("library", "publish") if name == "kan"
                                       else ("observe", "library"))
                 run(binary, supported, "--help")
                 result = subprocess.run([binary, refused, "--help"], capture_output=True)
                 assert result.returncode != 0, (name, refused)
+                if name == "kan":
+                    # Familiar v2 verbs are additive, with an explicit profile;
+                    # they must never fall back to a cwd-discovered v1 store.
+                    assert "--profile" in run(binary, "observe", "--help")
+                    with tempfile.TemporaryDirectory(prefix="kan-no-profile-") as isolated:
+                        result = subprocess.run([binary, "observe", "install-safety-probe"],
+                                                cwd=isolated, capture_output=True, text=True)
+                        assert result.returncode == 2, result
+                        assert "--profile" in result.stderr and "required" in result.stderr
+                        assert list(Path(isolated).iterdir()) == []
                 if name == "kan-v1":
                     # Registration must point to this binary, never the new kan.
                     assert binary in run(binary, "mcp", "install")

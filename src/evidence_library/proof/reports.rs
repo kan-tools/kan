@@ -64,7 +64,9 @@ impl Readers {
                         selection: record.selection,
                     });
                 }
-                if sequence >= selection.through {
+                // Proof pages walk backward from the pinned frontier. Continue
+                // through the inclusive lower bound, not just the newest row.
+                if sequence <= selection.from {
                     done = true;
                     break;
                 }
@@ -80,6 +82,8 @@ impl Readers {
         if cites.len() as u64 != selection.through - selection.from + 1 {
             return Err(Failure::Missing.into());
         }
+        // The bundle manifest and decoded input order are chronological.
+        cites.reverse();
         selection.pin = Some(pin);
         Ok((
             selection.clone(),

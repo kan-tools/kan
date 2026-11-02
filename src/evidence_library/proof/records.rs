@@ -128,7 +128,7 @@ impl Batch {
         if self.version != 1
             || self.source.len() > 1024
             || self.order == 0
-            || self.order > u64::MAX - 3
+            || self.order > i64::MAX as u64 - 3
             || evidence_service::unhex(&self.intent_hash, 32).is_err()
             || self.intent_hash.len() != 64
             || self.claims.is_empty()
@@ -154,7 +154,7 @@ impl Batch {
                 || claim.content.artifacts.last() != Some(&self.operation_artifact()?)
                 || claim.content.workspace != anchor(&self.source)?
                 || claim.content.recorded_at != Some(self.operation.recorded_at + i as u64)
-                || record.rev != format!("{:020}", self.order + i as u64)
+                || record.rev != crate::store::encode_tid(self.order + i as u64)
             {
                 return Err(Failure::Corrupt);
             }
@@ -565,7 +565,7 @@ impl Readers {
                     };
                     let claim = owner.sign_record(content)?;
                     let cid = crate::cid::content_cid(&claim.content).map_err(|_| Failure::Corrupt)?;
-                    let raw = codec::encode_v1(claim, format!("{:020}", order + i as u64))
+                    let raw = codec::encode_v1(claim, crate::store::encode_tid(order + i as u64))
                         .map_err(|_| Failure::Invalid)?;
                     claims.push(Encoded { cid: cid.to_string(), bytes: evidence_service::hex(&raw) });
                     previous = Some(cid);
@@ -789,6 +789,8 @@ mod tests {
         for (i, body) in bodies.into_iter().enumerate() {
             let cites = if matches!(body, ClaimBody::Status { .. }) && previous.is_some() {
                 vec![previous.clone().unwrap()]
+            } else if matches!(body, ClaimBody::Subject { .. }) {
+                Vec::new()
             } else {
                 parse_cids(&d.cites).unwrap()
             };
@@ -809,7 +811,7 @@ mod tests {
                 content,
                 sig: signer.sign(&cid.to_bytes()).unwrap(),
             };
-            let raw = codec::encode_v1(claim, format!("{:020}", order + i as u64)).unwrap();
+            let raw = codec::encode_v1(claim, crate::store::encode_tid(order + i as u64)).unwrap();
             batch.claims.push(Encoded {
                 cid: cid.to_string(),
                 bytes: evidence_service::hex(&raw),
@@ -864,6 +866,15 @@ mod tests {
         let first = batch(&d, &signer, &[], "a", 500, 1000);
         let retry = batch(&d, &signer, &[], "a", 500, 1000);
         assert_eq!(first.claims[0].bytes, retry.claims[0].bytes);
+        let decoded = first.decoded(signer.did().as_str()).unwrap();
+        assert_eq!(decoded[0].1.rev.len(), 13);
+        assert_eq!(decoded[0].1.rev, crate::store::encode_tid(1000));
+        // The attested append order must still match the canonical envelope.
+        let mut wrong_order = first.clone();
+        wrong_order.order += 1;
+        assert!(wrong_order.decoded(signer.did().as_str()).is_err());
+        wrong_order.order = i64::MAX as u64;
+        assert!(wrong_order.decoded(signer.did().as_str()).is_err());
         let new = batch(&d, &signer, &[], "b", 500, 1004);
         assert_ne!(
             first.claims[0].cid, new.claims[0].cid,

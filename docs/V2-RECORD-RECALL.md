@@ -77,7 +77,7 @@ signed evidence citations and literal artifacts; returned source URIs expand
 through the normal typed reference tool under current access.
 
 Receipts distinguish canonical inner claim CIDs, the outer authored declaration,
-operation nonce/time and local/publication state. Local encrypted save is not an
+operation nonce/time and local/publication state. Append order is encoded with the original 13-character ATProto TID encoder in each canonical envelope; it is separate from the author-attested time. Local encrypted save is not an
 archive acknowledgment, independent backup, complete capture or accepted review.
 An operator-configured outbox automatically queues the record at that fixed
 bound destination; delivery uses the existing explicit drainer. Queue failure

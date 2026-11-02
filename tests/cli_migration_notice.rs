@@ -51,9 +51,15 @@ fn help_version_and_errors_keep_their_contract_with_a_legacy_notice() {
         }
         assert!(!String::from_utf8_lossy(&output.stdout).contains("legacy-workspace"));
     }
-    let output = kan(root.path(), &["observe"]);
+    // Familiar v2 recording is now recognized, but must never discover
+    // or write the detected legacy store without an explicit v2 profile.
+    let output = kan(root.path(), &["observe", "notice-safety-probe"]);
     assert_eq!(output.status.code(), Some(2));
-    assert!(stderr(&output).contains("unrecognized subcommand"));
+    assert!(stderr(&output).contains("--profile"));
+    assert!(stderr(&output).contains("required"));
+    let old_only = kan(root.path(), &["publish"]);
+    assert_eq!(old_only.status.code(), Some(2));
+    assert!(stderr(&old_only).contains("unrecognized subcommand"));
     assert!(stderr(&output).contains("optional `kan-v1`"));
     assert_eq!(fs::read(evidence).unwrap(), b"retained damaged evidence");
     assert!(!root.path().join(".kan/V2_FENCE").exists());

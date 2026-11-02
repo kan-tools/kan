@@ -8956,10 +8956,26 @@ async fn bundled_extraction_decodes_tool_inputs_and_report_read_does_not_call_or
         .await;
     assert!(requests.lock().unwrap().is_empty());
     assert!(plan.to_string().len() <= 12288);
+    // The service inventory is newest-first. A full interval must keep all
+    // three rows and present the frozen bundle in chronological input order.
+    let inventory = ui.call(json!({"action":"proof-page","source":source,"pin":plan["selection"]["pin"],"cursor":null,"limit":20}), 200).await;
+    let rows = inventory["records"].as_array().unwrap();
+    assert_eq!(rows.len(), 3);
+    assert_eq!(rows[0]["sequence"], "3");
+    ui.call(json!({"action":"extract-plan","selection":{"source":source,"from":1,"through":4,"recipe":"documentation-summary"}}),404).await;
+    assert!(requests.lock().unwrap().is_empty());
     let submit = json!({"action":"extract-run","selection":plan["selection"],"preview":plan["digest"],"nonce":plan["nonce"],"wait":true});
     let done = ui.call(submit.clone(), 200).await;
     assert_eq!(done["state"], "succeeded");
     assert_eq!(done["promotion"], "not-performed");
+    let job = ui
+        .call(json!({"action":"analysis-job","id":done["id"]}), 200)
+        .await;
+    let frozen = job["job"]["draft"]["cites"].as_array().unwrap();
+    assert_eq!(frozen.len(), 3);
+    for (cite, row) in frozen.iter().zip(rows.iter().rev()) {
+        assert_eq!(cite["selection"], row["selection"]);
+    }
     assert_eq!(ui.call(submit, 200).await, done);
     assert_eq!(requests.lock().unwrap().len(), 1);
     {

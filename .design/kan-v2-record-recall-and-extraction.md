@@ -352,3 +352,24 @@ Explicit boundaries: default `me` is narrower than v1 `local`; explicit local an
 DID/weight membership are available, role aliases refuse. Imported originals,
 Git-computed ancestry and complete Day JSON/cutover are separate contracts. This
 is not an upgrade of the installed system binary or the live research ledger.
+
+
+### First runtime qualification findings — 2026-11-02
+
+The first compiling revision exposed invalid decimal revision strings in new
+canonical record envelopes: the unchanged v1 codec requires 13-character ATProto
+TIDs. The correction reuses the original encoder for transaction-assigned append
+order, checks its range, and verifies that every retained envelope matches that
+order. Author-attested time remains separate. No invalid envelope was accepted by
+the codec; failed operations and their diagnostics remain retained.
+
+The extraction planner also stopped at the first newest-first inventory row.
+It now scans through the inclusive lower bound, then orders the complete selected
+interval chronologically. The actual provider integration test checks all three
+frozen selections against the signed inventory and still refuses a missing row.
+
+Existing install/migration-notice assertions that all familiar verbs were absent
+are updated for the approved profile-scoped recording surface: v2 recognizes
+`observe`, requires an explicit profile, and must leave a detected legacy store
+untouched. Legacy-only `publish` remains refused by v2. These boundaries require
+remote qualification; fixing source or passing formatting is not runtime proof.
