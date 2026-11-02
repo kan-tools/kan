@@ -327,7 +327,7 @@ fn record_trust(
 }
 struct History {
     claims: Vec<(Cid, StoredClaim)>,
-    origins: std::collections::BTreeMap<Cid, Value>,
+    origins: std::collections::BTreeMap<String, Value>,
 }
 impl Readers {
     async fn record_scope(&self, source: &str) -> Result<(), ContentError> {
@@ -416,7 +416,7 @@ impl Readers {
                             evidence.push(json!({"source":cite.source,"uri":reference["uri"],"availability":availability}));
                         }
                         for (cid, _) in &decoded {
-                            origins.insert(cid.clone(),json!({"annotation":value["id"],"operation":batch.operation,"evidence":evidence,"derived_from":draft.derived_from,"claim_authorship":"canonical kan-claim-v1 compatibility signature; storage admission is separate"}));
+                            origins.insert(cid.to_string(),json!({"annotation":value["id"],"operation":batch.operation,"evidence":evidence,"derived_from":draft.derived_from,"claim_authorship":"canonical kan-claim-v1 compatibility signature; storage admission is separate"}));
                         }
                     }
                     history.extend(decoded);
@@ -646,17 +646,20 @@ impl Readers {
                     .filter(move |(id, c)| {
                         c.content.body.kind() == ClaimKind::Status && !live.contains(id)
                     })
-                    .map(|(id, _)| id.clone())
+                    .map(|(id, _)| id.to_string())
             })
             .collect();
         let render = |cid: &Cid, claim: &Claim| {
             let mut value = serde_json::to_value(crate::json::ClaimJson::new(
                 cid,
                 claim,
-                superseded.contains(cid),
+                superseded.contains(&cid.to_string()),
             ))
             .map_err(|_| Failure::Corrupt)?;
-            value["origin"] = origins.get(cid).cloned().ok_or(Failure::Corrupt)?;
+            value["origin"] = origins
+                .get(&cid.to_string())
+                .cloned()
+                .ok_or(Failure::Corrupt)?;
             Ok::<_, Failure>(value)
         };
         let result = match verb.as_str() {
