@@ -59,6 +59,7 @@ impl Readers {
                     cites: draft.cites.clone(),
                     retry_of: None,
                     trigger_annotation: Some(id.into()),
+                    decode: false,
                 };
                 let result = async {
                     let preview = self.analysis_preview(job.clone()).await?;

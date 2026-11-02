@@ -348,7 +348,7 @@ fn plan(
                     .ok_or(Failure::Corrupt)?
                     .to_string();
                 let encoded = serde_json::to_vec(
-                    &json!({"format":"kan-annotation/1","declaration":declaration}),
+                    &json!({"format":if declaration["draft"]["authored"].is_null() {"kan-annotation/1"} else {"kan-annotation/2"},"declaration":declaration}),
                 )
                 .map_err(invalid)?;
                 let (declaration, draft) = knowledge::decode_publication(&encoded, &author)?;

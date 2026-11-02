@@ -17,6 +17,7 @@
   let searchStates = [], searchRun = 0, searchFilter = null, searchHits = new Map(), searchPages = 0;
   let analysisEnabled=false,analysisDraft=null,analysisPreview=null,analysisRecipes=[];
   let viewsNext=null, annotationsNext=null, knowledgeNext=null, knowledgeSubject=null;
+  let recordRetry=null,recallQuery=null,recallNext=null;
   let annotationsEnabled=false, annotationCites=[], annotationDerivations=[], annotationRelations=[], annotationSupersedes=null, annotationWithdraws=null, annotationPreview=null;
   let attemptMode = false;
   let pinWire = null, contentEnabled = false, contentValue = null, returnItem = null;
@@ -109,7 +110,7 @@
     for (const [key, val] of Object.entries({Scope:value.scope, Manifest:value.record.manifest, Receipt:value.record.receipt, 'Observed writer':value.writer || 'Unavailable for present-time verification', Observer:'Not normalized in this source view', 'Claimed speaker':'Not inferred from the writer key', 'Service issuer':value.service_issuer, Signature:value.signature, Admission:value.admission, 'Content trust':value.content_trust, ...(value.archive ? {Archive:value.archive, Profile:value.profile, 'Proof purpose':value.record.purpose, 'Attested at (Unix milliseconds)':value.record.issued_at, 'Receipt issuer':value.record.receipt_issuer, Attestation:value.record.attestation, Availability:value.availability} : {})})) {
       const dt = document.createElement('dt'), dd = document.createElement('dd'); dt.textContent = key; dd.textContent = val; $('provenance').append(dt); $('provenance').append(dd);
     }
-    if(annotationsEnabled&&value.reference&&value.offset==='0'&&typeof value.utf8==='string'){try{$('restore-annotation').hidden=JSON.parse(value.utf8).format!=='kan-annotation/1';}catch{$('restore-annotation').hidden=true;}}
+    if(annotationsEnabled&&value.reference&&value.offset==='0'&&typeof value.utf8==='string'){try{$('restore-annotation').hidden=!['kan-annotation/1','kan-annotation/2'].includes(JSON.parse(value.utf8).format);}catch{$('restore-annotation').hidden=true;}}
     if(value.reference){$('reference-value').value=value.uri||JSON.stringify({reference:value.reference,offset:String(value.offset||'0')},null,2);$('reference-export').hidden=false;}
     notice(unavailable ? `Source ${value.availability} · provenance retained; no bytes substituted.` : 'Source verified · this is one retained occurrence, not a reconstructed session.');
   }
@@ -175,8 +176,8 @@
   }
   function renderCapabilities(value) {
     if (!Array.isArray(value.capabilities) || !Array.isArray(value.unavailable)) throw new Error('Unsupported capability response.');
-    const labels = {'attachment-export':'Attachment downloads','harness-jsonl':'Harness snapshots','portable-references':'Portable evidence references','import-content':'Imported v1 files and claims','owner-maintenance':'Owner maintenance','operations-read':'Operations reader','text-search':'Persistent text search','attempt-content':'Large attempt Content','session-content':'Conversation reader','session-links':'Explicit session relationships','attempt-discovery':'Captured attempt discovery','snapshot-inventory':'Snapshot inventory','source-ranges':'Source ranges','provenance':'Provenance','content-inspection':'Selected Content','payload-availability':'Payload availability','semantic-search':'Semantic search','normalized-sessions':'Sessions','annotations':'Annotations','saved-views':'Saved views','analysis':'Analysis','administrative-jobs':'Admin jobs'};
-    const supported = new Set(['attachment-export','harness-jsonl','portable-references','import-content','owner-maintenance','analysis','operations-read','text-search','saved-views','annotations','snapshot-inventory','source-ranges','provenance','content-inspection','payload-availability','attempt-discovery','attempt-content','session-links','session-content']), seen = new Set();
+    const labels = {'attachment-export':'Attachment downloads','harness-jsonl':'Harness snapshots','portable-references':'Portable evidence references','import-content':'Imported v1 files and claims','owner-maintenance':'Owner maintenance','operations-read':'Operations reader','text-search':'Persistent text search','attempt-content':'Large attempt Content','session-content':'Conversation reader','session-links':'Explicit session relationships','attempt-discovery':'Captured attempt discovery','snapshot-inventory':'Snapshot inventory','source-ranges':'Source ranges','provenance':'Provenance','content-inspection':'Selected Content','payload-availability':'Payload availability','semantic-search':'Semantic search','normalized-sessions':'Sessions','typed-records':'Typed authored records','annotations':'Annotations','saved-views':'Saved views','analysis':'Analysis','administrative-jobs':'Admin jobs'};
+    const supported = new Set(['typed-records','attachment-export','harness-jsonl','portable-references','import-content','owner-maintenance','analysis','operations-read','text-search','saved-views','annotations','snapshot-inventory','source-ranges','provenance','content-inspection','payload-availability','attempt-discovery','attempt-content','session-links','session-content']), seen = new Set();
     $('capability-list').replaceChildren();
     for (const [items, available] of [[value.capabilities,true],[value.unavailable,false]]) {
       for (const capability of items) {
@@ -221,7 +222,7 @@
     $('operations-link').hidden=!value.capabilities.includes('operations-read');
     $('owner-maintenance').hidden=!value.capabilities.includes('owner-maintenance');
     clearAnalysis(true);analysisEnabled=value.capabilities.includes('analysis');$('analysis').hidden=!analysisEnabled;
-    annotationsEnabled=value.capabilities.includes('annotations');$('knowledge').hidden=!annotationsEnabled;
+    annotationsEnabled=value.capabilities.includes('annotations');$('knowledge').hidden=!annotationsEnabled;$('typed-records').hidden=!value.capabilities.includes('typed-records');
     catalogContent = value.capabilities.includes('content-inspection');
     if (value.scopes.some(s => (s.capabilities?.includes('content-inspection') || (value.version === 1 && catalogContent)) && typeof s.pin_wire !== 'string')) throw new Error('Missing exact snapshot.');
     scopes = value.scopes;
@@ -244,6 +245,7 @@
   }
 
   function choose(entry) {
+    clearRecords();
     clearDiscovery(); activeSource = entry; pin = entry.pin; pinWire = entry.pin_wire || null; history = [];
     $('discovery').hidden = !entry.capabilities?.includes('attempt-discovery');navigation(true);
     contentEnabled = entry.capabilities ? entry.capabilities.includes('content-inspection') : catalogContent;
@@ -987,7 +989,9 @@
   $('next-subjects').addEventListener('click',()=>{if(knowledgeNext!==null)run(()=>knowledgeSubjects(knowledgeSubject,knowledgeNext));});
   $('knowledge-mode').addEventListener('change',()=>{cancelWork();knowledgeNext=null;knowledgeSubject=null;$('next-subjects').disabled=true;$('knowledge-subjects').replaceChildren();$('knowledge-detail').replaceChildren();$('knowledge-coverage').textContent='View changed; browse subjects to refresh.';});
 
+  function clearRecords(){recordRetry=null;recallQuery=null;recallNext=null;$('record-results').replaceChildren();$('record-receipt').textContent='';$('record-coverage').textContent='';$('record-more').disabled=true;$('record-text').value='';$('record-target').value='';$('record-find').value='';$('record-subject').value='general';}
   function clearKnowledge(hide=false) {
+    clearRecords();
     knowledgeNext=null;knowledgeSubject=null;$('next-subjects').disabled=true;
     annotationsNext=null;$('next-annotations').disabled=true;
     annotationCites=[];annotationDerivations=[];annotationRelations=[];$('annotation-relations').replaceChildren();$('relation-target').value='';annotationSupersedes=null;annotationWithdraws=null;annotationPreview=null;
@@ -1047,7 +1051,7 @@
         const results=document.createElement('div'),check=textNode('button','Inspect tag-triggered jobs');
         check.addEventListener('click',()=>run(()=>showTriggers(note.id,results)));row.append(check);row.append(results);
       }
-      if(!note.draft.withdraws){
+      if(!note.draft.withdraws && !note.draft.authored){
         const withdraw=textNode('button','Withdraw annotation');withdraw.addEventListener('click',()=>editAnnotation(note.draft.cites,note.draft.subject,null,[],[],note.id));row.append(withdraw);
         const correct=textNode('button','Append correction');correct.addEventListener('click',()=>editAnnotation(note.draft.cites,note.draft.subject,note.id,note.draft.derived_from||[],note.draft.relations||[]));row.append(correct);
       }
@@ -1407,4 +1411,31 @@
   $('close-inspector').addEventListener('click', () => { epoch++; if(controller) controller.abort(); const button = buttons.get(selected); clearContent(false); clearInspector(); if(button)button.focus(); });
   $('lock').addEventListener('click', () => lock());
   window.addEventListener('pagehide', () => lock());
+
+  $('record-form').addEventListener('input',()=>{recordRetry=null;});
+  $('record-form').addEventListener('submit',event=>{event.preventDefault();run(async()=>{
+    if(!isProof()){notice('Select the exact proof collection for this authored record.',true);return;}
+    const verb=$('record-verb').value;
+    const narrative=['observe','plan','decide','result','block','resolve'].includes(verb);
+    const target=['same','relate','retract','reject'].includes(verb);
+    const draft={source:sourceId(activeSource),verb,subject:$('record-subject').value.trim(),
+      text:narrative?$('record-text').value:null,target:target?$('record-target').value.trim():null,
+      relation:verb==='relate'?$('record-relation').value:null,status:verb==='mark'?$('record-status').value:null};
+    if(!recordRetry){
+      const nonce=Array.from(crypto.getRandomValues(new Uint8Array(32)),n=>n.toString(16).padStart(2,'0')).join('');
+      recordRetry={...draft,operation:{nonce,recorded_at:Date.now()*1000}};
+    }
+    const value=await rpc({action:'record',draft:recordRetry});if(!value)return;
+    $('record-receipt').textContent=`Saved ${value.claims.join(', ')} · ${value.durability} · ledger ${value.publication}. No independent backup is implied.`;
+    recordRetry=null;
+  });});
+  async function recallRecords(more=false){
+    if(!isProof()){notice('Select an authorized proof collection.',true);return;}
+    if(!more){recallQuery={action:'recall',source:sourceId(activeSource),verb:$('record-view').value,subject:$('record-find').value.trim()||null,trust:[],budget:1024};$('record-results').replaceChildren();}
+    const value=await rpc({...recallQuery,cursor:more?recallNext:null});if(!value)return;
+    for(const entry of value.entries){const card=document.createElement('article');card.className='panel';details(card,entry.type,JSON.stringify(entry,null,2));$('record-results').append(card);}
+    recallNext=value.next;$('record-more').disabled=!recallNext;$('record-coverage').textContent=`${value.coverage} ${value.trust_note}`;
+  }
+  $('record-recall').addEventListener('click',()=>run(()=>recallRecords(false)));
+  $('record-more').addEventListener('click',()=>run(()=>recallRecords(true)));
 })();

@@ -65,7 +65,7 @@ impl Workspace {
                     // Only attribution, links and exact access-check citations
                     // are needed; do not copy the neighbor's text or recipes.
                     let neighbor = serde_json::json!({"id":annotation,"author":value["author"],
-                        "recovered_from":value["recovered_from"],"draft":{"subject":draft["subject"],
+                        "recovered_from":value["recovered_from"],"draft":{"authored":draft["authored"],"subject":draft["subject"],
                         "text":"","tags":[],"cites":draft["cites"],
                         "supersedes":draft["supersedes"],"withdraws":draft["withdraws"]}});
                     related_bytes = related_bytes

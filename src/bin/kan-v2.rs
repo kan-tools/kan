@@ -134,6 +134,9 @@ enum RecoveryCommand {
 }
 #[derive(Subcommand)]
 enum Command {
+    #[cfg(feature = "v2-crypto")]
+    #[command(flatten)]
+    Records(kan::evidence_record_cli::Command),
     /// Set up, verify or restore a file-based recipient-key recovery package.
     #[cfg(feature = "v2-crypto")]
     Recovery {
@@ -771,6 +774,8 @@ fn run(#[allow(unused_mut)] mut cli: Cli) -> Result<(), Box<dyn std::error::Erro
         .transpose()?
         .flatten();
     match cli.command {
+        #[cfg(feature = "v2-crypto")]
+        Command::Records(command) => kan::evidence_record_cli::run(command)?,
         #[cfg(feature = "v2-crypto")]
         Command::OpsInit { journal, spool } => {
             kan::evidence_operations::Journal::create(&journal, &spool)

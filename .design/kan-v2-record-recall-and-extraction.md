@@ -252,7 +252,7 @@ triggers remain opt-in; merely saving or reading this report cannot promote it.
 A report is addressed and retrievable directly. Its content and references must
 fit ordinary CLI/MCP pages without copying the provider's full raw response.
 Original request/response and usage remain separately inspectable run evidence.
-Explicit promotion uses the checked annotation preview/save path with derived-from
+Explicit promotion uses the checked typed record-preview/record path in the authored annotation envelope, with derived-from
 lineage; authorship of the promotion does not retroactively make the model output
 independently verified.
 
@@ -290,16 +290,16 @@ independently verified.
 
 ## Open Questions
 
-<!-- OPEN: Q1 -->
-### Q1: Canonical authored-record and compatibility envelope
-The current claim domain is typed and identity-aware; current v2 annotations are
-versioned generic declarations with captured-evidence citations. Prefer reusing
-canonical typed claim semantics and the existing fold. Before implementation,
-produce a concrete mapping covering signing identity, note scope, kind, evidence
-versus claim citations, stable IDs, correction/retraction and old publication reads.
-Choose the transport/envelope only after testing that it preserves those contracts;
-no tag-only emulation or silent kan-annotation/1 format reinterpretation.
-<!-- /OPEN -->
+### Q1: Canonical authored-record and compatibility envelope — resolved for implementation
+The bridge uses canonical, explicitly labelled kan-claim-v1 typed records carried
+through v2, with the existing fold. It does not silently rename these records as
+kan-claim-v2 or turn storage scope into governed identity. Native current-codec
+records retain their original control-evidence requirements. A separate versioned
+authored envelope preserves existing kan-annotation/1. See the concrete
+[compatibility matrix](kan-v2-record-compatibility-matrix.md). This is an
+implementation choice under the approved semantic-parity requirement, not a runtime
+compatibility result or permission to replace Day's existing consumer.
+
 
 <!-- OPEN: Q2 -->
 ### Q2: Demo model, inputs and spend envelope
@@ -321,3 +321,34 @@ No secret value should be pasted into the design or an agent prompt.
   upgrading the system binary, deploying services or publishing a release here.
 - Repeating original failed inference/drills/capacity fixtures or deleting retained
   stores, snapshots, backups, keys, logs or volumes.
+
+
+## Integrated implementation checkpoint — qualification pending
+
+The approved build now has a shared typed record/preview/recall contract, a
+private project profile and familiar CLI verbs, typed MCP author/read separation,
+and browser authoring/recall. Canonical compatibility batches preserve typed
+narratives, statuses, relations, retractions and rejections, with atomic append,
+explicit retry operation, signed inner CIDs and separate publication state.
+Ordinary v1 code/bytes are not rewritten. New authored envelopes are version 2;
+ordinary annotation envelopes remain version 1. Sender custody must enroll the
+uncited record collection independently of optional evidence citations.
+
+Bundled extraction plans pin an explicit bounded interval and use shared decoded
+streams, including tool arguments. Reports remain derived; report reads require
+no provider configuration and promotion previews the edited authored operation.
+The demo helper freezes input before the explicit-doc arm and retains create-new
+operational receipts/readbacks. It does not itself launch agents or infer task
+acceptance. Its retained controls cannot substitute for actual fresh readers.
+
+The old capture-only author/reader trial and its one changed-code continuation
+remain failures for agent acceptance, with successful backend recovery controls.
+Neither is relabelled a pass by this implementation. The new two-arm exercise
+uses new evidence and separately selected model/credential reference/spend; no
+new paid inference or review has been launched at this checkpoint. All AC boxes
+remain pending remote runtime qualification and the actual bounded exercise.
+
+Explicit boundaries: default `me` is narrower than v1 `local`; explicit local and
+DID/weight membership are available, role aliases refuse. Imported originals,
+Git-computed ancestry and complete Day JSON/cutover are separate contracts. This
+is not an upgrade of the installed system binary or the live research ledger.

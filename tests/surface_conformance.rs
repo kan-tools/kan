@@ -15,6 +15,7 @@ use sha2::{Digest, Sha256};
 const CATALOG: &str = include_str!("fixtures/read-write-surface.tsv");
 const RULE_EVIDENCE: &[(&str, &str)] = &[
     ("project-capture-runtime", "tests/test_kan_project.py"),
+    ("record-demo-runtime", "tests/test_kan_record_demo.py"),
     (
         "authenticated-control-checkpoint",
         "src/evidence_control_index.rs",
@@ -47,6 +48,9 @@ const RULE_EVIDENCE: &[(&str, &str)] = &[
         "annotation-publication",
         "tests/support/proof_library_tests.rs",
     ),
+    // The same encrypted annotation surface also owns canonical typed batches.
+    // Its SQL schema/kind is unchanged; publication/restore tests check both
+    // kan-annotation/1 and kan-annotation/2 against their original signatures.
     ("encrypted-reader-workspace", "tests/evidence_workspace.rs"),
     (
         "checkpointed-bundle-copy",

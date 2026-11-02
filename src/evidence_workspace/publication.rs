@@ -90,8 +90,22 @@ impl Workspace {
             }
             let draft = &record["draft"];
             let cites = draft["cites"].as_array().ok_or(Failure::Corrupt)?;
-            if cites.is_empty() || cites.len() > 8 {
+            if (cites.is_empty() && draft["authored"].is_null()) || cites.len() > 8 {
                 return Err(Failure::Corrupt);
+            }
+            if !draft["authored"].is_null() {
+                let batch: crate::evidence_library::RecordBatch =
+                    serde_json::from_value(draft["authored"].clone()).map_err(invalid)?;
+                batch.decoded(record["author"].as_str().ok_or(Failure::Corrupt)?)?;
+                // An uncited authored act still names an independently enrolled
+                // collection. A different cited collection cannot enroll it.
+                if !self
+                    .erasure_histories
+                    .iter()
+                    .any(|h| crate::evidence_library::proof::source_id(&h.binding) == batch.source)
+                {
+                    return Err(Failure::AccessLimited);
+                }
             }
             for cite in cites {
                 let token: crate::evidence_reader::proof::Token =

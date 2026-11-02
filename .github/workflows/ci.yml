@@ -71,6 +71,7 @@ jobs:
         run: |
           python3 tests/test_capture_claude_hook.py
           python3 tests/test_kan_project.py
+          python3 tests/test_kan_record_demo.py
       - id: diagnostic_report_tests
         continue-on-error: ${{ github.event_name == 'workflow_dispatch' && inputs.collect_all }}
         run: |
@@ -154,10 +155,12 @@ jobs:
         run: cargo test --features v2-crypto --lib evidence_library::proof::imports
       - id: check_31_evidence_library_proof_knowledge
         continue-on-error: ${{ github.event_name == 'workflow_dispatch' && inputs.collect_all }}
-        run: cargo test --features v2-crypto --lib evidence_library::proof::knowledge
+        run: |
+          cargo test --features v2-crypto --lib evidence_library::proof::knowledge
+          cargo test --features v2-crypto --lib evidence_library::proof::records
       - id: check_32_evidence_library_proof_analysis_adapters
         continue-on-error: ${{ github.event_name == 'workflow_dispatch' && inputs.collect_all }}
-        run: cargo test --features v2-crypto --lib evidence_library::proof::analysis::adapters
+        run: cargo test --features v2-crypto --lib evidence_library::proof::analysis
       - id: check_33_evidence_library_mcp
         continue-on-error: ${{ github.event_name == 'workflow_dispatch' && inputs.collect_all }}
         run: cargo test --features v2-crypto --lib evidence_library::mcp

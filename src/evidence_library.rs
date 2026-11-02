@@ -3,7 +3,7 @@ mod download;
 mod mcp;
 pub use mcp::serve as serve_mcp;
 mod owner;
-mod proof;
+pub(crate) mod proof;
 use crate::evidence_content::ContentError;
 use crate::evidence_reader::proof as verified;
 use crate::evidence_reader::{Pin, Reader};
@@ -15,17 +15,22 @@ use hyper::{
 };
 use hyper_util::rt::TokioIo;
 pub use owner::{Config as OwnerConfig, Owner, Request as OwnerRequest};
-pub use proof::analysis::{Config as AnalysisConfig, Draft as AnalysisDraft};
+pub use proof::analysis::{bundled_recipes, Config as AnalysisConfig, Draft as AnalysisDraft};
 pub use proof::attachments::Direction as AttachmentDirection;
 pub use proof::imports::{ControlEvidence as ImportControlEvidence, View as ImportView};
 pub use proof::knowledge::{Citation as EvidenceCitation, Draft as AnnotationDraft};
 pub use proof::outbox::AnnotationOutbox;
+pub use proof::records::{
+    Batch as RecordBatch, Draft as RecordDraft, Operation as RecordOperation,
+};
+pub use proof::reports::Selection as ExtractionSelection;
 pub use proof::sessions::{Identity as SessionIdentity, Selection as SessionSelection};
 pub use proof::{
     search::{Filter as SearchFilter, Target as SearchTarget},
     Readers,
 };
 use serde::Deserialize;
+use serde_json::Value;
 use std::{convert::Infallible, future::Future, io, sync::Arc, time::Duration};
 use tokio::{
     net::TcpListener,
@@ -95,6 +100,20 @@ pub enum Query {
         #[serde(default)]
         retry: bool,
     },
+    ExtractPlan {
+        selection: ExtractionSelection,
+    },
+    ExtractRun {
+        selection: ExtractionSelection,
+        preview: String,
+        nonce: String,
+        #[serde(default)]
+        wait: bool,
+    },
+    Report {
+        id: String,
+        cursor: Option<serde_json::Value>,
+    },
     AnalysisPreview {
         draft: AnalysisDraft,
     },
@@ -115,6 +134,22 @@ pub enum Query {
         identity: SessionIdentity,
         attempts: Vec<SessionSelection>,
         format: crate::evidence_content::Format,
+    },
+    Record {
+        draft: RecordDraft,
+    },
+    RecordPreview {
+        draft: RecordDraft,
+    },
+    Recall {
+        source: String,
+        verb: String,
+        subject: Option<String>,
+        #[serde(default)]
+        trust: Vec<String>,
+        #[serde(default = "record_budget")]
+        budget: usize,
+        cursor: Option<Value>,
     },
     AnnotationDelivery {
         id: String,
@@ -243,6 +278,9 @@ pub enum Query {
         length: usize,
     },
 }
+fn record_budget() -> usize {
+    1024
+}
 fn response(code: StatusCode, mime: &'static str, body: impl Into<Bytes>) -> Response<Full<Bytes>> {
     let mut r = Response::new(Full::new(body.into()));
     *r.status_mut() = code;
@@ -264,11 +302,17 @@ async fn query(reader: &Reader, query: Query) -> Result<Vec<u8>, ContentError> {
         Query::ProofImport { .. }
         | Query::KnowledgeGraph { .. }
         | Query::AnnotationTriggers { .. }
+        | Query::ExtractPlan { .. }
+        | Query::ExtractRun { .. }
+        | Query::Report { .. }
         | Query::AnalysisPreview { .. }
         | Query::AnalysisSubmit { .. }
         | Query::AnalysisJobs
         | Query::AnalysisJob { .. }
         | Query::ProofSession { .. }
+        | Query::Record { .. }
+        | Query::RecordPreview { .. }
+        | Query::Recall { .. }
         | Query::AnnotationDelivery { .. }
         | Query::AnnotationQueue { .. }
         | Query::AnnotationDrain { .. }

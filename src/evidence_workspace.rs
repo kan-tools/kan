@@ -15,6 +15,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 pub(crate) mod annotations;
+mod authored;
 pub mod erasure;
 pub mod publication;
 
@@ -459,7 +460,7 @@ impl Workspace {
         let _custody = self.publication_lease()?;
         let declaration = self.get("annotation", id)?.ok_or(Failure::AccessLimited)?;
         let bytes = serde_json::to_vec(
-            &serde_json::json!({"format":"kan-annotation/1","declaration":declaration}),
+            &serde_json::json!({"format":if declaration["draft"]["authored"].is_null() {"kan-annotation/1"} else {"kan-annotation/2"},"declaration":declaration}),
         )
         .map_err(invalid)?;
         match crate::evidence_delivery::queue_bound(
@@ -503,6 +504,19 @@ impl Workspace {
     /// lifetime lock does not modify the database or replace SQLite transactions.
     pub(crate) fn analysis_lease(&self) -> Result<AnalysisLease> {
         lease(&self.path, ".scheduler-lock", true).map(AnalysisLease)
+    }
+    pub(crate) fn sign_record(
+        &self,
+        content: crate::claim::v1::ClaimContent,
+    ) -> Result<crate::claim::v1::Claim> {
+        if content.author.did != self.author() || content.author.agent.is_some() {
+            return Err(Failure::AccessLimited);
+        }
+        let cid = crate::cid::content_cid(&content).map_err(invalid)?;
+        Ok(crate::claim::v1::Claim {
+            sig: self.signer.sign(&cid.to_bytes()).map_err(invalid)?,
+            content,
+        })
     }
     pub fn author(&self) -> String {
         self.signer.did().to_string()

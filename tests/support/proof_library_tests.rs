@@ -8615,3 +8615,591 @@ async fn proof_reader_forwarded_transport_keeps_identity_source_and_current_gran
     let _ = relay.await;
     server.stop().await;
 }
+
+#[tokio::test]
+async fn typed_records_save_uncited_atomic_retry_recall_and_refuse_cross_scope() {
+    let archive = tempfile::tempdir().unwrap();
+    let local = private_workspace_directory();
+    let binding = attested::Binding {
+        archive: [2; 32],
+        scope: [1; 32],
+        issuer: identity(8).did(),
+    };
+    let root = archive.path().join("archive");
+    attested::Archive::create(&root, binding.clone()).unwrap();
+    let f = Fixture {
+        root,
+        binding,
+        requests: vec![],
+        profile: Profile::Admitted,
+    };
+    let server = Server::start(&f).await;
+    let readers = || {
+        kan::evidence_library::Readers::new(None, vec![server.client(&f)])
+            .unwrap()
+            .with_workspace(
+                kan::evidence_workspace::Workspace::open(
+                    &local.path().join("authored.sqlite"),
+                    identity(6),
+                    [97; 32],
+                )
+                .unwrap(),
+            )
+    };
+    let ui = Ui::start(readers()).await;
+    let source = ui.call(json!({"action":"catalog"}), 200).await["scopes"][0]["id"].clone();
+    let mut draft = json!({"source":source,"verb":"block","subject":"project/demo","text":"Source rev abc, digest def. Migration remains unqualified.","operation":{"nonce":"a".repeat(64),"recorded_at":500}});
+    let preview = ui
+        .call(json!({"action":"record-preview","draft":draft}), 200)
+        .await;
+    assert_eq!(preview["author"], identity(6).did());
+    assert_eq!(
+        ui.call(json!({"action":"annotations","limit":100}), 200)
+            .await["records"]
+            .as_array()
+            .unwrap()
+            .len(),
+        0
+    );
+    let (one, two) = tokio::join!(
+        ui.call(json!({"action":"record","draft":draft}), 200),
+        ui.call(json!({"action":"record","draft":draft}), 200)
+    );
+    assert_eq!(one, two);
+    assert_eq!(one["publication"], "not-configured");
+    assert_eq!(one["claims"].as_array().unwrap().len(), 2);
+    let batch: kan::evidence_library::RecordBatch =
+        serde_json::from_value(one["record"]["draft"]["authored"].clone()).unwrap();
+    let claims = batch.decoded(identity(6).did().as_str()).unwrap();
+    assert_eq!(claims[1].1.claim.content.cites, vec![claims[0].0.clone()]);
+    assert!(one["record"]["draft"]["cites"]
+        .as_array()
+        .unwrap()
+        .is_empty());
+    draft["text"] = json!("conflicting retry must not replace original");
+    ui.call(json!({"action":"record","draft":draft}), 400).await;
+    draft["source"] = json!("proof:not-authorized");
+    ui.call(json!({"action":"record","draft":draft}), 403).await;
+    draft["source"] = source.clone();
+    draft["verb"] = json!("resolve");
+    draft["operation"] = json!({"nonce":"b".repeat(64),"recorded_at":1});
+    let resolved = ui.call(json!({"action":"record","draft":draft}), 200).await;
+    assert!(
+        resolved["record"]["draft"]["authored"]["order"]
+            .as_u64()
+            .unwrap()
+            > batch.order
+    );
+    let recall = ui
+        .call(
+            json!({"action":"recall","source":source,"verb":"status","subject":"project/demo"}),
+            200,
+        )
+        .await;
+    assert_eq!(recall["entries"][0]["subject"]["value"], "Resolved");
+    assert_eq!(recall["day_json_compatibility"], false);
+    let issues = ui
+        .call(
+            json!({"action":"recall","source":source,"verb":"issues"}),
+            200,
+        )
+        .await;
+    assert!(issues["entries"].as_array().unwrap().is_empty());
+    let mut retract = json!({"source":source,"verb":"retract","target":one["claims"][0]});
+    let correction = ui
+        .call(json!({"action":"record","draft":retract}), 200)
+        .await;
+    let looked = ui
+        .call(
+            json!({"action":"recall","source":source,"verb":"show","subject":one["claims"][0]}),
+            200,
+        )
+        .await;
+    assert_eq!(
+        looked["entries"][0]["subject"]["record"]["cid"],
+        one["claims"][0]
+    );
+    retract["target"] = correction["claims"][0].clone();
+    ui.call(json!({"action":"record","draft":retract}), 200)
+        .await;
+    ui.stop().await;
+    let ui = Ui::start(readers()).await;
+    let shown=ui.call(json!({"action":"recall","source":source,"verb":"show","subject":"project/demo","trust":["me"]}),200).await;
+    assert!(shown["entries"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|r| r["claim"]["cid"] == one["claims"][0]));
+    assert!(shown["entries"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|r| r["type"] == "claim")
+        .all(|r| r["claim"]["origin"]["evidence"]
+            .as_array()
+            .unwrap()
+            .is_empty()));
+    ui.call(
+        json!({"action":"recall","source":source,"verb":"show","trust":["roles"]}),
+        400,
+    )
+    .await;
+    ui.call(json!({"action":"recall","source":source,"verb":"show","cursor":{"binding":"wrong","row":1,"offset":0}}),400).await;
+    let context = ui
+        .call(
+            json!({"action":"recall","source":source,"verb":"context","budget":1}),
+            200,
+        )
+        .await;
+    assert!(context["view"]["omitted_claims"].as_u64().unwrap() > 0);
+    server
+        .service
+        .lock()
+        .unwrap()
+        .replace_grants(vec![])
+        .unwrap();
+    ui.call(
+        json!({"action":"recall","source":source,"verb":"show"}),
+        403,
+    )
+    .await;
+    ui.call(json!({"action":"record","draft":{"source":source,"verb":"observe","text":"Access does not follow an empty evidence set"}}),403).await;
+    ui.stop().await;
+}
+
+#[tokio::test]
+async fn typed_publication_restores_canonical_records_and_requires_explicit_foreign_trust() {
+    let archive = private_workspace_directory();
+    let local = private_workspace_directory();
+    let f = fixture_requests(archive.path(), Profile::Admitted, encrypted);
+    let server = Server::start(&f).await;
+    let ui = Ui::start(
+        kan::evidence_library::Readers::new(None, vec![server.client(&f)])
+            .unwrap()
+            .with_workspace(
+                kan::evidence_workspace::Workspace::open(
+                    &local.path().join("original.sqlite"),
+                    identity(6),
+                    [91; 32],
+                )
+                .unwrap(),
+            ),
+    )
+    .await;
+    let source = ui.call(json!({"action":"catalog"}), 200).await["scopes"][0]["id"].clone();
+    let saved=ui.call(json!({"action":"record","draft":{"source":source,"verb":"decide","subject":"project/demo","text":"Keep v1 while migration remains unqualified."}}),200).await;
+    let declaration = saved["record"].clone();
+    let bytes = serde_json::to_vec(&json!({"format":"kan-annotation/2","declaration":declaration}))
+        .unwrap();
+    let previous = Some(
+        service::append_manifest(f.requests.last().unwrap())
+            .unwrap()
+            .cid()
+            .to_string(),
+    );
+    let publication = encrypted_frame(3, 8, previous, &bytes);
+    let mut original = attested::Archive::open(&f.root, f.binding.clone()).unwrap();
+    original
+        .admit(&publication, &identity(8), &grant(), 1000)
+        .unwrap();
+    drop(original);
+    ui.stop().await;
+    server
+        .service
+        .lock()
+        .unwrap()
+        .replace_grants(vec![
+            grant(),
+            Grant {
+                principal: identity(7).did(),
+                append: false,
+                inventory: true,
+            },
+        ])
+        .unwrap();
+    let other = client::Reader::new(
+        identity(7),
+        client::Access {
+            binding: binding(&f),
+            endpoint: server.endpoint.clone(),
+            private_key: PRIVATE,
+        },
+    )
+    .unwrap();
+    let pin = other.snapshot().await.unwrap();
+    let page = other.page(&pin, None, 1).await.unwrap();
+    let reference = client::Reference::new(other.binding(), &page.records[0]);
+    let restored = Ui::start(
+        kan::evidence_library::Readers::new(None, vec![other])
+            .unwrap()
+            .with_workspace(
+                kan::evidence_workspace::Workspace::open(
+                    &local.path().join("restored.sqlite"),
+                    identity(7),
+                    [92; 32],
+                )
+                .unwrap(),
+            ),
+    )
+    .await;
+    let preview = restored
+        .call(
+            json!({"action":"restore-annotation","reference":reference}),
+            200,
+        )
+        .await;
+    let request =
+        json!({"action":"restore-annotation","reference":reference,"preview":preview["digest"]});
+    let result = restored.call(request.clone(), 200).await;
+    assert_eq!(result["annotation"]["draft"], declaration["draft"]);
+    assert_eq!(result["annotation"]["author"], identity(6).did());
+    assert_eq!(restored.call(request, 200).await, result);
+    let mine = restored
+        .call(
+            json!({"action":"recall","source":source,"verb":"show","subject":"project/demo"}),
+            200,
+        )
+        .await;
+    assert!(mine["entries"].as_array().unwrap().is_empty());
+    assert_eq!(mine["excluded_by_trust"], 1);
+    let foreign=restored.call(json!({"action":"recall","source":source,"verb":"show","subject":"project/demo","trust":[identity(6).did()]}),200).await;
+    assert!(foreign["entries"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|r| r["claim"]["cid"] == saved["claims"][0]));
+    restored.call(json!({"action":"record","draft":{"source":source,"verb":"retract","target":saved["claims"][0]}}),403).await;
+    restored.call(json!({"action":"record","draft":{"source":source,"verb":"reject","target":saved["claims"][0]}}),200).await;
+    let rejected=restored.call(json!({"action":"recall","source":source,"verb":"show","subject":"project/demo","trust":["local"]}),200).await;
+    assert!(!rejected["entries"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|r| r["claim"]["cid"] == saved["claims"][0]));
+    restored.stop().await;
+}
+
+#[tokio::test]
+async fn bundled_extraction_decodes_tool_inputs_and_report_read_does_not_call_or_promote() {
+    use http_body_util::{BodyExt, Full};
+    use hyper::{body::Bytes, Response};
+    let archive = tempfile::tempdir().unwrap();
+    let local = private_workspace_directory();
+    let body=serde_json::to_vec(&json!({"messages":[{"role":"assistant","content":[{"type":"tool_use","name":"Write","id":"call","input":{"file_path":"DECISION.md","content":"Accepted source rev 123, SHA 456. Keep Day/v1 while migration remains unqualified. é🙂"}}]}]})).unwrap();
+    let f = fixture_requests(archive.path(), Profile::Admitted, |n, a, p| {
+        captured_request_body(n, a, p, &body)
+    });
+    let server = Server::start(&f).await;
+    let gateway = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let endpoint = format!("http://{}/v1/messages", gateway.local_addr().unwrap());
+    let requests = Arc::new(std::sync::Mutex::new(Vec::<Value>::new()));
+    let seen = requests.clone();
+    let report_text =
+        "Derived assessment é🙂. Input 0 is observed evidence, not independent review.\n"
+            .repeat(500);
+    let returned = report_text.clone();
+    let provider = tokio::spawn(async move {
+        loop {
+            let (stream, _) = gateway.accept().await.unwrap();
+            let seen = seen.clone();
+            let returned = returned.clone();
+            tokio::spawn(async move {
+                let svc = hyper::service::service_fn(
+                    move |req: hyper::Request<hyper::body::Incoming>| {
+                        let seen = seen.clone();
+                        let returned = returned.clone();
+                        async move {
+                            let raw = req.into_body().collect().await.unwrap().to_bytes();
+                            let request: Value = serde_json::from_slice(&raw).unwrap();
+                            let n = {
+                                let mut all = seen.lock().unwrap();
+                                all.push(request);
+                                all.len()
+                            };
+                            let raw = if n == 1 {
+                                serde_json::to_vec(&json!({"type":"message","model":"returned-synthetic-model","content":[{"type":"text","text":returned}],"usage":{"input_tokens":100,"output_tokens":120}})).unwrap()
+                            } else {
+                                b"malformed provider response".to_vec()
+                            };
+                            Ok::<_, std::convert::Infallible>(Response::new(Full::new(
+                                Bytes::from(raw),
+                            )))
+                        }
+                    },
+                );
+                let _ = hyper::server::conn::http1::Builder::new()
+                    .serve_connection(hyper_util::rt::TokioIo::new(stream), svc)
+                    .await;
+            });
+        }
+    });
+    let base = || {
+        kan::evidence_library::Readers::new(None, vec![server.client(&f)])
+            .unwrap()
+            .with_workspace(
+                kan::evidence_workspace::Workspace::open(
+                    &local.path().join("reports.sqlite"),
+                    identity(6),
+                    [97; 32],
+                )
+                .unwrap(),
+            )
+    };
+    let scope_ui = Ui::start(base()).await;
+    let source = scope_ui.call(json!({"action":"catalog"}), 200).await["scopes"][0]["id"].clone();
+    scope_ui.stop().await;
+    let ui=Ui::start(base().with_analysis(serde_json::from_value(json!({"endpoint":endpoint,"token":"synthetic-provider-gateway-token-123456","model":"requested-synthetic-model","sources":[source],"max_input_bytes":100000,"max_output_tokens":128,"max_jobs":3})).unwrap()).unwrap()).await;
+    let selection = json!({"source":source,"from":1,"through":3,"recipe":"documentation-summary"});
+    ui.call(json!({"action":"extract-plan","selection":{"source":source,"from":1,"through":9,"recipe":"documentation-summary"}}),422).await;
+    let plan = ui
+        .call(json!({"action":"extract-plan","selection":selection}), 200)
+        .await;
+    assert!(requests.lock().unwrap().is_empty());
+    assert!(plan.to_string().len() <= 12288);
+    let submit = json!({"action":"extract-run","selection":plan["selection"],"preview":plan["digest"],"nonce":plan["nonce"],"wait":true});
+    let done = ui.call(submit.clone(), 200).await;
+    assert_eq!(done["state"], "succeeded");
+    assert_eq!(done["promotion"], "not-performed");
+    assert_eq!(ui.call(submit, 200).await, done);
+    assert_eq!(requests.lock().unwrap().len(), 1);
+    {
+        let all = requests.lock().unwrap();
+        let prompt = all[0]["messages"][0]["content"].as_str().unwrap();
+        assert!(prompt.contains("DECISION.md"));
+        assert!(prompt.contains("Accepted source rev 123"));
+        assert!(!prompt.contains("bytes_hex"));
+        assert!(!prompt.contains("event_json"));
+        assert!(!prompt.contains("parsed_json"));
+        assert!(prompt.contains("citation_sets"));
+        assert_eq!(all[0]["model"], "requested-synthetic-model");
+        assert!(all[0].get("tools").is_none());
+    }
+    assert!(ui
+        .call(json!({"action":"annotations","limit":100}), 200)
+        .await["records"]
+        .as_array()
+        .unwrap()
+        .is_empty());
+    let id = done["id"].clone();
+    ui.stop().await;
+    // Fresh reader has no analysis Engine/provider configuration at all.
+    let ui = Ui::start(base()).await;
+    let mut cursor = Value::Null;
+    let mut joined = String::new();
+    let mut pages = 0;
+    loop {
+        let page = ui
+            .call(json!({"action":"report","id":id,"cursor":cursor}), 200)
+            .await;
+        assert!(serde_json::to_vec(&page).unwrap().len() <= 12288);
+        assert_eq!(page["returned_model"], "returned-synthetic-model");
+        assert_eq!(page["requested_model"], "requested-synthetic-model");
+        assert_eq!(page["inputs"].as_array().unwrap().len(), 3);
+        for block in page["blocks"].as_array().unwrap() {
+            joined.push_str(block["text"].as_str().unwrap());
+        }
+        pages += 1;
+        assert!(pages < 100);
+        cursor = page["next"].clone();
+        if cursor.is_null() {
+            break;
+        }
+    }
+    assert_eq!(joined, report_text);
+    assert!(pages > 1);
+    assert_eq!(requests.lock().unwrap().len(), 1);
+    let edited = json!({"source":source,"verb":"decide","subject":"project/reviewed","text":"Edited, human-reviewed conclusion, still uncertain.","derived_from":[id]});
+    let preview = ui
+        .call(json!({"action":"record-preview","draft":edited}), 200)
+        .await;
+    assert_eq!(preview["author"], identity(6).did());
+    assert_eq!(preview["evidence"].as_array().unwrap().len(), 3);
+    assert!(ui
+        .call(json!({"action":"annotations","limit":100}), 200)
+        .await["records"]
+        .as_array()
+        .unwrap()
+        .is_empty());
+    let saved = ui
+        .call(json!({"action":"record","draft":preview["draft"]}), 200)
+        .await;
+    assert_eq!(saved["record"]["draft"]["text"], edited["text"]);
+    assert_eq!(saved["record"]["draft"]["derived_from"], json!([id]));
+    let recall = ui
+        .call(
+            json!({"action":"recall","source":source,"verb":"show","subject":"project/reviewed"}),
+            200,
+        )
+        .await;
+    let claim = recall["entries"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|e| e["type"] == "claim")
+        .unwrap();
+    assert_eq!(claim["claim"]["origin"]["derived_from"], json!([id]));
+    assert_eq!(
+        claim["claim"]["origin"]["evidence"]
+            .as_array()
+            .unwrap()
+            .len(),
+        3
+    );
+    server
+        .service
+        .lock()
+        .unwrap()
+        .replace_grants(vec![])
+        .unwrap();
+    ui.call(json!({"action":"report","id":id}), 403).await;
+    assert_eq!(requests.lock().unwrap().len(), 1);
+    ui.stop().await;
+    provider.abort();
+}
+
+#[tokio::test]
+async fn uncited_typed_record_queues_exactly_and_sender_still_requires_collection_custody() {
+    let archive = tempfile::tempdir().unwrap();
+    let local = private_workspace_directory();
+    let custody = private_workspace_directory();
+    let remote = tempfile::tempdir().unwrap();
+    let f = fixture_requests(archive.path(), Profile::Admitted, encrypted);
+    let server = Server::start(&f).await;
+    let mut history:kan::evidence_erasure_history::Access=serde_json::from_value(json!({"directory":custody.path(),"binding":{"profile":"admitted","archive":service::hex(&f.binding.archive),"scope":service::hex(&f.binding.scope),"issuer":f.binding.issuer},"owner":identity(9).did()})).unwrap();
+    history.initialize().unwrap();
+    let genesis = kan::evidence_erasure_history::Record::sign(
+        history.preview(None, "a".repeat(64)).unwrap(),
+        &identity(9),
+    )
+    .unwrap();
+    let minimum = genesis.id().unwrap();
+    history.append(genesis).unwrap();
+    history.minimum = Some(minimum);
+    let target = attested::Binding {
+        archive: [81; 32],
+        scope: [82; 32],
+        issuer: identity(7).did(),
+    };
+    let ingest = kan::evidence_service::AdmittingService::new(
+        attested::Archive::create(remote.path(), target.clone()).unwrap(),
+        identity(7),
+        vec![Grant {
+            principal: identity(6).did(),
+            append: true,
+            inventory: false,
+        }],
+    )
+    .unwrap();
+    let listener = kan::evidence_http::bind("127.0.0.1:0".parse().unwrap())
+        .await
+        .unwrap();
+    let endpoint = format!("http://{}/v1/rpc", listener.local_addr().unwrap());
+    let task = tokio::spawn(kan::evidence_http::serve_admitted(listener, ingest));
+    let spool = local.path().join("publication.sqlite");
+    drop(
+        kan::evidence_spool::Spool::create(
+            &spool,
+            &service::hex(&target.scope),
+            identity(6).did().as_str(),
+            &target.issuer,
+            8 * 1024 * 1024,
+        )
+        .unwrap(),
+    );
+    let readers = || {
+        kan::evidence_library::Readers::new(None, vec![server.client(&f)])
+            .unwrap()
+            .with_workspace(
+                kan::evidence_workspace::Workspace::open(
+                    &local.path().join("records.sqlite"),
+                    identity(6),
+                    [97; 32],
+                )
+                .unwrap()
+                .with_erasure_histories(vec![history.clone()])
+                .unwrap(),
+            )
+            .with_annotation_outbox(
+                kan::evidence_library::AnnotationOutbox::new(
+                    spool.clone(),
+                    endpoint.clone(),
+                    kan::evidence_crypto::public_key(&[83; 32]).unwrap(),
+                )
+                .unwrap(),
+            )
+            .unwrap()
+    };
+    let ui = Ui::start(readers()).await;
+    let source = ui.call(json!({"action":"catalog"}), 200).await["scopes"][0]["id"].clone();
+    let request = json!({"action":"record","draft":{"source":source,"verb":"decide","text":"Deliberately uncited; no capture completeness claim.","operation":{"nonce":"c".repeat(64),"recorded_at":100}}});
+    let saved = ui.call(request.clone(), 200).await;
+    assert_eq!(saved["publication"], "queued");
+    let exact = kan::evidence_spool::Spool::open(&spool)
+        .unwrap()
+        .head()
+        .unwrap()
+        .unwrap();
+    let plain = kan::evidence_delivery::decrypt_request(
+        &exact,
+        &[83; 32],
+        &target.scope,
+        identity(6).did().as_str(),
+    )
+    .unwrap();
+    let publication: Value = serde_json::from_slice(&plain).unwrap();
+    assert_eq!(publication["format"], "kan-annotation/2");
+    assert_eq!(publication["declaration"], saved["record"]);
+    assert_eq!(
+        ui.call(request.clone(), 200).await["claims"],
+        saved["claims"]
+    );
+    assert_eq!(
+        kan::evidence_spool::Spool::open(&spool)
+            .unwrap()
+            .head()
+            .unwrap()
+            .unwrap(),
+        exact
+    );
+    let unenrolled = kan::evidence_workspace::Workspace::open(
+        &local.path().join("records.sqlite"),
+        identity(6),
+        [97; 32],
+    )
+    .unwrap();
+    assert!(unenrolled.authorize_publication(&exact).is_err());
+    drop(unenrolled);
+    ui.stop().await;
+    let ui = Ui::start(readers()).await;
+    let status = ui
+        .call(
+            json!({"action":"annotation-delivery","id":saved["id"]}),
+            200,
+        )
+        .await;
+    assert_eq!(status["state"], "queued");
+    ui.call(
+        json!({"action":"annotation-drain","destination":status["destination_digest"]}),
+        200,
+    )
+    .await;
+    assert_eq!(
+        ui.call(
+            json!({"action":"annotation-delivery","id":saved["id"]}),
+            200
+        )
+        .await["state"],
+        "acknowledged"
+    );
+    assert_eq!(
+        attested::Archive::open(remote.path(), target)
+            .unwrap()
+            .verify()
+            .unwrap()
+            .through,
+        1
+    );
+    assert_eq!(ui.call(request, 200).await["publication"], "acknowledged");
+    ui.stop().await;
+    task.abort();
+}

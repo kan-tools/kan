@@ -226,7 +226,7 @@ fn parse_cids(raw: Vec<String>) -> Result<Vec<Cid>, Error> {
 /// `head_sha` is the same commit `append`'s automatic `ArtifactRef::Commit`
 /// uses — a `FileAt`/`LineRangeAt` anchor is "this file, as of that commit,"
 /// not a separately-anchored artifact.
-fn parse_file_artifact(raw: &str, head_sha: &crate::claim::v1::Sha) -> ArtifactRef {
+pub(crate) fn parse_file_artifact(raw: &str, head_sha: &crate::claim::v1::Sha) -> ArtifactRef {
     if let Some(idx) = raw.rfind(':') {
         let (path, range) = (&raw[..idx], &raw[idx + 1..]);
         if let Some((start, end)) = range.split_once('-') {
@@ -2466,7 +2466,7 @@ fn is_open_issue(ws: &Workspace, subject_view: &SubjectView) -> bool {
     is_open_issue_with_state(subject_view, &state)
 }
 
-fn is_open_issue_with_state(subject_view: &SubjectView, state: &StateView) -> bool {
+pub(crate) fn is_open_issue_with_state(subject_view: &SubjectView, state: &StateView) -> bool {
     let has_status_claim = subject_view
         .claims
         .iter()

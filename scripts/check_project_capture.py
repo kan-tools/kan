@@ -66,10 +66,13 @@ def run(*args, ok=True):
 class Mcp:
     response_seconds = 90
 
-    def __init__(self, config, signing):
+    def __init__(self, config, signing, profile=None, writes=False):
         # An undrained stderr pipe can block a child independently of stdout.
         self.diagnostics = tempfile.TemporaryFile()
-        self.proc = subprocess.Popen([str(binary), '--no-migration-notice', 'library', '--config', str(config), '--signing-key', signing, '--mcp'], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=self.diagnostics)
+        command = [str(binary), '--no-migration-notice', 'mcp', '--profile', str(profile)] if profile else [str(binary), '--no-migration-notice', 'library', '--config', str(config), '--signing-key', signing, '--mcp']
+        if writes:
+            command.append('--writes')
+        self.proc = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=self.diagnostics)
         self.pending = bytearray()
         self.id = 0
         try:
@@ -145,7 +148,7 @@ def text_items(entries):
         text = entry.get('item', {}).get('text')
         if text is None:
             continue
-        key = (entry['context']['selection'], entry['context']['group'], entry['direction'], entry['item_index'])
+        key = (entry['type'], entry['context']['selection'], entry['context']['group'], entry['direction'], entry['item_index'])
         assert entry['citations'] and all(c['uri'].startswith('kan+capture://') and c['bytes'] for c in entry['citations'])
         assert entry['text_fragment']['continued'] == (key in items)
         items[key] = items.get(key, '') + text
@@ -288,6 +291,42 @@ with tempfile.TemporaryDirectory(prefix='kan-project-qualification-') as temp:
         assert bad['field'] == 'arguments.pin'
         bad = client.call('kan_v2_discover', {'source': 42, 'private-secret-field': 'private-secret-value'}, False)
         assert 'private-secret' not in json.dumps(bad)
+        progress('typed-record-cli-and-mcp')
+        record_source = client.call('kan_v2_catalog', {})['scopes'][0]['id']
+        record_profile = root / 'record-profile.json'
+        put(record_profile, {'version': 1, 'allowed_worktrees': [str(root / 'work'), str(root / 'second-worktree')],
+            'source': record_source, 'reader_config': str(reader_config), 'signing_key': reader_key,
+            'workspace': str(root / 'records.sqlite'), 'workspace_key': recipient_private})
+        receipt = json.loads(run('decide', 'Keep v1 until migration is qualified. Source synthetic-rev, SHA synthetic-hash.', '--profile', record_profile, '--subject', 'project/demo', '--json').stdout)
+        assert receipt['claims'] and receipt['durability'] == 'encrypted-workspace' and receipt['publication'] == 'not-configured'
+        for verb in ['observe', 'plan', 'decide', 'result', 'block', 'resolve', 'same', 'relate', 'mark', 'retract', 'reject', 'show', 'status', 'issues', 'context', 'summarize', 'extract', 'report', 'promote', 'mcp']:
+            assert b'--profile' in run(verb, '--help').stdout
+        run('block', 'project/demo', 'Migration remains unqualified.', '--profile', record_profile, '--json')
+        run('resolve', 'project/demo', 'This synthetic exercise is complete; real migration is not.', '--profile', record_profile, '--json')
+        run('relate', 'project/demo', 'depends-on', 'project/migration', '--profile', record_profile, '--json')
+        os.chdir(root / 'second-worktree')
+        recalled = json.loads(run('show', 'project/demo', '--profile', record_profile, '--trust', 'me', '--json').stdout)
+        assert any(r.get('claim', {}).get('cid') == receipt['claims'][0] for r in recalled['entries'])
+        readonly = Mcp(reader_config, reader_key, profile=record_profile)
+        try:
+            names = {t['name'] for t in readonly.rpc('tools/list', {})['tools']}
+            assert 'kan_v2_recall' in names and 'kan_v2_report' in names and 'kan_v2_record' not in names
+            denied = readonly.call('kan_v2_read', {'query': {'action': 'record', 'draft': {'source': record_source, 'verb': 'observe', 'text': 'forbidden read-to-write escalation'}}}, False)
+            assert denied['error'] == 'capability-required'
+            notes = readonly.call('kan_v2_recall', {'source': record_source, 'subject': 'project/demo'})
+            assert any(r.get('claim', {}).get('cid') == receipt['claims'][0] for r in notes['entries'])
+        finally:
+            readonly.close()
+        writable = Mcp(reader_config, reader_key, profile=record_profile, writes=True)
+        try:
+            wrote = writable.call('kan_v2_record', {'draft': {'source': record_source, 'verb': 'observe', 'subject': 'project/demo', 'text': 'MCP authoring is a separate explicit authority.'}})
+            assert wrote['claims'] and 'record' not in wrote
+        finally:
+            writable.close()
+        os.chdir(root)
+        refused = run('show', '--profile', record_profile, '--json', ok=False)
+        assert b'outside this profile' in refused.stderr
+        os.chdir(root / 'work')
         progress('original-readback')
         count, continuation_probe = read_decision(client, marker)
         # New reader with payload keys unavailable must expose explicit states.
@@ -354,7 +393,7 @@ with tempfile.TemporaryDirectory(prefix='kan-project-qualification-') as temp:
         assert restored_count == count
         client.close()
         client = None
-        print(json.dumps({'qualification': 'project-capture-and-typed-mcp', 'status': 'passed', 'captured_records': count, 'decoded_decision_and_citations': True, 'typed_page_bytes_max': 12 * 1024, 'large_unicode_text_bytes': len(marker.encode()), 'current_grant_rechecked_on_continuation': True, 'unavailable_key_state_explicit': True, 'fresh_client_recovery_readback': True, 'backup_verification': verified['verification'], 'fixture': 'synthetic, same-host, no production key-custody claim'}))
+        print(json.dumps({'qualification': 'project-capture-and-typed-mcp', 'status': 'passed', 'captured_records': count, 'decoded_decision_and_citations': True, 'typed_page_bytes_max': 12 * 1024, 'large_unicode_text_bytes': len(marker.encode()), 'current_grant_rechecked_on_continuation': True, 'unavailable_key_state_explicit': True, 'fresh_client_recovery_readback': True, 'typed_authored_cli_and_mcp': True, 'cross_worktree_profile_and_unrelated_refusal': True, 'backup_verification': verified['verification'], 'fixture': 'synthetic, same-host, no production key-custody claim'}))
     except BaseException:
         # This runner creates only synthetic fixtures. Retain bounded actual
         # startup diagnostics in CI before its disposable directory is cleaned.

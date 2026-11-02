@@ -13,6 +13,13 @@ principals. Configure an existing scope decryption key explicitly; the Library
 never creates or discovers keys. Location is portable; no production deployment
 default is selected by this implementation.
 
+## Explicit record and recall facade
+
+The agent-usability source branch adds typed authored records and bundled derived
+reports alongside captured evidence. See [V2-RECORD-RECALL.md](V2-RECORD-RECALL.md)
+for the profile, familiar verbs, MCP tools, trust/Day compatibility boundary and
+comparative demo. This remains experimental until its own qualification completes.
+
 ## Proof archives, attempts and explicit sessions
 
 A proof source config uses `"protocol": "kan-proof-reader/1"`, `"profile":
@@ -451,7 +458,7 @@ binding invalidates the configured destination instead of silently redirecting i
 API equivalents: `annotation-delivery` (`id`), `annotation-queue` (`id`,
 `destination`, the returned confirmation digest), and `annotation-drain`
 (`destination`). The server chooses all filesystem paths and network destinations
-from operator configuration. Published records use `kan-annotation/1` encrypted
+from operator configuration. Ordinary annotations use `kan-annotation/1`; experimental canonical typed batches use `kan-annotation/2`. Both use encrypted
 plaintext frames and preserve the authored declaration and all citations. Keep the
 workspace backup as well. [Portable references and published annotation restoration](#portable-references-and-restoring-published-annotations)
 support explicit reconstruction and cross-reader source resolution under current
@@ -798,7 +805,7 @@ current archive membership and grants, then returns current reader selections.
 Missing payloads retain their reference and provenance. Wrong identities or
 receipts refuse resolution; possession of a reference does not grant access.
 
-A retained `kan-annotation/1` source offers **Restore published annotation**.
+A retained `kan-annotation/1` or `kan-annotation/2` source offers **Restore published annotation**.
 The shared `restore-annotation` API takes a reference; without `preview` it returns
 a digest-bound plan, and with that digest it installs the verified declaration in
 the encrypted workspace. It preserves the original author, ID, timestamp, draft,

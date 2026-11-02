@@ -4,7 +4,7 @@ function ui(){
  const nodes=new Map(),pending=[],downloads=[],forms=[],revoked=[],timers=new Map(),blobs=[];let active;
  class Element{constructor(){this.value='';this.hidden=false;this.disabled=false;this.children=[];this.events={};this.attrs={};this.textContent='';}setAttribute(k,v){this.attrs[k]=v;}addEventListener(k,f){this.events[k]=f;}append(v){this.children.push(v);}replaceChildren(){this.children=[];}remove(){this.removed=true;}focus(){active=this;}submit(){forms.push({action:this.action,method:this.method,enctype:this.enctype,payload:this.children.find(n=>n.name==='payload').value,element:this});}click(){downloads.push(this);if(this.events.click)this.events.click();}}
  const node=id=>{if(!nodes.has(id))nodes.set(id,new Element());return nodes.get(id);};const window={events:{},addEventListener(k,f){this.events[k]=f;}};
- const context={document:{getElementById:node,createElement:()=>new Element(),body:node("body")},window,AbortController,Blob,Uint8Array,setTimeout:(fn)=>{const id={};timers.set(id,fn);return id;},clearTimeout:id=>timers.delete(id),URL:{createObjectURL:blob=>{blobs.push(blob);return 'blob:synthetic';},revokeObjectURL:url=>revoked.push(url)},fetch:(url,opts)=>new Promise((resolve,reject)=>pending.push({url,opts,resolve,reject})),console};
+ const context={crypto:require('node:crypto').webcrypto,document:{getElementById:node,createElement:()=>new Element(),body:node("body")},window,AbortController,Blob,Uint8Array,setTimeout:(fn)=>{const id={};timers.set(id,fn);return id;},clearTimeout:id=>timers.delete(id),URL:{createObjectURL:blob=>{blobs.push(blob);return 'blob:synthetic';},revokeObjectURL:url=>revoked.push(url)},fetch:(url,opts)=>new Promise((resolve,reject)=>pending.push({url,opts,resolve,reject})),console};
  node('library').hidden=true;node('inspection').hidden=true;
  vm.createContext(context);vm.runInContext(fs.readFileSync('web/library/app.js','utf8'),context);
  const respond=async(value,status=200)=>{const request=pending.shift();assert.ok(request,'expected request');request.resolve({ok:status===200,status,json:async()=>value});await tick();await tick();};
@@ -1063,4 +1063,17 @@ test('capture URI resolution uses fresh authorization and exports the versioned 
  assert.equal(JSON.parse(u.pending[0].opts.body).offset,'0');
  await u.respond({...proofSource,reference:{version:1},uri});assert.equal(u.node('reference-value').value,uri);
  u.node('lock').click();assert.equal(u.node('reference-value').value,'');
+});
+
+
+test('typed uncited record uses the selected collection and recall clears on lock and scope changes',async()=>{
+ const u=ui();await u.login();await u.respond({version:2,coverage:'complete',capabilities:['snapshot-inventory','source-ranges','provenance','payload-availability','annotations','typed-records'],unavailable:[],scopes:[{...proofEntry('typed-A'),pin:{request:'typed-pin',reply:{}}}]});await u.respond(proofPage);
+ assert.equal(u.node('typed-records').hidden,false);
+ u.node('record-verb').value='decide';u.node('record-subject').value='project/demo';u.node('record-text').value='<script>untrusted note</script>';
+ u.node('record-form').events.submit({preventDefault(){}});await tick();
+ const request=JSON.parse(u.pending[0].opts.body);assert.equal(request.action,'record');assert.equal(request.draft.source,'typed-A');assert.equal(request.draft.verb,'decide');assert.equal(request.draft.text,'<script>untrusted note</script>');assert.equal(request.draft.operation.nonce.length,64);assert.equal(request.draft.evidence,undefined);
+ await u.respond({claims:['canonical-claim'],durability:'encrypted-workspace',publication:'not-configured'});assert.match(u.node('record-receipt').textContent,/canonical-claim/);
+ u.node('record-find').value='project/demo';u.node('record-view').value='show';u.node('record-recall').click();await tick();assert.equal(JSON.parse(u.pending[0].opts.body).action,'recall');
+ await u.respond({entries:[{type:'claim',claim:{text:'<img src=hostile>'}}],coverage:'authorized selection',trust_note:'me',next:{binding:'view',row:1,offset:0}});assert.equal(u.node('record-results').children.length,1);assert.equal(u.node('record-more').disabled,false);
+ u.node('record-more').click();await tick();const later=u.pending[0];u.node('lock').click();assert.equal(later.opts.signal.aborted,true);await u.respond({entries:[{type:'claim'}],coverage:'old',next:null});assert.equal(u.node('record-results').children.length,0);assert.equal(u.node('record-text').value,'');assert.equal(u.node('record-receipt').textContent,'');
 });

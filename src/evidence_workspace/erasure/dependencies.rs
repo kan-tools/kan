@@ -122,6 +122,20 @@ fn directly_affected(
     targets: &BTreeSet<(String, String)>,
 ) -> Result<bool> {
     match kind {
+        "annotation"
+            if value["draft"]["cites"]
+                .as_array()
+                .is_some_and(|v| v.is_empty())
+                && !value["draft"]["authored"].is_null() =>
+        {
+            let draft: crate::evidence_library::AnnotationDraft =
+                serde_json::from_value(value["draft"].clone()).map_err(invalid)?;
+            draft
+                .authored
+                .ok_or(Failure::Corrupt)?
+                .decoded(text(value, "author")?)?;
+            Ok(false)
+        }
         "annotation" | "analysis-job" | "analysis-input" => {
             cites(&value["draft"]["cites"], binding, targets)
         }

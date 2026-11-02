@@ -172,7 +172,7 @@ source access through the authenticated reader. There is no plaintext page store
 
 Citations retain portable occurrence URIs and enclosing source byte ranges.
 `coarse` attribution is not the exact JSON string-token range. Large redundant
-`parsed_json`, `event_json`, accumulated tool JSON and raw per-frame metadata are
+`parsed_json`, `event_json`, redundant event JSON and raw per-frame metadata are
 omitted from this normal view; the advanced shared audit API retains them. A
 non-text protocol/framing/context wrapper is counted on its stream state rather
 than repeated before its readable children; malformed and unsupported states
@@ -206,3 +206,8 @@ payload authority. Health history is not automatically deleted. A deleted proces
 ownership record is not reconstructed into permission to kill an unidentified
 service. Keep configuration and necessary operational history with project backups;
 never mistake them for the archive or key-recovery package itself.
+
+The experimental [record/recall facade](V2-RECORD-RECALL.md) keeps deliberate
+authoring separate from this capture helper. Bounded decoded retrieval now retains
+large tool-input JSON fragments with their own enclosing source citations. These
+remain observed inputs, never a task-success or tool-execution certificate.

@@ -39,16 +39,19 @@ pub struct Draft {
     pub derived_from: Vec<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub relations: Vec<Relation>,
+    /// Versioned canonical typed records; old ordinary annotations omit this.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub authored: Option<super::records::Batch>,
 }
 impl Draft {
-    fn validate(&self) -> Result<(), Failure> {
+    pub(super) fn validate(&self) -> Result<(), Failure> {
         if self.subject.trim().is_empty()
             || self.subject.len() > 256
             || self.text.trim().is_empty()
             || self.text.len() > 8192
             || self.tags.len() > 32
             || self.tags.iter().any(|s| s.is_empty() || s.len() > 64)
-            || self.cites.is_empty()
+            || (self.cites.is_empty() && self.authored.is_none())
             || self.cites.len() > 8
             || self.derived_from.len() > 8
             || self.relations.len() > 16
@@ -77,8 +80,10 @@ pub(crate) fn decode_publication(
         return Err(Failure::Invalid);
     }
     let publication: Value = serde_json::from_slice(plaintext).map_err(|_| Failure::Invalid)?;
-    if publication["format"] != "kan-annotation/1"
-        || publication.as_object().is_none_or(|m| m.len() != 2)
+    if !matches!(
+        publication["format"].as_str(),
+        Some("kan-annotation/1" | "kan-annotation/2")
+    ) || publication.as_object().is_none_or(|m| m.len() != 2)
     {
         return Err(Failure::Invalid);
     }
@@ -102,6 +107,23 @@ pub(crate) fn decode_publication(
     let draft: Draft =
         serde_json::from_value(declaration["draft"].clone()).map_err(|_| Failure::Invalid)?;
     draft.validate()?;
+    if (publication["format"] == "kan-annotation/2") != draft.authored.is_some() {
+        return Err(Failure::Corrupt);
+    }
+    if let Some(batch) = &draft.authored {
+        let claims = batch.decoded(writer)?;
+        if draft.supersedes.is_some()
+            || draft.withdraws.is_some()
+            || !draft.tags.is_empty()
+            || !draft.relations.is_empty()
+            || claims.iter().any(|(_, s)| {
+                s.claim.content.subject
+                    != crate::claim::v1::SubjectRef::Local(draft.subject.clone())
+            })
+        {
+            return Err(Failure::Corrupt);
+        }
+    }
     crate::evidence_content::coordinate(
         declaration["recorded_at"]
             .as_str()
@@ -117,10 +139,14 @@ pub(crate) fn decode_publication(
         .as_object_mut()
         .ok_or(Failure::Invalid)?
         .remove("recorded_at");
-    if crate::evidence_service::hex(&Sha256::digest(
-        serde_json::to_vec(&original).map_err(|_| Failure::Invalid)?,
-    )) != id
-    {
+    let expected = if let Some(batch) = &draft.authored {
+        super::records::Batch::annotation_id(&batch.source, &batch.operation, writer)?
+    } else {
+        crate::evidence_service::hex(&Sha256::digest(
+            serde_json::to_vec(&original).map_err(|_| Failure::Invalid)?,
+        ))
+    };
+    if expected != id {
         return Err(Failure::Corrupt);
     }
     Ok((declaration.clone(), draft))
@@ -149,7 +175,11 @@ impl Readers {
         let (declaration, draft) = decode_publication(&plaintext, &writer)?;
         let id = declaration["id"].as_str().ok_or(Failure::Corrupt)?;
         let (authorized, partial) = self.authorized_sources().await;
-        if !authorized.contains(&source)
+        if draft
+            .authored
+            .as_ref()
+            .is_some_and(|b| !authorized.contains(&b.source))
+            || !authorized.contains(&source)
             || draft.cites.iter().any(|c| !authorized.contains(&c.source))
         {
             return Err(if partial {
@@ -214,6 +244,18 @@ impl Readers {
         }
         draft.relations = relations;
         let workspace = self.workspace()?;
+        if let Some(batch) = &draft.authored {
+            let decoded = batch.decoded(&workspace.author())?;
+            if decoded.iter().any(|(_, c)| {
+                c.claim.content.subject
+                    != crate::claim::v1::SubjectRef::Local(draft.subject.clone())
+            }) || draft.supersedes.is_some()
+                || draft.withdraws.is_some()
+            {
+                return Err(Failure::Invalid.into());
+            }
+            self.selected(&batch.source)?.snapshot().await?;
+        }
         let mut parent_origin = None;
         if let Some(previous) = draft.supersedes.as_ref().or(draft.withdraws.as_ref()) {
             if previous.len() != 64
@@ -319,7 +361,11 @@ impl Readers {
                 .push(json!({"source":cite.source,"record":record,"availability":availability}));
         }
         let (authorized, partial) = self.authorized_sources().await;
-        if draft.cites.iter().any(|c| !authorized.contains(&c.source))
+        if draft
+            .authored
+            .as_ref()
+            .is_some_and(|b| !authorized.contains(&b.source))
+            || draft.cites.iter().any(|c| !authorized.contains(&c.source))
             || parent_origin
                 .as_ref()
                 .is_some_and(|source| !authorized.contains(source))
@@ -333,9 +379,17 @@ impl Readers {
         }
         let withdrawing = draft.withdraws.is_some();
         let declaration = json!({"version":1,"author":workspace.author(),"analysis_trigger_plan":if withdrawing { json!([]) } else { self.annotation_analysis_plan(&draft.tags) },"draft":draft});
-        let id = crate::evidence_service::hex(&Sha256::digest(
-            serde_json::to_vec(&declaration).map_err(|_| Failure::Invalid)?,
-        ));
+        let id = if let Some(batch) = &draft.authored {
+            super::records::Batch::annotation_id(
+                &batch.source,
+                &batch.operation,
+                &workspace.author(),
+            )?
+        } else {
+            crate::evidence_service::hex(&Sha256::digest(
+                serde_json::to_vec(&declaration).map_err(|_| Failure::Invalid)?,
+            ))
+        };
         Ok(
             json!({"id":id,"declaration":declaration,"evidence":evidence,"effect":if withdrawing {"Append the author’s withdrawal and its reason. Preserve the original assertion, source citations and analysis lineage; do not schedule automatic analysis."} else {"Append an attributed annotation. Retained evidence and previous annotations are unchanged."}}),
         )
@@ -374,10 +428,17 @@ impl Readers {
             if declaration["recovered_from"]["source"]
                 .as_str()
                 .is_some_and(|s| !authorized.contains(s))
-                || draft.cites.is_empty()
+                || (draft.cites.is_empty() && draft.authored.is_none())
+                || draft
+                    .authored
+                    .as_ref()
+                    .is_some_and(|b| !authorized.contains(&b.source))
                 || draft.cites.iter().any(|c| !authorized.contains(&c.source))
             {
                 continue;
+            }
+            if let Some(batch) = &draft.authored {
+                batch.decoded(declaration["author"].as_str().ok_or(Failure::Corrupt)?)?;
             }
             let index = candidates.len();
             for cite in draft.cites {
@@ -412,7 +473,11 @@ impl Readers {
         for (index, declaration) in candidates.into_iter().enumerate() {
             let draft: Draft = serde_json::from_value(declaration["draft"].clone())
                 .map_err(|_| Failure::Corrupt)?;
-            if draft.cites.iter().any(|c| !current.contains(&c.source))
+            if draft
+                .authored
+                .as_ref()
+                .is_some_and(|b| !current.contains(&b.source))
+                || draft.cites.iter().any(|c| !current.contains(&c.source))
                 || declaration["recovered_from"]["source"]
                     .as_str()
                     .is_some_and(|s| !current.contains(s))

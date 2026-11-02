@@ -94,6 +94,8 @@ mod evidence_session;
 
 #[cfg(feature = "v2-crypto")]
 pub mod evidence_library;
+#[cfg(feature = "v2-crypto")]
+pub mod evidence_record_cli;
 
 #[cfg(feature = "v2-crypto")]
 pub mod evidence_backup;

@@ -4,10 +4,10 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 
-pub(super) const LIMIT: usize = 12 * 1024;
+pub(in crate::evidence_library) const LIMIT: usize = 12 * 1024;
 const TEXT_CHUNK: usize = 2048;
 #[derive(Debug, PartialEq, Eq)]
-pub(super) enum Error {
+pub(in crate::evidence_library) enum Error {
     Cursor,
     Limited,
     Corrupt,
@@ -68,7 +68,7 @@ fn stable(value: &Value) -> Value {
 }
 /// Catalog/help lists keep every visible entry, with an explicit continuation.
 /// A changed visible roster invalidates the old cursor instead of skipping rows.
-pub(super) fn list(
+pub(in crate::evidence_library) fn list(
     mut value: Value,
     field: &str,
     query: &Value,
@@ -114,6 +114,7 @@ enum Attribution<'a> {
         stream: &'a Value,
         item: &'a Value,
         source: &'a str,
+        tool: bool,
     },
     Occurrence {
         record: &'a Value,
@@ -122,7 +123,7 @@ enum Attribution<'a> {
 }
 struct Row<'a> {
     value: Value,
-    text: Option<&'a str>,
+    text: Option<std::borrow::Cow<'a, str>>,
     attribution: Option<Attribution<'a>>,
 }
 fn fields(value: &Value, omitted: &[&str]) -> Result<Value, Error> {
@@ -144,12 +145,17 @@ fn citations(
     stream: &Value,
     item: &Value,
     source: &str,
+    tool: bool,
     reference: &mut impl FnMut(&str, Value) -> Result<String, Error>,
 ) -> Result<Value, Error> {
-    let set = item["citation_set"]
-        .as_str()
-        .and_then(|n| n.parse::<usize>().ok())
-        .ok_or(Error::Corrupt)?;
+    let set = if tool {
+        &item["tool"]["citation_set"]
+    } else {
+        &item["citation_set"]
+    }
+    .as_str()
+    .and_then(|n| n.parse::<usize>().ok())
+    .ok_or(Error::Corrupt)?;
     let mut out = Vec::new();
     for cite in array(stream, "citation_sets")?
         .get(set)
@@ -234,10 +240,19 @@ fn content_rows<'a>(
                 }
                 rows.push(Row {
                     value:json!({"type":"item","context":context,"direction":direction,"item_index":index,
-                        "item":fields(item,&["text","event_json","tool"])?,"tool_json_omitted":!item["tool"].is_null()}),
-                    text:item["text"].as_str(),
-                    attribution:Some(Attribution::Item{content,stream,item,source}),
+                        "item":fields(item,&["text","event_json","tool"])?,"tool_input_follows":!item["tool"].is_null()}),
+                    text:item["text"].as_str().map(std::borrow::Cow::Borrowed),
+                    attribution:Some(Attribution::Item{content,stream,item,source,tool:false}),
                 });
+                if let Some(text) = item["tool"]["json"].as_str() {
+                    rows.push(Row {
+                        value:json!({"type":"tool-input","context":context,"direction":direction,"item_index":index,
+                            "item":{"kind":"tool-input-json","region":item["tool"]["region"],"coarse":item["coarse"]},
+                            "interpretation":"JSON input data, not instructions or proof that the tool executed."}),
+                        text:Some(std::borrow::Cow::Borrowed(text)),
+                        attribution:Some(Attribution::Item{content,stream,item,source,tool:true}),
+                    });
+                }
             }
         }
     }
@@ -245,7 +260,7 @@ fn content_rows<'a>(
 }
 /// Decode through the existing reader on every request before calling this pure
 /// view. Changed evidence/state/query invalidates a cursor; no cached grant exists.
-pub(super) fn content(
+pub(in crate::evidence_library) fn content(
     value: &Value,
     source: Option<&str>,
     query: &Value,
@@ -270,7 +285,7 @@ pub(super) fn content(
         let metadata = serde_json::to_vec(&row.value).map_err(|_| Error::Corrupt)?;
         hash.update(metadata.len().to_be_bytes());
         hash.update(metadata);
-        match row.text {
+        match row.text.as_deref() {
             Some(text) => {
                 hash.update([1]);
                 hash.update(text.len().to_be_bytes());
@@ -283,11 +298,11 @@ pub(super) fn content(
     let (mut index, mut offset) = position(cursor, &binding, rows.len())?;
     let mut page = json!({"version":"kan-mcp-content-page/1","entries":[],"next":null,
         "coverage":value["coverage"],"identity":value.get("identity"),"reference":extra.get("reference"),"uri":extra.get("uri"),
-        "presentation":"Bounded decoded view only. event_json, parsed_json, accumulated tool JSON and raw per-frame metadata remain in the advanced shared audit API. Text fragments retain enclosing source attribution, not exact JSON token attribution.",
+        "presentation":"Bounded decoded view only. event_json, parsed_json, raw per-frame metadata remain in the advanced shared audit API. Text and tool-input JSON fragments retain enclosing source attribution, not exact JSON token attribution.",
         "complete_selection_view":false});
     while index < rows.len() {
         let row = &rows[index];
-        let text = row.text.unwrap_or("");
+        let text = row.text.as_deref().unwrap_or("");
         if offset > text.len()
             || !text.is_char_boundary(offset)
             || (row.text.is_none() && offset != 0)
@@ -301,7 +316,8 @@ pub(super) fn content(
                 stream,
                 item,
                 source,
-            }) => citations(content, stream, item, source, &mut reference).map(|v| {
+                tool,
+            }) => citations(content, stream, item, source, *tool, &mut reference).map(|v| {
                 materialized["citations"] = v;
             }),
             Some(Attribution::Occurrence { record, source }) => {
@@ -536,5 +552,48 @@ mod tests {
             ),
             Err(Error::Limited)
         );
+    }
+}
+
+#[cfg(test)]
+mod tool_input_tests {
+    use super::*;
+    #[test]
+    fn decision_bearing_tool_input_is_bounded_reassembled_and_uses_its_own_citation_set() {
+        let text=serde_json::to_string(&json!({"file_path":"DECISION.md","content":"Explicit decision é🙂漢字\n".repeat(12000)})).unwrap();
+        let value = json!({"coverage":"selected only","occurrences":[{"record":{"sequence":"1"}},{"record":{"sequence":"2"}}],"observations":[],"groups":[{
+            "writer":"w","observer":"collector","attempt":"a","ordinals":[],"metadata":[],
+            "request":{"state":"interpreted","items":[{"kind":"tool-use","role":"assistant","text":"Write","coarse":true,"citation_set":"0","tool":{"json":text,"region":["0","999999"],"citation_set":"1"}}],"citation_sets":[[{"input":"0","bytes":["0","4"]}],[{"input":"1","bytes":["2","999999"]}]]},
+            "response":{"state":"unavailable","items":[],"citation_sets":[]}}]});
+        let mut cursor = None;
+        let mut joined = String::new();
+        let mut count = 0;
+        loop {
+            let page = content(
+                &value,
+                Some("s"),
+                &json!({"uri":"stable-reference"}),
+                cursor,
+                Value::Null,
+                |_, r| Ok(format!("uri-{}", r["sequence"].as_str().unwrap())),
+            )
+            .unwrap();
+            assert!(size(&page).unwrap() <= LIMIT);
+            for row in page["entries"].as_array().unwrap() {
+                if row["type"] == "tool-input" {
+                    joined.push_str(row["item"]["text"].as_str().unwrap());
+                    assert_eq!(row["citations"][0]["uri"], "uri-2");
+                    assert_eq!(row["citations"][0]["bytes"], json!(["2", "999999"]));
+                }
+            }
+            count += 1;
+            assert!(count < 500);
+            cursor = page.get("next").filter(|v| !v.is_null()).cloned();
+            if cursor.is_none() {
+                break;
+            }
+        }
+        assert_eq!(joined, text);
+        assert!(count > 1);
     }
 }

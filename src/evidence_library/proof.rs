@@ -14,6 +14,8 @@ mod discovery;
 pub(crate) mod imports;
 pub mod knowledge;
 pub mod outbox;
+pub mod records;
+pub mod reports;
 pub mod search;
 pub mod sessions;
 mod triggers;
@@ -29,6 +31,12 @@ pub struct Readers {
     workers: std::sync::Arc<tokio::sync::Semaphore>,
 }
 impl Readers {
+    pub(super) fn has_analysis(&self) -> bool {
+        self.analysis.is_some()
+    }
+    pub(super) fn has_records(&self) -> bool {
+        self.workspace.is_some() && !self.proof.is_empty()
+    }
     pub(super) fn has_proof_sources(&self) -> bool {
         !self.proof.is_empty()
     }
@@ -181,6 +189,14 @@ impl Readers {
                     .await?
             }
             Query::AnnotationTriggers { id, retry } => self.annotation_triggers(&id, retry).await?,
+            Query::ExtractPlan { selection } => self.extract_plan(selection).await?,
+            Query::ExtractRun {
+                selection,
+                preview,
+                nonce,
+                wait,
+            } => self.extract_run(selection, preview, nonce, wait).await?,
+            Query::Report { id, cursor } => self.report(id, cursor).await?,
             Query::AnalysisPreview { draft } => self.analysis_preview(draft).await?,
             Query::AnalysisSubmit {
                 draft,
@@ -195,13 +211,34 @@ impl Readers {
                 attempts,
                 format,
             } => self.session_content(identity, attempts, format).await?,
+            Query::Record { draft } => self.record(draft, true).await?,
+            Query::RecordPreview { draft } => self.record(draft, false).await?,
+            Query::Recall {
+                source,
+                verb,
+                subject,
+                trust,
+                budget,
+                cursor,
+            } => {
+                self.recall(source, verb, subject, trust, budget, cursor)
+                    .await?
+            }
             Query::AnnotationDelivery { id } => self.annotation_delivery(&id).await?,
             Query::AnnotationQueue { id, destination } => {
                 self.annotation_queue(&id, &destination).await?
             }
             Query::AnnotationDrain { destination } => self.annotation_drain(&destination).await?,
-            Query::AnnotationPreview { draft } => self.annotation_preview(draft).await?,
+            Query::AnnotationPreview { draft } => {
+                if draft.authored.is_some() {
+                    return Err(Failure::Invalid.into());
+                }
+                self.annotation_preview(draft).await?
+            }
             Query::AnnotationSave { draft, preview } => {
+                if draft.authored.is_some() {
+                    return Err(Failure::Invalid.into());
+                }
                 self.annotation_save(draft, preview).await?
             }
             Query::Annotations {
@@ -494,6 +531,7 @@ impl Readers {
                         json!("text-search"),
                         json!("saved-views"),
                         json!("annotations"),
+                        json!("typed-records"),
                     ]);
                     catalog["unavailable"]
                         .as_array_mut()
@@ -579,7 +617,7 @@ impl Readers {
         serde_json::to_vec(&value).map_err(|_| Failure::Invalid.into())
     }
 }
-fn source_id(binding: &wire::Binding) -> String {
+pub(crate) fn source_id(binding: &wire::Binding) -> String {
     format!(
         "proof:{}:{}:{}:{}",
         match binding.profile {

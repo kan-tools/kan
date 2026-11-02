@@ -17,7 +17,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-pub const VERSION: &str = "kan-anthropic-messages/4";
+pub const VERSION: &str = "kan-anthropic-messages/5";
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Format {
     Request,
@@ -252,6 +252,14 @@ fn block(
             .is_some_and(|v| !v.is_string() && !v.is_array())
     {
         i.issues.push(Issue::Shape);
+    }
+    if kind == Kind::ToolUse {
+        if let Some(input) = value.get("input").filter(|v| v.is_object()) {
+            i.tool_input = Some(w.string(&input.to_string())?);
+            i.tool_region = Some(region.clone());
+        } else {
+            i.issues.push(Issue::ToolJson);
+        }
     }
     push(out, i, w)?;
     if kind == Kind::ToolResult && value.get("content").is_some_and(Value::is_array) {
@@ -968,6 +976,45 @@ pub(crate) fn validate_mapping<'a, 'b>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn complete_request_and_harness_tool_arguments_have_source_regions() {
+        let body = serde_json::json!({"model":"synthetic","messages":[{"role":"assistant","content":[{"type":"tool_use","id":"call","name":"Write","input":{"file_path":"DECISION.md","content":"Keep v1; migration unqualified. é🙂"}}]}]});
+        let json = body.to_string();
+        let limits = || Limits {
+            input_bytes: 100000,
+            items: 100,
+            output_bytes: 100000,
+            scan_bytes: 100000,
+            citations: 100,
+            duration: Duration::from_secs(2),
+            cancelled: Arc::new(AtomicBool::new(false)),
+        };
+        let request = interpret(json.as_bytes(), Format::Request, limits()).unwrap();
+        let tool = request
+            .items
+            .iter()
+            .find(|i| i.kind == Kind::ToolUse)
+            .unwrap();
+        let input: Value = serde_json::from_str(tool.tool_input.as_ref().unwrap()).unwrap();
+        assert_eq!(input["file_path"], "DECISION.md");
+        assert_eq!(tool.tool_region, Some(0..json.len()));
+        let line = serde_json::json!({"type":"assistant","message":body["messages"][0]})
+            .to_string()
+            + "\n";
+        let harness = interpret(line.as_bytes(), Format::HarnessJsonl, limits()).unwrap();
+        let tool = harness
+            .items
+            .iter()
+            .find(|i| i.kind == Kind::ToolUse)
+            .unwrap();
+        assert!(tool
+            .tool_input
+            .as_ref()
+            .unwrap()
+            .contains("migration unqualified"));
+        assert!(tool.coarse);
+        assert!(tool.tool_region.is_some());
+    }
     #[test]
     fn cancellation_after_first_event_refuses_remaining_output() {
         let c = Arc::new(AtomicBool::new(false));

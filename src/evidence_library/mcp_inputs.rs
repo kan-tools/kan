@@ -114,6 +114,16 @@ pub(super) struct Help {
 }
 #[derive(Clone, Copy, Deserialize, Serialize, JsonSchema)]
 pub(super) enum Tool {
+    #[serde(rename = "kan_v2_record")]
+    Record,
+    #[serde(rename = "kan_v2_recall")]
+    Recall,
+    #[serde(rename = "kan_v2_extract_plan")]
+    ExtractPlan,
+    #[serde(rename = "kan_v2_extract")]
+    Extract,
+    #[serde(rename = "kan_v2_report")]
+    Report,
     #[serde(rename = "kan_v2_catalog")]
     Catalog,
     #[serde(rename = "kan_v2_discover")]
@@ -128,6 +138,11 @@ pub(super) enum Tool {
 impl Tool {
     pub fn name(self) -> &'static str {
         match self {
+            Self::Record => "kan_v2_record",
+            Self::Recall => "kan_v2_recall",
+            Self::ExtractPlan => "kan_v2_extract_plan",
+            Self::Extract => "kan_v2_extract",
+            Self::Report => "kan_v2_report",
             Self::Catalog => "kan_v2_catalog",
             Self::Discover => "kan_v2_discover",
             Self::Content => "kan_v2_content",
@@ -137,6 +152,11 @@ impl Tool {
     }
     pub fn schema(self) -> Value {
         match self {
+            Self::Record => schema::<Record>(),
+            Self::Recall => schema::<Recall>(),
+            Self::ExtractPlan => schema::<ExtractPlan>(),
+            Self::Extract => schema::<Extract>(),
+            Self::Report => schema::<Report>(),
             Self::Catalog => schema::<Empty>(),
             Self::Discover => schema::<Discover>(),
             Self::Content => schema::<Content>(),
@@ -146,6 +166,19 @@ impl Tool {
     }
     pub fn example(self) -> Value {
         match self {
+            Self::Record => {
+                json!({"draft":{"source":"copy scope.id","verb":"decide","subject":"project/demo","text":"The explicitly authored decision."}})
+            }
+            Self::Recall => {
+                json!({"source":"copy scope.id","verb":"show","subject":"project/demo"})
+            }
+            Self::ExtractPlan => {
+                json!({"selection":{"source":"copy scope.id","from":1,"through":5,"recipe":"documentation-summary"}})
+            }
+            Self::Extract => {
+                json!({"selection":{"source":"copy plan.selection.source","from":1,"through":5,"recipe":"documentation-summary","pin":{"request":"copy complete plan.selection.pin","reply":{}}},"preview":"copy plan.digest","nonce":"copy plan.nonce"})
+            }
+            Self::Report => json!({"id":"copy job.id"}),
             Self::Catalog => json!({}),
             Self::Discover => json!({"source":"copy scope.id from catalog","limit":3}),
             Self::Content => {
@@ -163,6 +196,51 @@ pub(super) fn schema<T: JsonSchema>() -> Value {
     serde_json::to_value(schemars::schema_for!(T)).expect("static JSON schema")
 }
 
+#[derive(Deserialize, Serialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub(super) struct Record {
+    pub draft: super::RecordDraft,
+}
+#[derive(Deserialize, Serialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub(super) struct Recall {
+    pub source: String,
+    /// show, status, issues or context. Defaults to show.
+    #[serde(default = "show")]
+    pub verb: String,
+    pub subject: Option<String>,
+    #[serde(default)]
+    pub trust: Vec<String>,
+    #[serde(default = "budget")]
+    pub budget: usize,
+    #[schemars(with = "Option<std::collections::BTreeMap<String,Value>>")]
+    pub cursor: Option<Value>,
+}
+fn show() -> String {
+    "show".into()
+}
+fn budget() -> usize {
+    1024
+}
+#[derive(Deserialize, Serialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub(super) struct ExtractPlan {
+    pub selection: super::ExtractionSelection,
+}
+#[derive(Deserialize, Serialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub(super) struct Extract {
+    pub selection: super::ExtractionSelection,
+    pub preview: String,
+    pub nonce: String,
+}
+#[derive(Deserialize, Serialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub(super) struct Report {
+    pub id: String,
+    #[schemars(with = "Option<std::collections::BTreeMap<String,Value>>")]
+    pub cursor: Option<Value>,
+}
 /// The parameter wrapper advertises the typed shape but defers deserialization
 /// to our value-free error handler. Framework serde errors may quote bad values.
 // Delegate the root schema directly. A derived transparent `with` wrapper can
@@ -193,6 +271,11 @@ input!(SessionInput, Session);
 input!(ReferenceInput, Reference);
 input!(HelpInput, Help);
 input!(AdvancedInput, Advanced);
+input!(RecordInput, Record);
+input!(RecallInput, Recall);
+input!(ExtractPlanInput, ExtractPlan);
+input!(ExtractInput, Extract);
+input!(ReportInput, Report);
 
 pub(super) fn parse<T: DeserializeOwned + JsonSchema>(raw: Value) -> Result<T, Value> {
     serde_json::from_value(raw.clone()).map_err(|_| {
@@ -310,6 +393,11 @@ mod tests {
         check::<ReferenceInput>();
         check::<HelpInput>();
         check::<AdvancedInput>();
+        check::<RecordInput>();
+        check::<RecallInput>();
+        check::<ExtractPlanInput>();
+        check::<ExtractInput>();
+        check::<ReportInput>();
     }
     #[test]
     fn invalid_fields_are_actionable_without_echoing_supplied_values() {
