@@ -142,8 +142,11 @@ signed cursor together. Responses contain record descriptions, signed selections
 and portable occurrence URIs.
 
 Pass the returned source, pin and selected record selections to `kan_v2_content`.
-It uses existing bounded decoded content and source citations; `kind: attempt`
-explicitly selects the existing larger reconstruction budget. `kan_v2_session`
+It uses existing bounded decoded content and source citations. The default selected
+view can contain several attempts. For `kind: attempt`, group discovery rows by
+their writer, description observer and description attempt, then supply the
+selections from exactly one group; this selects the existing larger reconstruction
+budget. Mixing attempt identities is refused. `kan_v2_session`
 presents explicitly selected cross-archive attempts with observer membership claims
 kept separate from writer identity. `kan_v2_reference` accepts an exact returned
 portable URI, rechecks current access and returns decoded occurrence content.

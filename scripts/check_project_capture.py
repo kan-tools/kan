@@ -100,11 +100,33 @@ def read_decision(client, marker):
     page = client.call('kan_v2_discover', {'source': source_id, 'limit': 20})
     tokens = [r['record']['selection'] for r in page['records']]
     assert tokens
-    content = client.call('kan_v2_content', {'source': source_id, 'pin': page['pin'], 'selections': tokens, 'kind': 'attempt'})
+    content = client.call('kan_v2_content', {'source': source_id, 'pin': page['pin'], 'selections': tokens})
     assert marker in json.dumps(content), 'decoded content must contain actual selected decision'
     assert any(g['request']['citation_sets'] for g in content['groups']), 'decoded text must retain source citations'
     assert content['coverage'] and content['occurrences']
     assert not any(k in content for k in ['bytes_hex', 'raw_hex'])
+    attempts = {}
+    for row in page['records']:
+        description = row['description']
+        assert description['kind'] == 'capture'
+        key = (row['writer'], description['observer'], description['attempt'])
+        attempts.setdefault(key, []).append(row['record']['selection'])
+    assert len(attempts) >= 2, 'hook and transcript captures must remain distinct attempts'
+    decoded_attempts = []
+    for selected in attempts.values():
+        view = client.call('kan_v2_content', {'source': source_id, 'pin': page['pin'], 'selections': selected, 'kind': 'attempt'})
+        assert len(view['groups']) == 1
+        decoded_attempts.append(view)
+    assert marker in json.dumps(decoded_attempts)
+    member = next(row for row in page['records'] if (row['description'].get('session_link') or {}).get('state') == 'claimed')
+    link = member['description']['session_link']
+    session = client.call('kan_v2_session', {
+        'identity': {'writer': member['writer'], 'observer': member['description']['observer'], 'scheme': link['scheme'], 'session': link['session']},
+        'attempts': [{'source': source_id, 'pin': page['pin'], 'selections': selected} for selected in attempts.values()]})
+    assert marker in json.dumps(session) and session['coverage']
+    assert all(a['membership'] == 'claimed' for a in session['attempts']), 'membership is an observer claim, not capture completeness'
+    mixed = client.call('kan_v2_content', {'source': source_id, 'pin': page['pin'], 'selections': tokens, 'kind': 'attempt'}, False)
+    assert mixed['error'] == 'invalid-request', 'attempt identity guard must not be relaxed'
     bad = client.call('kan_v2_discover', {'source': source_id, 'cursor': page['records'][0]['record']['selection']}, False)
     assert bad['field'] == 'arguments.pin'
     wrong = json.loads(json.dumps(page['pin']))
@@ -175,6 +197,8 @@ with tempfile.TemporaryDirectory(prefix='kan-project-qualification-') as temp:
         names = {t['name'] for t in tools}
         assert {'kan_v2_catalog', 'kan_v2_help', 'kan_v2_discover', 'kan_v2_content', 'kan_v2_session', 'kan_v2_reference'} <= names
         assert 'kan_v2_owner' not in names and 'kan_v2_write' not in names
+        help_view = client.call('kan_v2_help', {'tool': 'kan_v2_content'})
+        assert help_view['tools'][0]['name'] == 'kan_v2_content' and help_view['tools'][0]['input_schema']['type'] == 'object'
         schemas = {t['name']: t['inputSchema'] for t in tools}
         assert all(s.get('type') == 'object' for s in schemas.values()), 'every advertised MCP root must be an object'
         assert schemas['kan_v2_discover']['properties']['source']['type'] == 'string'

@@ -306,7 +306,7 @@ impl Server {
         refreshed(result)
     }
     #[tool(
-        description = "Read bounded decoded content with exact evidence citations, using the source, pin and record.selection objects returned by discovery. Defaults to selected content; attempt opts into the existing larger reconstruction budget. No byte offsets or hex decoding are required. Missing chunks, unknown content and coverage limits remain visible.",
+        description = "Read bounded decoded content with exact evidence citations, using the source, pin and record.selection objects returned by discovery. Default selected content can include multiple attempts. For kind: attempt, first group selections by discovery writer/observer/attempt and supply exactly ONE group; this enables the existing larger reconstruction budget. No byte offsets or hex decoding are required. Missing chunks, unknown content and coverage limits remain visible.",
         annotations(read_only_hint = true)
     )]
     async fn kan_v2_content(

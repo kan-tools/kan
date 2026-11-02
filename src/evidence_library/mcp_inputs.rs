@@ -53,8 +53,9 @@ pub(super) struct Content {
     /// Signed record.selection objects from discovery. Preserve their bindings.
     #[schemars(with = "Vec<std::collections::BTreeMap<String, Value>>")]
     pub selections: Vec<Value>,
-    /// Selected content is the ordinary bounded view. Attempt allows the
-    /// existing larger attempt budget; neither mode claims complete capture.
+    /// Selected is the ordinary bounded multi-attempt view. Attempt allows the
+    /// larger budget for ONE writer/observer/attempt identity only; group by the
+    /// discovery descriptions first. Neither mode claims complete capture.
     #[serde(default = "selected")]
     pub kind: ContentKind,
 }
