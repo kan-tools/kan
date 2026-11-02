@@ -1,0 +1,323 @@
+# Feature: V1-style record and recall over v2, with bundled extraction
+
+## Summary
+
+Restore the simple deliberate-recording and budgeted-recall workflow over v2's
+shared service APIs. Capture, search and post-session extraction support authored
+knowledge; retrieving a recorded decision must not require replaying a transcript.
+Provide a bundled extraction/summary path whose output is a reviewable derived
+report. Turning that report into an authored annotation remains an explicit act.
+
+Owner decisions, 2026-11-02: preserve v1's familiar verbs and typed meanings where
+possible; initial extraction output is a report with explicit annotation promotion.
+These decisions follow the approved agent-usability build and the subsequent
+product design review. This document refines its next implementation contract;
+it is not a claim of implementation, runtime acceptance or Day compatibility.
+
+No system binary replacement, live migration, production credential change,
+merge, tag, publication, deployment or deletion is authorized here. No new paid
+agent trial has started. A paid demo needs an explicitly selected model, provisioned
+credential reference, input scope and spend limit before execution. Existing failed
+pilots and all retained stores remain intact.
+
+Process recording follows AGENTS.md's Git-first day#168 / kan#197 exception.
+Live Day schema validation, claim recording, telos/bridge interrogation and claim
+backfill remain pending. They are not empty or passing results. The skill's
+suggested docs/CONVENTIONS.md is absent from this checkout; this file is not a
+substitute for validation against the actual process schema.
+
+## Current product and evidence
+
+- Released baseline is `8852067e6daf34348bf5e687c8c2ac19b3023e32` / beta.1.
+  The private agent-usability build at
+  `d937769623ae00ead740b2f6899003ca8b3da875` is qualified but unmerged. The
+  installed laptop binary remains `kan 0.13.0-beta.1`.
+- `src/cli/mod.rs` and `src/actions.rs` implement v1 recording, correction,
+  structuring and recall with typed claims, explicit authors, citations, anchors
+  and fold/trust semantics. Their JSON contracts are consumed by Day.
+- `src/bin/kan-v2.rs` primarily exposes service, capture, Library and operational
+  commands. Its Library request option and MCP share `src/evidence_library.rs`.
+  There is no v1-style record/recall facade on the v2 executable today.
+- `src/evidence_library/proof/knowledge.rs` offers annotation preview/save/list,
+  corrections, withdrawals and relations. Its draft currently requires 1–8
+  captured-evidence citations. Its authorization path also excludes declarations
+  without citations. Merely relaxing validation would neither establish note
+  scope nor safely implement uncited authored assertions.
+- `src/evidence_workspace/annotations.rs` persists encrypted workspace records.
+  Annotation publication is separately composed in
+  `src/evidence_library/proof/outbox.rs`. A local save is not an archive receipt.
+- `src/claim/mod.rs`, `src/claim/codec.rs`, `src/claim/view.rs` and
+  `src/fold/claim_view_state.rs` already describe current/legacy typed semantics.
+  `src/evidence_library/proof/imports/current.rs` projects imported typed claims
+  under selected identity/control evidence. Tags on a generic note are not an
+  equivalent implementation of these contracts.
+- `src/evidence_library/proof/analysis.rs` already implements explicit bounded
+  analysis previews, persisted jobs, retry lineage and source rechecks.
+  `src/evidence_library/proof/analysis/adapters.rs` provides the generative
+  Anthropic Messages adapter. Use the existing configured collector/gateway;
+  provider credentials do not belong in CLI output or agent prompts.
+- Current analysis input assembly is bounded to eight cited occurrences and a
+  configured byte budget, and presents capture frames individually. A bundled
+  session extraction must plan coherent selected input and report gaps instead
+  of taking an arbitrary first eight records or silently losing long inputs.
+- Both Linux and macOS qualification passed at d937769. The explicit continuation
+  of the real Sonnet reader still failed the retrieval task despite every reply
+  fitting 12 KiB. It stopped in the chronological prefix of one large captured
+  request before the decision/source pins. The answer is retained; this is not a
+  demonstrated storage failure. Captured Write inputs can contain authored text,
+  while the normal renderer omits accumulated tool JSON. No independent review
+  of this agent-usability feature has launched.
+- Exact private evidence remains in
+  `.local-state/agent-usability-20261101/pilot-evidence.json` and
+  `.local-state/agent-usability-20261101/pilot-report.md`. Original results and the
+  one continuation are retained separately. Do not rerun them as a new demo.
+
+## Requirements
+
+- REQ-1: Provide v1-style recording, structuring, correction and recall through a
+  v2 CLI facade and equivalent typed MCP tools over one shared action contract.
+  Preserve typed intent, author identity, subject/reference semantics and trust;
+  do not replace decisions, status or relations with opaque tag conventions.
+- REQ-2: Allow an authorized author to record a statement without prior transcript
+  capture or an evidence citation. Authored scope and read/write authorization
+  are explicit independently of citations. Uncited, cited and model-derived
+  statements remain distinguishable. No missing governance/admission is invented.
+- REQ-3: Return a stable record reference and explicit local/queued/acknowledged
+  durability state. Ordinary recording does not require hand-built pins, preview
+  JSON, separate manual publication calls or owner credentials. Existing explicit
+  profile configuration fixes any automatic queue/delivery destination.
+- REQ-4: Recall authored records directly by subject/reference and through a
+  bounded context view, retaining correction history, contradictions, trust
+  framing and omission disclosure. Supporting evidence can be expanded without
+  requiring complete session reconstruction. Read-only tools cannot record.
+- REQ-5: Existing v1 commands, signed records, CIDs, identity/trust and fold results
+  remain unchanged. A compatibility matrix states which v2 behaviors and versioned
+  JSON shapes match v1 and which require an explicit translation. Partial parity
+  cannot be advertised as a compatible replacement for Day/v1.
+- REQ-6: Separate operator configuration from normal use. One explicit private
+  project/profile resolves the existing permitted source, destination, signer,
+  reader workspace and credential references across its authorized worktrees.
+  No inferred linked-worktree scope, global install or ambient key discovery.
+- REQ-7: Bundle a versioned post-session extraction and summary recipe over exact
+  selected evidence. Plan inputs using shared authenticated decoding, retaining
+  original source references, ordering claims, missing/unsupported states and
+  excluded ranges. Large input requires explicit bounded batches or refusal.
+- REQ-8: A Sonnet API worker uses the existing configured inference adapter and
+  gateway with separately supplied provider credentials, input allowlist, byte/
+  token/job/spend limits and no arbitrary tools. Record actual returned model,
+  recipe/prompt revision, exact input manifest, outputs and available usage.
+  No automatic paid retry follows an interruption or provider failure.
+- REQ-9: Extraction first produces a readable derived report with stable reference,
+  citations, uncertainty, exclusions and run lineage. It is not an authored
+  decision, accepted claim or instruction merely because a job succeeded.
+  Explicit promotion retains run provenance and permits review/edit before save.
+- REQ-10: Provide a supported demo runner using the same interfaces as ordinary
+  users: explicit documentation versus independent post-session extraction over
+  one frozen working-evidence set. Fresh readers receive no expected answer or
+  filesystem/raw-offset workaround. Retain both successes and failures.
+- REQ-11: Normal CLI/MCP output remains bounded and readable; continuations retain
+  current authorization and exact source binding. Compact reusable references
+  reduce repeated protocol objects without becoming durable read capabilities.
+  Preserve document/tool input content needed for recall with explicit coverage.
+- REQ-12: Keep existing Day/v1 and Git as the operational research workflow until
+  the separately qualified adapter/cutover gate passes. The demo uses disposable
+  stores and no dual writing of an authoritative live research record. Preserve
+  original stores, capture gaps, backup evidence and failed experiments.
+
+## Acceptance Criteria
+
+- [ ] AC-1: A verb-by-verb fixture matrix compares observe/plan/decide/result,
+  block/resolve, same/relate/mark, retract/reject and show/status/issues/context
+  semantics with v1. Unsupported behavior refuses explicitly; a tag-only mapping
+  cannot pass typed decision, status, identity or relation cases. (REQ-1, REQ-5)
+- [ ] AC-2: Create an attributed statement in a disposable authorized scope with
+  capture disabled and no citations; read it after restart. Cross-scope and
+  reader-only writes fail. An empty citation set cannot bypass note-scope access.
+  Scope admission/trust unknown states remain explicit. (REQ-2)
+- [ ] AC-3: Record, return the stable reference, read back, enqueue/deliver, restart
+  and retry without duplicate records or changed identity. Offline/failed delivery
+  reports local durability and pending state; local save never claims archive
+  acknowledgment or independent backup. (REQ-3)
+- [ ] AC-4: Fresh CLI and typed-MCP readers retrieve the explicit decision, source
+  revision/hash, reason and uncertainty by subject/context. Correction/retraction,
+  conflicting-author and trust-exclusion controls pass. No transcript replay,
+  invented source authority or missing-field reconstruction is needed. (REQ-4)
+- [ ] AC-5: Existing v1 byte/signature/CID/JSON fixtures pass unchanged; compatibility
+  results separately cover native v2 authored records and imported originals.
+  No Day consumer is redirected, and full Day compatibility remains unclaimed
+  until its separate contract tests pass. (REQ-5, REQ-12)
+- [ ] AC-6: Two explicit worktrees share the selected private profile; an unrelated
+  project is refused. Routine record/recall requires no owner configuration,
+  global binary replacement or manual signed-token assembly. (REQ-6)
+- [ ] AC-7: The real extraction planner handles multi-occurrence messages and
+  decision-bearing tool inputs, reconstructs exact source-attributed inputs and
+  reports partial/unsupported data. Over-budget plans refuse or expose selected
+  batches and exclusions; no silent first-eight truncation. (REQ-7)
+- [ ] AC-8: Fake-provider qualification covers provider errors, malformed/truncated
+  output, current revocation, cancellation, interruption and exact-retry rules.
+  One explicitly budgeted real Sonnet API run records actual model/recipe/input/
+  output/usage; missing usage is labelled unavailable. No secrets appear in logs.
+  (REQ-8)
+- [ ] AC-9: Reading a report creates no annotation or trusted decision. Explicit
+  promotion previews the author, text, subject and citations; save/readback retains
+  run lineage and edits. Later correction retains original report and declaration.
+  Prompts and captured instructions cannot enable promotion or tools. (REQ-9)
+- [ ] AC-10: In the demo, both fresh readers recover the chosen decision, source
+  revision/hash and unresolved boundary with resolving citations. Compare wrong
+  or unsupported conclusions, omissions, retrieval calls/bytes, elapsed time and
+  model usage. The extractor cannot read the explicit documentation arm's notes
+  or later outputs; the evaluator's expected answers are inaccessible to both.
+  Report each arm independently; exit 0 is not task success. (REQ-10)
+- [ ] AC-11: Every normal output fits the declared bound; large Unicode messages
+  and tool arguments remain recoverable, not silently omitted. Query/reference
+  mismatch, current grant revocation and unavailable evidence controls pass.
+  Fresh readers do not copy large selection sets per page as the normal path.
+  (REQ-11)
+- [ ] AC-12: Demo cleanup stops owned services and retains disposable stores,
+  reports, gaps, failed attempts and credentials privately. Existing original
+  pilot/recovery evidence is neither repeated nor relabelled current-runtime
+  qualification. System binary and live Day/v1 stores remain unchanged. (REQ-12)
+
+## Architecture
+
+### Semantic compatibility before command aliases
+
+Reuse the canonical claim codecs and deterministic view/fold implementation where
+applicable, with an explicit service-backed action boundary. `src/actions.rs`
+currently depends on a repository Workspace; simply invoking it through a hidden
+kan-v1 subprocess would preserve the old storage/discovery problems rather than
+provide the selected v2 interface. Separate pure command intent/read projection
+from repository-specific I/O before choosing which action code to share.
+
+The first engineering deliverable is an exact compatibility matrix with typed
+examples and source references. It must settle how authored v2 records use the
+existing claim codecs or a versioned annotation envelope without losing kind,
+subject identity, correction/retraction or author/trust semantics. Existing
+kan-annotation/1 publications remain readable; do not silently add fields that
+old signed-envelope validators reinterpret. No second fold or competing source
+of truth may be introduced as a shortcut.
+
+Evidence citations and claim-to-claim citations have different types and meanings.
+An authored statement needs an explicit scope even when it has no evidence cites.
+The current requirement that every annotation cite a captured occurrence cannot
+be removed until authorization, persistence, publication, restoration, erasure
+and correction handling all cover that explicit scope. Keep source access checks
+for citations that are supplied; do not erase provenance when sources disappear.
+
+### Common record/recall surface
+
+Proposed familiar CLI verbs are observe, plan, decide, result, block, resolve,
+same, relate, mark, retract, reject, show, status, issues and context. They are
+not available on the current v2 CLI. Equivalent action-specific MCP schemas call
+the same shared action contract. Existing service/recovery commands retain their
+meaning. Exact option spelling and versioned JSON are frozen with the compatibility
+matrix, not guessed from examples in this draft.
+
+Resolve profile configuration once at launch, with distinct read, annotation-write
+and owner authority. A routine explicitly requested record operation may compose
+its existing preview/save/readback internally and retain the receipt; this does
+not require another human confirmation for every ordinary note. Sensitive owner
+operations keep their separate plan/consent boundary. Delivery may continue in an
+explicitly configured outbox, with honest local versus acknowledged states.
+
+The human UI makes authored records and derived reports independently reachable.
+Show an explicit statement without asking the reader to discover its source frames
+first. Offer supporting evidence and full history as adjacent views. Context
+assembly must label which entries are authored, model-derived, imported or captured,
+and state its token budget, trust frame and exclusions. Search supplements exact
+subject/reference reads rather than making those reads depend on an LLM.
+
+### Bundled extraction and summary
+
+Extend the existing analysis engine and adapters instead of introducing a second
+scheduler or model-response store. A versioned recipe bundle produces a readable
+report of decisions, results, open questions, source revisions and supporting
+citations. The planner records the selected evidence frontier and decoded input
+manifest before submitting bounded work. Source bytes are rechecked under current
+authorization before dispatch; no cached plaintext bypasses revocation.
+
+Reuse source-attributed decoded content when assembling model inputs. Avoid both
+raw frame replay as the default prompt and silently discarding tool-input content
+that contains authored documents. If several bounded batches are required, retain
+per-batch manifests and connect the final report to all source runs. A synthesis
+report cannot claim coverage of omitted, unavailable or never captured inputs.
+
+Use the Anthropic Messages adapter with a separately configured Sonnet model via
+the collector/gateway. "Offline" means post-session processing, not network-free
+inference. Provider API keys remain in private operator-supplied files; they are
+not inherited from Claude Code login or printed into configuration examples.
+Prefer explicit on-demand submission for the first bundle. Existing optional tag
+triggers remain opt-in; merely saving or reading this report cannot promote it.
+
+A report is addressed and retrievable directly. Its content and references must
+fit ordinary CLI/MCP pages without copying the provider's full raw response.
+Original request/response and usage remain separately inspectable run evidence.
+Explicit promotion uses the checked annotation preview/save path with derived-from
+lineage; authorship of the promotion does not retroactively make the model output
+independently verified.
+
+### Controlled two-path demo
+
+1. Create a new disposable public/synthetic toy project and working session under
+   a bounded, explicitly approved model budget. Do not reuse production keys or
+   repeat the retained original pilot, backup or large capacity fixtures.
+2. Freeze the common working-evidence frontier and input manifest before producing
+   either documentation result. Define the expected decision/source/uncertainty
+   privately for evaluation; never give those answers to the fresh readers.
+3. Explicit arm: prompt the working agent to deliberately record the documentation
+   through the v2 record interface. Save/readback checks the real authored records.
+4. Extraction arm: independently run the bundled post-session recipe over only the
+   frozen working evidence. Exclude the explicit arm's documentation session,
+   annotations and later generated reports from its permitted input.
+5. Use separate fresh reader contexts with the same retrieval task and comparable
+   budgets. One uses authored records, the other the derived report; either may
+   expand exact supporting evidence through the ordinary typed read tools.
+6. Evaluate each outcome and its coverage, quality, citations, retrieval effort,
+   timing and usage. Do not turn a good summary into proof of author intent or
+   independent review. Permit an explicit separate promotion demonstration only
+   after report inspection. Retain refusals and failures as results.
+
+## Resolved Questions
+
+- Preserve v1's familiar verbs and typed meanings wherever possible; command-name
+  parity without semantic parity is insufficient. Owner confirmed 2026-11-02.
+- Bundled extraction initially produces a reviewable derived report; annotation
+  promotion is explicit, not automatic. Owner confirmed 2026-11-02.
+- Deliberate annotation and recall are a primary workflow, rather than requiring
+  capture and later extraction to manufacture every useful research record.
+- Keep the established Day/v1 research record and Git operationally unchanged
+  until separately qualified compatibility and cutover; the demo is isolated.
+
+## Open Questions
+
+<!-- OPEN: Q1 -->
+### Q1: Canonical authored-record and compatibility envelope
+The current claim domain is typed and identity-aware; current v2 annotations are
+versioned generic declarations with captured-evidence citations. Prefer reusing
+canonical typed claim semantics and the existing fold. Before implementation,
+produce a concrete mapping covering signing identity, note scope, kind, evidence
+versus claim citations, stable IDs, correction/retraction and old publication reads.
+Choose the transport/envelope only after testing that it preserves those contracts;
+no tag-only emulation or silent kan-annotation/1 format reinterpretation.
+<!-- /OPEN -->
+
+<!-- OPEN: Q2 -->
+### Q2: Demo model, inputs and spend envelope
+The user proposed Sonnet through an API key. Exact provider model/version, private
+credential reference, public toy input and maximum spend per author/extractor/reader
+remain to be selected before paid execution. The previously authorized single
+reader continuation has been used and failed; this plan does not silently repeat it.
+No secret value should be pasted into the design or an agent prompt.
+<!-- /OPEN -->
+
+## Out of Scope
+
+- Automatic annotation promotion or treating summaries as authoritative decisions.
+- Running new paid jobs, changing credentials or live routes merely to draft this
+  design; an actual demo has a concrete selected input/model/budget first.
+- New plaintext retrieval stores, duplicate research ledgers, a second semantic
+  fold, a provider-specific archive format or storage authorization from a citation.
+- Retiring Day/v1, rewriting original claims/CIDs, migrating live research stores,
+  upgrading the system binary, deploying services or publishing a release here.
+- Repeating original failed inference/drills/capacity fixtures or deleting retained
+  stores, snapshots, backups, keys, logs or volumes.

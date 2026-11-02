@@ -224,6 +224,32 @@ RPC timings expose the next actual observation. The synthetic MCP transport also
 bounds partial-line reads and redirects stderr to a file rather than an undrained
 pipe; neither mechanism is claimed as the traced cause of the previous timeout.
 
+## Owner product review — 2026-11-02
+
+The bounded-page build at d937769 passed Linux and macOS qualification, but the
+one explicit continuation of the original fresh Sonnet reader still failed
+AC-4/AC-10. All replies fit 12 KiB; the reader stopped before reaching the decision
+and source pins. The author final contains the requested facts. Bounded output
+alone did not make chronological transcript retrieval an adequate common path.
+This result does not invalidate the retained storage/recovery controls or imply
+that the answer is absent. Actual results and the original failure remain retained.
+
+During the ensuing design review, the owner confirmed both directions:
+
+- Restore v1-style familiar verbs and typed record/recall meanings through v2.
+  Deliberate authored knowledge is a primary path, not something that must always
+  be reconstructed from captured sessions. Tags alone are not semantic parity.
+- Bundle post-session extraction/summary as a reviewable derived report, with
+  explicit annotation promotion. Compare it with prompted explicit documentation
+  in an isolated two-path demo rather than silently repeating the failed pilot.
+
+The follow-on contract and unresolved codec/budget decisions are in
+[Record, recall and extraction](kan-v2-record-recall-and-extraction.md).
+This refines the product entry path without changing the established live Day/v1
+record, granting migration authority or declaring the failed acceptance complete.
+The existing implementation and all its failure evidence remain foundations for
+that work; no new model call or independent review has launched.
+
 ## Delivery sequence
 
 1. Typed discovery and actionable errors, together with the decoded common read
