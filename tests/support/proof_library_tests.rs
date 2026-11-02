@@ -9028,7 +9028,13 @@ async fn bundled_extraction_decodes_tool_inputs_and_report_read_does_not_call_or
     for (n, input) in report_inputs.iter().enumerate() {
         assert_eq!(input["input"], n);
         assert_eq!(input["availability"], "available");
-        assert!(input["uri"].as_str().is_some_and(|s| s.starts_with("kan:")));
+        let uri = input["uri"].as_str().unwrap();
+        let reference = kan::evidence_reader::proof::Reference::from_uri(uri).unwrap();
+        assert_eq!(reference.canonical_uri().unwrap(), uri);
+        assert_eq!(
+            serde_json::to_value(&reference.coordinate).unwrap()["through"],
+            rows[rows.len() - 1 - n]["sequence"]
+        );
     }
     assert!(pages > 1);
     assert_eq!(requests.lock().unwrap().len(), 1);
