@@ -6,7 +6,11 @@ use serde_json::{json, Value};
 
 #[derive(Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
-pub(super) struct Empty {}
+pub(super) struct Empty {
+    /// Copy next from this tool's previous page; omit for the first page.
+    #[schemars(with = "Option<std::collections::BTreeMap<String, Value>>")]
+    pub cursor: Option<Value>,
+}
 #[derive(Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub(super) struct Advanced {
@@ -26,13 +30,14 @@ pub(super) struct Discover {
     /// Opaque next token from discovery; never invent or edit token fields.
     #[schemars(with = "Option<std::collections::BTreeMap<String, Value>>")]
     pub cursor: Option<Value>,
-    /// Bounded occurrences to inspect, from 1 to 20 (default 10).
-    #[serde(default = "ten")]
+    /// Requested occurrences, from 1 to 20 (default 3). The serialized output
+    /// budget may return fewer; follow the returned signed next cursor.
+    #[serde(default = "three")]
     #[schemars(range(min = 1, max = 20))]
     pub limit: usize,
 }
-fn ten() -> usize {
-    10
+fn three() -> usize {
+    3
 }
 #[derive(Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "kebab-case")]
@@ -58,6 +63,10 @@ pub(super) struct Content {
     /// discovery descriptions first. Neither mode claims complete capture.
     #[serde(default = "selected")]
     pub kind: ContentKind,
+    /// Opaque decoded-view next cursor; copy verbatim with identical arguments.
+    /// This is presentation position, not source-byte selection or a grant.
+    #[schemars(with = "Option<std::collections::BTreeMap<String, Value>>")]
+    pub cursor: Option<Value>,
 }
 #[derive(Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -83,6 +92,8 @@ pub(super) struct Selection {
 pub(super) struct Session {
     pub identity: SessionIdentity,
     pub attempts: Vec<Selection>,
+    #[schemars(with = "Option<std::collections::BTreeMap<String, Value>>")]
+    pub cursor: Option<Value>,
 }
 #[derive(Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -90,12 +101,16 @@ pub(super) struct Reference {
     /// Exact kan+capture://v1/occurrence URI returned by Kan. It identifies
     /// evidence, not a grant; resolution checks current access again.
     pub uri: String,
+    #[schemars(with = "Option<std::collections::BTreeMap<String, Value>>")]
+    pub cursor: Option<Value>,
 }
 #[derive(Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub(super) struct Help {
     /// Omit for all common read tools; otherwise choose an advertised name.
     pub tool: Option<Tool>,
+    #[schemars(with = "Option<std::collections::BTreeMap<String, Value>>")]
+    pub cursor: Option<Value>,
 }
 #[derive(Clone, Copy, Deserialize, Serialize, JsonSchema)]
 pub(super) enum Tool {
@@ -132,7 +147,7 @@ impl Tool {
     pub fn example(self) -> Value {
         match self {
             Self::Catalog => json!({}),
-            Self::Discover => json!({"source":"copy scope.id from catalog","limit":10}),
+            Self::Discover => json!({"source":"copy scope.id from catalog","limit":3}),
             Self::Content => {
                 json!({"source":"copy scope.id","pin":{"request":"copy complete returned pin, not this illustrative object","reply":{}},"selections":[{"body":{},"signature":"copy complete record.selection"}],"kind":"selected"})
             }

@@ -136,10 +136,15 @@ for services this helper started. Operational state, logs and failed outputs rem
 ## Ordinary agent retrieval
 
 Use `kan_v2_catalog` first to inspect accessible sources and configured capabilities.
+Catalog and help responses are paginated: when `next` is non-null, copy it into
+`cursor` on the same tool with unchanged other arguments. Their upstream coverage
+describes source enumeration, while presentation coverage describes this page.
 For proof sources, `kan_v2_discover` accepts an exact source id and bounded limit;
 a fresh pin is obtained when omitted. Continue only with the returned pin and
 signed cursor together. Responses contain record descriptions, signed selections,
-and portable occurrence URIs.
+and portable occurrence URIs. The requested limit defaults to three. The serialized
+output budget may return fewer rows; the signed next cursor always follows the
+last returned row, so following it does not skip hidden inventory entries.
 
 Pass the returned source, pin and selected record selections to `kan_v2_content`.
 It uses existing bounded decoded content and source citations. The default selected
@@ -152,6 +157,29 @@ kept separate from writer identity. `kan_v2_reference` accepts an exact returned
 portable URI, rechecks current access and returns decoded occurrence content.
 A single occurrence can be an incomplete chunk; use attempt reconstruction where
 necessary. References are evidence identity, not enduring grants.
+
+These typed tools return at most 12 KiB of JSON per response. Content, session and
+reference responses use `entries`: group/stream availability states, explicit
+non-capture observations, observer membership claims, and decoded items with
+`citations`. Item text can span several Unicode-safe fragments. Follow `next` by
+copying it into `cursor` with the exact same source, pin, selections, kind, URI or
+session arguments. `text_fragment.continued`/`final` describe one item's text,
+and `complete_selection_view` means that presentation has reached its selected
+end, never complete capture. A cursor is a query-bound presentation position,
+not source-byte selection or authority. Changed evidence/state invalidates it;
+restart the view rather than inventing a replacement. Every page rechecks current
+source access through the authenticated reader. There is no plaintext page store.
+
+Citations retain portable occurrence URIs and enclosing source byte ranges.
+`coarse` attribution is not the exact JSON string-token range. Large redundant
+`parsed_json`, `event_json`, accumulated tool JSON and raw per-frame metadata are
+omitted from this normal view; the advanced shared audit API retains them. A
+non-text protocol/framing/context wrapper is counted on its stream state rather
+than repeated before its readable children; malformed and unsupported states
+remain explicit. A
+minimum required citation/metadata unit that cannot fit returns `content-limit`,
+not empty success or silently discarded evidence. Unknown, unavailable and partial
+states remain explicit even when there is no readable text.
 
 `kan_v2_help` returns advertised common schemas, field-copy examples and configured
 capabilities. Signed pins and selections are opaque: copy them verbatim rather

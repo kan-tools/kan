@@ -165,6 +165,54 @@ profile controls before deciding whether to extend offline `read-record` to
 admitted/copied archives. Any extension must select an explicit proof binding
 and preserve authentication semantics, rather than reinterpret the file.
 
+## Real-agent acceptance finding — 2026-11-02
+
+Revision `b170be4` passed full remote qualification, including the actual capture,
+decoded-content and native backup/recovery fixture on Linux and macOS. The real
+Sonnet documentation pilot then failed AC-4/AC-10: its fresh reader could not
+inspect a 65,762-character discovery response or a 256,406-character decoded
+transcript response within the harness tool-output limit. The reader reported
+that it had not recovered the decision, despite exiting successfully. Backend
+backup/recovery and a new programmatic MCP client's decoded readback passed;
+that does not turn the agent acceptance failure into a pass.
+
+Evidence is retained privately in
+`.local-state/agent-usability-20261101/{pilot-evidence.json,pilot-report.md}`.
+The pilot-only scope bootstrap also failed before Claude created its reported
+transcript directory. That operator helper was repaired from the actual reported
+path; two terminal capture gaps and later explicit snapshots remain distinct.
+No inference was restarted. These setup findings do not diagnose storage loss.
+
+REQ-4's existing bounded-output requirement therefore needs an agent-sized
+presentation bound, rather than only the much larger shared audit/API bound:
+
+- Typed discovery must adapt the returned row count to the actual serialized
+  output budget. Its signed next cursor must follow the last **returned** row;
+  never drop rows while returning a cursor for a larger hidden page.
+- Normal typed content, session and reference reads need bounded decoded-item
+  pages, with a default JSON payload budget of 12 KiB. A continuation is an
+  opaque presentation cursor bound to the exact selection/query, not a grant.
+  Each page reuses the existing authenticated reader and checks current access.
+  No plaintext cache, additional retrieval store or enduring capability is added.
+- Keep readable text, item/availability states, coarse attribution, exact source
+  citations and explicit continuation/coverage. Omit redundant full parsed JSON,
+  serialized events and accumulated tool JSON from the normal presentation;
+  retain the existing advanced audit API for those original representations.
+  Large individual text items must page without losing Unicode or source binding.
+- Refuse explicitly when a single required citation/metadata unit cannot fit;
+  never represent a refused or truncated result as complete or empty evidence.
+- Qualification must use a realistic large harness transcript, assert each
+  serialized page's bound, reconstruct paged text with citations, and exercise
+  cursor/query mismatch plus unavailable/partial states. Preserve all existing
+  authority and mixed-attempt refusals.
+
+After qualifying the revised binary, use one explicitly recorded continuation of
+the existing failed reader session, with the updated tool schemas and retained
+evidence. Preserve its initial failure and do not rerun the author or launch a
+duplicate pilot on unchanged code. The focused independent review remains gated
+on actual usable retrieval, not CI alone. This refines the approved common-path
+scope; it does not add Day migration, publication or system-upgrade authority.
+
 ## Delivery sequence
 
 1. Typed discovery and actionable errors, together with the decoded common read
