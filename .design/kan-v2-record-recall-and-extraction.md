@@ -402,3 +402,19 @@ The report text, original frozen inputs and single provider result stay unchange
 After remote qualification, continue only that same reader explicitly on the
 changed interface within its original remaining spend allocation; do not rerun
 authoring, extraction or a fresh inference unchanged.
+
+### Operator readback finding — report references need frozen reconstruction context
+
+Qualified compact handles resolved correctly, but input 4 of the actual report is
+one body chunk: a single-occurrence read disclosed missing start/body ranges and
+contained no readable items. No reader continuation was spent on that known gap.
+The report handle must reconstruct its original bounded frozen input manifest
+through the shared authenticated reader, then present complete decoded items whose
+text or tool input intersects the focused input. States, original item attribution
+and citations remain intact; enclosing items may cross input boundaries. This is
+explicit selected context, not an expanded live search or completeness assertion.
+Direct occurrence URIs retain their single-occurrence behavior. Rebinding all
+manifest tokens to one fresh pin must preserve order, foreign-reader attribution,
+current grants and source availability, without an Engine, cached plaintext or
+another provider call. Regression checks must distinguish single-chunk partial
+state from the same frozen context's readable source and preserve focus lineage.

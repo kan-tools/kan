@@ -234,10 +234,50 @@ impl Readers {
         let draft: analysis::Draft =
             serde_json::from_value(job["draft"].clone()).map_err(|_| Failure::Corrupt)?;
         let inputs = self.report_inputs(&draft, &id).await?;
-        inputs
-            .get(input)
-            .cloned()
-            .ok_or_else(|| Failure::Invalid.into())
+        let mut value = inputs.get(input).cloned().ok_or(Failure::Invalid)?;
+        if draft.decode {
+            let first = draft.cites.first().ok_or(Failure::Corrupt)?;
+            let original_pin = serde_json::to_vec(&first.pin).map_err(|_| Failure::Corrupt)?;
+            if draft.cites.len() > 8
+                || draft.cites.iter().any(|c| {
+                    c.source != first.source
+                        || serde_json::to_vec(&c.pin).ok().as_ref() != Some(&original_pin)
+                })
+            {
+                return Err(Failure::Invalid.into());
+            }
+            let tokens = draft
+                .cites
+                .iter()
+                .map(|c| c.selection.clone())
+                .collect::<Vec<_>>();
+            let (pin, sources) = self
+                .selected(&first.source)?
+                .rebind_citations(&tokens)
+                .await?;
+            if sources.iter().any(|source| {
+                matches!(source, crate::evidence_reader::proof::Source::Erased { .. })
+            }) {
+                return Err(Failure::AccessLimited.into());
+            }
+            let selections = sources
+                .into_iter()
+                .map(|source| {
+                    use crate::evidence_reader::proof::Source;
+                    let record = match source {
+                        Source::Available { record, .. }
+                        | Source::Missing { record }
+                        | Source::Corrupt { record }
+                        | Source::KeyUnavailable { record, .. }
+                        | Source::Erased { record } => record,
+                    };
+                    record.selection
+                })
+                .collect::<Vec<_>>();
+            value["content_request"] = json!({"action":"proof-content","source":first.source,"pin":pin,"selections":selections,"format":"anthropic-messages-auto"});
+            value["report_selection"] = json!({"id":id,"input":input,"inputs_count":draft.cites.len(),"coverage":"Reconstruct only the frozen report manifest. Show enclosing items whose text or tool input intersects the focused input; their exact citations may cross input boundaries. States remain explicit. Not complete capture."});
+        }
+        Ok(value)
     }
     pub(super) async fn report(
         &self,

@@ -9029,6 +9029,7 @@ async fn bundled_extraction_decodes_tool_inputs_and_report_read_does_not_call_or
         .await;
     assert_eq!(joined, report_text);
     assert_eq!(report_inputs.len(), 3);
+    let mut saved_context_request = None;
     for (n, input) in report_inputs.iter().enumerate() {
         assert_eq!(input["input"], n);
         assert_eq!(input["availability"], "available");
@@ -9040,6 +9041,19 @@ async fn bundled_extraction_decodes_tool_inputs_and_report_read_does_not_call_or
             json!({"report":{"id":id,"input":n}})
         );
         assert_eq!(locator["uri"], input["uri"]);
+        assert_eq!(locator["report_selection"]["input"], n);
+        assert_eq!(
+            locator["content_request"]["selections"]
+                .as_array()
+                .unwrap()
+                .len(),
+            3
+        );
+        let context = ui.call(locator["content_request"].clone(), 200).await;
+        assert_eq!(context["occurrences"].as_array().unwrap().len(), 3);
+        assert!(context.to_string().contains("Accepted source rev 123"));
+        assert!(context.to_string().contains("DECISION.md"));
+        saved_context_request = Some(locator["content_request"].clone());
         let resolved = ui
             .call(
                 json!({"action":"resolve-capture-uri","uri":locator["uri"]}),
@@ -9060,6 +9074,64 @@ async fn bundled_extraction_decodes_tool_inputs_and_report_read_does_not_call_or
     }
     assert!(pages > 1);
     assert_eq!(requests.lock().unwrap().len(), 1);
+    // Foreign attributed tokens are not a grant. Rebind all inputs to the
+    // newly authorized reader's own common pin, then deny it after revocation.
+    server
+        .service
+        .lock()
+        .unwrap()
+        .replace_grants(vec![
+            grant(),
+            Grant {
+                principal: identity(7).did(),
+                append: false,
+                inventory: true,
+            },
+        ])
+        .unwrap();
+    let foreign = Ui::start(
+        kan::evidence_library::Readers::new(
+            None,
+            vec![client::Reader::new(
+                identity(7),
+                client::Access {
+                    binding: binding(&f),
+                    endpoint: server.endpoint.clone(),
+                    private_key: PRIVATE,
+                },
+            )
+            .unwrap()],
+        )
+        .unwrap()
+        .with_workspace(
+            kan::evidence_workspace::Workspace::open(
+                &local.path().join("reports.sqlite"),
+                identity(6),
+                [97; 32],
+            )
+            .unwrap(),
+        ),
+    )
+    .await;
+    let rebound = foreign
+        .call(json!({"action":"report-input","id":id,"input":1}), 200)
+        .await;
+    for selection in rebound["content_request"]["selections"].as_array().unwrap() {
+        assert_eq!(selection["body"]["principal"], identity(7).did());
+    }
+    let context = foreign.call(rebound["content_request"].clone(), 200).await;
+    assert!(context.to_string().contains("Accepted source rev 123"));
+    server
+        .service
+        .lock()
+        .unwrap()
+        .replace_grants(vec![grant()])
+        .unwrap();
+    foreign
+        .call(json!({"action":"report-input","id":id,"input":1}), 403)
+        .await;
+    foreign.call(rebound["content_request"].clone(), 403).await;
+    foreign.stop().await;
     let edited = json!({"source":source,"verb":"decide","subject":"project/reviewed","text":"Edited, human-reviewed conclusion, still uncertain.","derived_from":[id]});
     let preview = ui
         .call(json!({"action":"record-preview","draft":edited}), 200)
@@ -9106,6 +9178,7 @@ async fn bundled_extraction_decodes_tool_inputs_and_report_read_does_not_call_or
     ui.call(json!({"action":"report","id":id}), 403).await;
     ui.call(json!({"action":"report-input","id":id,"input":0}), 403)
         .await;
+    ui.call(saved_context_request.unwrap(), 403).await;
     assert_eq!(requests.lock().unwrap().len(), 1);
     ui.stop().await;
     provider.abort();

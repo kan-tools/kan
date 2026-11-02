@@ -179,13 +179,56 @@ fn citations(
     }
     Ok(json!(out))
 }
+// Keep whole items, original item indices and citation sets after reconstruction.
+// State rows are emitted separately and are never filtered by this focus.
+fn report_item_touches(
+    stream: &Value,
+    item: &Value,
+    input: usize,
+    count: usize,
+) -> Result<bool, Error> {
+    let sets = array(stream, "citation_sets")?;
+    let touches = |id: &Value| -> Result<bool, Error> {
+        let n = id
+            .as_str()
+            .and_then(|v| v.parse::<usize>().ok())
+            .ok_or(Error::Corrupt)?;
+        let set = sets
+            .get(n)
+            .and_then(Value::as_array)
+            .ok_or(Error::Corrupt)?;
+        let mut found = false;
+        for cite in set {
+            let n = cite["input"]
+                .as_str()
+                .and_then(|v| v.parse::<usize>().ok())
+                .ok_or(Error::Corrupt)?;
+            if n >= count {
+                return Err(Error::Corrupt);
+            }
+            found |= n == input;
+        }
+        Ok(found)
+    };
+    let text = item["text"].is_string();
+    let tool = item["tool"]["json"].is_string();
+    Ok((!text && !tool)
+        || (text && touches(&item["citation_set"])?)
+        || (tool && touches(&item["tool"]["citation_set"])?))
+}
 fn content_rows<'a>(
     content: &'a Value,
     source: &'a str,
     selection: usize,
+    focus: Option<usize>,
     rows: &mut Vec<Row<'a>>,
     hash: &mut Sha256,
 ) -> Result<(), Error> {
+    if let Some(input) = focus {
+        if input >= array(content, "occurrences")?.len() {
+            return Err(Error::Corrupt);
+        }
+    }
     // Bind citation lineage once, without expanding a reused set for each item.
     hash.update(serde_json::to_vec(&stable(&content["occurrences"])).map_err(|_| Error::Corrupt)?);
     for group in array(content, "groups")? {
@@ -238,6 +281,16 @@ fn content_rows<'a>(
                 {
                     continue;
                 }
+                if let Some(input) = focus {
+                    if !report_item_touches(
+                        stream,
+                        item,
+                        input,
+                        array(content, "occurrences")?.len(),
+                    )? {
+                        continue;
+                    }
+                }
                 rows.push(Row {
                     value:json!({"type":"item","context":context,"direction":direction,"item_index":index,
                         "item":fields(item,&["text","event_json","tool"])?,"tool_input_follows":!item["tool"].is_null()}),
@@ -272,13 +325,30 @@ pub(in crate::evidence_library) fn content(
     hash.update(serde_json::to_vec(query).map_err(|_| Error::Corrupt)?);
     hash.update(serde_json::to_vec(&extra).map_err(|_| Error::Corrupt)?);
     let mut rows = Vec::new();
+    let focus = if extra["report_selection"].is_object() {
+        Some(
+            extra["report_selection"]["input"]
+                .as_u64()
+                .and_then(|v| usize::try_from(v).ok())
+                .ok_or(Error::Corrupt)?,
+        )
+    } else {
+        None
+    };
     if let Some(source) = source {
-        content_rows(value, source, 0, &mut rows, &mut hash)?;
+        content_rows(value, source, 0, focus, &mut rows, &mut hash)?;
     } else {
         for (index, attempt) in array(value, "attempts")?.iter().enumerate() {
             let source = attempt["source"].as_str().ok_or(Error::Corrupt)?;
             rows.push(Row { value:json!({"type":"session-attempt","selection":index,"source":source,"membership":attempt["membership"],"links":attempt["links"]}),text:None,attribution:None });
-            content_rows(&attempt["content"], source, index, &mut rows, &mut hash)?;
+            content_rows(
+                &attempt["content"],
+                source,
+                index,
+                focus,
+                &mut rows,
+                &mut hash,
+            )?;
         }
     }
     for row in &rows {
@@ -300,6 +370,9 @@ pub(in crate::evidence_library) fn content(
         "coverage":value["coverage"],"identity":value.get("identity"),"reference":extra.get("reference"),"uri":extra.get("uri"),
         "presentation":"Bounded decoded view only. event_json, parsed_json, raw per-frame metadata remain in the advanced shared audit API. Text and tool-input JSON fragments retain enclosing source attribution, not exact JSON token attribution.",
         "complete_selection_view":false});
+    if extra["report_selection"].is_object() {
+        page["report_selection"] = extra["report_selection"].clone();
+    }
     while index < rows.len() {
         let row = &rows[index];
         let text = row.text.as_deref().unwrap_or("");
@@ -398,6 +471,79 @@ pub(in crate::evidence_library) fn content(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn report_focus_preserves_original_item_indices_tool_citations_and_loss_states() {
+        let text = "é🙂 report tool arguments ".repeat(2000);
+        let mut raw = fixture("unrelated prefix");
+        raw["occurrences"] = json!([{"record":{"sequence":"1"}},{"record":{"sequence":"2"}},{"record":{"sequence":"3"}}]);
+        raw["groups"][0]["request"]["citation_sets"] =
+            json!([[{"input":"0","bytes":["0","50"]}],[{"input":"2","bytes":["50","90000"]}]]);
+        raw["groups"][0]["request"]["items"].as_array_mut().unwrap().push(json!({"kind":"tool-use","role":"assistant","text":"Write","coarse":true,"citation_set":"0","tool":{"json":text,"region":["50","90000"],"citation_set":"1"}}));
+        let original = raw.clone();
+        let query = json!({"report":{"id":"r","input":2}});
+        let extra = json!({"report_selection":{"id":"r","input":2,"inputs_count":3,"coverage":"frozen manifest context; focused enclosing items only"}});
+        let mut cursor = None;
+        let mut first_cursor = None;
+        let mut joined = String::new();
+        let mut loss_seen = false;
+        let mut pages = 0;
+        loop {
+            let page = content(
+                &raw,
+                Some("source"),
+                &query,
+                cursor,
+                extra.clone(),
+                |_, record| Ok(format!("source-{}", record["sequence"].as_str().unwrap())),
+            )
+            .unwrap();
+            assert!(size(&page).unwrap() <= LIMIT);
+            assert_eq!(page["report_selection"], extra["report_selection"]);
+            for entry in page["entries"].as_array().unwrap() {
+                assert_ne!(entry["item"]["text"], "unrelated prefix");
+                if entry["type"] == "stream-state" && entry["direction"] == "response" {
+                    loss_seen = true;
+                    assert_eq!(entry["state"]["state"], "unavailable");
+                }
+                if entry["type"] == "tool-input" {
+                    assert_eq!(entry["item_index"], 1);
+                    assert_eq!(entry["citations"][0]["uri"], "source-3");
+                    joined.push_str(entry["item"]["text"].as_str().unwrap());
+                }
+                if entry["type"] == "item" {
+                    assert_eq!(entry["item_index"], 1);
+                    assert_eq!(entry["citations"][0]["uri"], "source-1");
+                }
+            }
+            pages += 1;
+            assert!(pages < 100);
+            cursor = page.get("next").filter(|v| !v.is_null()).cloned();
+            if first_cursor.is_none() {
+                first_cursor = cursor.clone();
+            }
+            if cursor.is_none() {
+                assert_eq!(page["complete_selection_view"], true);
+                break;
+            }
+        }
+        assert!(loss_seen && pages > 1);
+        assert_eq!(joined, text);
+        assert_eq!(raw, original);
+        let mut changed = extra;
+        changed["report_selection"]["input"] = json!(0);
+        assert_eq!(
+            content(
+                &raw,
+                Some("source"),
+                &query,
+                first_cursor,
+                changed,
+                |_, _| Ok("uri".into())
+            )
+            .unwrap_err(),
+            Error::Cursor
+        );
+    }
     fn fixture(text: &str) -> Value {
         json!({"coverage":"explicit selection only, not complete capture","observations":[{"kind":"capture","input":"0"}],"occurrences":[{"record":{"sequence":"1"}}],
         "groups":[{"writer":"writer","observer":"collector","attempt":"attempt","ordinals":[],"ordinal_gaps":[],"missing_start":false,"terminal":"claimed-completed","metadata":[],

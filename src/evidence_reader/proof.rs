@@ -636,25 +636,46 @@ impl Reader {
         Ok(coordinate.clone())
     }
     pub async fn rebind_citation(&self, selection: &Token) -> Result<(Pin, Source)> {
-        let coordinate = self.citation_coordinate(selection)?;
-        let expected = coordinate.frontier(&self.access.binding)?;
+        let (pin, mut sources) = self
+            .rebind_citations(std::slice::from_ref(selection))
+            .await?;
+        Ok((pin, sources.pop().ok_or(Failure::Corrupt)?))
+    }
+    /// Rebind an explicit bounded manifest to one current reader-local pin.
+    /// Foreign tokens supply attributed coordinates, never authority. Preserve
+    /// input order and loss states; each service read checks current access.
+    pub(crate) async fn rebind_citations(
+        &self,
+        selections: &[Token],
+    ) -> Result<(Pin, Vec<Source>)> {
+        if selections.is_empty() || selections.len() > wire::READ_BATCH_LIMIT {
+            return Err(Failure::Invalid);
+        }
+        let coordinates = selections
+            .iter()
+            .map(|s| self.citation_coordinate(s))
+            .collect::<Result<Vec<_>>>()?;
         let pin = self.snapshot().await?;
         let checked = self.check_pin(&pin)?;
-        if expected.through > checked.frontier.through {
-            return Err(Failure::Missing);
+        let mut sources = Vec::new();
+        for coordinate in coordinates {
+            let expected = coordinate.frontier(&self.access.binding)?;
+            if expected.through > checked.frontier.through {
+                return Err(Failure::Missing);
+            }
+            let (_, reply) = self
+                .call(wire::Command::Read {
+                    pin: wire::Coordinate::from_frontier(&checked.frontier),
+                    selected: coordinate,
+                })
+                .await?;
+            let wire::Output::Evidence { record, source } = reply.reply.result? else {
+                return Err(Failure::Corrupt);
+            };
+            sources.push(self.decode_source(&checked, &expected, record, source)?);
         }
-        let (_, reply) = self
-            .call(wire::Command::Read {
-                pin: wire::Coordinate::from_frontier(&checked.frontier),
-                selected: selection.body.coordinate.clone(),
-            })
-            .await?;
-        let wire::Output::Evidence { record, source } = reply.reply.result? else {
-            return Err(Failure::Corrupt);
-        };
-        let value = self.decode_source(&checked, &expected, record, source)?;
         self.page(&pin, None, 1).await?;
-        Ok((pin, value))
+        Ok((pin, sources))
     }
     pub(crate) async fn cited_source(&self, pin: &Pin, selection: &Token) -> Result<Source> {
         if selection.body.principal == self.signer.did() {

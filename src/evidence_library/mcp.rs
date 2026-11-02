@@ -445,7 +445,7 @@ impl Server {
         self.decoded_page(result, None, &query, args.cursor, Value::Null)
     }
     #[tool(
-        description = "Resolve a small report/input handle from reference_request (preferred for report citations), or an exact portable kan+capture occurrence URI, under current access, then read its decoded content with citations. A URI identifies evidence, not authority. A single occurrence may be an incomplete capture; use discovery plus attempt content for broader reconstruction. Returns 12 KiB decoded pages: copy next into cursor with the same report/input handle or URI. Raw bytes are available only through the advanced audit API.",
+        description = "Open a small report/input reference_request under current access: reconstruct only its frozen report manifest and page complete items whose text or tool input intersects the focused input, with original citations and loss states. Or resolve an exact portable kan+capture occurrence URI and decode that single occurrence. A URI identifies evidence, not authority. A single occurrence may be an incomplete capture; use discovery plus attempt content for broader reconstruction. Returns 12 KiB decoded pages: copy next into cursor with the same report/input handle or URI. Raw bytes are available only through the advanced audit API.",
         annotations(read_only_hint = true)
     )]
     async fn kan_v2_reference(
@@ -469,6 +469,23 @@ impl Server {
                     .await;
                 if result.is_error == Some(true) {
                     return result;
+                }
+                if let Some(value) = result
+                    .structured_content
+                    .as_ref()
+                    .filter(|v| v["content_request"].is_object())
+                {
+                    let decoded = self.library(value["content_request"].clone(), false).await;
+                    if decoded.is_error == Some(true) {
+                        return decoded;
+                    }
+                    return self.decoded_page(
+                        decoded,
+                        value["source"].as_str(),
+                        &query_identity(&args),
+                        args.cursor.clone(),
+                        json!({"report_selection":value["report_selection"]}),
+                    );
                 }
                 let Some(uri) = result
                     .structured_content

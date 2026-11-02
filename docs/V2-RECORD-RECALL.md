@@ -191,6 +191,8 @@ Report input references and text fragments both paginate under the normal 12 KiB
 
 Report inputs also return a compact `reference_request`, such as `{"report":{"id":"...","input":4}}`. Pass it directly to `kan_v2_reference`, then follow its cursor with the same handle. This avoids copying a long portable URI. The report id/input number is a locator, not a read capability: every use rechecks the report sources through the existing authenticated readers, requires no provider configuration and makes no model call. Exact portable URIs remain supported.
 
+For a bundled decoded report, the handle reconstructs only that report's frozen input manifest (at most eight inputs), then pages whole items whose text or tool arguments intersect the focused input. This supplies missing multipart context without a live search. Items can cross input boundaries; original item indices, source citations and loss states remain intact. The returned `report_selection` states this focused coverage. It does not claim complete capture. A direct occurrence URI continues to read that occurrence alone and may disclose an incomplete stream.
+
 Report text/citations need review. Explicit promotion inherits original input
 citations and the retained result CID; edits and later corrections do not replace
 the original report. A captured instruction cannot grant tools or promotion.

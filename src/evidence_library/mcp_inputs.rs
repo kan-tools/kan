@@ -98,10 +98,12 @@ pub(super) struct Session {
 #[derive(Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub(super) struct ReportReference {
-    /// Existing derived report id; not a grant or provider request.
+    /// Existing derived report id. Bundled reports reconstruct their bounded
+    /// frozen manifest as context, not live search or a provider request.
     #[schemars(length(min = 64, max = 64))]
     pub id: String,
-    /// Stable input number from that report, zero-based.
+    /// Stable input number from that report, zero-based. Show complete items
+    /// whose text or tool arguments intersect this input, with exact citations.
     #[schemars(range(min = 0, max = 7))]
     pub input: usize,
 }
