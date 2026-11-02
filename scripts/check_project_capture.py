@@ -24,6 +24,12 @@ spec = importlib.util.spec_from_file_location('project', source / 'kan-project.p
 integration = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(integration)
 binary = Path(sys.argv[1]).resolve(strict=True)
+started = time.monotonic()
+
+
+def progress(stage, **fields):
+    # Synthetic fixture diagnostics only: no request arguments or key contents.
+    print(json.dumps({'stage': stage, 'elapsed_seconds': round(time.monotonic() - started, 3), **fields}), flush=True)
 
 
 def b58(data):
@@ -58,28 +64,51 @@ def run(*args, ok=True):
 
 
 class Mcp:
+    response_seconds = 90
+
     def __init__(self, config, signing):
-        self.proc = subprocess.Popen([str(binary), '--no-migration-notice', 'library', '--config', str(config), '--signing-key', signing, '--mcp'], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        # An undrained stderr pipe can block a child independently of stdout.
+        self.diagnostics = tempfile.TemporaryFile()
+        self.proc = subprocess.Popen([str(binary), '--no-migration-notice', 'library', '--config', str(config), '--signing-key', signing, '--mcp'], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=self.diagnostics)
+        self.pending = bytearray()
         self.id = 0
-        self.rpc('initialize', {'protocolVersion': '2025-06-18', 'capabilities': {}, 'clientInfo': {'name': 'project-qualification', 'version': '1'}})
-        self.proc.stdin.write(b'{"jsonrpc":"2.0","method":"notifications/initialized"}\n')
-        self.proc.stdin.flush()
+        try:
+            self.rpc('initialize', {'protocolVersion': '2025-06-18', 'capabilities': {}, 'clientInfo': {'name': 'project-qualification', 'version': '1'}})
+            self.proc.stdin.write(b'{"jsonrpc":"2.0","method":"notifications/initialized"}\n')
+            self.proc.stdin.flush()
+        except BaseException:
+            self.proc.terminate()
+            self.proc.wait(timeout=10)
+            self.diagnostics.close()
+            raise
 
     def rpc(self, method, params):
         self.id += 1
+        label = params.get('name', method)
+        progress('mcp-start', method=label, request=self.id)
+        call_started = time.monotonic()
         self.proc.stdin.write((json.dumps({'jsonrpc': '2.0', 'id': self.id, 'method': method, 'params': params}) + '\n').encode())
         self.proc.stdin.flush()
-        deadline = time.monotonic() + 90
+        deadline = time.monotonic() + self.response_seconds
         while time.monotonic() < deadline:
-            ready, _, _ = select.select([self.proc.stdout], [], [], max(0, deadline - time.monotonic()))
-            assert ready, 'MCP response deadline'
-            line = self.proc.stdout.readline()
-            assert line, 'MCP closed early'
+            # readline() after select can wait forever on a partial JSON line.
+            # Read only available bytes and apply the deadline to the whole line.
+            if b'\n' not in self.pending:
+                ready, _, _ = select.select([self.proc.stdout], [], [], max(0, deadline - time.monotonic()))
+                assert ready, ('MCP response deadline', label, self.id)
+                chunk = os.read(self.proc.stdout.fileno(), 65536)
+                assert chunk, ('MCP closed early', label, self.id)
+                self.pending.extend(chunk)
+                assert len(self.pending) <= 1024 * 1024, 'MCP fixture transport frame limit'
+                continue
+            line, _, rest = self.pending.partition(b'\n')
+            self.pending = bytearray(rest)
             value = json.loads(line)
             if value.get('id') == self.id:
                 assert 'error' not in value, value
+                progress('mcp-complete', method=label, request=self.id, response_bytes=len(line), call_seconds=round(time.monotonic() - call_started, 3))
                 return value['result']
-        raise AssertionError('MCP response deadline')
+        raise AssertionError(('MCP response deadline', label, self.id))
 
     def call(self, name, args, ok=True):
         r = self.rpc('tools/call', {'name': name, 'arguments': args})
@@ -93,6 +122,7 @@ class Mcp:
         self.proc.stdin.close()
         self.proc.wait(timeout=10)
         assert self.proc.returncode == 0
+        self.diagnostics.close()
 
 
 def collect_view(client, name, args):
@@ -233,11 +263,14 @@ with tempfile.TemporaryDirectory(prefix='kan-project-qualification-') as temp:
     assert len(marker.encode()) > 175935
     try:
         os.chdir(root / 'work')
+        progress('start-services')
         p.start()
         transcript = root / 'transcripts-actual-name' / 'session.jsonl'
         put(transcript, (json.dumps({'type': 'assistant', 'message': {'role': 'assistant', 'content': [{'type': 'text', 'text': marker}]}}) + '\n').encode())
+        progress('capture', transcript_bytes=transcript.stat().st_size)
         observed = p.capture(json.dumps({'hook_event_name': 'KanFinalSnapshot', 'origin': 'explicit-operator-backfill', 'cwd': str(root / 'work'), 'session_id': 'synthetic-session', 'transcript_path': str(transcript)}).encode(), True)
         assert observed['status'] == 'acknowledged', observed
+        progress('capture-acknowledged')
         health = p.health()
         assert health['delivery']['pending'] == 0 and health['capture_completeness'] == 'not-verified'
         client = Mcp(reader_config, reader_key)
@@ -255,6 +288,7 @@ with tempfile.TemporaryDirectory(prefix='kan-project-qualification-') as temp:
         assert bad['field'] == 'arguments.pin'
         bad = client.call('kan_v2_discover', {'source': 42, 'private-secret-field': 'private-secret-value'}, False)
         assert 'private-secret' not in json.dumps(bad)
+        progress('original-readback')
         count, continuation_probe = read_decision(client, marker)
         # New reader with payload keys unavailable must expose explicit states.
         unavailable_key = root / 'unavailable-recipient.key'
@@ -275,6 +309,7 @@ with tempfile.TemporaryDirectory(prefix='kan-project-qualification-') as temp:
             unavailable.close()
         # Recheck a continuation against the same issuer after its inventory
         # grant is removed. No cached plaintext page may bypass current access.
+        progress('revocation-control')
         p.stop()
         revoked = root / 'revoked-grants.json'
         put(revoked, [{'principal': writer, 'append': True, 'inventory': False}])
@@ -289,6 +324,7 @@ with tempfile.TemporaryDirectory(prefix='kan-project-qualification-') as temp:
             denied_service.wait(timeout=10)
         client.close()
         client = None
+        progress('backup-recovery')
         database = archive / 'archive.sqlite'
         before = hashlib.sha256(database.read_bytes()).hexdigest()
         mismatch = run('backup', database, root / 'wrong.sqlite', *proof, ok=False)
@@ -313,6 +349,7 @@ with tempfile.TemporaryDirectory(prefix='kan-project-qualification-') as temp:
         os.chdir(root / 'second-worktree')
         p.start()
         client = Mcp(reader_config, reader_key)
+        progress('recovered-readback')
         restored_count, _ = read_decision(client, marker)
         assert restored_count == count
         client.close()
@@ -332,5 +369,6 @@ with tempfile.TemporaryDirectory(prefix='kan-project-qualification-') as temp:
         if client is not None:
             client.proc.terminate()
             client.proc.wait(timeout=10)
+            client.diagnostics.close()
         p.stop()
         os.chdir(initial_cwd)

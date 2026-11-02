@@ -213,6 +213,17 @@ duplicate pilot on unchanged code. The focused independent review remains gated
 on actual usable retrieval, not CI alone. This refines the approved common-path
 scope; it does not add Day migration, publication or system-upgrade authority.
 
+The first bounded-page qualification at `36a3637` passed all 55 substantive Linux
+checks, including the large Unicode/revocation/recovery fixture and four pager
+regressions. Both macOS runs reached the unchanged 20-minute step deadline after
+building the unoptimized binary, without intermediate fixture diagnostics. The
+exact stalled phase is unknown; this is not a macOS runtime pass. The correction
+aligns macOS with Linux's existing opt-level 1 CI profile while retaining debug
+and overflow assertions, the same fixture and the same timeout. Flushed stage and
+RPC timings expose the next actual observation. The synthetic MCP transport also
+bounds partial-line reads and redirects stderr to a file rather than an undrained
+pipe; neither mechanism is claimed as the traced cause of the previous timeout.
+
 ## Delivery sequence
 
 1. Typed discovery and actionable errors, together with the decoded common read
