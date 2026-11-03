@@ -418,3 +418,16 @@ manifest tokens to one fresh pin must preserve order, foreign-reader attribution
 current grants and source availability, without an Engine, cached plaintext or
 another provider call. Regression checks must distinguish single-chunk partial
 state from the same frozen context's readable source and preserve focus lineage.
+
+### Terminal agent finding — readable input navigation
+
+The same-session reader continuation correctly reported failure: it completed
+metadata-only input5 and began6, but never opened a text-bearing input. Its actual
+returns confirmed no readable bodies in those focused views; the input4 operator
+control remained exact and readable. Preserve this failed acceptance result.
+REQ-11 now requires an explicit focused readable-item count, a clear metadata-only
+explanation and compact hops to readable inputs and each cited input. Derive these
+only from the current shared decoded manifest; no new provider, cache, source
+selection or authority. A zero-readable manifest remains explicitly unavailable.
+The new testing tiers in the active SOP govern focused qualification and the
+owner-authorized next bounded certification step; no broad matrix per UX patch.

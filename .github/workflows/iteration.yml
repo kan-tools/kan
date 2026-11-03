@@ -1,0 +1,117 @@
+name: Iteration
+on:
+  push:
+    branches-ignore: [main]
+  pull_request:
+permissions:
+  contents: read
+concurrency:
+  group: iteration-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  quick:
+    # Internal branches already have push checks; fork PRs need their own run.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      rust: ${{ steps.scope.outputs.rust }}
+      library: ${{ steps.scope.outputs.library }}
+      capture: ${{ steps.scope.outputs.capture }}
+      core: ${{ steps.scope.outputs.core }}
+      macos: ${{ steps.scope.outputs.macos }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: scope
+        run: python3 scripts/ci-scope.py --event "$GITHUB_EVENT_PATH" --head "$GITHUB_SHA" --output "$GITHUB_OUTPUT"
+      - name: Scope selection regression checks
+        run: python3 tests/test_ci_scope.py
+      - name: Static and small script checks
+        run: |
+          bash scripts/check-citations.sh --self-test
+          bash scripts/check-citations.sh
+          bash scripts/check-rfcs-adrs.sh
+          python3 tests/test_capture_claude_hook.py
+          python3 tests/test_kan_project.py
+          python3 tests/test_kan_record_demo.py
+          python3 tests/test_ci_diagnostic_report.py
+          node --test tests/library_ui.test.cjs tests/operations_ui.test.cjs tests/operations_review_ui.test.cjs tests/operations_restart_review.test.cjs tests/theme_ui.test.cjs
+      - uses: dtolnay/rust-toolchain@stable
+        if: steps.scope.outputs.rust == 'true'
+        with:
+          components: rustfmt
+      - run: cargo fmt --all --check
+        if: steps.scope.outputs.rust == 'true'
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: iteration-scope-${{ github.sha }}
+          path: ci-scope.json
+          if-no-files-found: error
+  component:
+    needs: quick
+    if: needs.quick.outputs.rust == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      CARGO_BUILD_JOBS: 4
+      CARGO_INCREMENTAL: 0
+      CARGO_PROFILE_DEV_OPT_LEVEL: '1'
+      CARGO_PROFILE_DEV_DEBUG: line-tables-only
+      CARGO_PROFILE_DEV_DEBUG_ASSERTIONS: 'true'
+      CARGO_PROFILE_DEV_OVERFLOW_CHECKS: 'true'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: v2-optimized-integration
+      - name: Cross-cutting compilation and units
+        if: needs.quick.outputs.core == 'true'
+        run: |
+          cargo check --locked --workspace --all-targets --all-features
+          cargo test --locked --features v2-crypto --lib
+      - name: Affected Library units and actual HTTP integration
+        if: needs.quick.outputs.library == 'true'
+        run: |
+          if [ "${{ needs.quick.outputs.core }}" != true ]; then
+            cargo test --locked --features v2-crypto --lib evidence_library::
+          fi
+          cargo test --locked --features v2-crypto,kan-v1 --test evidence_inventory library_tests:: -- --list > "$RUNNER_TEMP/library-test-list.txt"
+          python3 - <<'PYTEST'
+          import os
+          from pathlib import Path
+          tests = (Path(os.environ['RUNNER_TEMP']) / 'library-test-list.txt').read_text().splitlines()
+          assert any(line.endswith(': test') for line in tests), 'Library integration filter selected ZERO tests'
+          PYTEST
+          cargo test --locked --features v2-crypto,kan-v1 --test evidence_inventory library_tests::
+      - name: Library lint
+        run: cargo clippy --locked --features v2-crypto --lib -- -D warnings
+      - name: Capture lifecycle integration
+        if: needs.quick.outputs.capture == 'true'
+        run: |
+          cargo build --locked --bin kan
+          python3 -m pip install cryptography==46.0.3
+          python3 scripts/check_project_capture.py target/debug/kan
+  platform:
+    needs: quick
+    if: needs.quick.outputs.macos == 'true'
+    runs-on: macos-latest
+    timeout-minutes: 25
+    env:
+      CARGO_BUILD_JOBS: 4
+      CARGO_PROFILE_DEV_OPT_LEVEL: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: v2-optimized-integration
+      - name: Native identity and lease regressions
+        run: |
+          cargo test --locked --no-default-features --features kan-v1 --test keychain_identity --test at_rest_guards --test keychain_one_door
+          cargo test --locked --features v2-crypto --lib lease_tests

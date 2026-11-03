@@ -146,6 +146,7 @@ fn citations(
     item: &Value,
     source: &str,
     tool: bool,
+    report: Option<&str>,
     reference: &mut impl FnMut(&str, Value) -> Result<String, Error>,
 ) -> Result<Value, Error> {
     let set = if tool {
@@ -170,7 +171,11 @@ fn citations(
             .get(index)
             .ok_or(Error::Corrupt)?["record"]
             .clone();
-        out.push(json!({"source":source,"uri":reference(source,record)?,"bytes":cite["bytes"],"coarse":item["coarse"]}));
+        let mut value = json!({"source":source,"uri":reference(source,record)?,"bytes":cite["bytes"],"coarse":item["coarse"]});
+        if let Some(id) = report {
+            value["reference_request"] = json!({"report":{"id":id,"input":index}});
+        }
+        out.push(value);
         // Expand only the next visible item's citation set, never all repeated
         // sets across the entire interpreted transcript.
         if serde_json::to_vec(&out).map_err(|_| Error::Corrupt)?.len() > LIMIT {
@@ -215,6 +220,29 @@ fn report_item_touches(
     Ok((!text && !tool)
         || (text && touches(&item["citation_set"])?)
         || (tool && touches(&item["tool"]["citation_set"])?))
+}
+fn report_readable_inputs(content: &Value) -> Result<Vec<usize>, Error> {
+    let mut counts = vec![0; array(content, "occurrences")?.len()];
+    if counts.len() > 8 {
+        return Err(Error::Corrupt);
+    }
+    for group in array(content, "groups")? {
+        for direction in ["request", "response"] {
+            let stream = &group[direction];
+            for item in array(stream, "items")? {
+                if !item["text"].is_string() && !item["tool"]["json"].is_string() {
+                    continue;
+                }
+                let count = counts.len();
+                for (input, value) in counts.iter_mut().enumerate() {
+                    if report_item_touches(stream, item, input, count)? {
+                        *value += 1;
+                    }
+                }
+            }
+        }
+    }
+    Ok(counts)
 }
 fn content_rows<'a>(
     content: &'a Value,
@@ -318,9 +346,28 @@ pub(in crate::evidence_library) fn content(
     source: Option<&str>,
     query: &Value,
     cursor: Option<Value>,
-    extra: Value,
+    mut extra: Value,
     mut reference: impl FnMut(&str, Value) -> Result<String, Error>,
 ) -> Result<Value, Error> {
+    if extra["report_selection"].is_object() {
+        let counts = report_readable_inputs(value)?;
+        let focus = extra["report_selection"]["input"]
+            .as_u64()
+            .and_then(|v| usize::try_from(v).ok())
+            .ok_or(Error::Corrupt)?;
+        let count = *counts.get(focus).ok_or(Error::Corrupt)?;
+        let id = extra["report_selection"]["id"].clone();
+        let readable = counts.iter().enumerate().filter(|(_,n)|**n>0).map(|(input,n)|json!({"input":input,"readable_items":n,"reference_request":{"report":{"id":id,"input":input}}})).collect::<Vec<_>>();
+        extra["report_selection"]["readable_items_in_focus"] = json!(count);
+        extra["report_selection"]["readability"] = json!(if count > 0 {
+            "Decoded text or tool arguments are present in this focused view."
+        } else if readable.is_empty() {
+            "No decoded text or tool arguments in the frozen manifest. This view contains structural/loss metadata only."
+        } else {
+            "This input contains no decoded text or tool arguments. Metadata entries do not verify source text; use a readable_inputs reference_request to open a text-bearing input."
+        });
+        extra["report_selection"]["readable_inputs"] = json!(readable);
+    }
     let mut hash = Sha256::new();
     hash.update(serde_json::to_vec(query).map_err(|_| Error::Corrupt)?);
     hash.update(serde_json::to_vec(&extra).map_err(|_| Error::Corrupt)?);
@@ -383,6 +430,13 @@ pub(in crate::evidence_library) fn content(
             return Err(Error::Cursor);
         }
         let mut materialized = row.value.clone();
+        if extra["report_selection"].is_object() && materialized["type"] == "item" {
+            materialized["content_state"] = json!(if row.text.is_some() {
+                "decoded-text"
+            } else {
+                "metadata-only; no decoded body on this item"
+            });
+        }
         let attribution = match &row.attribution {
             Some(Attribution::Item {
                 content,
@@ -390,7 +444,16 @@ pub(in crate::evidence_library) fn content(
                 item,
                 source,
                 tool,
-            }) => citations(content, stream, item, source, *tool, &mut reference).map(|v| {
+            }) => citations(
+                content,
+                stream,
+                item,
+                source,
+                *tool,
+                extra["report_selection"]["id"].as_str(),
+                &mut reference,
+            )
+            .map(|v| {
                 materialized["citations"] = v;
             }),
             Some(Attribution::Occurrence { record, source }) => {
@@ -498,7 +561,12 @@ mod tests {
             )
             .unwrap();
             assert!(size(&page).unwrap() <= LIMIT);
-            assert_eq!(page["report_selection"], extra["report_selection"]);
+            assert_eq!(
+                page["report_selection"]["id"],
+                extra["report_selection"]["id"]
+            );
+            assert_eq!(page["report_selection"]["input"], 2);
+            assert_eq!(page["report_selection"]["readable_items_in_focus"], 1);
             for entry in page["entries"].as_array().unwrap() {
                 assert_ne!(entry["item"]["text"], "unrelated prefix");
                 if entry["type"] == "stream-state" && entry["direction"] == "response" {
@@ -543,6 +611,72 @@ mod tests {
             .unwrap_err(),
             Error::Cursor
         );
+    }
+    #[test]
+    fn metadata_only_report_focus_explains_absence_and_routes_to_readable_input() {
+        let mut raw = fixture("A source statement é🙂");
+        raw["occurrences"] = json!([{"record":{"sequence":"1"}},{"record":{"sequence":"2"}}]);
+        raw["groups"][0]["request"]["items"].as_array_mut().unwrap().push(json!({"kind":"text","role":"user","text":null,"tool":null,"citation_set":"0","coarse":true}));
+        let original = raw.clone();
+        let query = json!({"report":{"id":"report","input":1}});
+        let extra = json!({"report_selection":{"id":"report","input":1,"inputs_count":2}});
+        let page = content(&raw, Some("source"), &query, None, extra, |_, _| {
+            Ok("exact-source-uri".into())
+        })
+        .unwrap();
+        assert!(size(&page).unwrap() <= LIMIT);
+        assert_eq!(page["report_selection"]["readable_items_in_focus"], 0);
+        assert!(page["report_selection"]["readability"]
+            .as_str()
+            .unwrap()
+            .contains("no decoded text"));
+        let hop = page["report_selection"]["readable_inputs"][0]["reference_request"].clone();
+        assert_eq!(hop, json!({"report":{"id":"report","input":0}}));
+        let metadata = page["entries"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|e| e["type"] == "item")
+            .unwrap();
+        assert_eq!(
+            metadata["content_state"],
+            "metadata-only; no decoded body on this item"
+        );
+        assert_eq!(metadata["citations"][0]["reference_request"], hop);
+        assert_eq!(metadata["citations"][0]["uri"], "exact-source-uri");
+        let readable = content(
+            &raw,
+            Some("source"),
+            &hop,
+            None,
+            json!({"report_selection":{"id":"report","input":0,"inputs_count":2}}),
+            |_, _| Ok("exact-source-uri".into()),
+        )
+        .unwrap();
+        assert_eq!(readable["report_selection"]["readable_items_in_focus"], 1);
+        assert!(readable["entries"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|e| e["item"]["text"] == "A source statement é🙂"));
+        assert_eq!(raw, original);
+        for item in raw["groups"][0]["request"]["items"].as_array_mut().unwrap() {
+            item["text"] = Value::Null;
+        }
+        let empty = content(
+            &raw,
+            Some("source"),
+            &query,
+            None,
+            json!({"report_selection":{"id":"report","input":1,"inputs_count":2}}),
+            |_, _| Ok("uri".into()),
+        )
+        .unwrap();
+        assert_eq!(empty["report_selection"]["readable_inputs"], json!([]));
+        assert!(empty["report_selection"]["readability"]
+            .as_str()
+            .unwrap()
+            .contains("No decoded text"));
     }
     fn fixture(text: &str) -> Value {
         json!({"coverage":"explicit selection only, not complete capture","observations":[{"kind":"capture","input":"0"}],"occurrences":[{"record":{"sequence":"1"}}],

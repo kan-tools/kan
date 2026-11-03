@@ -2,15 +2,23 @@ name: CI
 
 on:
   push:
+    branches: [main]
   pull_request:
   workflow_dispatch:
     inputs:
+      artifact_only:
+        description: Build a private macOS binary only; this does not qualify the candidate
+        type: boolean
+        default: false
       collect_all:
         description: Continue independent checks after failures and report all outcomes
         type: boolean
         default: false
 
-run-name: CI${{ github.event_name == 'workflow_dispatch' && inputs.collect_all && ' — collect all failures' || '' }}
+run-name: CI${{ inputs.artifact_only && ' — artifact only (not qualification)' || (github.event_name == 'workflow_dispatch' && inputs.collect_all && ' — collect all failures' || '') }}
+
+permissions:
+  contents: read
 
 concurrency:
   # Preserve any pre-optimization qualification already running when this
@@ -20,7 +28,7 @@ concurrency:
 
 jobs:
   test:
-    if: ${{ !cancelled() && (needs.msrv.result == 'success' || (github.event_name == 'workflow_dispatch' && inputs.collect_all)) }}
+    if: ${{ !inputs.artifact_only && !cancelled() && (needs.msrv.result == 'success' || (github.event_name == 'workflow_dispatch' && inputs.collect_all)) }}
     needs: msrv
     runs-on: ubuntu-latest
     env:
@@ -72,6 +80,7 @@ jobs:
           python3 tests/test_capture_claude_hook.py
           python3 tests/test_kan_project.py
           python3 tests/test_kan_record_demo.py
+          python3 tests/test_ci_scope.py
       - id: diagnostic_report_tests
         continue-on-error: ${{ github.event_name == 'workflow_dispatch' && inputs.collect_all }}
         run: |
@@ -247,7 +256,6 @@ jobs:
           python3 scripts/check_cli_install.py
       - name: HTTP encrypted capture qualification at 64 KiB and four writers
         id: check_53_http_encrypted_capture_qualification_at_64_kib_and_four_writ
-        if: github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && inputs.collect_all)
         env:
           KAN_HTTP_CAPTURE_REPORT: ${{ runner.temp }}/kan-http-capture.json
         continue-on-error: ${{ github.event_name == 'workflow_dispatch' && inputs.collect_all }}
@@ -260,7 +268,6 @@ jobs:
           retention-days: 30
       - name: Real Library browser and download qualification
         id: check_54_real_library_browser_and_download_qualification
-        if: github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && inputs.collect_all)
         timeout-minutes: 15
         shell: bash
         continue-on-error: ${{ github.event_name == 'workflow_dispatch' && inputs.collect_all }}
@@ -295,7 +302,7 @@ jobs:
                   raise
           PY
       - uses: actions/upload-artifact@v4
-        if: always() && (github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && inputs.collect_all))
+        if: always()
         with:
           name: v2-library-browser-${{ github.sha }}
           path: ${{ runner.temp }}/kan-library-browser/
@@ -303,23 +310,22 @@ jobs:
           retention-days: 30
 
       - name: Collect every check outcome and preserve failure
-        if: ${{ always() && github.event_name == 'workflow_dispatch' && inputs.collect_all }}
+        if: always()
         env:
           CI_RESULTS: ${{ toJSON(steps) }}
         run: python3 scripts/ci-diagnostic-report.py --output "$RUNNER_TEMP/ci-check-results.json" --title "Check outcomes"
       - uses: actions/upload-artifact@v4
-        if: always() && github.event_name == 'workflow_dispatch' && inputs.collect_all
+        if: always()
         with:
           name: ci-check-results-${{ github.run_id }}
           path: ${{ runner.temp }}/ci-check-results.json
           if-no-files-found: error
 
-  # Preserve realistic large-capture qualification without blocking every
-  # short integration check on rebuilding the O(n²) admission fixture. Push
-  # runs own this test; the PR event uses the same head without duplicating it.
+  # Candidate qualification includes the retained large-capture regression.
+  # Ordinary branch pushes use iteration.yml instead.
   capacity:
     needs: msrv
-    if: ${{ !cancelled() && ((github.event_name == 'push' && needs.msrv.result == 'success') || (github.event_name == 'workflow_dispatch' && inputs.collect_all)) }}
+    if: ${{ !inputs.artifact_only && !cancelled() && (needs.msrv.result == 'success' || (github.event_name == 'workflow_dispatch' && inputs.collect_all)) }}
     runs-on: ubuntu-latest
     timeout-minutes: 45
     env:
@@ -349,6 +355,7 @@ jobs:
   # second edit -- a hardcoded version here would be a second source of truth
   # about one fact, which is the thing this repo keeps filing issues about.
   msrv:
+    if: ${{ !inputs.artifact_only && (github.event_name != 'pull_request' || !github.event.pull_request.draft) }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -402,6 +409,7 @@ jobs:
   # at 10x, and the rest of the suite is platform-independent and already
   # covered above.
   canary:
+    if: ${{ !inputs.artifact_only && (github.event_name != 'pull_request' || !github.event.pull_request.draft) }}
     runs-on: macos-latest
     env:
       CARGO_BUILD_JOBS: 4
@@ -471,7 +479,7 @@ jobs:
 
   diagnostic_summary:
     name: Diagnostic qualification result
-    if: ${{ always() && github.event_name == 'workflow_dispatch' && inputs.collect_all }}
+    if: ${{ always() && !inputs.artifact_only && (github.event_name != 'pull_request' || !github.event.pull_request.draft) }}
     needs: [msrv, test, capacity, canary]
     runs-on: ubuntu-latest
     steps:
@@ -485,4 +493,32 @@ jobs:
         with:
           name: ci-job-results-${{ github.run_id }}
           path: ${{ runner.temp }}/ci-job-results.json
+          if-no-files-found: error
+
+  private_macos_binary:
+    if: github.event_name == 'workflow_dispatch' && inputs.artifact_only
+    runs-on: macos-latest
+    timeout-minutes: 20
+    env:
+      CARGO_BUILD_JOBS: 4
+      CARGO_INCREMENTAL: 0
+      CARGO_PROFILE_DEV_OPT_LEVEL: '1'
+      CARGO_PROFILE_DEV_DEBUG: line-tables-only
+      CARGO_PROFILE_DEV_DEBUG_ASSERTIONS: 'true'
+      CARGO_PROFILE_DEV_OVERFLOW_CHECKS: 'true'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: v2-optimized-integration
+      - name: Build exact revision without repeating qualification
+        run: |
+          git rev-parse HEAD
+          cargo build --locked --bin kan
+          target/debug/kan --no-migration-notice --version
+      - uses: actions/upload-artifact@v4
+        with:
+          name: kan-iteration-macos-${{ github.sha }}
+          path: target/debug/kan
           if-no-files-found: error

@@ -12,6 +12,50 @@ The product target remains `.design/kan-v2-server-first.md`,
 `.design/kan-v2-buildout.md` and `.design/kan-v2-human-frontend.md`.
 A minimal demo is useful verification, but does not replace feature completeness.
 
+### Testing tiers — owner decision, 2026-11-03
+
+The owner requested proportionate CI and integration testing after repeated whole
+qualification cycles obscured the remaining agent UX problem. This policy
+supersedes the per-changed-revision push-plus-collect-all routine used during the
+Nov1–3 agent-usability build. It changes test scheduling, not assertions or the
+separate merge/release approval gates.
+
+| Tier | Trigger and purpose | Evidence and limits |
+|---|---|---|
+| 0 — fast feedback | Every change: formatting, docs/schema checks, small Python/Node tests | Local lightweight checks allowed. No local Rust compilation/runtime on gilgamesh. |
+| 1 — component integration | Ordinary branch pushes: affected remote Linux Rust units and actual service integration; native identity/lease tests when platform paths change | `iteration.yml` records its selected scope. Unknown Rust/build inputs select conservative core coverage; unavailable diffs never mean an empty pass. A test filter must select actual tests. No browser installation, package/install matrix, scale fixture or paid model in this tier. |
+| 2 — candidate qualification | Review-ready PRs, main, or one explicit stable-candidate dispatch | `ci.yml` retains the complete check set, MSRV, both platforms, real browser, package/install modes and diagnostic outcomes. One full run per stable candidate; do not dispatch collect-all alongside an equivalent automatic run. Changes after a qualified candidate require scoped checks and a final current-candidate full pass before merge. |
+| 3 — agent acceptance | Deliberately budgeted UX certification after Tier1 and an operator check of the changed path | Reuse the existing disposable archive/report and normal Claude Code sign-in. Name model, session, budget, task and acceptance criteria before launch. Inspect actual tool reads/citations/uncertainty; exit0 is insufficient. No automatic paid retries. One focused independent review follows usable integrated evidence and final Tier2 qualification. |
+| 4 — release/scale/operational assurance | Explicit release, storage-format, custody, migration or scale work that invalidates the corresponding evidence | Reuse prior valid measurements; do not reseed/repeat100GiB/10GiB fixtures for presentation changes. Live migration, deletion, system install and publication retain separate approval. |
+
+An on-demand `ci.yml` dispatch with `artifact_only=true` builds the exact macOS
+binary for an operator/agent check without repeating Linux tests or pretending to
+qualify the candidate. The artifact identifies its source SHA; verify architecture,
+version and hash before private use. `collect_all=true` remains a full diagnostic
+mode, not an additional mandatory run after every push. The two inputs never turn
+an artifact-only run into qualification. Ordinary branch pushes no longer launch
+the full workflow. Draft PRs use iteration checks; ready PRs use full qualification.
+
+Each retained result names the exact commit, tier, selected checks, actual outcomes
+and reused baseline. Skipped/unexecuted checks are not passes. Product failures
+need diagnosis and changed code/test inputs; infrastructure failures are recorded
+separately and a retry targets only the authorized failed/unstarted job. Evidence
+collection must not repeat completed jobs merely to produce a larger report.
+
+Repository settings inspection on Nov3 found main unprotected and no rulesets.
+This policy does not silently change those settings: full current-candidate
+qualification and separate human merge approval remain explicit gates until the
+owner separately chooses enforcement settings.
+
+For the current certification, reuse fully qualified89826fc as backend baseline.
+Add the readable-input navigation regression, run Tier1 plus one artifact-only
+macOS build, and verify the retained report/source without a provider. Then run
+one changed-code continuation of the existing report reader with at most$0.40
+from its remaining original allocation, under the owner's instruction to resume
+certification. No author/extraction/backup repeat. Once usable, freeze the candidate,
+run Tier2 once, then the already-authorized independent Opus review. A failed
+acceptance result stops further paid execution pending diagnosis and human steering.
+
 ### CLI naming — owner decision, 2026-10-26
 
 The public `kan` executable is the v2 service/capture/Library CLI. Default Cargo
@@ -248,18 +292,16 @@ and retained capacity measurements are unchanged.
 
 ### Build loop
 
-For a single diagnostic sweep, manually dispatch `CI` with `collect_all=true`:
-`gh workflow run ci.yml --ref feat/kan-v2-proof-library -f collect_all=true`.
-The input defaults to false; push and PR runs retain their existing fail-fast
-behavior. The diagnostic run continues independent checks, runs stable tests
-even if MSRV fails, includes both browser and capacity qualification, and keeps
-original failures in summary tables and JSON artifacts. Its final result stays
-failed when any check fails or remains incomplete. Missing toolchains, failed
-compilation or fixture initialization can still block dependent checks. Manual
-runs have separate concurrency groups so a subsequent push cannot cancel them.
+Use the testing tiers in the Active development flow above. Ordinary branch
+pushes run scoped iteration checks. Full candidate runs use `CI`; one diagnostic
+sweep may set `collect_all=true` to retain every original outcome even after
+failure. Do not duplicate an existing full run. Missing toolchains, compilation
+or fixture initialization remain failed/unexecuted evidence, not passes. Artifact
+builds use `artifact_only=true` and carry no qualification claim.
 
 1. Work continuously on the existing permanent integration tip
-   `.worktrees/kan-v2-proof-library`, branch `feat/kan-v2-proof-library`.
+   `.worktrees/kan-v2-proof-library`, on the owner-selected integration branch
+   (currently `feat/kan-v2-agent-usability`).
    Preserve the existing draft stack and root checkout's unrelated changes.
    Do not create a branch, worktree or PR for each helper, test or review follow-up.
 2. Finish the Library candidate's Rust/CLI/browser checks, then complete the work
