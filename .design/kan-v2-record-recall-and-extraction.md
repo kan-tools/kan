@@ -1,5 +1,23 @@
 # Feature: V1-style record and recall over v2, with bundled extraction
 
+## Current refinement — owner decisions, 2026-11-04
+
+The next design is
+[semantic progressive disclosure and offline consolidation](kan-v2-semantic-disclosure-and-consolidation.md).
+It records the owner's selections: all five built-in flows, explicit runs plus
+opt-in post-finalization processing, and authored-first recall with a labelled
+derived supplement. It grounds the semantic direction, witness-preserving
+relations, normal reading/evidence fallback and replaceable decision workers in
+the existing fold. A local decision-model setup is being investigated; an
+official local Jev runtime has not been identified and no alternative installed.
+
+Future Sonnet acceptance starts with fresh sessions and disposable state. Do not
+resume the old readers. All old trials remain retained. At74922b7, scoped checks
+and provider-offline readback passed, but the final resumed reader stopped with
+a provider safeguard refusal before completing its source check. Certification
+and independent review remain incomplete. Later historical checkpoint paragraphs
+below describe their own revisions; they do not authorize another continuation.
+
 ## Summary
 
 Restore the simple deliberate-recording and budgeted-recall workflow over v2's
@@ -26,7 +44,7 @@ backfill remain pending. They are not empty or passing results. The skill's
 suggested docs/CONVENTIONS.md is absent from this checkout; this file is not a
 substitute for validation against the actual process schema.
 
-## Current product and evidence
+## Initial product and evidence — historical context, 2026-11-02
 
 - Released baseline is `8852067e6daf34348bf5e687c8c2ac19b3023e32` / beta.1.
   The private agent-usability build at
@@ -301,14 +319,15 @@ implementation choice under the approved semantic-parity requirement, not a runt
 compatibility result or permission to replace Day's existing consumer.
 
 
-<!-- OPEN: Q2 -->
-### Q2: Demo model, inputs and spend envelope
-The user proposed Sonnet through an API key. Exact provider model/version, private
-credential reference, public toy input and maximum spend per author/extractor/reader
-remain to be selected before paid execution. The previously authorized single
-reader continuation has been used and failed; this plan does not silently repeat it.
-No secret value should be pasted into the design or an agent prompt.
-<!-- /OPEN -->
+### Q2: Prior demo execution — resolved historical choice; no fresh run authorized
+The owner selected Sonnet5.5 through normal Claude Code sign-in. The comparative
+trial ran using a test-only local bridge, not a direct provider API credential.
+Its extraction succeeded once; later reader continuations remain failed/partial
+acceptance, including the terminal provider refusal. The2026-11-04 refinement
+requires fresh sessions and disposable state for any future test, preserving all
+prior evidence. A new task/input/model/budget plan must be selected before that
+execution; prior remaining allocation is not blanket approval. No secret value
+belongs in the design or an agent prompt.
 
 ## Out of Scope
 

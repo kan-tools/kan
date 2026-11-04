@@ -47,14 +47,18 @@ This policy does not silently change those settings: full current-candidate
 qualification and separate human merge approval remain explicit gates until the
 owner separately chooses enforcement settings.
 
-For the current certification, reuse fully qualified89826fc as backend baseline.
-Add the readable-input navigation regression, run Tier1 plus one artifact-only
-macOS build, and verify the retained report/source without a provider. Then run
-one changed-code continuation of the existing report reader with at most$0.40
-from its remaining original allocation, under the owner's instruction to resume
-certification. No author/extraction/backup repeat. Once usable, freeze the candidate,
-run Tier2 once, then the already-authorized independent Opus review. A failed
-acceptance result stops further paid execution pending diagnosis and human steering.
+The74922b7 iteration checks, artifact build and provider-offline readback passed;
+its last resumed reader stopped with a provider safeguard refusal before usable
+source-check acceptance. That bounded continuation is consumed. The heartbeat
+remains paused; no final Tier2 qualification or integrated review has launched.
+
+Owner refinement,2026-11-04: continue design toward
+[semantic progressive disclosure and consolidation](kan-v2-semantic-disclosure-and-consolidation.md).
+Any future Sonnet comparative exercise starts with fresh sessions and disposable
+working state, preserving all prior trials. Select a new concrete task/input/model/
+budget plan; never resume old failed readers or interpret remaining prior budget
+as blanket permission. Use scoped checks before that exercise, one final Tier2
+candidate run once usable, then the independent review. No old backup/scale repeat.
 
 ### CLI naming — owner decision, 2026-10-26
 
