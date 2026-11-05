@@ -148,7 +148,9 @@ task success. Stop/compaction snapshots, notes and derivations do not trigger it
 
 Hooks only queue; they never launch a model or background process. An explicit
 `python3 scripts/kan-project.py --config /private/capture.json process-finalized`
-drains at most one queued event. This is also a bounded entry point for an
+drains at most one queued event under a 120-second total processing deadline,
+shared across discovery, preview and submission commands. This is also a bounded
+entry point for an
 operator-managed after-session runner; no scheduler or login service is installed.
 Signed discovery must find the exact attempt's complete ordinal set within the
 scan budget and one contiguous inventory interval. Interleaved/missing/oversized

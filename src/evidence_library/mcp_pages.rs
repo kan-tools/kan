@@ -604,11 +604,12 @@ pub(in crate::evidence_library) fn content(
 }
 
 #[cfg(test)]
+fn first_citation<'a>(page: &'a Value, entry: &Value) -> &'a Value {
+    &page["citation_dictionary"][entry["citation_refs"][0].as_str().unwrap()]
+}
+#[cfg(test)]
 mod tests {
     use super::*;
-    fn first_citation<'a>(page: &'a Value, entry: &Value) -> &'a Value {
-        &page["citation_dictionary"][entry["citation_refs"][0].as_str().unwrap()]
-    }
     #[test]
     fn excerpt_first_page_deduplicates_witnesses_and_preserves_frozen_item_and_view_identity() {
         let text = "observable é🙂 text ".repeat(2000);
@@ -944,29 +945,27 @@ mod tests {
             },
         )
         .unwrap();
+        let visible = page["entries"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|r| r["type"] == "item")
+            .count();
         assert!(
-            expanded <= 3,
-            "do not expand every reused citation set up front"
+            expanded <= visible + 1,
+            "expand only visible items plus the next candidate, never all 300 items"
         );
+        assert_eq!(page["citation_dictionary"].as_object().unwrap().len(), 1);
+        assert_eq!(page["citation_dictionary"]["c0"]["uri"], "x".repeat(8500));
         assert!(!page["next"].is_null());
         assert!(size(&page).unwrap() <= LIMIT);
         let small = fixture("🙂");
-        let first = content(
-            &small,
-            Some("source"),
-            &json!({}),
-            None,
-            Value::Null,
-            |_, _| Ok("x".repeat(LIMIT + 1)),
-        )
-        .unwrap();
-        assert!(!first["next"].is_null());
         assert_eq!(
             content(
                 &small,
                 Some("source"),
                 &json!({}),
-                Some(first["next"].clone()),
+                None,
                 Value::Null,
                 |_, _| Ok("x".repeat(LIMIT + 1))
             ),

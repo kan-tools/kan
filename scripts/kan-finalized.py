@@ -10,6 +10,7 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import time
 
 RECIPES = {'session-brief', 'decisions-and-questions', 'project-consolidation',
            'handoff-context', 'relation-suggestions'}
@@ -107,6 +108,12 @@ def process(project):
     config = policy(project)
     if config is None:
         return {'state': 'disabled'}
+    deadline = time.monotonic() + 120
+    def invoke(args, cwd, receipt):
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise ValueError('finalization processing budget exhausted')
+        return command(project, args, cwd, receipt, timeout=remaining)
     # Only one queue event per invocation; the engine's lifetime quota remains
     # a separate, additional bound. No retry, sleep or background worker.
     directory = project.runtime / 'consolidation'
@@ -132,7 +139,7 @@ def process(project):
             def read(query, name):
                 request = destination / (name + '-request.json')
                 create(request, query)
-                return command(project, base + ['--request', request], cwd, destination / (name + '.json'))
+                return invoke(base + ['--request', request], cwd, destination / (name + '.json'))
             pin = read({'action': 'proof-snapshot', 'source': profile['source']}, 'snapshot')
             pin_file = destination / 'pin.json'
             create(pin_file, pin)
@@ -149,7 +156,7 @@ def process(project):
             start, end = interval(rows, receipt['attempt'], receipt['observed'])
             results = []
             for index, recipe in enumerate(config['recipes']):
-                plan = command(project, ['extract', '--profile', profile_path, '--from', start, '--through', end,
+                plan = invoke(['extract', '--profile', profile_path, '--from', start, '--through', end,
                                '--pin-file', pin_file, '--recipe', recipe, '--finalized-session', receipt['session'], '--finalized-attempt', receipt['attempt']],
                                cwd, destination / ('plan-' + str(index) + '.json'))
                 # Freeze to the original discovery frontier, never a later note.
@@ -157,7 +164,7 @@ def process(project):
                     raise ValueError('finalization requires a plan at the frozen discovery pin')
                 frozen = destination / ('frozen-' + str(index) + '.json')
                 create(frozen, plan)
-                results.append(command(project, ['extract', '--profile', profile_path, '--plan', frozen, '--run'],
+                results.append(invoke(['extract', '--profile', profile_path, '--plan', frozen, '--run'],
                                        cwd, destination / ('submit-' + str(index) + '.json')))
             create(destination / 'result.json', {'state': 'submitted', 'jobs': results})
             return {'state': 'processed', 'id': event.stem, 'jobs': len(results)}

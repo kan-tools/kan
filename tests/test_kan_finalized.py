@@ -107,6 +107,19 @@ class Finalization(unittest.TestCase):
             self.assertEqual(finalized.process(self.p)['state'], 'no-unstarted-events')
         self.assertTrue((self.root / 'consolidation' / queued['id'] / 'failure.json').exists())
 
+    def test_overall_deadline_cannot_multiply_by_discovery_pages(self):
+        finalized.queue(self.p, self.record)
+        times = iter([0, 30, 121])
+        calls = []
+        def fake(args, **kwargs):
+            calls.append(kwargs['timeout'])
+            kwargs['stdout'].write(json.dumps({'request':'synthetic pin','reply':{}}).encode())
+            return SimpleNamespace(returncode=0)
+        with patch.object(finalized.time, 'monotonic', side_effect=lambda: next(times)), patch.object(finalized.subprocess, 'run', side_effect=fake), patch.object(finalized.Path, 'cwd', return_value=self.root):
+            self.assertEqual(finalized.process(self.p)['state'], 'not-completed')
+        self.assertEqual(calls, [90])
+        self.assertEqual(finalized.process(self.p)['state'], 'no-unstarted-events')
+
     def test_changed_policy_needs_new_explicit_plan_not_silent_resend(self):
         finalized.queue(self.p, self.record)
         self.p.c['consolidation']['recipes'] = ['handoff-context']
