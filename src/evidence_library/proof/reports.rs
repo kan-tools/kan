@@ -586,9 +586,31 @@ mod tests {
         ));
         let mut oversized = full;
         oversized["inputs"][0]["uri"] = json!("x".repeat(20000));
-        assert!(matches!(
-            report_page(oversized, None),
-            Err(ContentError::Limited)
-        ));
+        let mut cursor = None;
+        let mut prefix = String::new();
+        let mut pages = 0;
+        loop {
+            match report_page(oversized.clone(), cursor) {
+                Ok(page) => {
+                    // Text precedes manifests. An oversized later reference
+                    // must refuse when reached, never be skipped or imply a
+                    // complete selection after a successful text prefix.
+                    assert!(serde_json::to_vec(&page).unwrap().len() <= 12 * 1024);
+                    assert!(page["inputs"].as_array().unwrap().is_empty());
+                    assert!(!page["blocks"].as_array().unwrap().is_empty());
+                    for block in page["blocks"].as_array().unwrap() {
+                        prefix.push_str(block["text"].as_str().unwrap());
+                    }
+                    assert!(!page["next"].is_null());
+                    cursor = Some(page["next"].clone());
+                    pages += 1;
+                    assert!(pages < 100);
+                }
+                Err(ContentError::Limited) => break,
+                _ => panic!("oversized report reference must refuse explicitly"),
+            }
+        }
+        assert!(pages > 0);
+        assert_eq!(prefix, text);
     }
 }

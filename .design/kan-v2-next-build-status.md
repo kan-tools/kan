@@ -42,6 +42,13 @@ need diagnosis and changed code/test inputs; infrastructure failures are recorde
 separately and a retry targets only the authorized failed/unstarted job. Evidence
 collection must not repeat completed jobs merely to produce a larger report.
 
+Tier1 keeps independent unit, HTTP and lint outcomes after compilation permits
+them to run. A failing unit does not hide the other component diagnostics. The
+final component gate reads original step outcomes, not `continue-on-error`
+conclusions, and fails if any selected check failed, skipped or was missing.
+The small component-results artifact records the required scope and all actual
+outcomes; this is diagnostic scheduling, never a waiver or a larger test matrix.
+
 Repository settings inspection on Nov3 found main unprotected and no rulesets.
 This policy does not silently change those settings: full current-candidate
 qualification and separate human merge approval remain explicit gates until the

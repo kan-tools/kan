@@ -38,6 +38,7 @@ jobs:
           python3 tests/test_kan_record_demo.py
           python3 tests/test_kan_finalized.py
           python3 tests/test_ci_diagnostic_report.py
+          python3 tests/test_ci_component_result.py
           node --test tests/library_ui.test.cjs tests/operations_ui.test.cjs tests/operations_review_ui.test.cjs tests/operations_restart_review.test.cjs tests/theme_ui.test.cjs
       - uses: dtolnay/rust-toolchain@stable
         if: steps.scope.outputs.rust == 'true'
@@ -71,17 +72,26 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           key: v2-optimized-integration
-      - name: Cross-cutting compilation and units
+      - name: Cross-cutting compilation
+        id: compile
         if: needs.quick.outputs.core == 'true'
+        continue-on-error: true
+        run: cargo check --locked --workspace --all-targets --all-features
+      - name: Core units
+        id: core_units
+        if: always() && needs.quick.outputs.core == 'true' && steps.compile.outcome == 'success'
+        continue-on-error: true
+        run: cargo test --locked --features v2-crypto --lib
+      - name: Affected Library units
+        id: library_units
+        if: always() && needs.quick.outputs.library == 'true' && needs.quick.outputs.core != 'true'
+        continue-on-error: true
+        run: 'cargo test --locked --features v2-crypto --lib evidence_library::'
+      - name: Actual Library HTTP integration
+        id: library_http
+        if: always() && needs.quick.outputs.library == 'true' && (needs.quick.outputs.core != 'true' || steps.compile.outcome == 'success')
+        continue-on-error: true
         run: |
-          cargo check --locked --workspace --all-targets --all-features
-          cargo test --locked --features v2-crypto --lib
-      - name: Affected Library units and actual HTTP integration
-        if: needs.quick.outputs.library == 'true'
-        run: |
-          if [ "${{ needs.quick.outputs.core }}" != true ]; then
-            cargo test --locked --features v2-crypto --lib evidence_library::
-          fi
           cargo test --locked --features v2-crypto,kan-v1 --test evidence_inventory library_tests:: -- --list > "$RUNNER_TEMP/library-test-list.txt"
           python3 - <<'PYTEST'
           import os
@@ -91,13 +101,32 @@ jobs:
           PYTEST
           cargo test --locked --features v2-crypto,kan-v1 --test evidence_inventory library_tests::
       - name: Library lint
+        id: lint
+        if: always() && (needs.quick.outputs.core != 'true' || steps.compile.outcome == 'success')
+        continue-on-error: true
         run: cargo clippy --locked --features v2-crypto --lib -- -D warnings
       - name: Capture lifecycle integration
-        if: needs.quick.outputs.capture == 'true'
+        id: capture
+        if: always() && needs.quick.outputs.capture == 'true' && (needs.quick.outputs.core != 'true' || steps.compile.outcome == 'success')
+        continue-on-error: true
         run: |
           cargo build --locked --bin kan
           python3 -m pip install cryptography==46.0.3
           python3 scripts/check_project_capture.py target/debug/kan
+      - name: Preserve actual outcomes and fail selected incomplete or failed checks
+        if: always()
+        env:
+          SCOPE_CORE: ${{ needs.quick.outputs.core }}
+          SCOPE_LIBRARY: ${{ needs.quick.outputs.library }}
+          SCOPE_CAPTURE: ${{ needs.quick.outputs.capture }}
+          CHECK_OUTCOMES: ${{ toJSON(steps) }}
+        run: python3 scripts/ci-component-result.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: iteration-component-${{ github.sha }}
+          path: ci-component-results.json
+          if-no-files-found: error
   platform:
     needs: quick
     if: needs.quick.outputs.macos == 'true'
