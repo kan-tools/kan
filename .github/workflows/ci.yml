@@ -83,6 +83,7 @@ jobs:
           python3 tests/test_kan_finalized.py
           python3 tests/test_ci_scope.py
           python3 tests/test_ci_component_result.py
+          python3 tests/test_tev_evaluate.py
       - id: diagnostic_report_tests
         continue-on-error: ${{ github.event_name == 'workflow_dispatch' && inputs.collect_all }}
         run: |

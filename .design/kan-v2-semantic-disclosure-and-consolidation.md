@@ -93,7 +93,7 @@ Implementation pass,2026-11-04, with scoped runtime inspection2026-11-05:
   Capture lifecycle and macOS runtime were scope-skipped, not qualified by this
   run. The private exact-head Mac artifact was verified but not installed.
 
-Local-worker readback correction,2026-11-05 (new regressions await remote CI):
+Local-worker readback correction,2026-11-05:
 
 - The one synthetic Kan-to-Tev job at22295f4 reached a bound server while it was
   loading and retained HTTP503 `Loading model`. No classification result was
@@ -109,6 +109,31 @@ Local-worker readback correction,2026-11-05 (new regressions await remote CI):
   is needed to render a saved result. Pure Unicode/paging and actual fake-provider
   HTTP controls cover all three answer types, provider-offline reading, retained
   model/usage identity, no extra requests and current revocation.
+  These controls passed scoped Tier1 at4b8caa9. The corrected one-job real local
+  runtime integration then passed, with worker-offline ordinary report readback;
+  it did not establish classification quality.
+
+Own-project task evaluation,2026-11-05:
+
+- The authorized Terra subagent labeled48 genuine whole annotation bodies;
+  a blind12-case parent audit initially matched full label triplets on8/12.
+  Disagreements and uncertainties were reviewed before predictions; labels are
+  provisional model-assisted references, not human gold. Text/revision matched
+  digest-verified CAR blocks; claim identity came from a derived index without
+  independent signature or current-MST verification. Private sources remain
+  outside Git; original annotation kind was not provided to the classifier.
+- All48 local requests succeeded in314s on the pinned M4 worker. A namespace
+  alias group split defect was caught by the scorer before prediction inspection;
+  both affected cases were quarantined, retaining all original frozen artifacts.
+  Primary analysis uses23 calibration and23 held-out examples. Future runs must
+  execute the offline preflight before starting a worker, not after inference.
+- Held-out accuracy was stance11/23, adoption12/22 and reason strength11/22.
+  Calibration-only temperatures did not improve all held-out probability scores.
+  Two top-class-probability>=0.9 stance predictions mislabeled merged-work reports
+  as adopted decisions. Median latency6.43s/p958.03s; no isolated memory benchmark.
+  This pilot supports no source filtering or acceptance inference. Keep existing
+  authored kinds and fold judgments deterministic; classification from untyped
+  text remains optional and requires better evidence before production use.
 
 ## Requirements
 
@@ -166,6 +191,15 @@ Local-worker readback correction,2026-11-05 (new regressions await remote CI):
   provider invocation, large fixture repeat, migration or publication is implied
   by accepting this design. Final candidate qualification and independent review
   follow usable integrated evidence.
+- REQ-13: Measure the selected local decision worker on a small, frozen corpus
+  of genuine own-project annotation excerpts with source pins. Separate grouped
+  calibration and held-out cases; labels remain blind to worker output. Preserve
+  ambiguous labels, failures, full distributions, latency and runtime identity.
+  Model-assisted labels are provisional references, not human gold or truth.
+- REQ-14: Report task discrimination and probability reliability separately.
+  Any fitted calibration parameters use only the calibration split; held-out
+  results cannot tune prompts, thresholds or calibration. No evaluation score
+  changes admission, authorship, source visibility or product defaults.
 
 ## Acceptance Criteria
 
@@ -225,8 +259,70 @@ Local-worker readback correction,2026-11-05 (new regressions await remote CI):
   Tier2 candidate and one independent integrated review use the current design
   and actual evidence. Compatibility limitations remain explicit, installed
   Day/v1/Git stores unchanged, and old scale/recovery trials unrepeated. (REQ-12)
+- [ ] AC-13: At most48 source-verified real excerpts have stable identities,
+  subject/near-duplicate-disjoint splits and a frozen rubric. The authorized
+  Terra labeler sees no predictions; a deterministic12-case independent audit
+  and review of uncertainties retain disagreements before labels freeze. Private
+  text, label/provenance and model-input manifests remain separate. (REQ-13)
+- [ ] AC-14: A bounded single pass records missing/failed requests, per-head
+  accuracy/confusion, Brier/log loss, reliability-bin counts, selective risk and
+  latency. Any temperature fit uses only calibration cases; tests detect split
+  leakage, missing predictions and native-confidence misuse. Report baseline
+  comparisons and grouped uncertainty; no broad calibration or production
+  filtering claim follows from this enriched small corpus. (REQ-13, REQ-14)
 
 ## Architecture
+
+### First-pass local-worker task evaluation — owner request,2026-11-05
+
+Use the existing `evidence-triage` questions from the verified current binary:
+recorded stance (adopted/proposal/none/unknown), presence of explicit adoption
+(Noul), and recorded reason strength (Score0–2). These labels concern what the
+visible excerpt records, not whether a statement is true, a task succeeded, or
+the viewer accepts it. Annotation kind is a sampling aid, never model input or
+a substitute for reading the excerpt. A proposal is not adoption; ambiguous
+binary/ordinal labels remain null and their coverage is reported.
+
+Select up to48 whole short text bodies or exact bounded excerpts from Kan's own
+retained annotations, with immutable claim/log source identities. Keep original
+texts/provenance private outside Git. Enrich the sample across original annotation
+types, at most two per logical subject; this is a task pilot, not a prevalence
+estimate. Related subjects and exact/near-duplicate excerpts cannot cross the
+24-case calibration /24-case held-out split. Freeze source, corpus, rubric,
+recipe/request and label hashes before worker execution. The single authorized
+Terra subagent labels independently of predictions; the parent independently
+audits12 deterministic cases and all uncertainties before resolving a frozen
+reference set. Record unresolved disagreements rather than forcing certainty.
+
+The evaluator sends at most48 requests in one15-minute owned local runtime,
+one slot/four CPU threads with the pinned Tev1 4B Q4_K_M artifact. It uses the
+existing System One question/state envelope and visible-unit text, with genuine
+evaluation source locators rather than invented proof tokens. This measures the
+worker task; it is not another48 archive/backup fixtures or a substitute for the
+separate qualified Kan integration. No proxy/cloud fallback or automatic retry;
+requests, errors, skipped cases, token usage where returned and cold/warm latency
+are retained. Stop the owned worker afterward. No paid Sonnet call is implied.
+
+`scripts/tev-evaluate.py` performs offline scoring only. Report per-head class
+counts, confusion/accuracy/macroF1, unscaled multiclass Brier (sum of squared
+class errors), negative log likelihood, three reliability bins with counts,
+fixed confidence risk/coverage points and grouped-bootstrap accuracy intervals.
+Compare uniform and calibration-split class-prior baselines. Native `confidence`
+is not presumed to mean probability of correctness; use the actual full
+distribution. Ordinal expected-score error is separate from classification.
+Failed/missing predictions count against end-to-end accuracy and coverage, never
+silently disappear from the metric denominator.
+
+Optionally fit one scalar temperature per head on calibration cases only, over
+a fixed bounded grid, when there are at least12 usable examples and two classes
+with at least three each. Preserve raw results and report held-out adjusted
+results even when worse; do not choose settings using held-out outcomes. Brier
+and log loss combine reliability and discrimination, so neither alone certifies
+calibration. Use reliability counts and broad grouped uncertainty to state what
+this small model-assisted corpus cannot establish. This follows the distinction
+in [scikit-learn's calibration guidance](https://scikit-learn.org/stable/modules/calibration.html)
+and the single-parameter method in [Guo et al.](https://proceedings.mlr.press/v70/guo17a.html).
+No threshold is promoted to a product exclusion rule by this experiment.
 
 ### Denotational direction and effectful derivation
 

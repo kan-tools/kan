@@ -147,6 +147,68 @@ there was no classification result or automatic resubmission. A future explicit
 run must require the runtime's successful health response before submission;
 an open port alone is insufficient readiness.
 
+The corrected one-job Kan integration at `4b8caa9` succeeded: a health-gated
+local request completed, then ordinary report reading reproduced all retained
+questions and distributions with the model stopped and provider configuration
+unavailable. It used one synthetic excerpt, so it establishes the execution and
+readback path, not classification quality or calibration.
+
+### Small real-annotation evaluation
+
+The offline scorer `scripts/tev-evaluate.py` reads an explicit private corpus,
+reference labels and previously retained responses; it never starts a worker:
+
+```sh
+python3 scripts/tev-evaluate.py --validate-only --cases /private/cases.jsonl \
+  --labels /private/reference-labels.jsonl --output /private/preflight.json
+# Only after preflight succeeds, run the separately bounded worker experiment.
+python3 scripts/tev-evaluate.py --cases /private/cases.jsonl \
+  --labels /private/reference-labels.jsonl \
+  --responses /private/responses.jsonl --output /private/evaluation.json
+```
+
+Cases contain `id`, `group`, `split` (`calibration` or `heldout`) and exact visible
+`text`. Labels contain `id`, `stance` (adopted/proposal/none/unknown), `decision`
+(0/1/null) and `support` (0/1/2/null). Response rows retain `id`, `status`, typed
+`answers` and elapsed seconds. Failures and absent responses remain failures in
+accuracy/coverage; ambiguous reference heads remain counted but unscored. Text
+and source/claim metadata should stay in private files, not Git fixtures.
+
+Subject groups, exact duplicates and near-duplicate text cannot cross splits.
+The scorer reports raw and calibration-only temperature-adjusted held-out
+results, class-prior/uniform baselines, reliability counts, grouped uncertainty
+and latency. It uses actual probabilities, not the worker's unrelated native
+confidence scalar. Brier/log loss combine discrimination and reliability, so
+they do not alone establish calibration. Model-assisted references, selection
+bias and small per-class counts must accompany results. No fitted temperature
+or threshold automatically changes product retrieval or excludes evidence.
+
+The2026-11-05 own-project pilot submitted48 genuine annotation excerpts; every
+local request succeeded. A namespace-alias split defect was caught before
+prediction inspection; the entire two-example group was quarantined, leaving
+23 calibration and23 held-out examples. Original inputs/results remain retained.
+This is why preflight must run before future worker execution. Source text and
+revision were matched in digest-verified CAR blocks; claim identity came from
+the derived index, without independent signature or current-MST verification.
+
+Terra supplied blind provisional labels. An independent12-case parent audit
+matched all three labels on8/12; disagreements and uncertainties were reviewed
+before predictions, with five binary/ordinal references left ambiguous. Held-out
+accuracy against the resulting references was stance11/23 (48%), explicit
+adoption12/22 (55%), and reason strength11/22 (50%). Group-bootstrap95% accuracy
+ranges were broad:25–70%,32–74%, and30–70%, respectively. Calibration-only
+temperature scaling did not improve every held-out probability score. Neither
+of the two stance predictions above0.9 top-class probability matched its
+reference: merged-work reports were mistaken for adopted decisions.
+
+Median request latency was6.43s and p958.03s on the pinned M4 configuration;
+48 sequential requests took314s including readiness. No isolated peak-memory
+benchmark was performed. These enriched, model-assisted references are not human
+gold, and this held-out set is now spent for tuning. Keep this worker opt-in;
+no result supports hiding evidence or inferring acceptance. Already typed authored
+claims should keep their explicit kinds and fold semantics, rather than being
+reclassified by Tev.
+
 ## Finalization queue
 
 Project capture accepts an optional `consolidation` policy:

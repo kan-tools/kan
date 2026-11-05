@@ -39,6 +39,7 @@ jobs:
           python3 tests/test_kan_finalized.py
           python3 tests/test_ci_diagnostic_report.py
           python3 tests/test_ci_component_result.py
+          python3 tests/test_tev_evaluate.py
           node --test tests/library_ui.test.cjs tests/operations_ui.test.cjs tests/operations_review_ui.test.cjs tests/operations_restart_review.test.cjs tests/theme_ui.test.cjs
       - uses: dtolnay/rust-toolchain@stable
         if: steps.scope.outputs.rust == 'true'
