@@ -176,7 +176,11 @@ impl Adapter {
                 "questions":recipe.questions}),
         })
     }
-    pub(super) fn accepts(self, request: &Value, response: &Value) -> bool {
+    pub(in crate::evidence_library::proof) fn accepts(
+        self,
+        request: &Value,
+        response: &Value,
+    ) -> bool {
         match self {
             Self::AnthropicMessages => {
                 response["type"] == "message" && response["content"].is_array()

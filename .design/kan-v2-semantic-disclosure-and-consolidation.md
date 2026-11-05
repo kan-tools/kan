@@ -62,7 +62,7 @@ At source revision `74922b7e6fea27f33c4c77da8f2e6277c3aef215`:
 The existing trials are historical diagnostic evidence. Their changing prompts,
 resumed contexts and partial reads cannot be relabelled a clean fresh exercise.
 
-Implementation pass,2026-11-04 (runtime qualification pending):
+Implementation pass,2026-11-04, with scoped runtime inspection2026-11-05:
 
 - `src/evidence_library/proof/analysis/recipes.rs` implements five versioned typed
   candidate contracts and a visible-evidence projection. Original item ids and
@@ -88,8 +88,27 @@ Implementation pass,2026-11-04 (runtime qualification pending):
 - `docs/V2-CONSOLIDATION.md` records interfaces and boundaries. The new actual
   HTTP regression covers all five flows, excluded inputs, source routes,
   two-level lineage, duplicate finalization, authored priority, offline report
-  reading and revocation. These Rust checks await remote execution; local
-  lightweight controls do not establish that they compiled or passed.
+  reading and revocation. At22295f4, actual Tier1 passed170 Rust units and53
+  Library HTTP tests (one ignored), plus compilation, lint and180 Node tests.
+  Capture lifecycle and macOS runtime were scope-skipped, not qualified by this
+  run. The private exact-head Mac artifact was verified but not installed.
+
+Local-worker readback correction,2026-11-05 (new regressions await remote CI):
+
+- The one synthetic Kan-to-Tev job at22295f4 reached a bound server while it was
+  loading and retained HTTP503 `Loading model`. No classification result was
+  produced, and no automatic resubmission occurred. All owned services stopped;
+  the system binary and global Ollama state were unchanged. Port readiness was
+  an operator-harness mistake; subsequent explicit starts must wait for a
+  successful runtime health response. This is not a workload quality result.
+- Source inspection also found that normal reports rendered prose/structured
+  consolidation but omitted successful System One answers. The report read path
+  now retains each exact question/rubric and complete answer/distribution in
+  bounded `decision-assessment` blocks. Confidence is not calibrated truth or
+  authored acceptance. No result or execution format changes; no Engine/provider
+  is needed to render a saved result. Pure Unicode/paging and actual fake-provider
+  HTTP controls cover all three answer types, provider-offline reading, retained
+  model/usage identity, no extra requests and current revocation.
 
 ## Requirements
 

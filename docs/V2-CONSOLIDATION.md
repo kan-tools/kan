@@ -96,6 +96,16 @@ and full returned distributions. It uses the same visible-evidence projection.
 These scores advise ordering/review only; no threshold silently excludes sources.
 Tev1 is a different model from hosted Jev, despite protocol compatibility.
 
+Ordinary `kan report` and `kan_v2_report` expose each retained question/rubric
+and its complete Choice, Score or Noul answer as JSON text fragments in
+`decision-assessment` blocks, keyed by `question_id`. Full distributions and
+unknown/none alternatives survive; they are not reduced to a winning label.
+Follow `next` to complete the report. Model identity, input references, usage
+availability and current dependency access follow the same report contract as
+generative output. Reading needs no worker configuration and performs no model
+call. These assessments remain unpromoted model interpretations, not calibrated
+truth or authored acceptance.
+
 Example analysis configuration (substitute existing private paths and source):
 
 ```json
@@ -131,6 +141,11 @@ Tev1 4B Q4_K_M on gilgamesh has passed isolated API/Metal setup checks;7/9 small
 synthetic labels matched, with two proposal/rubric disagreements. That is not
 Kan workload accuracy or calibration. No daemon or production profile was
 installed. Actual new-binary integration and workload evaluation are separate.
+The first Kan-to-Tev probe received HTTP503 `Loading model`: the operator checked
+the listening socket before the model was ready. Its failed job is retained;
+there was no classification result or automatic resubmission. A future explicit
+run must require the runtime's successful health response before submission;
+an open port alone is insufficient readiness.
 
 ## Finalization queue
 

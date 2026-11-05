@@ -702,7 +702,9 @@ fn print_report(value: Value, json_output: bool) -> Result<()> {
         }
         for block in value["blocks"].as_array().ok_or("invalid report")? {
             if let Some(text) = block["text"].as_str() {
-                if block["fragment"] == 0 && block["kind"].is_string() {
+                if block["fragment"] == 0 && block["kind"] == "decision-assessment" {
+                    println!("\nModel assessment — {}", block["question_id"]);
+                } else if block["fragment"] == 0 && block["kind"].is_string() {
                     println!(
                         "\n{} / {} / {}",
                         block["kind"], block["basis"], block["stance"]

@@ -65,6 +65,32 @@ fn fragments(text: &str) -> Vec<String> {
     }
     out
 }
+// Retain each exact question/rubric and its complete typed answer. In particular,
+// never reduce a distribution to its winning label or interpret it as acceptance.
+// JSON text fragments use the same bounded report rows as generative text, so a
+// large rubric/distribution cannot become an unpaged repeated header.
+fn decision_blocks(request: &Value, response: &Value) -> Result<Vec<Value>, Failure> {
+    if !analysis::Adapter::TypesafeSystemOne.accepts(request, response) {
+        return Err(Failure::Corrupt);
+    }
+    let mut blocks = Vec::new();
+    for (n, (id, question)) in request["questions"]
+        .as_object()
+        .ok_or(Failure::Corrupt)?
+        .iter()
+        .enumerate()
+    {
+        let text = serde_json::to_string_pretty(
+            &json!({"question":question,"answer":response["answers"][id]}),
+        )
+        .map_err(|_| Failure::Corrupt)?
+            + "\n";
+        for (index, text) in fragments(&text).into_iter().enumerate() {
+            blocks.push(json!({"block":n,"fragment":index,"kind":"decision-assessment","question_id":id,"text":text}));
+        }
+    }
+    Ok(blocks)
+}
 // Input references are bounded rows too, never an unbounded repeated header.
 fn report_page(mut value: Value, cursor: Option<Value>) -> Result<Value, ContentError> {
     let query = json!({"id": value["id"]});
@@ -506,6 +532,11 @@ impl Readers {
                         blocks.push(json!({"block":format!("limitation/{n}"),"fragment":index,"kind":"limitation","text":text}));
                     }
                 }
+            } else if result["state"] == "succeeded" && result["adapter"] == "typesafe-system-one" {
+                let saved = workspace
+                    .get("analysis-input", &id)?
+                    .ok_or(Failure::Corrupt)?;
+                blocks = decision_blocks(&saved["request"], &result["parsed"])?;
             } else if let Some(content) = result["parsed"]["content"].as_array() {
                 for (n, part) in content.iter().enumerate() {
                     if let Some(text) = part["text"].as_str() {
@@ -526,7 +557,7 @@ impl Readers {
             map.remove("instructions");
             map.remove("questions");
         }
-        let value = json!({"version":"kan-derived-report/1","id":id,"recipe":recipe,"worker":job["preview"]["worker"],"requested_model":job["preview"]["model"],"returned_model":output.as_ref().map(|o|o["parsed"]["model"].clone()),"state":output.as_ref().map_or(json!("pending-or-interrupted; inspect job status"),|o|o["state"].clone()),"blocks":blocks,"inputs":inputs,"usage":output.as_ref().map(|o|o["parsed"]["usage"].clone()),"usage_state":if output.as_ref().is_some_and(|o|!o["parsed"]["usage"].is_null()) {"provider-reported; not a billing receipt"} else {"unavailable"},"coverage":"Only the exact selected input manifest. Model claims and citations need review; this is not complete capture or an accepted decision.","promotion":"not-performed; explicit authored operation required"});
+        let value = json!({"version":"kan-derived-report/1","id":id,"recipe":recipe,"worker":job["preview"]["worker"],"requested_model":job["preview"]["model"],"returned_model":output.as_ref().map(|o|o["parsed"]["model"].clone()),"state":output.as_ref().map_or(json!("pending-or-interrupted; inspect job status"),|o|o["state"].clone()),"blocks":blocks,"inputs":inputs,"usage":output.as_ref().map(|o|o["parsed"]["usage"].clone()),"usage_state":if output.as_ref().is_some_and(|o|!o["parsed"]["usage"].is_null()) {"provider-reported; not a billing receipt"} else {"unavailable"},"authority":"Unpromoted model interpretation. Confidence and probabilities are model outputs, not calibrated truth or authored acceptance.","coverage":"Only the exact selected input manifest. Model claims and citations need review; this is not complete capture or an accepted decision.","promotion":"not-performed; explicit authored operation required"});
         report_page(value, cursor)
     }
 }
@@ -534,6 +565,54 @@ impl Readers {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn decision_reports_preserve_exact_rubrics_and_distributions_in_bounded_pages() {
+        let request = json!({"questions":{
+            "stance":{"type":"choice","instructions":"Classify only observed é🙂 statements. ".repeat(500),"criteria":{"accepted":"Explicitly adopted","unknown":"Unclear"}},
+            "support":{"type":"score","instructions":"How explicit is the support?","criteria":["Absent","Reason recorded"]},
+            "decision":{"type":"noul","instructions":"Is an adoption recorded?"}
+        }});
+        let response = json!({"model":"synthetic-local-worker","answers":{
+            "stance":{"type":"choice","choice":"unknown","confidence":0.2,"probabilities":{"accepted":0.49,"unknown":0.51}},
+            "support":{"type":"score","score":0.75,"confidence":0.3,"probabilities":{"0":0.25,"1":0.75}},
+            "decision":{"type":"noul","noul":0.65}
+        }});
+        let blocks = decision_blocks(&request, &response).unwrap();
+        let full = json!({"id":"a".repeat(64),"inputs":[],"blocks":blocks});
+        let mut joined = std::collections::BTreeMap::<String, String>::new();
+        let mut cursor = None;
+        let mut pages = 0;
+        loop {
+            let page = report_page(full.clone(), cursor).unwrap();
+            assert!(serde_json::to_vec(&page).unwrap().len() <= 12 * 1024);
+            for block in page["blocks"].as_array().unwrap() {
+                assert_eq!(block["kind"], "decision-assessment");
+                joined
+                    .entry(block["question_id"].as_str().unwrap().into())
+                    .or_default()
+                    .push_str(block["text"].as_str().unwrap());
+            }
+            pages += 1;
+            assert!(pages < 100);
+            if page["next"].is_null() {
+                break;
+            }
+            cursor = Some(page["next"].clone());
+        }
+        assert!(pages > 1);
+        assert_eq!(joined.len(), 3);
+        for (id, text) in joined {
+            let exact: Value = serde_json::from_str(&text).unwrap();
+            assert_eq!(exact["question"], request["questions"][&id]);
+            assert_eq!(exact["answer"], response["answers"][&id]);
+        }
+        let mut invalid = response;
+        invalid["answers"]["stance"]["probabilities"]["unknown"] = json!(0.9);
+        assert!(matches!(
+            decision_blocks(&request, &invalid),
+            Err(Failure::Corrupt)
+        ));
+    }
     #[test]
     fn report_pages_preserve_all_eight_large_references_and_unicode_without_repeating_header() {
         let inputs: Vec<Value> = (0..8).map(|n| json!({"input":n,"source":"source","uri":format!("kan://{}-{}",n,"a".repeat(2200)),"reference_request":{"report":{"id":"b".repeat(64),"input":n}},"availability":if n==6 {"key-unavailable"}else{"available"}})).collect();
