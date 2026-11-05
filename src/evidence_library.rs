@@ -15,7 +15,9 @@ use hyper::{
 };
 use hyper_util::rt::TokioIo;
 pub use owner::{Config as OwnerConfig, Owner, Request as OwnerRequest};
-pub use proof::analysis::{bundled_recipes, Config as AnalysisConfig, Draft as AnalysisDraft};
+pub use proof::analysis::{
+    bundled_decision_recipes, bundled_recipes, Config as AnalysisConfig, Draft as AnalysisDraft,
+};
 pub use proof::attachments::Direction as AttachmentDirection;
 pub use proof::imports::{ControlEvidence as ImportControlEvidence, View as ImportView};
 pub use proof::knowledge::{Citation as EvidenceCitation, Draft as AnnotationDraft};
@@ -153,6 +155,11 @@ pub enum Query {
         trust: Vec<String>,
         #[serde(default = "record_budget")]
         budget: usize,
+        /// Explicit retained derivations; no model is run during recall.
+        #[serde(default)]
+        derived: Vec<String>,
+        #[serde(default = "derived_budget")]
+        derived_budget: usize,
         cursor: Option<Value>,
     },
     AnnotationDelivery {
@@ -284,6 +291,9 @@ pub enum Query {
 }
 fn record_budget() -> usize {
     1024
+}
+fn derived_budget() -> usize {
+    256
 }
 fn response(code: StatusCode, mime: &'static str, body: impl Into<Bytes>) -> Response<Full<Bytes>> {
     let mut r = Response::new(Full::new(body.into()));

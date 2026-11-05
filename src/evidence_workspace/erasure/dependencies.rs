@@ -439,7 +439,18 @@ impl Workspace {
                         add(("analysis-job".into(), p), child.clone())?;
                     }
                     if let Some(p) = parent(d, "trigger_annotation")? {
-                        add(("annotation".into(), p), child)?;
+                        add(("annotation".into(), p), child.clone())?;
+                    }
+                    if let Some(parents) = d.get("derived_from") {
+                        for p in parents.as_array().ok_or(Failure::Corrupt)? {
+                            add(
+                                (
+                                    "analysis-job".into(),
+                                    p.as_str().ok_or(Failure::Corrupt)?.into(),
+                                ),
+                                child.clone(),
+                            )?;
+                        }
                     }
                 }
                 Ok(())

@@ -140,22 +140,28 @@ extraction planner/provider. Neither flag grants owner authority.
 | `kan_v2_report` | Read bounded derived text/lineage without a provider call or promotion |
 
 Existing typed catalog/help/discover/content/session/reference and advanced audit
-APIs remain. Normal decoded views retain bounded tool-input JSON as well as text;
+APIs remain. Normal decoded views lead with text/tool data and use page-local citation dictionaries for exact attribution;
 large Write inputs are not hidden behind a whole-event/raw-hex fallback. Tool
 input is observed data, not evidence that the tool executed successfully. Fragments
 retain exact enclosing source ranges and their coarse-attribution flag.
 
 ## Bundled extraction and report review
 
-The `documentation-summary` recipe, revision 1, uses the existing configured
-Anthropic Messages inference adapter through a loopback gateway. The gateway owns
-its separately configured upstream API credential and model allowlist. Kan does
-not read a shell API key or silently select a provider/model. Omitting `recipes`
-from the analysis configuration selects this bundled recipe; an explicit list
-keeps its existing meaning. The configured input bytes, output-token request,
-lifetime job quota and single-new-job provider call remain explicit. These are
-execution bounds, not a verified dollar bill; select the actual model, source
-allowlist, credential reference and spend envelope before a paid exercise.
+The versioned recipe pack now includes session brief, decisions/open questions,
+project consolidation, handoff/context and relation suggestions. `kan recipes`
+lists their exact contracts; the CLI defaults to `session-brief`. Outputs remain
+unpromoted structured derivations. The original prose `documentation-summary`
+revision1 remains available explicitly for old plans/reports. Omitting `recipes`
+from analysis configuration selects the bundled pack; an explicit list retains
+its meaning. See [consolidation and disclosure](V2-CONSOLIDATION.md) for typed
+outputs, visible-input exclusions, exact item locators, local Tev configuration,
+prior derivation lineage and opt-in finalization queueing.
+
+The configured loopback gateway owns its separately configured provider access.
+Kan never extracts a Claude Code login token or silently selects a provider.
+Local-server authentication can use a private `token_file` reference. Input bytes,
+output-token request, lifetime quota and one-call-per-job bound remain explicit;
+these are not verified dollar billing or evidence of task success.
 
 ```sh
 kan extract --profile /private/project.json --from 1 --through 3
@@ -178,8 +184,9 @@ interfaces for other coordinates. A source selection may itself be partial:
 shared assembly/decoding preserves missing, unsupported and stream-coverage
 states. There is no claim that three frames constitute an entire conversation.
 
-The prompt contains coherent decoded selected streams, source attribution and
-citation sets, including decision-bearing tool input. Duplicate whole-event JSON
+The new recipes use a visible-evidence projection of coherent selected streams,
+with source attribution and decision-bearing tool input. Internal reasoning and
+system/control wrappers are excluded and counted; originals remain retained. Duplicate whole-event JSON
 is omitted from this presentation, while original inputs/request/response remain
 in encrypted analysis lineage. A changed source/selection/model/recipe makes the
 copied digest fail. A retained interrupted/failed job is not automatically retried.
@@ -187,7 +194,7 @@ copied digest fail. A retained interrupted/failed job is not automatically retri
 A report ID identifies a run, not an accepted decision. Readback does not require
 provider configuration and calls no model. It reports requested/returned models,
 recipe, inputs/source URIs, availability, usage or its absence, and coverage.
-Report input references and text fragments both paginate under the normal 12 KiB budget. `inputs_count` and `blocks_count` name the total manifest and fragment counts; each page carries only its visible `inputs` and `blocks`. Follow `next` with unchanged report ID to retain both completely. Input numbers in the generated text refer to the stable selected manifest. An indivisible over-budget reference refuses explicitly.
+Report text fragments precede input references; both paginate under the normal 12 KiB budget. `inputs_count` and `blocks_count` name the total manifest and fragment counts; each page carries only its visible `inputs` and `blocks`. Follow `next` with unchanged report ID to retain both completely. Input numbers in the generated text refer to the stable selected manifest. An indivisible over-budget reference refuses explicitly.
 
 Report inputs also return a compact `reference_request`, such as `{"report":{"id":"...","input":4}}`. Pass it directly to `kan_v2_reference`, then follow its cursor with the same handle. This avoids copying a long portable URI. The report id/input number is a locator, not a read capability: every use rechecks the report sources through the existing authenticated readers, requires no provider configuration and makes no model call. Exact portable URIs remain supported.
 

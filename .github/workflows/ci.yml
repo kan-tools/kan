@@ -80,6 +80,7 @@ jobs:
           python3 tests/test_capture_claude_hook.py
           python3 tests/test_kan_project.py
           python3 tests/test_kan_record_demo.py
+          python3 tests/test_kan_finalized.py
           python3 tests/test_ci_scope.py
       - id: diagnostic_report_tests
         continue-on-error: ${{ github.event_name == 'workflow_dispatch' && inputs.collect_all }}

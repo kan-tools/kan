@@ -269,6 +269,10 @@ pub struct Recall {
     pub trust: Vec<String>,
     #[arg(long, default_value_t = 1024)]
     pub budget: usize,
+    #[arg(long = "derived-report")]
+    pub derived: Vec<String>,
+    #[arg(long, default_value_t = 256)]
+    pub derived_budget: usize,
     #[arg(long)]
     pub cursor: Option<String>,
     #[arg(long, conflicts_with = "subject")]
@@ -282,17 +286,33 @@ pub struct Extraction {
     pub from: Option<u64>,
     #[arg(long, required_unless_present = "plan")]
     pub through: Option<u64>,
+    /// Exact signed discovery pin in a private file; freezes the selected frontier.
+    #[arg(long, conflicts_with = "plan")]
+    pub pin_file: Option<PathBuf>,
     /// Previously frozen private extraction plan. Submission checks it again.
     #[arg(long,conflicts_with_all=["from","through"])]
     pub plan: Option<PathBuf>,
-    #[arg(long, default_value = "documentation-summary")]
+    #[arg(long, default_value = "session-brief")]
     pub recipe: String,
+    /// Prior validated consolidations over inputs also included in this interval.
+    #[arg(long = "derived-report")]
+    pub derived_from: Vec<String>,
+    /// Explicit finalized boundary; requires an opted-in analysis configuration.
+    #[arg(long, requires = "finalized_attempt")]
+    pub finalized_session: Option<String>,
+    #[arg(long, requires = "finalized_session")]
+    pub finalized_attempt: Option<String>,
     /// Explicit paid submission. Without this flag only a plan is produced.
     #[arg(long)]
     pub run: bool,
 }
 #[derive(Subcommand)]
 pub enum Command {
+    /// List versioned built-in recipes without opening a workspace or worker.
+    Recipes {
+        #[arg(long)]
+        decision: bool,
+    },
     /// Record an observation through the v2 knowledge interface.
     Observe(Narrative),
     Plan(Narrative),
@@ -473,6 +493,15 @@ fn print(mut value: Value, json_output: bool, writing: bool) -> Result<()> {
 }
 pub fn run(command: Command) -> Result<()> {
     let (base, verb, mut draft) = match command {
+        Command::Recipes { decision } => {
+            let recipes = if decision {
+                library::bundled_decision_recipes()
+            } else {
+                library::bundled_recipes()
+            };
+            println!("{}", serde_json::to_string_pretty(&recipes)?);
+            return Ok(());
+        }
         Command::Observe(a) => return narrative(a, "observe"),
         Command::Plan(a) => return narrative(a, "plan"),
         Command::Decide(a) => return narrative(a, "decide"),
@@ -648,6 +677,8 @@ fn read(a: Recall, verb: &str) -> Result<()> {
                 subject: a.subject,
                 trust: a.trust,
                 budget: a.budget,
+                derived: a.derived,
+                derived_budget: a.derived_budget,
                 cursor: a.cursor.map(|v| serde_json::from_str(&v)).transpose()?,
             },
         )?,
@@ -671,7 +702,21 @@ fn print_report(value: Value, json_output: bool) -> Result<()> {
         }
         for block in value["blocks"].as_array().ok_or("invalid report")? {
             if let Some(text) = block["text"].as_str() {
+                if block["fragment"] == 0 && block["kind"].is_string() {
+                    println!(
+                        "\n{} / {} / {}",
+                        block["kind"], block["basis"], block["stance"]
+                    );
+                }
                 print!("{text}");
+                if let Some(uncertainty) = block["uncertainty"].as_str() {
+                    println!("\nUncertainty: {uncertainty}");
+                }
+                if let Some(witnesses) = block["witnesses"].as_array() {
+                    for witness in witnesses {
+                        println!("\nSource: {}", witness["reference_request"]);
+                    }
+                }
             }
         }
         println!();
@@ -706,7 +751,23 @@ fn extract(a: Extraction) -> Result<()> {
             from: a.from.ok_or("missing --from")?,
             through: a.through.ok_or("missing --through")?,
             recipe: a.recipe,
-            pin: None,
+            pin: a
+                .pin_file
+                .as_ref()
+                .map(|path| -> Result<crate::evidence_reader::proof::Pin> {
+                    if !path.is_absolute() {
+                        return Err("pin file must be absolute".into());
+                    }
+                    Ok(serde_json::from_slice(&secret_file(path)?)?)
+                })
+                .transpose()?,
+            derived_from: a.derived_from,
+            finalized: a.finalized_session.map(|session| {
+                crate::evidence_library::proof::analysis::Finalized {
+                    session,
+                    attempt: a.finalized_attempt.expect("clap requires attempt"),
+                }
+            }),
         };
         serde_json::from_slice(
             &runtime.block_on(reader.execute(Query::ExtractPlan { selection }))?,

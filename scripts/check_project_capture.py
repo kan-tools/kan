@@ -129,12 +129,21 @@ class Mcp:
 
 
 def collect_view(client, name, args):
+    def attributed(page):
+        assert page['version'] == 'kan-mcp-content-page/2'
+        values = []
+        for entry in page['entries']:
+            entry = dict(entry)
+            if 'citation_refs' in entry:
+                entry['citations'] = [page['citation_dictionary'][key] for key in entry['citation_refs']]
+            values.append(entry)
+        return values
     first = client.call(name, args)
-    pages, entries, cursor = [first], list(first['entries']), first['next']
+    pages, entries, cursor = [first], attributed(first), first['next']
     while cursor is not None:
         assert len(pages) < 1000, 'bounded continuation count'
         page = client.call(name, {**args, 'cursor': cursor})
-        entries.extend(page['entries'])
+        entries.extend(attributed(page))
         pages.append(page)
         cursor = page['next']
     assert pages[-1]['complete_selection_view']

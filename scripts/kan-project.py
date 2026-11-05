@@ -25,7 +25,7 @@ MAX_JSON = 1024 * 1024
 MAX_EVENT = 16 * 1024 * 1024
 FIELDS = {'version', 'binary', 'project_roots', 'transcript_roots', 'runtime',
           'spool', 'writer_key', 'recipient', 'endpoint', 'reader_config',
-          'reader_key', 'services', 'timeout_seconds', 'startup_seconds'}
+          'reader_key', 'services', 'timeout_seconds', 'startup_seconds', 'consolidation'}
 CONTRACT = ('Use the existing relevant Day handoff and research packet first. '
             'Record material decisions/results once through the established trusted '
             'Day/v1 workflow; Git holds source and reports. Use Kan decoded evidence '
@@ -113,7 +113,7 @@ class Project:
         c = read_json(self.config)
         if not isinstance(c, dict) or set(c) - FIELDS or c.get('version') != 1:
             problem('unknown-config-shape', 'config')
-        required = FIELDS - {'services', 'timeout_seconds', 'startup_seconds'}
+        required = FIELDS - {'services', 'timeout_seconds', 'startup_seconds', 'consolidation'}
         if required - set(c):
             problem('missing-config-fields', 'config')
         self.c = c
@@ -134,6 +134,7 @@ class Project:
             if type(value) not in (int, float) or not 1 <= value <= 120:
                 problem('budget-must-be-1-to-120-seconds', field)
         endpoint(c['endpoint'], 'endpoint')
+        self.consolidator().policy(self)
         if not isinstance(c['recipient'], str) or len(c['recipient']) != 64:
             problem('public-recipient-hex-required', 'recipient')
         try:
@@ -149,6 +150,27 @@ class Project:
             problem('command-budget-exhausted', 'runtime')
         except OSError:
             problem('command-unavailable', 'binary')
+
+    @staticmethod
+    def consolidator():
+        spec = importlib.util.spec_from_file_location('kan_finalized', Path(__file__).with_name('kan-finalized.py'))
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+
+    @staticmethod
+    def private_json(path):
+        private(canonical(str(path), 'consolidation'), 'consolidation')
+        return read_json(path)
+
+    @staticmethod
+    def private_directory(path):
+        private(canonical(str(path), 'consolidation'), 'consolidation', True)
+
+    def process_finalized(self):
+        self.check()
+        with self.lock():
+            return self.consolidator().process(self)
 
     def check(self, cwd=None):
         selected = Path(cwd or Path.cwd()).resolve(strict=True)
@@ -258,6 +280,13 @@ class Project:
                 if drained.returncode == 0 and record['delivery']['pending'] == 0:
                     record['status'] = 'acknowledged'
                 self.event(record)
+            # Queueing has its own diagnostic outcome. It never changes the
+            # capture result and never starts inference inside a harness hook.
+            try:
+                with self.lock():
+                    record['consolidation'] = self.consolidator().queue(self, record)
+            except Exception:
+                record['consolidation'] = {'state': 'queue-unavailable', 'model_execution': 'not-performed'}
             return record
         except Exception as exc:
             record['error'] = exc.code if isinstance(exc, Problem) else type(exc).__name__
@@ -423,7 +452,7 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--config', required=True, help='explicit private project configuration')
     sub = parser.add_subparsers(dest='operation', required=True)
-    for operation in ['check', 'start', 'stop', 'health', 'claude-settings', 'hook']:
+    for operation in ['check', 'start', 'stop', 'health', 'claude-settings', 'hook', 'process-finalized']:
         sub.add_parser(operation)
     final = sub.add_parser('finalize', help='explicit marked snapshot/backfill and drain; never claims a harness SessionEnd')
     final.add_argument('--session-id', required=True)
@@ -445,7 +474,8 @@ def main(argv=None):
             print(json.dumps(value))
             return 0 if value['status'] == 'acknowledged' else 1
         value = {'check': project.check, 'start': project.start, 'stop': project.stop,
-                 'health': project.health, 'claude-settings': project.settings}[args.operation]()
+                 'health': project.health, 'claude-settings': project.settings,
+                 'process-finalized': project.process_finalized}[args.operation]()
         print(json.dumps(value))
         return 0
     except Exception as exc:

@@ -62,6 +62,35 @@ At source revision `74922b7e6fea27f33c4c77da8f2e6277c3aef215`:
 The existing trials are historical diagnostic evidence. Their changing prompts,
 resumed contexts and partial reads cannot be relabelled a clean fresh exercise.
 
+Implementation pass,2026-11-04 (runtime qualification pending):
+
+- `src/evidence_library/proof/analysis/recipes.rs` implements five versioned typed
+  candidate contracts and a visible-evidence projection. Original item ids and
+  source ranges survive exclusion of thinking/control wrappers. Shape and witness
+  validation cannot certify truth or calibrate confidence.
+- Existing jobs carry explicit worker identity, optional private local token-file
+  references and bounded prior-derivation lineage. Prior originals must also be
+  explicitly selected in the current interval; this is bounded consolidation,
+  not an automatic unbounded project crawler. `project-consolidation` currently
+  consumes selected captured statements/prior outputs; automatic selection of
+  authored subject graphs remains a separate selector refinement.
+- Reports lead with structured statements and exact decoded-item locators.
+  Typed content-page version2 leads with useful text/tool data and uses a
+  page-local citation dictionary. Original indices/ranges, loss states and the
+  separate full-evidence API remain. Recall binds an explicit compatibility
+  evaluation context and appends explicitly selected derived supplements after
+  authored rows under a separate budget.
+- `scripts/kan-finalized.py` supplies an opt-in metadata-only finalization queue
+  and bounded explicit drain, using existing analysis jobs. Hooks never execute
+  inference. Signed attempt discovery freezes inputs; duplicate scheduling and
+  ambiguous outcomes never automatically reissue the request. No daemon, new
+  credential, plaintext source cache or production configuration is installed.
+- `docs/V2-CONSOLIDATION.md` records interfaces and boundaries. The new actual
+  HTTP regression covers all five flows, excluded inputs, source routes,
+  two-level lineage, duplicate finalization, authored priority, offline report
+  reading and revocation. These Rust checks await remote execution; local
+  lightweight controls do not establish that they compiled or passed.
+
 ## Requirements
 
 - REQ-1: Preserve scoped subjects, immutable evidence/artifacts, attributed typed
@@ -233,8 +262,10 @@ show candidates separately under an explicit derivation policy.
 ### Opinionated recipe pack
 
 Each recipe is a bundle of selector, instructions, output schema, renderer,
-validation and execution limits. These are proposed contracts, not new bundled
-code already present in `src/evidence_library/proof/analysis.rs`.
+validation and execution limits. The initial typed pack is now implemented
+beside `src/evidence_library/proof/analysis.rs`; full runtime and fresh-agent
+qualification remain pending. The explicit pinned interval selector is shared;
+flow-specific automatic subject-graph selection is not claimed implemented.
 
 | Flow | Required result and prompt stance |
 |---|---|

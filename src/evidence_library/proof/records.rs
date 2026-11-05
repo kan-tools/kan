@@ -16,6 +16,13 @@ use std::{
     collections::BTreeSet,
     time::{SystemTime, UNIX_EPOCH},
 };
+pub(super) struct RecallOptions {
+    pub trust: Vec<String>,
+    pub budget: usize,
+    pub derived: Vec<String>,
+    pub derived_budget: usize,
+    pub cursor: Option<Value>,
+}
 
 #[derive(Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -618,11 +625,20 @@ impl Readers {
         source: String,
         verb: String,
         subject: Option<String>,
-        trusted: Vec<String>,
-        budget: usize,
-        cursor: Option<Value>,
+        options: RecallOptions,
     ) -> Result<Value, ContentError> {
-        if (verb == "context" && subject.is_some()) || (verb != "context" && budget != 1024) {
+        let RecallOptions {
+            trust: trusted,
+            budget,
+            derived,
+            derived_budget,
+            cursor,
+        } = options;
+        if (verb == "context" && subject.is_some())
+            || (verb != "context" && budget != 1024)
+            || derived.len() > 8
+            || derived_budget > 1024
+        {
             return Err(Failure::Invalid.into());
         }
         if let Some(subject) = &subject {
@@ -635,6 +651,14 @@ impl Readers {
         let trust = record_trust(&trusted, &self.workspace()?.author(), &history)?;
         let excluded = fold::excluded_by_trust(&history, &trust);
         let view = fold::fold(history.clone(), &trust);
+        use sha2::{Digest, Sha256};
+        let evaluation = json!({"version":"kan-compat-evaluation/1","source":source,
+            "claims":history.iter().map(|(id,_)|id.to_string()).collect::<Vec<_>>(),"trust":crate::json::TrustJson::with_empty_reason(&trust,None),
+            "normalizer":"canonical-v1-fold/1","relations":"explicit-v1-witnesses/1","derivations":derived,
+            "query":{"verb":verb,"subject":subject},"unsupported":["weighted trust semantics","higher identity witnesses","computed Git ancestry"]});
+        let view_id = evidence_service::hex(&Sha256::digest(
+            serde_json::to_vec(&evaluation).map_err(|_| Failure::Corrupt)?,
+        ));
         let superseded: BTreeSet<_> = view
             .classes
             .iter()
@@ -742,11 +766,16 @@ impl Readers {
                 }
             }
         }
+        let (supplement, omitted) = self
+            .derived_supplement(&source, subject.as_deref(), &derived, derived_budget)
+            .await?;
+        entries.extend(supplement);
+        value["evaluation"] = json!({"id":view_id,"version":"kan-compat-evaluation/1","normalizer":"canonical-v1-fold/1","relations":"explicit-v1-witnesses/1","derived_reports":derived,"derived_budget":derived_budget,"derived_omitted":omitted,"authority":"Derived supplements do not change this authored fold, trust or identity. Inspect authored witnesses and retained report lineage separately."});
         value["entries"] = json!(entries);
         crate::evidence_library::mcp::pages::list(
             value,
             "entries",
-            &json!({"source":source,"verb":verb,"subject":subject,"trust":trusted,"budget":budget}),
+            &json!({"source":source,"verb":verb,"subject":subject,"trust":trusted,"budget":budget,"derived":derived,"derived_budget":derived_budget}),
             cursor,
         )
         .map_err(|e| match e {

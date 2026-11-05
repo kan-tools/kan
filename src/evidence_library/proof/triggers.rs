@@ -60,6 +60,8 @@ impl Readers {
                     retry_of: None,
                     trigger_annotation: Some(id.into()),
                     decode: false,
+                    derived_from: Vec::new(),
+                    finalized: None,
                 };
                 let result = async {
                     let preview = self.analysis_preview(job.clone()).await?;

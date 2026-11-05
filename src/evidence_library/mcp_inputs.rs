@@ -106,6 +106,9 @@ pub(super) struct ReportReference {
     /// whose text or tool arguments intersect this input, with exact citations.
     #[schemars(range(min = 0, max = 7))]
     pub input: usize,
+    /// Optional decoded item locator returned with a structured statement.
+    /// This opens its exact item inside the same frozen manifest.
+    pub excerpt: Option<crate::evidence_library::proof::reports::Excerpt>,
 }
 #[derive(Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -131,6 +134,12 @@ impl Reference {
                     return Err(invalid(
                         "arguments.report.input",
                         "an input number from 0 to 7",
+                    ));
+                }
+                if report.excerpt.as_ref().is_some_and(|e| !e.valid()) {
+                    return Err(invalid(
+                        "arguments.report.excerpt",
+                        "a returned bounded group/direction/item/part locator",
                     ));
                 }
                 Ok(())
@@ -252,6 +261,12 @@ pub(super) struct Recall {
     pub trust: Vec<String>,
     #[serde(default = "budget")]
     pub budget: usize,
+    /// Retained report ids to append as labelled derived suggestions, after all
+    /// authored rows. No inference occurs; each source is authorized again.
+    #[serde(default)]
+    pub derived: Vec<String>,
+    #[serde(default = "derived_budget")]
+    pub derived_budget: usize,
     #[schemars(with = "Option<std::collections::BTreeMap<String,Value>>")]
     pub cursor: Option<Value>,
 }
@@ -260,6 +275,9 @@ fn show() -> String {
 }
 fn budget() -> usize {
     1024
+}
+fn derived_budget() -> usize {
+    256
 }
 #[derive(Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]

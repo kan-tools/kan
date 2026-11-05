@@ -18,6 +18,39 @@ pub struct Selection {
     pub recipe: String,
     #[schemars(with = "Option<std::collections::BTreeMap<String,Value>>")]
     pub pin: Option<Pin>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub derived_from: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub finalized: Option<analysis::Finalized>,
+}
+#[derive(Clone, Deserialize, Serialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct Excerpt {
+    pub group: usize,
+    pub direction: String,
+    pub item: usize,
+    pub part: String,
+}
+impl Excerpt {
+    pub(crate) fn valid(&self) -> bool {
+        self.group < 64
+            && self.item < 100_000
+            && matches!(self.direction.as_str(), "request" | "response")
+            && matches!(self.part.as_str(), "text" | "tool")
+    }
+    fn from_unit(value: &str) -> Option<Self> {
+        let parts: Vec<_> = value.split('/').collect();
+        if parts.len() != 4 {
+            return None;
+        }
+        let value = Self {
+            group: parts[0].strip_prefix('g')?.parse().ok()?,
+            direction: parts[1].into(),
+            item: parts[2].strip_prefix('i')?.parse().ok()?,
+            part: parts[3].into(),
+        };
+        value.valid().then_some(value)
+    }
 }
 fn fragments(text: &str) -> Vec<String> {
     let mut out = Vec::new();
@@ -36,7 +69,9 @@ fn fragments(text: &str) -> Vec<String> {
 fn report_page(mut value: Value, cursor: Option<Value>) -> Result<Value, ContentError> {
     let query = json!({"id": value["id"]});
     let mut rows = Vec::new();
-    for (field, kind) in [("inputs", "input"), ("blocks", "block")] {
+    // Useful report text first. Full input manifests remain an explicit tail,
+    // rather than making an agent read long URIs before the first statement.
+    for (field, kind) in [("blocks", "block"), ("inputs", "input")] {
         let values = value
             .as_object_mut()
             .and_then(|m| m.remove(field))
@@ -75,6 +110,73 @@ fn report_page(mut value: Value, cursor: Option<Value>) -> Result<Value, Content
     Ok(page)
 }
 impl Readers {
+    /// Derived material has its own budget and never enters the authored fold.
+    /// Callers append these rows AFTER all authored rows before pagination.
+    pub(super) async fn derived_supplement(
+        &self,
+        source: &str,
+        subject: Option<&str>,
+        ids: &[String],
+        budget: usize,
+    ) -> Result<(Vec<Value>, usize), ContentError> {
+        use crate::context::TokenEstimator;
+        let estimator = crate::context::TiktokenEstimator::cl100k();
+        let mut remaining = budget;
+        let mut rows = Vec::new();
+        let mut omitted = 0;
+        let mut seen = std::collections::BTreeSet::new();
+        for id in ids {
+            if id.len() != 64 || crate::evidence_service::unhex(id, 32).is_err() || !seen.insert(id)
+            {
+                return Err(Failure::Invalid.into());
+            }
+            let job = self
+                .workspace()?
+                .get("analysis-job", id)?
+                .ok_or(Failure::AccessLimited)?;
+            let draft: analysis::Draft =
+                serde_json::from_value(job["draft"].clone()).map_err(|_| Failure::Corrupt)?;
+            // Recheck ALL dependency sources, not just the collection being
+            // recalled; a cached result is never a cached grant.
+            self.report_inputs(&draft, id).await?;
+            if !draft.cites.iter().any(|c| c.source == source) {
+                return Err(Failure::Invalid.into());
+            }
+            let result = self
+                .workspace()?
+                .get("analysis-result", id)?
+                .ok_or(Failure::Missing)?;
+            let Some(candidates) = result["consolidation"]["candidates"]
+                .as_array()
+                .filter(|_| result["state"] == "succeeded")
+            else {
+                rows.push(json!({"type":"derived-state","report":id,"state":"No validated structured consolidation; inspect the retained report explicitly."}));
+                continue;
+            };
+            for (n, candidate) in candidates.iter().enumerate() {
+                if subject.is_some_and(|label| {
+                    !candidate["subjects"].as_array().is_some_and(|ss| {
+                        ss.iter()
+                            .any(|s| s["source"] == source && s["label"] == label)
+                    })
+                }) {
+                    continue;
+                }
+                let row = json!({"type":"derived-supplement","report":id,"candidate":n,"statement":candidate,
+                    "recipe":job["preview"]["recipe"]["id"],"revision":job["preview"]["recipe"]["revision"],"model":result["parsed"]["model"],
+                    "authority":"Unpromoted model-derived suggestion; may disagree with authored claims. Recorded acceptance is not authored acceptance by this viewer.","report_request":{"id":id}});
+                let tokens =
+                    estimator.estimate(&serde_json::to_string(&row).map_err(|_| Failure::Corrupt)?);
+                if tokens > remaining {
+                    omitted += 1;
+                    continue;
+                }
+                remaining -= tokens;
+                rows.push(row);
+            }
+        }
+        Ok((rows, omitted))
+    }
     async fn extract_draft(
         &self,
         mut selection: Selection,
@@ -135,6 +237,8 @@ impl Readers {
                 retry_of: None,
                 trigger_annotation: None,
                 decode: true,
+                derived_from: selection.derived_from,
+                finalized: selection.finalized,
             },
         ))
     }
@@ -184,7 +288,7 @@ impl Readers {
     }
     // A report handle is a locator only: rebind EVERY source under current
     // access on every use, exactly as the report view does, without an Engine.
-    async fn report_inputs(
+    async fn direct_report_inputs(
         &self,
         draft: &analysis::Draft,
         id: &str,
@@ -218,6 +322,60 @@ impl Readers {
             inputs.push(json!({"input":n,"source":cite.source,"uri":reference["uri"],"availability":availability,"reference_request":{"report":{"id":id,"input":n}}}));
         }
         Ok(inputs)
+    }
+    pub(super) async fn report_dependency_access(
+        &self,
+        draft: &analysis::Draft,
+        id: &str,
+    ) -> Result<Vec<Value>, ContentError> {
+        let mut pending = vec![(id.to_owned(), draft.clone())];
+        let mut seen = std::collections::BTreeSet::new();
+        let mut root = None;
+        while let Some((key, draft)) = pending.pop() {
+            if !seen.insert(key.clone()) {
+                continue;
+            }
+            if seen.len() > 64 || draft.derived_from.len() > 8 {
+                return Err(ContentError::Limited);
+            }
+            let inputs = self.direct_report_inputs(&draft, &key).await?;
+            if key == id {
+                root = Some(inputs);
+            }
+            for parent in &draft.derived_from {
+                if parent.len() != 64 || crate::evidence_service::unhex(parent, 32).is_err() {
+                    return Err(Failure::Corrupt.into());
+                }
+                let job = self
+                    .workspace()?
+                    .get("analysis-job", parent)?
+                    .ok_or(Failure::AccessLimited)?;
+                let result = self
+                    .workspace()?
+                    .get("analysis-result", parent)?
+                    .ok_or(Failure::AccessLimited)?;
+                if result["state"] != "succeeded" {
+                    return Err(Failure::AccessLimited.into());
+                }
+                pending.push((
+                    parent.clone(),
+                    serde_json::from_value(job["draft"].clone()).map_err(|_| Failure::Corrupt)?,
+                ));
+            }
+        }
+        root.ok_or(Failure::Corrupt.into())
+    }
+    async fn report_inputs(
+        &self,
+        draft: &analysis::Draft,
+        id: &str,
+    ) -> Result<Vec<Value>, ContentError> {
+        tokio::time::timeout(
+            std::time::Duration::from_secs(120),
+            self.report_dependency_access(draft, id),
+        )
+        .await
+        .map_err(|_| ContentError::Limited)?
     }
     pub(super) async fn report_input(
         &self,
@@ -297,7 +455,58 @@ impl Readers {
         let output = workspace.get("analysis-result", &id)?;
         let mut blocks = Vec::new();
         if let Some(result) = &output {
-            if let Some(content) = result["parsed"]["content"].as_array() {
+            if result["state"] == "succeeded" && result["consolidation"].is_object() {
+                let saved = workspace
+                    .get("analysis-input", &id)?
+                    .ok_or(Failure::Corrupt)?;
+                let units = saved["projection"][0]["units"]
+                    .as_array()
+                    .ok_or(Failure::Corrupt)?;
+                for (n, candidate) in result["consolidation"]["candidates"]
+                    .as_array()
+                    .ok_or(Failure::Corrupt)?
+                    .iter()
+                    .enumerate()
+                {
+                    let mut witnesses = Vec::new();
+                    for key in candidate["evidence"].as_array().ok_or(Failure::Corrupt)? {
+                        let key = key.as_str().ok_or(Failure::Corrupt)?;
+                        let unit = units
+                            .iter()
+                            .find(|u| u["id"] == key)
+                            .ok_or(Failure::Corrupt)?;
+                        let excerpt = Excerpt::from_unit(key).ok_or(Failure::Corrupt)?;
+                        let input = unit["citations"][0]["input"]
+                            .as_str()
+                            .and_then(|s| s.parse::<usize>().ok())
+                            .ok_or(Failure::Corrupt)?;
+                        if input >= draft.cites.len() {
+                            return Err(Failure::Corrupt.into());
+                        }
+                        witnesses.push(json!({"unit":key,"reference_request":{"report":{"id":id,"input":input,"excerpt":excerpt}},"source_ranges":unit["citations"],"coarse":unit["coarse"]}));
+                    }
+                    for (index, text) in
+                        fragments(candidate["text"].as_str().ok_or(Failure::Corrupt)?)
+                            .into_iter()
+                            .enumerate()
+                    {
+                        blocks.push(json!({"block":n,"fragment":index,"text":text,"kind":candidate["kind"],"basis":candidate["basis"],"stance":candidate["stance"],"speaker":candidate["speaker"],"subjects":candidate["subjects"],"relation":candidate["relation"],"uncertainty":candidate["uncertainty"],"witnesses":witnesses}));
+                    }
+                }
+                for (n, text) in result["consolidation"]["limitations"]
+                    .as_array()
+                    .ok_or(Failure::Corrupt)?
+                    .iter()
+                    .enumerate()
+                {
+                    for (index, text) in fragments(text.as_str().ok_or(Failure::Corrupt)?)
+                        .into_iter()
+                        .enumerate()
+                    {
+                        blocks.push(json!({"block":format!("limitation/{n}"),"fragment":index,"kind":"limitation","text":text}));
+                    }
+                }
+            } else if let Some(content) = result["parsed"]["content"].as_array() {
                 for (n, part) in content.iter().enumerate() {
                     if let Some(text) = part["text"].as_str() {
                         for (index, fragment) in fragments(text).into_iter().enumerate() {
@@ -312,7 +521,12 @@ impl Readers {
         if blocks.is_empty() {
             blocks.push(json!({"state":if output.is_some() {"No readable model text; inspect retained job result and failure state."} else {"No result yet; pending or interrupted. Report reading never retries a provider call."}}));
         }
-        let value = json!({"version":"kan-derived-report/1","id":id,"recipe":job["preview"]["recipe"],"requested_model":job["preview"]["model"],"returned_model":output.as_ref().map(|o|o["parsed"]["model"].clone()),"state":output.as_ref().map_or(json!("pending-or-interrupted; inspect job status"),|o|o["state"].clone()),"blocks":blocks,"inputs":inputs,"usage":output.as_ref().map(|o|o["parsed"]["usage"].clone()),"usage_state":if output.as_ref().is_some_and(|o|!o["parsed"]["usage"].is_null()) {"provider-reported; not a billing receipt"} else {"unavailable"},"coverage":"Only the exact selected input manifest. Model claims and citations need review; this is not complete capture or an accepted decision.","promotion":"not-performed; explicit authored operation required"});
+        let mut recipe = job["preview"]["recipe"].clone();
+        if let Some(map) = recipe.as_object_mut() {
+            map.remove("instructions");
+            map.remove("questions");
+        }
+        let value = json!({"version":"kan-derived-report/1","id":id,"recipe":recipe,"worker":job["preview"]["worker"],"requested_model":job["preview"]["model"],"returned_model":output.as_ref().map(|o|o["parsed"]["model"].clone()),"state":output.as_ref().map_or(json!("pending-or-interrupted; inspect job status"),|o|o["state"].clone()),"blocks":blocks,"inputs":inputs,"usage":output.as_ref().map(|o|o["parsed"]["usage"].clone()),"usage_state":if output.as_ref().is_some_and(|o|!o["parsed"]["usage"].is_null()) {"provider-reported; not a billing receipt"} else {"unavailable"},"coverage":"Only the exact selected input manifest. Model claims and citations need review; this is not complete capture or an accepted decision.","promotion":"not-performed; explicit authored operation required"});
         report_page(value, cursor)
     }
 }

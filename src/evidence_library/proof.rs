@@ -220,10 +220,23 @@ impl Readers {
                 subject,
                 trust,
                 budget,
+                derived,
+                derived_budget,
                 cursor,
             } => {
-                self.recall(source, verb, subject, trust, budget, cursor)
-                    .await?
+                self.recall(
+                    source,
+                    verb,
+                    subject,
+                    records::RecallOptions {
+                        trust,
+                        budget,
+                        derived,
+                        derived_budget,
+                        cursor,
+                    },
+                )
+                .await?
             }
             Query::AnnotationDelivery { id } => self.annotation_delivery(&id).await?,
             Query::AnnotationQueue { id, destination } => {

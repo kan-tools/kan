@@ -9185,6 +9185,219 @@ async fn bundled_extraction_decodes_tool_inputs_and_report_read_does_not_call_or
 }
 
 #[tokio::test]
+async fn structured_consolidation_preserves_visible_witnesses_finalization_idempotency_and_authored_priority(
+) {
+    use http_body_util::{BodyExt, Full};
+    use hyper::{body::Bytes, Response};
+    let archive = tempfile::tempdir().unwrap();
+    let local = private_workspace_directory();
+    let body = serde_json::to_vec(&json!({"system":"PRIVATE CONTROL MARKER","messages":[
+        {"role":"user","content":"Adopt JSON for interchange. Recorded reason: interoperability."},
+        {"role":"assistant","content":[{"type":"thinking","thinking":"PRIVATE REASONING MARKER"},
+            {"type":"tool_use","id":"write","name":"Write","input":{"file_path":"DECISION.md","content":"é🙂 observed artifact, not proof of tool completion"}}]}
+    ]})).unwrap();
+    let f = fixture_requests(archive.path(), Profile::Admitted, |n, a, p| {
+        captured_request_body(n, a, p, &body)
+    });
+    let server = Server::start(&f).await;
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let endpoint = format!("http://{}/v1/messages", listener.local_addr().unwrap());
+    let requests = Arc::new(std::sync::Mutex::new(Vec::<Value>::new()));
+    let seen = requests.clone();
+    let provider = tokio::spawn(async move {
+        loop {
+            let (stream, _) = listener.accept().await.unwrap();
+            let seen = seen.clone();
+            tokio::spawn(async move {
+                let svc = hyper::service::service_fn(
+                    move |req: hyper::Request<hyper::body::Incoming>| {
+                        let seen = seen.clone();
+                        async move {
+                            let bytes = req.into_body().collect().await.unwrap().to_bytes();
+                            let request: Value = serde_json::from_slice(&bytes).unwrap();
+                            let prompt: Value = serde_json::from_str(
+                                request["messages"][0]["content"].as_str().unwrap(),
+                            )
+                            .unwrap();
+                            let flow = [
+                                "session-brief",
+                                "decisions-and-questions",
+                                "project-consolidation",
+                                "handoff-context",
+                                "relation-suggestions",
+                            ]
+                            .into_iter()
+                            .find(|id| {
+                                request["system"]
+                                    .as_str()
+                                    .unwrap()
+                                    .contains(&format!("Flow: {id}."))
+                            })
+                            .unwrap();
+                            let unit = prompt[0]["units"]
+                                .as_array()
+                                .unwrap()
+                                .iter()
+                                .find(|u| u["role"] == "user")
+                                .unwrap();
+                            let mut c = json!({"kind":"decision","text":"Adopt JSON for interchange.","basis":"explicit","stance":"accepted","speaker":"recorded user","subjects":[{"source":unit["source"],"label":"project/test"}],"relation":null,"evidence":[unit["id"]],"uncertainty":"An explicit source statement; not independent verification or authored acceptance by this viewer."});
+                            if flow == "relation-suggestions" {
+                                c["kind"] = json!("relation");
+                                c["basis"] = json!("inferred");
+                                c["stance"] = json!("proposed");
+                                c["relation"] = json!({"from":{"source":unit["source"],"label":"project/test"},"to":{"source":unit["source"],"label":"format/json"},"kind":"depends-on"});
+                            }
+                            let output = json!({"version":"kan-consolidation/1","flow":flow,"candidates":[c],"limitations":["Selected observations only; no complete-capture or test-success claim."]});
+                            seen.lock().unwrap().push(request);
+                            Ok::<_,std::convert::Infallible>(Response::new(Full::new(Bytes::from(serde_json::to_vec(&json!({"type":"message","model":"synthetic-structured","content":[{"type":"text","text":output.to_string()}]})).unwrap()))))
+                        }
+                    },
+                );
+                let _ = hyper::server::conn::http1::Builder::new()
+                    .serve_connection(hyper_util::rt::TokioIo::new(stream), svc)
+                    .await;
+            });
+        }
+    });
+    let base = || {
+        kan::evidence_library::Readers::new(None, vec![server.client(&f)])
+            .unwrap()
+            .with_workspace(
+                kan::evidence_workspace::Workspace::open(
+                    &local.path().join("structured.sqlite"),
+                    identity(6),
+                    [98; 32],
+                )
+                .unwrap(),
+            )
+    };
+    let scope = Ui::start(base()).await;
+    let source = scope.call(json!({"action":"catalog"}), 200).await["scopes"][0]["id"].clone();
+    scope.stop().await;
+    let ui = Ui::start(base().with_analysis(serde_json::from_value(json!({"endpoint":endpoint,"token":"synthetic-structured-provider-token-1234","model":"requested-structured","sources":[source],"max_input_bytes":100000,"max_output_tokens":1024,"max_jobs":12,"finalization_recipes":["session-brief"]})).unwrap()).unwrap()).await;
+    ui.call(json!({"action":"record","draft":{"source":source,"verb":"decide","subject":"project/test","text":"Authored position disagrees with the derived JSON candidate."}}),200).await;
+    let mut ids = Vec::new();
+    for flow in [
+        "session-brief",
+        "decisions-and-questions",
+        "project-consolidation",
+        "handoff-context",
+        "relation-suggestions",
+    ] {
+        let plan = ui.call(json!({"action":"extract-plan","selection":{"source":source,"from":1,"through":3,"recipe":flow}}),200).await;
+        assert!(plan["projection"]["units"].as_u64().unwrap() >= 2);
+        let result = ui.call(json!({"action":"extract-run","selection":plan["selection"],"preview":plan["digest"],"nonce":plan["nonce"],"wait":true}),200).await;
+        assert_eq!(result["state"], "succeeded");
+        ids.push(result["id"].clone());
+        let page = ui
+            .call(json!({"action":"report","id":result["id"]}), 200)
+            .await;
+        assert_eq!(page["blocks"][0]["text"], "Adopt JSON for interchange.");
+        assert_eq!(
+            page["blocks"][0]["witnesses"][0]["reference_request"]["report"]["id"],
+            result["id"]
+        );
+        assert!(
+            page["blocks"][0]["witnesses"][0]["reference_request"]["report"]["excerpt"].is_object()
+        );
+    }
+    {
+        let all = requests.lock().unwrap();
+        assert_eq!(all.len(), 5);
+        for request in all.iter() {
+            let prompt = request["messages"][0]["content"].as_str().unwrap();
+            for forbidden in [
+                "PRIVATE CONTROL MARKER",
+                "PRIVATE REASONING MARKER",
+                "bytes_hex",
+                "event_json",
+                "parsed_json",
+            ] {
+                assert!(!prompt.contains(forbidden), "{forbidden}");
+            }
+            assert!(prompt.contains("observed artifact"));
+        }
+    }
+    let parent_plan = ui.call(json!({"action":"extract-plan","selection":{"source":source,"from":1,"through":3,"recipe":"project-consolidation","derived_from":[ids[0]]}}),200).await;
+    let child = ui.call(json!({"action":"extract-run","selection":parent_plan["selection"],"preview":parent_plan["digest"],"nonce":parent_plan["nonce"],"wait":true}),200).await;
+    assert_eq!(child["state"], "succeeded");
+    let job = ui
+        .call(json!({"action":"analysis-job","id":child["id"]}), 200)
+        .await;
+    assert_eq!(job["job"]["draft"]["derived_from"], json!([ids[0]]));
+    assert!(
+        requests.lock().unwrap().last().unwrap()["messages"][0]["content"]
+            .as_str()
+            .unwrap()
+            .contains("prior_derivations")
+    );
+    let finalized = json!({"session":"synthetic-session","attempt":"synthetic-finalized-attempt"});
+    let mut final_id = Value::Null;
+    for _ in 0..2 {
+        let p = ui.call(json!({"action":"extract-plan","selection":{"source":source,"from":1,"through":3,"recipe":"session-brief","finalized":finalized}}),200).await;
+        let r = ui.call(json!({"action":"extract-run","selection":p["selection"],"preview":p["digest"],"nonce":p["nonce"],"wait":true}),200).await;
+        assert_eq!(r["state"], "succeeded");
+        if final_id.is_null() {
+            final_id = r["id"].clone();
+        } else {
+            assert_eq!(r["id"], final_id);
+        }
+    }
+    assert_eq!(requests.lock().unwrap().len(), 7);
+    let recall = ui.call(json!({"action":"recall","source":source,"verb":"show","subject":"project/test","derived":[ids[0]],"derived_budget":1024}),200).await;
+    let entries = recall["entries"].as_array().unwrap();
+    let derived = entries
+        .iter()
+        .position(|e| e["type"] == "derived-supplement")
+        .unwrap();
+    assert!(entries[..derived].iter().any(|e| e["type"] == "claim"));
+    assert!(entries[derived..]
+        .iter()
+        .all(|e| e["type"] == "derived-supplement"));
+    let same = ui.call(json!({"action":"recall","source":source,"verb":"show","subject":"project/test","derived":[ids[0]],"derived_budget":0}),200).await;
+    assert_eq!(recall["evaluation"]["id"], same["evaluation"]["id"]);
+    assert_eq!(same["evaluation"]["derived_omitted"], 1);
+    assert!(!same["entries"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|e| e["type"] == "derived-supplement"));
+    ui.stop().await;
+    provider.abort();
+    // Provider and Engine absent: retained results and exact source routes live.
+    let ui = Ui::start(base()).await;
+    let page = ui
+        .call(json!({"action":"report","id":child["id"]}), 200)
+        .await;
+    assert_eq!(page["blocks"][0]["text"], "Adopt JSON for interchange.");
+    let locator = &page["blocks"][0]["witnesses"][0]["reference_request"]["report"];
+    let resolved = ui
+        .call(
+            json!({"action":"report-input","id":locator["id"],"input":locator["input"]}),
+            200,
+        )
+        .await;
+    let content = ui.call(resolved["content_request"].clone(), 200).await;
+    assert!(content
+        .to_string()
+        .contains("Recorded reason: interoperability"));
+    server
+        .service
+        .lock()
+        .unwrap()
+        .replace_grants(vec![])
+        .unwrap();
+    ui.call(json!({"action":"report","id":child["id"]}), 403)
+        .await;
+    ui.call(
+        json!({"action":"recall","source":source,"verb":"show","derived":[ids[0]]}),
+        403,
+    )
+    .await;
+    ui.stop().await;
+}
+
+#[tokio::test]
 async fn uncited_typed_record_queues_exactly_and_sender_still_requires_collection_custody() {
     let archive = tempfile::tempdir().unwrap();
     let local = private_workspace_directory();

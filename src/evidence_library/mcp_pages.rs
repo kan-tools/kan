@@ -244,11 +244,46 @@ fn report_readable_inputs(content: &Value) -> Result<Vec<usize>, Error> {
     }
     Ok(counts)
 }
+fn compact_citations(page: &mut Value) -> Result<(), Error> {
+    let mut dictionary = page["citation_dictionary"]
+        .as_object()
+        .cloned()
+        .ok_or(Error::Corrupt)?;
+    for entry in page["entries"].as_array_mut().ok_or(Error::Corrupt)? {
+        let Some(values) = entry
+            .as_object_mut()
+            .ok_or(Error::Corrupt)?
+            .remove("citations")
+        else {
+            continue;
+        };
+        let mut refs = Vec::new();
+        for cite in values.as_array().ok_or(Error::Corrupt)? {
+            let id = match dictionary
+                .iter()
+                .find(|(_, v)| *v == cite)
+                .map(|(k, _)| k.clone())
+            {
+                Some(id) => id,
+                None => {
+                    let id = format!("c{}", dictionary.len());
+                    dictionary.insert(id.clone(), cite.clone());
+                    id
+                }
+            };
+            refs.push(id);
+        }
+        entry["citation_refs"] = json!(refs);
+    }
+    page["citation_dictionary"] = json!(dictionary);
+    Ok(())
+}
 fn content_rows<'a>(
     content: &'a Value,
     source: &'a str,
     selection: usize,
     focus: Option<usize>,
+    excerpt: Option<&crate::evidence_library::proof::reports::Excerpt>,
     rows: &mut Vec<Row<'a>>,
     hash: &mut Sha256,
 ) -> Result<(), Error> {
@@ -298,6 +333,11 @@ fn content_rows<'a>(
                 .count();
             rows.push(Row { value:json!({"type":"stream-state","context":context,"direction":direction,"state":fields(stream,&["items","citation_sets","parsed_json"])?,"nontext_protocol_items_in_audit":omitted}),text:None,attribution:None });
             for (index, item) in array(stream, "items")?.iter().enumerate() {
+                if excerpt.is_some_and(|e| {
+                    e.group != group_index || e.direction != direction || e.item != index
+                }) {
+                    continue;
+                }
                 // Protocol/context wrappers often duplicate a whole JSONL event.
                 // Preserve their count and audit availability, not empty rows
                 // before every readable child. Malformed/unsupported states stay.
@@ -319,13 +359,18 @@ fn content_rows<'a>(
                         continue;
                     }
                 }
-                rows.push(Row {
+                if excerpt.is_none_or(|e| e.part == "text") {
+                    rows.push(Row {
                     value:json!({"type":"item","context":context,"direction":direction,"item_index":index,
                         "item":fields(item,&["text","event_json","tool"])?,"tool_input_follows":!item["tool"].is_null()}),
                     text:item["text"].as_str().map(std::borrow::Cow::Borrowed),
                     attribution:Some(Attribution::Item{content,stream,item,source,tool:false}),
                 });
-                if let Some(text) = item["tool"]["json"].as_str() {
+                }
+                if let Some(text) = item["tool"]["json"]
+                    .as_str()
+                    .filter(|_| excerpt.is_none_or(|e| e.part == "tool"))
+                {
                     rows.push(Row {
                         value:json!({"type":"tool-input","context":context,"direction":direction,"item_index":index,
                             "item":{"kind":"tool-input-json","region":item["tool"]["region"],"coarse":item["coarse"]},
@@ -372,6 +417,15 @@ pub(in crate::evidence_library) fn content(
     hash.update(serde_json::to_vec(query).map_err(|_| Error::Corrupt)?);
     hash.update(serde_json::to_vec(&extra).map_err(|_| Error::Corrupt)?);
     let mut rows = Vec::new();
+    let excerpt: Option<crate::evidence_library::proof::reports::Excerpt> =
+        if extra["excerpt"].is_object() {
+            Some(serde_json::from_value(extra["excerpt"].clone()).map_err(|_| Error::Cursor)?)
+        } else {
+            None
+        };
+    if excerpt.as_ref().is_some_and(|e| !e.valid()) {
+        return Err(Error::Cursor);
+    }
     let focus = if extra["report_selection"].is_object() {
         Some(
             extra["report_selection"]["input"]
@@ -383,7 +437,15 @@ pub(in crate::evidence_library) fn content(
         None
     };
     if let Some(source) = source {
-        content_rows(value, source, 0, focus, &mut rows, &mut hash)?;
+        content_rows(
+            value,
+            source,
+            0,
+            focus,
+            excerpt.as_ref(),
+            &mut rows,
+            &mut hash,
+        )?;
     } else {
         for (index, attempt) in array(value, "attempts")?.iter().enumerate() {
             let source = attempt["source"].as_str().ok_or(Error::Corrupt)?;
@@ -393,11 +455,19 @@ pub(in crate::evidence_library) fn content(
                 source,
                 index,
                 focus,
+                excerpt.as_ref(),
                 &mut rows,
                 &mut hash,
             )?;
         }
     }
+    if excerpt.is_some() && !rows.iter().any(|r| r.text.is_some()) {
+        return Err(Error::Cursor);
+    }
+    // Semantic disclosure: useful decoded text/tool data precedes structural
+    // diagnostics. Stable sorting keeps original indices and every loss row;
+    // full selected evidence inspection remains available in the advanced API.
+    rows.sort_by_key(|r| r.text.is_none());
     for row in &rows {
         let metadata = serde_json::to_vec(&row.value).map_err(|_| Error::Corrupt)?;
         hash.update(metadata.len().to_be_bytes());
@@ -413,10 +483,10 @@ pub(in crate::evidence_library) fn content(
     }
     let binding = crate::evidence_service::hex(&hash.finalize());
     let (mut index, mut offset) = position(cursor, &binding, rows.len())?;
-    let mut page = json!({"version":"kan-mcp-content-page/1","entries":[],"next":null,
+    let mut page = json!({"version":"kan-mcp-content-page/2","entries":[],"citation_dictionary":{},"next":null,
         "coverage":value["coverage"],"identity":value.get("identity"),"reference":extra.get("reference"),"uri":extra.get("uri"),
-        "presentation":"Bounded decoded view only. event_json, parsed_json, raw per-frame metadata remain in the advanced shared audit API. Text and tool-input JSON fragments retain enclosing source attribution, not exact JSON token attribution.",
-        "complete_selection_view":false});
+        "presentation":"Text first. Each entry's citation_refs resolves in THIS page's citation_dictionary, retaining original URI, exact enclosing range and coarse flag. event_json, parsed_json and raw frame metadata remain in the advanced shared audit API. Attribution is enclosing, not exact JSON tokens.",
+        "complete_selection_view":false,"view_id":binding,"disclosure":"excerpts-first; diagnostics follow; full original evidence remains available through the shared audit API"});
     if extra["report_selection"].is_object() {
         page["report_selection"] = extra["report_selection"].clone();
     }
@@ -493,10 +563,12 @@ pub(in crate::evidence_library) fn content(
             } else {
                 (index, end)
             };
+            let before = page.clone();
             page["entries"]
                 .as_array_mut()
                 .ok_or(Error::Corrupt)?
                 .push(entry);
+            compact_citations(&mut page)?;
             page["next"] = next(&binding, following, at, rows.len());
             page["complete_selection_view"] = json!(following == rows.len());
             if size(&page)? + 256 <= LIMIT {
@@ -504,7 +576,7 @@ pub(in crate::evidence_library) fn content(
                 offset = at;
                 break;
             }
-            page["entries"].as_array_mut().ok_or(Error::Corrupt)?.pop();
+            page = before;
             if !page["entries"].as_array().ok_or(Error::Corrupt)?.is_empty() {
                 page["next"] = next(&binding, index, offset, rows.len());
                 page["complete_selection_view"] = json!(false);
@@ -534,6 +606,68 @@ pub(in crate::evidence_library) fn content(
 #[cfg(test)]
 mod tests {
     use super::*;
+    fn first_citation<'a>(page: &'a Value, entry: &Value) -> &'a Value {
+        &page["citation_dictionary"][entry["citation_refs"][0].as_str().unwrap()]
+    }
+    #[test]
+    fn excerpt_first_page_deduplicates_witnesses_and_preserves_frozen_item_and_view_identity() {
+        let text = "observable é🙂 text ".repeat(2000);
+        let raw = fixture(&text);
+        let original = raw.clone();
+        let query = json!({"report":{"id":"a".repeat(64),"input":0,"excerpt":{"group":0,"direction":"request","item":0,"part":"text"}}});
+        let extra = json!({"report_selection":{"id":"a".repeat(64),"input":0,"inputs_count":1},"excerpt":query["report"]["excerpt"]});
+        let mut cursor = None;
+        let mut joined = String::new();
+        let mut view = None;
+        let mut pages = 0;
+        loop {
+            let page = content(
+                &raw,
+                Some("source"),
+                &query,
+                cursor,
+                extra.clone(),
+                |_, _| Ok(format!("kan+capture://{}", "u".repeat(1200))),
+            )
+            .unwrap();
+            assert!(size(&page).unwrap() <= LIMIT);
+            if pages == 0 {
+                assert_eq!(page["entries"][0]["type"], "item");
+                assert!(page["entries"][0]["item"]["text"].is_string());
+            }
+            assert!(page["citation_dictionary"].as_object().unwrap().len() <= 1);
+            if let Some(id) = &view {
+                assert_eq!(&page["view_id"], id);
+            } else {
+                view = Some(page["view_id"].clone());
+            }
+            for row in page["entries"].as_array().unwrap() {
+                if let Some(t) = row["item"]["text"].as_str() {
+                    assert_eq!(row["item_index"], 0);
+                    assert!(row.get("citations").is_none());
+                    assert_eq!(first_citation(&page, row)["bytes"], json!(["0", "200000"]));
+                    joined.push_str(t);
+                }
+            }
+            pages += 1;
+            assert!(pages < 100);
+            if page["next"].is_null() {
+                break;
+            }
+            cursor = Some(page["next"].clone());
+        }
+        assert_eq!(joined, text);
+        assert_eq!(raw, original);
+        let mut bad = extra;
+        bad["excerpt"]["item"] = json!(99);
+        assert_eq!(
+            content(&raw, Some("source"), &query, None, bad, |_, _| Ok(
+                "uri".into()
+            ))
+            .unwrap_err(),
+            Error::Cursor
+        );
+    }
     #[test]
     fn report_focus_preserves_original_item_indices_tool_citations_and_loss_states() {
         let text = "é🙂 report tool arguments ".repeat(2000);
@@ -575,12 +709,12 @@ mod tests {
                 }
                 if entry["type"] == "tool-input" {
                     assert_eq!(entry["item_index"], 1);
-                    assert_eq!(entry["citations"][0]["uri"], "source-3");
+                    assert_eq!(first_citation(&page, entry)["uri"], "source-3");
                     joined.push_str(entry["item"]["text"].as_str().unwrap());
                 }
                 if entry["type"] == "item" {
                     assert_eq!(entry["item_index"], 1);
-                    assert_eq!(entry["citations"][0]["uri"], "source-1");
+                    assert_eq!(first_citation(&page, entry)["uri"], "source-1");
                 }
             }
             pages += 1;
@@ -642,8 +776,8 @@ mod tests {
             metadata["content_state"],
             "metadata-only; no decoded body on this item"
         );
-        assert_eq!(metadata["citations"][0]["reference_request"], hop);
-        assert_eq!(metadata["citations"][0]["uri"], "exact-source-uri");
+        assert_eq!(first_citation(&page, metadata)["reference_request"], hop);
+        assert_eq!(first_citation(&page, metadata)["uri"], "exact-source-uri");
         let readable = content(
             &raw,
             Some("source"),
@@ -708,8 +842,14 @@ mod tests {
             for entry in page["entries"].as_array().unwrap() {
                 if let Some(text) = entry["item"]["text"].as_str() {
                     joined.push_str(text);
-                    assert_eq!(entry["citations"][0]["uri"], "kan+capture://test-citation");
-                    assert_eq!(entry["citations"][0]["bytes"], json!(["0", "200000"]));
+                    assert_eq!(
+                        first_citation(&page, entry)["uri"],
+                        "kan+capture://test-citation"
+                    );
+                    assert_eq!(
+                        first_citation(&page, entry)["bytes"],
+                        json!(["0", "200000"])
+                    );
                 }
             }
             pages += 1;
@@ -862,8 +1002,8 @@ mod tool_input_tests {
             for row in page["entries"].as_array().unwrap() {
                 if row["type"] == "tool-input" {
                     joined.push_str(row["item"]["text"].as_str().unwrap());
-                    assert_eq!(row["citations"][0]["uri"], "uri-2");
-                    assert_eq!(row["citations"][0]["bytes"], json!(["2", "999999"]));
+                    assert_eq!(first_citation(&page, row)["uri"], "uri-2");
+                    assert_eq!(first_citation(&page, row)["bytes"], json!(["2", "999999"]));
                 }
             }
             count += 1;

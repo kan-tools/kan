@@ -17,6 +17,10 @@ const RULE_EVIDENCE: &[(&str, &str)] = &[
     ("project-capture-runtime", "tests/test_kan_project.py"),
     ("record-demo-runtime", "tests/test_kan_record_demo.py"),
     (
+        "finalized-consolidation-runtime",
+        "tests/test_kan_finalized.py",
+    ),
+    (
         "authenticated-control-checkpoint",
         "src/evidence_control_index.rs",
     ),

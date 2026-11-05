@@ -401,7 +401,7 @@ impl Server {
         }
     }
     #[tool(
-        description = "Read bounded decoded content with exact evidence citations, using the source, pin and record.selection objects returned by discovery. Default selected content can include multiple attempts. For kind: attempt, first group selections by discovery writer/observer/attempt and supply exactly ONE group; this enables the existing larger reconstruction budget. Returns at most 12 KiB of decoded entries with exact citations; copy next into cursor with identical arguments until next is null. Text may span several presentation fragments. No raw byte offsets or hex decoding are required. Missing chunks, unknown content and coverage limits remain visible.",
+        description = "Read bounded decoded content with exact evidence citations, using the source, pin and record.selection objects returned by discovery. Default selected content can include multiple attempts. For kind: attempt, first group selections by discovery writer/observer/attempt and supply exactly ONE group; this enables the existing larger reconstruction budget. Returns text first in at most 12 KiB; resolve entry citation_refs in that page’s citation_dictionary for original URI/ranges and compact hops; copy next into cursor with identical arguments until next is null. Text may span several presentation fragments. No raw byte offsets or hex decoding are required. Missing chunks, unknown content and coverage limits remain visible.",
         annotations(read_only_hint = true)
     )]
     async fn kan_v2_content(
@@ -445,7 +445,7 @@ impl Server {
         self.decoded_page(result, None, &query, args.cursor, Value::Null)
     }
     #[tool(
-        description = "Open a small report/input reference_request under current access: reconstruct only its frozen report manifest and page complete items whose text or tool input intersects the focused input, with original citations and loss states. Or resolve an exact portable kan+capture occurrence URI and decode that single occurrence. A URI identifies evidence, not authority. A single occurrence may be an incomplete capture; use discovery plus attempt content for broader reconstruction. Returns 12 KiB decoded pages: copy next into cursor with the same report/input handle or URI. Raw bytes are available only through the advanced audit API.",
+        description = "Open a small report/input reference_request under current access: reconstruct only its frozen report manifest and page complete items whose text or tool input intersects the focused input, with original citations and loss states. Or resolve an exact portable kan+capture occurrence URI and decode that single occurrence. A URI identifies evidence, not authority. A single occurrence may be an incomplete capture; use discovery plus attempt content for broader reconstruction. Optional excerpt locators open one exact decoded item. Entries use citation_refs into the current page’s citation_dictionary, preserving URI/ranges/coarse attribution. Returns 12 KiB decoded pages: copy next into cursor with the same report/input handle or URI. Raw bytes are available only through the advanced audit API.",
         annotations(read_only_hint = true)
     )]
     async fn kan_v2_reference(
@@ -484,7 +484,7 @@ impl Server {
                         value["source"].as_str(),
                         &query_identity(&args),
                         args.cursor.clone(),
-                        json!({"report_selection":value["report_selection"]}),
+                        json!({"report_selection":value["report_selection"],"excerpt":report.excerpt}),
                     );
                 }
                 let Some(uri) = result
@@ -613,7 +613,7 @@ impl Server {
         refreshed(result)
     }
     #[tool(
-        description = "Recall deliberately authored records directly by subject or canonical claim CID. Choose show/status/issues/context; context is token-budgeted. Capture replay is not required. Results preserve codec, trust exclusions, corrections and coverage; this is not yet the Day/v1 JSON contract.",
+        description = "Recall deliberately authored records directly by subject or canonical claim CID. Choose show/status/issues/context; context is token-budgeted. Capture replay is not required. Optional derived report ids append a separately budgeted, labelled supplement after authored rows, with no inference. Results preserve codec, trust exclusions, corrections and coverage; this is not yet the Day/v1 JSON contract.",
         annotations(read_only_hint = true)
     )]
     async fn kan_v2_recall(
@@ -624,7 +624,7 @@ impl Server {
             Ok(v) => v,
             Err(e) => return e,
         };
-        self.library(json!({"action":"recall","source":a.source,"verb":a.verb,"subject":a.subject,"trust":a.trust,"budget":a.budget,"cursor":a.cursor}),false).await
+        self.library(json!({"action":"recall","source":a.source,"verb":a.verb,"subject":a.subject,"trust":a.trust,"budget":a.budget,"derived":a.derived,"derived_budget":a.derived_budget,"cursor":a.cursor}),false).await
     }
     #[tool(
         description = "Preview one bounded post-session extraction/summary over an exact pinned occurrence interval. No provider call is made. Returns the input coverage, recipe/model/limits, compact selection, digest and nonce. More than eight selected occurrences refuses explicitly; never silently truncate.",
