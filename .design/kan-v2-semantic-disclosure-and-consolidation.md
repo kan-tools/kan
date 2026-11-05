@@ -19,8 +19,9 @@ Owner decisions, 2026-11-04: include all five flows described below; support
 explicit runs and opt-in processing after session finalization; show authored
 claims first followed by a labelled derived supplement. Future Sonnet acceptance
 starts with fresh sessions and disposable working state, preserving every old
-trial. The owner wants to investigate a local decision-model setup; no Jev
-instance is currently running. The actual local model choice remains open.
+trial. The owner selected Tev1 4B Q4_K_M for an isolated local decision worker.
+Its initial protocol/setup checks have passed; workload quality and Kan recipe
+integration remain unqualified. Tev1 is a separate model, not local Jev.
 
 Follow `AGENTS.md` and the Active development flow/testing tiers in
 `kan-v2-next-build-status.md`. Design is Git-first while day#168 / kan#197 block
@@ -270,10 +271,10 @@ access; an official downloadable Jev runtime was not identified on2026-11-04.
 Do not install an SDK or local gateway and label remote inference local.
 
 Ollama documents local System One execution for independent models such as
-Together AI's experimental Tev1. The proposed first candidate is Tev1 0.8B for
-bounded setup/contract checks;4B is an alternative with a larger footprint.
+Together AI's experimental Tev1. The owner selected Tev1 4B Q4_K_M after comparing
+the published accuracy, runtime and weight footprints of the available options.
 Schema compatibility does not establish Jev-equivalent accuracy or calibration.
-The next local setup plan is concrete below and awaits the owner's model choice.
+The isolated setup and its bounded checks are recorded below.
 
 Claude Code is the preferred local-controller path for the next Sonnet exercise,
 using its existing normal sign-in. The current Messages-to-Claude-Code bridge is
@@ -302,12 +303,13 @@ report is more recent or rhetorically confident.
 
 ## Local setup plan
 
-Read-only preflight on2026-11-04 found arm64,24GiB physical RAM and about22GiB
-free disk. No common Ollama CLI was found on PATH in the prior inspection; that
-does not establish that every possible application/runtime location is empty.
-No model or runtime has been installed, downloaded or started in this pass.
+Initial read-only preflight on2026-11-04 found arm64,24GiB physical RAM and about
+22GiB free disk. Subsequent setup preflight measured20.52GiB free. No common
+Ollama CLI or application was found, and global Ollama state was absent. The
+following plan governed the isolated setup; production integration remains a
+separate step.
 
-After the model/runtime choice:
+Setup constraints:
 
 1. Verify the exact runtime release, model artifact, license and macOS support
    from primary sources; check disk again before any GB-scale write. Keep runtime
@@ -329,12 +331,56 @@ Ollama's documented request/context constraints and backend-specific model
 artifacts must be checked against the actual pinned runtime; do not assume the
 largest advertised context fits the laptop or a small request's precision.
 
+### Actual isolated setup, 2026-11-04
+
+The owner's concurrence resolved the choice to `tev1:4b-q4_K_M`. Task-owned
+runtime, model, receipts, licenses and synthetic results are retained under
+`.local-state/local-decision-20261104`; `README.md`, `worker-config.json` and
+`setup-evidence.json` are the operator entry points. This configuration is not a
+new supported Kan production schema.
+
+- Official Ollama0.40.14 Darwin archive SHA256:
+  `f3bf9a528e908da0da5a2b3a4ad3252a369d62186501dc4880261e8d9023bff5`.
+  Its bundled native llama-server0.8.0-dev, commit39febd2ad, is invoked directly.
+  Inspection found that `ollama serve` initializes a global identity key;
+  invoking the native server avoids that global state. No system installation,
+  login service or global Ollama identity was created.
+- Model manifest SHA256:
+  `608e3a13eec386ad34b657b1dcefe89e98c489f0cd6a3287ac2bb613db2f93da`.
+  The2,783,448,672-byte GGUF SHA256 is
+  `58b59b64c8f3b9386005fbbbb90ed2e8fefc8f8ca80fb09862974fde9371c6af`.
+  Sizes and hashes were verified; only the selected model was downloaded.
+- The explicit loopback endpoint is `http://127.0.0.1:11436/v1/systemone`, with a
+  task-local bearer-file reference, offline loading, context2048, one slot and
+  four CPU threads. Explicit Apple M4 Metal execution offloaded34/34 layers.
+  The model GPU buffer report was2572.86MiB; individual buffer reports are not
+  additive peak unified-memory measurements. Foreground startup is bounded to
+  600seconds and starts no inference by itself.
+- Three synthetic cases each exercised Choice, Score and Noul. All responses
+  satisfied the adapter's field/probability checks;7/9 expected labels matched.
+  Two proposal-case disagreements exposed an overlapping rubric and a near-tied
+  topic choice. These results do not certify quality or confidence calibration.
+  Three-question requests took1.32–1.49seconds; initial readiness took5.03seconds.
+  A separate explicit-Metal diagnostic took1.34seconds, with warm caches; it is
+  not an independent quality sample or a cold-load measurement.
+- Owned servers were stopped, port11436 closed, global Ollama state remained
+  absent and system Kan matched its retained baseline. Free disk was17.13GiB
+  after setup. No provider call, actual Kan analysis job or fresh Sonnet
+  acceptance run was performed as part of these local checks.
+
+Next, prepare the scoped recipe integration and a small labelled workload with
+unambiguous rubrics before using model scores to choose thresholds. Existing
+analysis jobs remain the execution seam; a protocol-compatible local worker
+does not establish that production integration is already implemented.
+
 Primary setup references checked2026-11-04:
 
 - [TypeSafe quick start](https://docs.typesafe.ai/introduction/quickstart)
 - [TypeSafe models](https://docs.typesafe.ai/models)
 - [Ollama System One](https://docs.ollama.com/api/systemone)
 - [Ollama Tev1 0.8B listing](https://ollama.com/library/tev1:0.8b)
+- [Selected Tev1 4B Q4_K_M](https://ollama.com/library/tev1:4b-q4_K_M)
+- [Pinned Ollama runtime release](https://github.com/ollama/ollama/releases/tag/v0.40.14)
 - [Ollama macOS setup](https://docs.ollama.com/macos)
 
 ## Resolved Questions
@@ -352,17 +398,19 @@ Primary setup references checked2026-11-04:
   retained and are not resumed or silently reused as fresh acceptance.
 - No Jev instance currently exists. Investigate a local decision-worker setup
   and distinguish the actual model from API compatibility or a remote gateway.
+- The owner selected independent Tev1 4B Q4_K_M locally. The isolated native
+  runtime setup and protocol checks above are complete; quality/calibration and
+  Kan recipe integration remain separate qualification work.
 
 ## Open Questions
 
-<!-- OPEN: Q1 -->
-### Q1: Actual local decision-model starting point
+<!-- OPEN: Q2 -->
+### Q2: Fresh acceptance exercise and bounds
 
-Official local Jev weights/runtime were not found. The owner has been offered a
-concrete choice: independent Tev1 0.8B locally through Ollama for a small initial
-check, Tev1 4B with a larger footprint, or hosted Jev with separately configured
-credentials/egress/spend. No substitution or installation has been performed.
-An exact runtime/model artifact is selected and verified before local setup.
+Select a concrete fresh working task, observable input categories, model/tool
+allowlists and total execution budget for the next Sonnet exercise after the
+semantic retrieval and recipe changes are ready. Retained old-session budgets
+and local setup results do not authorize an unspecified new paid trial.
 <!-- /OPEN -->
 
 ## Out of Scope
@@ -398,4 +446,5 @@ process claims. Claim/bridge recording and live graph next-step reads remain
 unavailable under the same worktree guard. Do not substitute manual counting for
 the validator or redirect writes into the main checkout. Backfill remains pending
 under the standing Git-first exception. The owner-selected recipes, triggering
-and display policy are resolved; the actual local model choice remains open.
+and display policy, and the local model choice, are resolved. The fresh
+acceptance execution plan remains open.
