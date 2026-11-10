@@ -60,20 +60,27 @@ class Demo:
         self.identity = {'binary_sha256': digest(self.binary), 'profile_sha256': digest(self.profile)}
 
     def call(self, *args):
+        # Pick the next numeric receipt before launching anything. A count is
+        # unsafe when a private preparer retained 1-based or noncontiguous logs.
+        indices = []
+        for path in self.output.glob('command-*.json'):
+            number = path.stem.removeprefix('command-')
+            if not number.isascii() or not number.isdecimal():
+                raise ValueError('invalid command receipt name; inspect before execution')
+            indices.append(int(number))
+        receipt = self.output / ('command-%04d.json' % (max(indices, default=-1) + 1))
         try:
             result = subprocess.run([str(self.binary), '--no-migration-notice', *map(str, args), '--profile', str(self.profile)],
                                     cwd=self.cwd, capture_output=True, timeout=180)
         except subprocess.TimeoutExpired as error:
-            index = len(list(self.output.glob('command-*.json')))
-            retain(self.output / ('command-%04d.json' % index), {'arguments': list(map(str, args)), 'outcome': 'timeout; provider outcome may be unknown',
+            retain(receipt, {'arguments': list(map(str, args)), 'outcome': 'timeout; provider outcome may be unknown',
                    'stdout': (error.stdout or b'')[:2 * 1024 * 1024].decode(errors='replace'), 'stderr': (error.stderr or b'')[:2 * 1024 * 1024].decode(errors='replace')})
             raise RuntimeError('command deadline; inspect retained diagnostics, never retry automatically') from error
         if len(result.stdout) > 2 * 1024 * 1024 or len(result.stderr) > 2 * 1024 * 1024:
             raise ValueError('command diagnostics exceeded the declared bound')
         # Exact diagnostics can contain source material. Retain privately,
         # never echo them into agent prompts or terminal reports.
-        index=len(list(self.output.glob('command-*.json')))
-        retain(self.output / ('command-%04d.json' % index), {'arguments': list(map(str,args)),
+        retain(receipt, {'arguments': list(map(str,args)),
                'returncode': result.returncode, 'stdout': result.stdout.decode(errors='replace'),
                'stderr': result.stderr.decode(errors='replace')})
         if result.returncode:

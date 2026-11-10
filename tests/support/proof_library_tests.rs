@@ -9344,8 +9344,13 @@ async fn structured_consolidation_preserves_visible_witnesses_finalization_idemp
                                 c["relation"] = json!({"from":{"source":unit["source"],"label":"project/test"},"to":{"source":unit["source"],"label":"format/json"},"kind":"depends-on"});
                             }
                             let output = json!({"version":"kan-consolidation/1","flow":flow,"candidates":[c],"limitations":["Selected observations only; no complete-capture or test-success claim."]});
+                            let text = if flow == "session-brief" {
+                                format!("```json\n{output}\n```")
+                            } else {
+                                output.to_string()
+                            };
                             seen.lock().unwrap().push(request);
-                            Ok::<_,std::convert::Infallible>(Response::new(Full::new(Bytes::from(serde_json::to_vec(&json!({"type":"message","model":"synthetic-structured","content":[{"type":"text","text":output.to_string()}]})).unwrap()))))
+                            Ok::<_,std::convert::Infallible>(Response::new(Full::new(Bytes::from(serde_json::to_vec(&json!({"type":"message","model":"synthetic-structured","content":[{"type":"text","text":text}]})).unwrap()))))
                         }
                     },
                 );
@@ -9395,6 +9400,27 @@ async fn structured_consolidation_preserves_visible_witnesses_finalization_idemp
         let result = ui.call(json!({"action":"extract-run","selection":plan["selection"],"preview":plan["digest"],"nonce":plan["nonce"],"wait":true}),200).await;
         assert_eq!(result["state"], "succeeded");
         ids.push(result["id"].clone());
+        if flow == "session-brief" {
+            let detail = ui
+                .call(json!({"action":"analysis-job","id":result["id"]}), 200)
+                .await;
+            assert!(detail["result"]["parsed"]["content"][0]["text"]
+                .as_str()
+                .unwrap()
+                .starts_with("```json\n"));
+            let unit = detail["input"]["projection"][0]["units"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|u| {
+                    u["text"] == "Adopt JSON for interchange. Recorded reason: interoperability."
+                })
+                .unwrap();
+            assert_eq!(
+                detail["result"]["consolidation"]["candidates"][0]["evidence"][0],
+                unit["id"]
+            );
+        }
         let page = ui
             .call(json!({"action":"report","id":result["id"]}), 200)
             .await;

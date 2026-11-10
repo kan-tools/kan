@@ -71,6 +71,29 @@ class DemoTests(unittest.TestCase):
         self.assertEqual(demo.private_json(self.output / 'extraction-terminal.json')['state'], 'failed-or-unknown')
         self.assertEqual(demo.private_json(self.output / 'command-0001.json')['stderr'], 'synthetic diagnostics')
 
+    def test_noncontiguous_receipts_cannot_hide_a_completed_submission(self):
+        self.freeze()
+        prior = self.output / 'command-0002.json'
+        prior.write_text('{"operator_preflight":"retained"}')
+        original = prior.read_bytes()
+        with patch.object(subprocess, 'run', self.response({'state': 'succeeded', 'id': 'report-id'})):
+            self.value.extract()
+        self.assertEqual(len(self.calls), 2)
+        self.assertEqual(prior.read_bytes(), original)
+        self.assertEqual(demo.private_json(self.output / 'command-0003.json')['returncode'], 0)
+        self.assertEqual(demo.private_json(self.output / 'extraction-terminal.json')['state'], 'succeeded')
+        with self.assertRaises(FileExistsError):
+            self.value.extract()
+        self.assertEqual(len(self.calls), 2)
+
+    def test_invalid_receipt_name_refuses_before_execution(self):
+        self.freeze()
+        (self.output / 'command-invalid.json').write_text('{}')
+        with patch.object(subprocess, 'run', self.response({'state': 'succeeded'})):
+            with self.assertRaises(ValueError):
+                self.value.extract()
+        self.assertEqual(len(self.calls), 1)
+
     def test_readback_follows_exact_presentation_cursor_without_another_model_call(self):
         self.freeze()
         with patch.object(subprocess, 'run', self.response({'state': 'succeeded', 'id': 'report-id'})):

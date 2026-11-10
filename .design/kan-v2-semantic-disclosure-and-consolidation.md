@@ -477,6 +477,24 @@ lifecycle, model, tool and cost/usage contracts in the existing analysis-job
 engine; runtime and fresh acceptance checks are still required.
 No login token is extracted and no direct-provider API qualification is inferred.
 
+The fresh Nov9 exercise at `5b46a29` verified native EOF, timeout, cancellation
+and output-limit controls, and one exact-witness Q4 operator request. The new
+author actually ran eight toy tests; its authored reader recovered the exact
+claim and pins with recorded-versus-verified limits. The first native Sonnet
+session brief completed through normal sign-in but failed structured validation:
+its otherwise valid JSON object was enclosed in a `json` Markdown fence. The
+original failed job and raw response remain unchanged; the other model phases
+were stopped. A private receipt-number collision also obscured the terminal
+result until read-only recovery; no extraction was repeated.
+
+The corrective parser accepts only one complete JSON object, bare or inside one
+entire `json`-labelled fence. It never searches surrounding prose or repairs
+JSON, fields or evidence ids. Existing schema and exact witness validation remain
+mandatory, with original response bytes retained. The orchestration helper picks
+the next numeric receipt before execution, preserving gaps and prior logs.
+These corrections require remote scoped runtime checks; they do not turn the
+retained failed exercise into acceptance or authorize an automatic paid retry.
+
 ### Explicit and opt-in finalization execution
 
 Session finalization emits a scheduling opportunity, not a task-success or

@@ -25,6 +25,10 @@ directed relation, supplied evidence-unit ids and uncertainty, plus limitations.
 Schema/locator validation is mechanical; truth and calibration are not certified
 by a successful parse. Invalid/missing evidence ids fail the job while retaining
 the exact provider response. No recipe automatically authors or promotes a claim.
+The response may be one JSON object or that entire object inside one `json`-labelled
+Markdown fence. This only removes a presentation envelope: surrounding prose,
+multiple objects/fences and malformed JSON are refused. The same schema, source
+and witness checks apply, and the original response bytes remain retained.
 
 The default CLI recipe is `session-brief`. The original prose-only
 `documentation-summary` revision1 remains available explicitly for old plans and

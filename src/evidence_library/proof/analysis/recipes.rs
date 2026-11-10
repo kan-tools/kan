@@ -240,9 +240,65 @@ pub(super) fn response_text(response: &Value) -> Option<String> {
     Some(parts.iter().filter_map(|p| p["text"].as_str()).collect())
 }
 
+// An entire JSON-labelled fence is a presentation envelope, not evidence or a
+// schema repair. Never search prose for JSON, combine objects, or alter fields.
+// The original response remains retained; validate still checks every witness.
+pub(super) fn response_object(text: &str) -> Option<Value> {
+    let text = text.trim();
+    let body = if let Some(body) = text
+        .strip_prefix("```json\n")
+        .or_else(|| text.strip_prefix("```json\r\n"))
+    {
+        body.strip_suffix("\n```")?.trim()
+    } else {
+        text
+    };
+    serde_json::from_str::<Value>(body)
+        .ok()
+        .filter(Value::is_object)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn response_envelope_requires_one_entire_json_object_and_keeps_witness_validation() {
+        let prompt = vec![visible(&content(), "proof:scope").unwrap()];
+        let recipe = &bundled()[0];
+        let output = json!({"version":"kan-consolidation/1","flow":recipe.id,
+            "candidates":[{"kind":"decision","text":"Keep café🙂.","basis":"explicit","stance":"proposed","speaker":"user","subjects":[],"relation":null,"evidence":["g0/request/i3/text"],"uncertainty":"Selected source only."}],
+            "limitations":["No acceptance implied."]});
+        let raw = output.to_string();
+        for text in [
+            raw.clone(),
+            format!(" \n```json\n{raw}\n```\n"),
+            format!("```json\r\n{raw}\r\n```"),
+        ] {
+            let parsed = response_object(&text).unwrap();
+            assert_eq!(parsed, output);
+            assert!(validate(parsed, recipe, &prompt).is_ok());
+        }
+        for text in [
+            format!("Explanation\n```json\n{raw}\n```"),
+            format!("```json\n{raw}\n```\nMore text"),
+            format!("```json\n{raw}\n```\n```json\n{raw}\n```"),
+            format!("{raw}\n{raw}"),
+            format!("```\n{raw}\n```"),
+            format!("```json\n{raw}"),
+            "null".into(),
+            "[]".into(),
+            "{broken}".into(),
+        ] {
+            assert!(
+                response_object(&text).is_none(),
+                "unexpected envelope: {text}"
+            );
+        }
+        let mut bad = output;
+        bad["candidates"][0]["evidence"] = json!(["invented-unit"]);
+        let parsed = response_object(&format!("```json\n{bad}\n```")).unwrap();
+        assert!(validate(parsed, recipe, &prompt).is_err());
+    }
     fn content() -> Value {
         json!({"coverage":"partial","groups":[{"request":{"state":"interpreted","items":[
         {"kind":"thinking","role":"assistant","text":"private reasoning"},

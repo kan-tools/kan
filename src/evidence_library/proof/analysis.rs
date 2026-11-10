@@ -579,7 +579,7 @@ impl Engine {
             consolidation = parsed
                 .as_ref()
                 .and_then(recipes::response_text)
-                .and_then(|s| serde_json::from_str::<Value>(&s).ok())
+                .and_then(|s| recipes::response_object(&s))
                 .and_then(|v| {
                     recipes::validate(v, &recipe, contract["projection"].as_array()?).ok()
                 });
