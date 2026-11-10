@@ -9529,8 +9529,11 @@ async fn structured_consolidation_preserves_visible_witnesses_finalization_idemp
         .as_array()
         .unwrap()
         .iter()
-        .find(|e| e["type"] == "claim")
-        .unwrap()["claim"]["cites"]
+        // CID lookup returns the retained record under subject-state, unlike
+        // subject lookup's separate claim rows. Check that exact existing route.
+        .find(|e| e["subject"]["record"]["cid"] == promoted["claims"][0])
+        .expect("CID recall must return the exact promoted retained record")["subject"]["record"]
+        ["cites"]
         .as_array()
         .unwrap();
     for original in project_job["input"]["project"]["claims"]
