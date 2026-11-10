@@ -9330,9 +9330,12 @@ async fn structured_consolidation_preserves_visible_witnesses_finalization_idemp
                                 .as_array()
                                 .unwrap()
                                 .iter()
-                                .find(|u| u["role"] == "user")
+                                .find(|u| u["role"] == "user" || (u["kind"] == "authored-claim" && u["text"] == "Authored position disagrees with the derived JSON candidate."))
                                 .unwrap();
                             let mut c = json!({"kind":"decision","text":"Adopt JSON for interchange.","basis":"explicit","stance":"accepted","speaker":"recorded user","subjects":[{"source":unit["source"],"label":"project/test"}],"relation":null,"evidence":[unit["id"]],"uncertainty":"An explicit source statement; not independent verification or authored acceptance by this viewer."});
+                            if unit["kind"] == "authored-claim" {
+                                c["text"] = unit["text"].clone();
+                            }
                             if flow == "relation-suggestions" {
                                 c["kind"] = json!("relation");
                                 c["basis"] = json!("inferred");
@@ -9454,6 +9457,55 @@ async fn structured_consolidation_preserves_visible_witnesses_finalization_idemp
         .unwrap()
         .iter()
         .any(|e| e["type"] == "derived-supplement"));
+    // Project-only inputs come from the same canonical fold, not a capture
+    // interval or a second model-built graph. Explicit relations expand one hop.
+    let neighbor=ui.call(json!({"action":"record","draft":{"source":source,"verb":"decide","subject":"format/json","text":"Neighbor has its own competing authored assertion."}}),200).await;
+    ui.call(json!({"action":"record","draft":{"source":source,"verb":"relate","subject":"project/test","target":"format/json","relation":"depends-on"}}),200).await;
+    ui.call(json!({"action":"record","draft":{"source":source,"verb":"same","subject":"project/alias","target":"project/test"}}),200).await;
+    let selection = json!({"source":source,"recipe":"project-consolidation","project":{"source":source,"prefix":"project/test","relation_depth":1},"derived_from":[ids[0]]});
+    let stale = ui
+        .call(json!({"action":"extract-plan","selection":selection}), 200)
+        .await;
+    ui.call(json!({"action":"record","draft":{"source":source,"verb":"observe","subject":"unrelated","text":"This unrelated append changes the frontier, but is outside the selected graph."}}),200).await;
+    ui.call(json!({"action":"extract-run","selection":stale["selection"],"preview":stale["digest"],"nonce":stale["nonce"],"wait":true}),400).await;
+    assert_eq!(
+        requests.lock().unwrap().len(),
+        7,
+        "stale project plan must not invoke a worker"
+    );
+    let project_plan = ui
+        .call(json!({"action":"extract-plan","selection":selection}), 200)
+        .await;
+    assert_ne!(
+        stale["project_evaluation"]["id"],
+        project_plan["project_evaluation"]["id"]
+    );
+    let project=ui.call(json!({"action":"extract-run","selection":project_plan["selection"],"preview":project_plan["digest"],"nonce":project_plan["nonce"],"wait":true}),200).await;
+    assert_eq!(project["state"], "succeeded");
+    let project_job = ui
+        .call(json!({"action":"analysis-job","id":project["id"]}), 200)
+        .await;
+    assert!(project_job["input"]["inputs"]
+        .as_array()
+        .unwrap()
+        .is_empty());
+    let project_units = project_job["input"]["project"]["units"].as_array().unwrap();
+    assert!(project_units
+        .iter()
+        .any(|u| u["recall_request"]["subject"] == neighbor["claims"][0]));
+    assert!(project_units.iter().all(|u| !u["text"]
+        .as_str()
+        .unwrap()
+        .contains("This unrelated append")));
+    assert!(project_job["input"]["project"]["classes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|c| !c["witnesses"].as_array().unwrap().is_empty()));
+    let limited = json!({"source":source,"recipe":"project-consolidation","project":{"source":source,"prefix":"project/test","relation_depth":1,"max_claims":1}});
+    ui.call(json!({"action":"extract-plan","selection":limited}), 422)
+        .await;
+    assert_eq!(requests.lock().unwrap().len(), 8);
     ui.stop().await;
     provider.abort();
     // Provider and Engine absent: retained results and exact source routes live.
@@ -9473,12 +9525,30 @@ async fn structured_consolidation_preserves_visible_witnesses_finalization_idemp
     assert!(content
         .to_string()
         .contains("Recorded reason: interoperability"));
+    let mut project_page = ui
+        .call(json!({"action":"report","id":project["id"]}), 200)
+        .await;
+    let project_witness = project_page["blocks"][0]["witnesses"][0].clone();
+    assert!(project_witness["recall_request"].is_object());
+    let exact=ui.call(json!({"action":"recall","source":source,"verb":"show","subject":project_witness["claim_cid"]}),200).await;
+    assert!(exact.to_string().contains("Authored position disagrees"));
+    while !project_page["next"].is_null() {
+        project_page = ui
+            .call(
+                json!({"action":"report","id":project["id"],"cursor":project_page["next"]}),
+                200,
+            )
+            .await;
+        assert!(serde_json::to_vec(&project_page).unwrap().len() <= 12 * 1024);
+    }
     server
         .service
         .lock()
         .unwrap()
         .replace_grants(vec![])
         .unwrap();
+    ui.call(json!({"action":"report","id":project["id"]}), 403)
+        .await;
     ui.call(json!({"action":"report","id":child["id"]}), 403)
         .await;
     ui.call(
@@ -9634,4 +9704,496 @@ async fn uncited_typed_record_queues_exactly_and_sender_still_requires_collectio
     assert_eq!(ui.call(request, 200).await["publication"], "acknowledged");
     ui.stop().await;
     task.abort();
+}
+
+#[tokio::test]
+async fn statement_assessment_requires_exact_witnesses_and_never_infers_an_absent_reason() {
+    use http_body_util::{BodyExt, Full};
+    use hyper::{body::Bytes, Response};
+    let archive = tempfile::tempdir().unwrap();
+    let local = private_workspace_directory();
+    let text = "Keep café🙂 for interchange. Recorded reason: interoperability.";
+    let body = serde_json::to_vec(
+        &json!({"system":"EXCLUDED CONTROL","messages":[{"role":"user","content":text}]}),
+    )
+    .unwrap();
+    let f = fixture_requests(archive.path(), Profile::Admitted, |n, a, p| {
+        captured_request_body(n, a, p, &body)
+    });
+    let server = Server::start(&f).await;
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let endpoint = format!("http://{}/v1/systemone", listener.local_addr().unwrap());
+    let received = Arc::new(std::sync::Mutex::new(Vec::<Value>::new()));
+    let seen = received.clone();
+    let provider = tokio::spawn(async move {
+        loop {
+            let (stream, _) = listener.accept().await.unwrap();
+            let seen = seen.clone();
+            tokio::spawn(async move {
+                let svc = hyper::service::service_fn(
+                    move |req: hyper::Request<hyper::body::Incoming>| {
+                        let seen = seen.clone();
+                        async move {
+                            let bytes = req.into_body().collect().await.unwrap().to_bytes();
+                            let request: Value = serde_json::from_slice(&bytes).unwrap();
+                            let mut answers = serde_json::Map::new();
+                            for (head, q) in request["questions"].as_object().unwrap() {
+                                let choice = match head.as_str() {
+                                    "prescription" => "instruction_or_request",
+                                    "adoption_assertion" => "proposal_or_command_only",
+                                    "reason_link" => "justification_for_target",
+                                    _ => panic!("unexpected assessment head"),
+                                };
+                                let probabilities = q["criteria"]
+                                    .as_object()
+                                    .unwrap()
+                                    .keys()
+                                    .map(|key| {
+                                        (key.clone(), json!(if key == choice { 1.0 } else { 0.0 }))
+                                    })
+                                    .collect::<serde_json::Map<_, _>>();
+                                answers.insert(head.clone(),json!({"type":"choice","choice":choice,"confidence":1.0,"probabilities":probabilities}));
+                            }
+                            seen.lock().unwrap().push(request.clone());
+                            Ok::<_,std::convert::Infallible>(Response::new(Full::new(Bytes::from(serde_json::to_vec(&json!({"model":request["model"],"answers":answers,"usage":{"input_tokens":30}})).unwrap()))))
+                        }
+                    },
+                );
+                let _ = hyper::server::conn::http1::Builder::new()
+                    .serve_connection(hyper_util::rt::TokioIo::new(stream), svc)
+                    .await;
+            });
+        }
+    });
+    let base = || {
+        kan::evidence_library::Readers::new(None, vec![server.client(&f)])
+            .unwrap()
+            .with_workspace(
+                kan::evidence_workspace::Workspace::open(
+                    &local.path().join("assessment.sqlite"),
+                    identity(6),
+                    [98; 32],
+                )
+                .unwrap(),
+            )
+    };
+    let scope = Ui::start(base()).await;
+    let catalog = scope.call(json!({"action":"catalog"}), 200).await;
+    let source = catalog["scopes"][0]["id"].clone();
+    let pin = catalog["scopes"][0]["pin"].clone();
+    let page = scope
+        .call(
+            json!({"action":"proof-page","source":source,"pin":pin,"limit":20}),
+            200,
+        )
+        .await;
+    let mut selections = page["records"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|r| r["selection"].clone())
+        .collect::<Vec<_>>();
+    selections.reverse();
+    let content=scope.call(json!({"action":"proof-content","source":source,"pin":pin,"selections":selections,"format":"anthropic-messages-json"}),200).await;
+    let (group, item) = content["groups"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .enumerate()
+        .find_map(|(g, group)| {
+            group["request"]["items"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .position(|i| i["text"] == text)
+                .map(|i| (g, i))
+        })
+        .unwrap();
+    let unit = format!("g{group}/request/i{item}/text");
+    scope.stop().await;
+    let recipe = kan::evidence_library::bundled_decision_recipes()
+        .into_iter()
+        .find(|r| r.id == "statement-assessment")
+        .unwrap();
+    let ui=Ui::start(base().with_analysis(serde_json::from_value(json!({"adapter":"typesafe-system-one","endpoint":endpoint,"token":"synthetic-assessment-provider-token-1234","worker":{"kind":"local-decision","runtime_revision":"synthetic-http-not-a-quality-test","model_sha256":"a".repeat(64)},"model":"synthetic-q4","sources":[source],"recipes":[recipe],"max_input_bytes":8192,"max_output_tokens":128,"max_jobs":4})).unwrap()).unwrap()).await;
+    let target = json!({"unit":unit,"start":0,"end":"Keep café🙂".len()});
+    let mut ids = Vec::new();
+    for with_reason in [false, true] {
+        let reason_start = text.find("interoperability").unwrap();
+        let assessment = json!({"target":target,"reason":if with_reason{json!({"unit":unit,"start":reason_start,"end":reason_start+"interoperability".len()})}else{Value::Null}});
+        let selection = json!({"source":source,"from":1,"through":3,"recipe":"statement-assessment","assessment":assessment});
+        let plan = ui
+            .call(json!({"action":"extract-plan","selection":selection}), 200)
+            .await;
+        let done=ui.call(json!({"action":"extract-run","selection":plan["selection"],"preview":plan["digest"],"nonce":plan["nonce"],"wait":true}),200).await;
+        assert_eq!(done["state"], "succeeded");
+        ids.push(done["id"].clone());
+        let job = ui
+            .call(json!({"action":"analysis-job","id":done["id"]}), 200)
+            .await;
+        assert_eq!(
+            job["input"]["request"]["questions"]
+                .as_object()
+                .unwrap()
+                .len(),
+            if with_reason { 3 } else { 2 }
+        );
+        assert_eq!(job["input"]["assessment"]["target"]["text"], "Keep café🙂");
+        assert_eq!(
+            job["result"]["statement_assessment"]["fields"]["adoption_assertion"]["assessment"],
+            "no"
+        );
+        assert_eq!(
+            job["result"]["statement_assessment"]["fields"]["reason_link"]["inference_performed"],
+            with_reason
+        );
+    }
+    for span in [
+        json!({"unit":unit,"start":0,"end":0}),
+        json!({"unit":"unknown","start":0,"end":1}),
+        json!({"unit":unit,"start":8,"end":11}),
+    ] {
+        ui.call(json!({"action":"extract-plan","selection":{"source":source,"from":1,"through":3,"recipe":"statement-assessment","assessment":{"target":span}}}),400).await;
+    }
+    assert_eq!(received.lock().unwrap().len(), 2);
+    for request in received.lock().unwrap().iter() {
+        assert!(!request.to_string().contains("EXCLUDED CONTROL"));
+    }
+    ui.stop().await;
+    provider.abort();
+    // Same encrypted jobs read through the normal report API, no Engine/provider.
+    let ui = Ui::start(base()).await;
+    for (index, id) in ids.iter().enumerate() {
+        let mut cursor = Value::Null;
+        let mut rendered = String::new();
+        let mut pages = 0;
+        loop {
+            let page = ui
+                .call(json!({"action":"report","id":id,"cursor":cursor}), 200)
+                .await;
+            assert!(serde_json::to_vec(&page).unwrap().len() <= 12 * 1024);
+            for block in page["blocks"].as_array().unwrap() {
+                if block["kind"] == "statement-assessment" {
+                    rendered.push_str(block["text"].as_str().unwrap());
+                }
+            }
+            pages += 1;
+            assert!(pages < 30);
+            if page["next"].is_null() {
+                break;
+            }
+            cursor = page["next"].clone();
+        }
+        let assessment: Value = serde_json::from_str(&rendered).unwrap();
+        assert_eq!(assessment["witness"]["target"]["text"], "Keep café🙂");
+        assert_eq!(
+            assessment["fields"]["reason_link"]["inference_performed"],
+            index == 1
+        );
+        assert_eq!(
+            assessment["witness"]["target"]["reference_request"]["report"]["id"],
+            *id
+        );
+    }
+    server
+        .service
+        .lock()
+        .unwrap()
+        .replace_grants(vec![])
+        .unwrap();
+    for id in ids {
+        ui.call(json!({"action":"report","id":id}), 403).await;
+    }
+    assert_eq!(received.lock().unwrap().len(), 2);
+    ui.stop().await;
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn normal_login_claude_worker_runs_once_and_retained_report_needs_no_cli_or_engine() {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = tempfile::tempdir().unwrap();
+    let local = private_workspace_directory();
+    let cwd = local.path().canonicalize().unwrap();
+    let executable = cwd.join("fake-claude");
+    // No actual provider/model. The real subprocess exercises flags, stdin,
+    // session normalization, immutable job replay and worker retirement.
+    std::fs::write(&executable,r#"#!/bin/sh
+model=; session=; tools=missing; mcp=missing
+while [ "$#" -gt 0 ]; do
+ case "$1" in
+ --model) model=$2; shift;; --session-id) session=$2; shift;;
+ --tools) tools=$2; shift;; --mcp-config) mcp=$2; shift;;
+ esac
+ shift
+done
+[ "$tools" = "" ] || exit 11
+[ "$mcp" = '{"mcpServers":{}}' ] || exit 12
+[ -z "$ANTHROPIC_API_KEY$ANTHROPIC_AUTH_TOKEN$ANTHROPIC_BASE_URL" ] || exit 13
+cat > received-input
+printf invoked >> invocations
+printf '{"type":"system","subtype":"init","model":"%s","session_id":"%s","tools":[],"mcp_servers":[],"apiKeySource":"none","permissionMode":"dontAsk"}\n' "$model" "$session"
+printf '{"type":"result","subtype":"success","session_id":"%s","is_error":false,"total_cost_usd":0.001,"result":"Retained tool-free worker result.","usage":{"input_tokens":20,"output_tokens":8}}\n' "$session"
+"#).unwrap();
+    std::fs::set_permissions(&executable, std::fs::Permissions::from_mode(0o700)).unwrap();
+    let f = fixture_requests(dir.path(), Profile::Admitted, captured_request);
+    let server = Server::start(&f).await;
+    let base = || {
+        kan::evidence_library::Readers::new(None, vec![server.client(&f)])
+            .unwrap()
+            .with_workspace(
+                kan::evidence_workspace::Workspace::open(
+                    &cwd.join("cli.sqlite"),
+                    identity(6),
+                    [98; 32],
+                )
+                .unwrap(),
+            )
+    };
+    let scope = Ui::start(base()).await;
+    let catalog = scope.call(json!({"action":"catalog"}), 200).await;
+    let source = catalog["scopes"][0]["id"].clone();
+    let pin = catalog["scopes"][0]["pin"].clone();
+    let page = scope
+        .call(
+            json!({"action":"proof-page","source":source,"pin":pin,"limit":1}),
+            200,
+        )
+        .await;
+    scope.stop().await;
+    let config = json!({"adapter":"claude-code","worker":{"kind":"claude-code","executable":executable,"working_directory":cwd,"max_budget_usd":0.05,"timeout_seconds":5},"model":"claude-sonnet-5-5","sources":[source],"recipes":[{"id":"documentation-summary","revision":"1","purpose":"summarize","instructions":"Summarize this synthetic evidence only."}],"max_input_bytes":65536,"max_output_tokens":128,"max_jobs":2});
+    let mut bad = config.clone();
+    bad["endpoint"] = json!("http://127.0.0.1:1/v1/messages");
+    assert!(base()
+        .with_analysis(serde_json::from_value(bad).unwrap())
+        .is_err());
+    let ui = Ui::start(
+        base()
+            .with_analysis(serde_json::from_value(config).unwrap())
+            .unwrap(),
+    )
+    .await;
+    let draft = json!({"recipe":"documentation-summary","cites":[{"source":source,"pin":pin,"selection":page["records"][0]["selection"]}]});
+    let plan = ui
+        .call(json!({"action":"analysis-preview","draft":draft}), 200)
+        .await;
+    assert!(plan["max_output_tokens"].is_null());
+    assert!(plan["provider_calls_per_new_job"].is_null());
+    assert_eq!(plan["worker_invocations_per_new_job"], 1);
+    let submit = json!({"action":"analysis-submit","draft":draft,"preview":plan["digest"],"nonce":plan["nonce"],"wait":true});
+    let done = ui.call(submit.clone(), 200).await;
+    assert_eq!(done["state"], "succeeded");
+    assert_eq!(ui.call(submit, 200).await, done);
+    assert_eq!(
+        std::fs::read_to_string(cwd.join("invocations")).unwrap(),
+        "invoked"
+    );
+    let detail = ui
+        .call(json!({"action":"analysis-job","id":done["job"]["id"]}), 200)
+        .await;
+    assert_eq!(detail["result"]["worker_execution"]["exit_code"], 0);
+    assert_eq!(
+        detail["result"]["parsed"]["claude_code"]["init"]["apiKeySource"],
+        "none"
+    );
+    assert!(detail["input"]["request"].get("max_tokens").is_none());
+    ui.stop().await;
+    std::fs::rename(&executable, cwd.join("retired-fake-claude")).unwrap();
+    let ui = Ui::start(base()).await;
+    let report = ui
+        .call(json!({"action":"report","id":done["job"]["id"]}), 200)
+        .await;
+    assert_eq!(
+        report["blocks"][0]["text"],
+        "Retained tool-free worker result."
+    );
+    assert_eq!(report["returned_model"], "claude-sonnet-5-5");
+    assert_eq!(
+        report["promotion"],
+        "not-performed; explicit authored operation required"
+    );
+    server
+        .service
+        .lock()
+        .unwrap()
+        .replace_grants(vec![])
+        .unwrap();
+    ui.call(json!({"action":"report","id":done["job"]["id"]}), 403)
+        .await;
+    ui.stop().await;
+}
+
+#[tokio::test]
+async fn project_analysis_erasure_follows_frozen_authored_annotations_not_model_text() {
+    use kan::evidence_workspace::Workspace;
+    let dir = tempfile::tempdir().unwrap();
+    let local = private_workspace_directory();
+    let f = fixture_requests(dir.path(), Profile::Admitted, encrypted);
+    let server = Server::start(&f).await;
+    let reader = server.client(&f);
+    let pin = reader.snapshot().await.unwrap();
+    let page = reader.page(&pin, None, 2).await.unwrap();
+    let binding=serde_json::from_value(json!({"profile":"admitted","archive":service::hex(&f.binding.archive),"scope":service::hex(&f.binding.scope),"issuer":f.binding.issuer})).unwrap();
+    let plan = attested::Archive::open(&f.root, f.binding.clone())
+        .unwrap()
+        .preview_erasure(
+            &[page.records[0].sequence.parse().unwrap()],
+            "b".repeat(64),
+            200,
+        )
+        .unwrap();
+    let record = kan::evidence_store::erasure::Record::sign(plan, &identity(8)).unwrap();
+    let database = local.path().join("project-lineage.sqlite");
+    let annotation = "a".repeat(64);
+    {
+        let workspace = Workspace::open(&database, identity(9), [84; 32]).unwrap();
+        let cite = json!({"source":"source","pin":pin,"selection":page.records[0].selection});
+        workspace
+            .put(
+                "annotation",
+                &annotation,
+                json!({"id":annotation,"draft":{"cites":[cite]}}),
+            )
+            .unwrap();
+        let draft = json!({"recipe":"project-consolidation","cites":[],"decode":true,"project":{"source":"source","subjects":["p"]}});
+        workspace
+            .put(
+                "analysis-job",
+                "project-job",
+                json!({"id":"project-job","draft":draft,"project_annotations":[annotation]}),
+            )
+            .unwrap();
+        workspace
+            .put(
+                "analysis-input",
+                "project-job",
+                json!({"draft":draft,"project_annotations":[annotation]}),
+            )
+            .unwrap();
+        workspace
+            .put(
+                "analysis-result",
+                "project-job",
+                json!({"text":"unrelated-job"}),
+            )
+            .unwrap();
+        workspace.put("analysis-job","unrelated-job",json!({"id":"unrelated-job","draft":{"cites":[{"source":"source","pin":pin,"selection":page.records[1].selection}]}})).unwrap();
+        workspace
+            .put(
+                "analysis-result",
+                "unrelated-job",
+                json!({"text":annotation}),
+            )
+            .unwrap();
+    }
+    let workspace = Workspace::open_for_erasure(&database, identity(9), [84; 32]).unwrap();
+    let cleanup = workspace
+        .preview_source_erasure(&binding, &record, "c".repeat(64))
+        .unwrap()
+        .unwrap();
+    workspace.apply_erasure(&cleanup).unwrap();
+    for kind in ["analysis-job", "analysis-input", "analysis-result"] {
+        assert!(workspace.get(kind, "project-job").unwrap().is_none());
+    }
+    assert!(workspace.get("annotation", &annotation).unwrap().is_none());
+    assert!(
+        workspace
+            .get("analysis-result", "unrelated-job")
+            .unwrap()
+            .is_some(),
+        "model text never creates a dependency edge"
+    );
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn cli_worker_deadlines_output_limits_and_cancellation_stop_owned_descendants() {
+    use std::os::unix::fs::PermissionsExt;
+    let archive = tempfile::tempdir().unwrap();
+    let local = private_workspace_directory();
+    let cwd = local.path().canonicalize().unwrap();
+    let executable = cwd.join("fake-claude");
+    let f = fixture_requests(archive.path(), Profile::Admitted, captured_request);
+    let server = Server::start(&f).await;
+    let base = || {
+        kan::evidence_library::Readers::new(None, vec![server.client(&f)])
+            .unwrap()
+            .with_workspace(
+                kan::evidence_workspace::Workspace::open(
+                    &cwd.join("worker-failure.sqlite"),
+                    identity(6),
+                    [98; 32],
+                )
+                .unwrap(),
+            )
+    };
+    let scope = Ui::start(base()).await;
+    let catalog = scope.call(json!({"action":"catalog"}), 200).await;
+    let source = catalog["scopes"][0]["id"].clone();
+    let pin = catalog["scopes"][0]["pin"].clone();
+    let page = scope
+        .call(
+            json!({"action":"proof-page","source":source,"pin":pin,"limit":1}),
+            200,
+        )
+        .await;
+    scope.stop().await;
+    for mode in ["overflow", "timeout", "cancel"] {
+        let body = if mode == "overflow" {
+            "head -c 2097153 /dev/zero".to_owned()
+        } else {
+            format!("printf partial; printf ready > ready-{mode}; (sleep 2; printf survived > survived-{mode}) &\nwait")
+        };
+        std::fs::write(&executable, format!("#!/bin/sh\n{body}\n")).unwrap();
+        std::fs::set_permissions(&executable, std::fs::Permissions::from_mode(0o700)).unwrap();
+        let config = json!({"adapter":"claude-code","worker":{"kind":"claude-code","executable":executable,"working_directory":cwd,"max_budget_usd":0.05,"timeout_seconds":if mode=="timeout"{1}else{5}},"model":"claude-sonnet-5-5","sources":[source],"recipes":[{"id":"documentation-summary","revision":"1","purpose":"summarize","instructions":"Synthetic fixture only."}],"max_input_bytes":65536,"max_output_tokens":128,"max_jobs":3});
+        let ui = Ui::start(
+            base()
+                .with_analysis(serde_json::from_value(config).unwrap())
+                .unwrap(),
+        )
+        .await;
+        let draft = json!({"recipe":"documentation-summary","cites":[{"source":source,"pin":pin,"selection":page["records"][0]["selection"]}]});
+        let preview = ui
+            .call(json!({"action":"analysis-preview","draft":draft}), 200)
+            .await;
+        let done=ui.call(json!({"action":"analysis-submit","draft":draft,"preview":preview["digest"],"nonce":preview["nonce"],"wait":mode!="cancel"}),200).await;
+        let id = &done["job"]["id"];
+        if mode == "cancel" {
+            let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(3);
+            while !cwd.join("ready-cancel").exists() {
+                assert!(
+                    tokio::time::Instant::now() < deadline,
+                    "owned fixture never started"
+                );
+                tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+            }
+            assert_eq!(
+                ui.call(json!({"action":"analysis-job","id":id,"cancel":true}), 200)
+                    .await["state"],
+                "cancelled"
+            );
+        } else {
+            assert_eq!(done["state"], "failed");
+            let detail = ui.call(json!({"action":"analysis-job","id":id}), 200).await;
+            let execution = &detail["result"]["worker_execution"];
+            assert_eq!(execution["transport_failed"], true);
+            assert!(detail["result"]["parsed"].is_null());
+            if mode == "overflow" {
+                assert_eq!(detail["result"]["truncated"], true);
+                assert_eq!(execution["raw"].as_str().unwrap().len(), 4 * 1024 * 1024);
+            } else {
+                assert_eq!(execution["timed_out"], true);
+                assert_eq!(execution["raw"], service::hex(b"partial"));
+            }
+        }
+        ui.stop().await;
+        if mode != "overflow" {
+            tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+            assert!(
+                !cwd.join(format!("survived-{mode}")).exists(),
+                "owned descendant survived cleanup"
+            );
+        }
+    }
 }

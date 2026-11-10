@@ -48,13 +48,45 @@ Loss/availability states remain visible. Original encrypted inputs are retained;
 the projection is neither deletion nor complete-capture certification.
 
 `--derived-report PARENT` explicitly includes a prior validated consolidation as
-context. Every original parent input must also occur in the selected interval;
+context. In capture-only mode every original parent input must also occur in the selected interval;
 the eight-input bound never silently widens. The new result retains parent-job
 lineage and must ground its new candidates in its own supplied visible units.
 Read-time checks cover all dependency sources and retained ancestors; provider
 configuration is unnecessary for reading. Long ranges/large ancestry refuse
 explicitly. This initial bounded hierarchy is not an unbounded project crawler
 or automatic consolidation of every authored subject in a repository.
+
+### Authored project selection
+
+`--project-file /private/selector.json` selects authored evidence independently of
+a capture interval. A selector contains `source`, explicit `subjects` and/or a
+segment `prefix`, optional `trust` (default `me`), `relation_depth`0–2,
+`max_subjects`1–32 (default16), and `max_claims`1–256 (default128). For example:
+
+```json
+{"source":"proof:explicit-source-id","prefix":"project/example","relation_depth":1,"max_subjects":16,"max_claims":128}
+```
+
+Use it with `kan extract --profile /private/project.json --project-file
+/private/selector.json --recipe project-consolidation`. Omit `--from/--through`
+for authored-only input, or supply both to add a bounded captured interval.
+The canonical fold supplies whole identity classes and explicit live relation
+neighbors, including incoming edges. The input retains signed authored claims,
+correction history, state and identity witnesses. Prefixes match path segments;
+`project/a` does not select `project/ab`. Exceeding a bound refuses the selection,
+rather than silently presenting a partial class as complete.
+
+The evaluation id binds the claim frontier, trust, selector, fold/relation versions
+and explicitly selected prior derivations. Submission recomputes the preview;
+an intervening append requires a new plan. Completed reports retain their original
+frontier, including disagreements and historical corrections. New appends do not
+rewrite them. An authored witness returns a typed `recall_request` with its exact
+claim CID and trust policy; captured witnesses keep their decoded-item routes.
+Selected prior derivations can have different captured intervals in project mode;
+their original sources remain explicit dependencies with current access checks.
+No automatic search for prior reports, model-created identity or graph mutation
+is performed. Frozen annotation dependencies also participate in publication and
+source-erasure closure, through the existing encrypted analysis lineage.
 
 ## Progressive disclosure
 
@@ -88,6 +120,54 @@ token budget cannot evict authored claims. Omitted candidates are counted. With
 no selected reports, recall remains authored-only. This provides an explicit
 selection policy rather than silently treating recent model prose as relevant.
 
+## Claude Code worker using normal sign-in
+
+The `claude-code` adapter runs an explicitly configured installed executable,
+using its normal login. Kan does not read or export login tokens and requires no
+provider API key or localhost bridge. Example analysis configuration:
+
+```json
+{
+  "adapter":"claude-code",
+  "worker":{
+    "kind":"claude-code",
+    "executable":"/absolute/path/to/claude",
+    "working_directory":"/private/empty-worker-directory",
+    "max_budget_usd":0.50,
+    "timeout_seconds":120
+  },
+  "model":"claude-sonnet-5-5",
+  "sources":["proof:explicit-source-id"],
+  "max_input_bytes":65536,
+  "max_output_tokens":1024,
+  "max_jobs":1
+}
+```
+
+Omit endpoint/token settings for this worker. The existing directory must be
+absolute and canonical; the executable must be absolute. Each job gets a fresh
+job-bound session, with no resume, tools, MCP servers, skills or custom hooks.
+Safe mode retains normal authentication; `--bare` would disable OAuth discovery
+and is deliberately not used. Kan passes only a small environment allowlist and
+does not forward provider API keys, base-URL/proxy overrides or alternate-provider
+switches. Operator-managed CLI policies still apply and can refuse execution.
+
+One job schedules one CLI invocation. The CLI owns its internal provider
+transport/retry behavior, so this is not an exactly-once API-call promise.
+Timeouts are1–600seconds; stdout2MiB and stderr64KiB are bounded. Completion,
+timeout, pipe overflow and cancellation stop the owned process group. Reported
+init/model/session/auth source, tool use, result and exit status are checked;
+exit0 alone cannot make a malformed, substituted-model or incomplete run succeed.
+Raw output, failure state and CLI-reported usage remain encrypted job evidence.
+The dollar limit is a CLI-reported list-cost budget, not a subscription billing
+receipt. This adapter has no output-token limit: the shared legacy configuration
+field remains required, but manifests return `max_output_tokens:null`.
+
+This worker uses the existing analysis lease, quotas, concurrency, cancellation,
+input access checks and encrypted result store. Ordinary report reads need
+neither the executable nor an analysis configuration and never invoke a worker.
+No global install, daemon or system Kan replacement is part of configuration.
+
 ## Local decision worker
 
 The existing `typesafe-system-one` adapter accepts Choice, Score and Noul.
@@ -95,6 +175,32 @@ The existing `typesafe-system-one` adapter accepts Choice, Score and Noul.
 and full returned distributions. It uses the same visible-evidence projection.
 These scores advise ordering/review only; no threshold silently excludes sources.
 Tev1 is a different model from hosted Jev, despite protocol compatibility.
+
+It also supplies the separate **`statement-assessment/1`** contract. Configure
+that exact recipe with a `local-decision` worker. This keeps prescription, an
+explicit textual report of adoption, and a reason-to-target link separate;
+historical adoption does not establish current effectiveness. It uses categorical
+questions with a versioned display mapping to yes/no/unresolved. The original
+`evidence-triage/1` recipe and historical results are unchanged.
+
+Supply `--assessment-file /private/target.json` when making an extraction plan:
+
+```json
+{"target":{"unit":"g0/request/i3/text","start":0,"end":12},"reason":null}
+```
+
+Use an actual decoded visible unit id and UTF-8 **byte** offsets, end exclusive.
+Unknown, empty, whitespace-only, oversized or split-codepoint spans refuse before
+inference. Kan submits those full visible units plus exact selected text and
+verbatim punctuation/paragraph context windows. Windows are navigation aids, not
+a semantic parser or a replacement target. Oversized prompts refuse explicitly;
+other frozen records remain accessible through the report's input fallback.
+Without a supplied reason occurrence, the reason-link question is removed before
+inference and the result is `not-supplied`, rather than a guessed relationship.
+Normal paginated reports preserve rubrics, distributions, mapped assessments,
+exact spans and supporting-source requests. None of these results authors a claim
+or supplies a calibrated truth probability. The development experiment's scores
+are not product acceptance; this transport/rendering path needs its own checks.
 
 Ordinary `kan report` and `kan_v2_report` expose each retained question/rubric
 and its complete Choice, Score or Noul answer as JSON text fragments in

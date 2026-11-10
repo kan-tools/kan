@@ -2,6 +2,7 @@
 //! and authorize the selection before calling this API. Tombstones retain no
 //! removed values and fence future writes, including not-yet-produced results.
 mod dependencies;
+pub(super) use dependencies::project_annotations;
 mod enrollment;
 use super::*;
 use std::collections::BTreeSet;

@@ -62,6 +62,8 @@ impl Readers {
                     decode: false,
                     derived_from: Vec::new(),
                     finalized: None,
+                    assessment: None,
+                    project: None,
                 };
                 let result = async {
                     let preview = self.analysis_preview(job.clone()).await?;

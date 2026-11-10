@@ -115,6 +115,26 @@ fn cites(v: &Value, binding: &Binding, targets: &BTreeSet<(String, String)>) -> 
         targets,
     )
 }
+pub(in crate::evidence_workspace) fn project_annotations(value: &Value) -> Result<Vec<String>> {
+    let Some(ids) = value.get("project_annotations").filter(|v| !v.is_null()) else {
+        return Ok(Vec::new());
+    };
+    let ids = ids
+        .as_array()
+        .filter(|a| a.len() <= 256)
+        .ok_or(Failure::Corrupt)?;
+    let mut out = BTreeSet::new();
+    for id in ids {
+        let id = id.as_str().ok_or(Failure::Corrupt)?;
+        if id.len() != 64
+            || crate::evidence_service::unhex(id, 32).is_err()
+            || !out.insert(id.to_owned())
+        {
+            return Err(Failure::Corrupt);
+        }
+    }
+    Ok(out.into_iter().collect())
+}
 fn directly_affected(
     kind: &str,
     value: &Value,
@@ -135,6 +155,19 @@ fn directly_affected(
                 .ok_or(Failure::Corrupt)?
                 .decoded(text(value, "author")?)?;
             Ok(false)
+        }
+        "analysis-job" | "analysis-input"
+            if value["draft"]["cites"]
+                .as_array()
+                .is_some_and(Vec::is_empty)
+                && !value["draft"]["project"].is_null() =>
+        {
+            let draft: crate::evidence_library::AnalysisDraft =
+                serde_json::from_value(value["draft"].clone()).map_err(invalid)?;
+            if draft.project.is_none() || project_annotations(value)?.is_empty() {
+                return Err(Failure::Corrupt);
+            }
+            Ok(false) // actual dependencies are typed annotation -> job edges below
         }
         "annotation" | "analysis-job" | "analysis-input" => {
             cites(&value["draft"]["cites"], binding, targets)
@@ -326,7 +359,7 @@ impl Workspace {
                 }
                 let value = serde_json::json!({
                     "id":value.get("id"), "version":value.get("version"),
-                    "manifest":value.get("manifest"), "annotation":value.get("annotation"), "job":value.get("job"),
+                    "project_annotations":value.get("project_annotations"), "manifest":value.get("manifest"), "annotation":value.get("annotation"), "job":value.get("job"),
                     "draft": {
                         "supersedes":value["draft"].get("supersedes"), "withdraws":value["draft"].get("withdraws"),
                         "derived_from":value["draft"].get("derived_from").cloned().unwrap_or_else(||serde_json::json!([])),
@@ -435,6 +468,9 @@ impl Workspace {
                 for (id, e) in &job_entries {
                     let d = &e.value["draft"];
                     let child = ("analysis-job".into(), id.clone());
+                    for parent in project_annotations(&e.value)? {
+                        add(("annotation".into(), parent), child.clone())?;
+                    }
                     if let Some(p) = parent(d, "retry_of")? {
                         add(("analysis-job".into(), p), child.clone())?;
                     }

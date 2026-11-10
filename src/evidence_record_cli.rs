@@ -282,9 +282,9 @@ pub struct Recall {
 pub struct Extraction {
     #[command(flatten)]
     pub base: Base,
-    #[arg(long, required_unless_present = "plan")]
+    #[arg(long, required_unless_present_any = ["plan","project_file"])]
     pub from: Option<u64>,
-    #[arg(long, required_unless_present = "plan")]
+    #[arg(long, required_unless_present_any = ["plan","project_file"])]
     pub through: Option<u64>,
     /// Exact signed discovery pin in a private file; freezes the selected frontier.
     #[arg(long, conflicts_with = "plan")]
@@ -302,6 +302,12 @@ pub struct Extraction {
     pub finalized_session: Option<String>,
     #[arg(long, requires = "finalized_session")]
     pub finalized_attempt: Option<String>,
+    /// Exact statement target/reason unit ids and UTF-8 spans, in a private JSON file.
+    #[arg(long, conflicts_with = "plan")]
+    pub assessment_file: Option<PathBuf>,
+    /// Bounded authored subject/prefix/relations/trust selector in private JSON.
+    #[arg(long, conflicts_with_all = ["plan","assessment_file"])]
+    pub project_file: Option<PathBuf>,
     /// Explicit paid submission. Without this flag only a plan is produced.
     #[arg(long)]
     pub run: bool,
@@ -750,8 +756,8 @@ fn extract(a: Extraction) -> Result<()> {
     } else {
         let selection = library::ExtractionSelection {
             source: p.source.clone(),
-            from: a.from.ok_or("missing --from")?,
-            through: a.through.ok_or("missing --through")?,
+            from: a.from.unwrap_or(0),
+            through: a.through.unwrap_or(0),
             recipe: a.recipe,
             pin: a
                 .pin_file
@@ -759,6 +765,26 @@ fn extract(a: Extraction) -> Result<()> {
                 .map(|path| -> Result<crate::evidence_reader::proof::Pin> {
                     if !path.is_absolute() {
                         return Err("pin file must be absolute".into());
+                    }
+                    Ok(serde_json::from_slice(&secret_file(path)?)?)
+                })
+                .transpose()?,
+            project: a
+                .project_file
+                .as_ref()
+                .map(|path| -> Result<_> {
+                    if !path.is_absolute() {
+                        return Err("project selector file must be absolute and private".into());
+                    }
+                    Ok(serde_json::from_slice(&secret_file(path)?)?)
+                })
+                .transpose()?,
+            assessment: a
+                .assessment_file
+                .as_ref()
+                .map(|path| -> Result<_> {
+                    if !path.is_absolute() {
+                        return Err("assessment file must be absolute and private".into());
                     }
                     Ok(serde_json::from_slice(&secret_file(path)?)?)
                 })

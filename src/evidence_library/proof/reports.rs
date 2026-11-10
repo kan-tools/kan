@@ -11,9 +11,11 @@ use serde_json::{json, Value};
 #[serde(deny_unknown_fields)]
 pub struct Selection {
     pub source: String,
-    #[schemars(range(min = 1, max = 9007199254740991.0))]
+    #[serde(default)]
+    #[schemars(range(min = 0, max = 9007199254740991.0))]
     pub from: u64,
-    #[schemars(range(min = 1, max = 9007199254740991.0))]
+    #[serde(default)]
+    #[schemars(range(min = 0, max = 9007199254740991.0))]
     pub through: u64,
     pub recipe: String,
     #[schemars(with = "Option<std::collections::BTreeMap<String,Value>>")]
@@ -22,6 +24,10 @@ pub struct Selection {
     pub derived_from: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub finalized: Option<analysis::Finalized>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub assessment: Option<analysis::StatementTarget>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub project: Option<analysis::ProjectSelection>,
 }
 #[derive(Clone, Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -207,6 +213,32 @@ impl Readers {
         &self,
         mut selection: Selection,
     ) -> Result<(Selection, analysis::Draft), ContentError> {
+        if selection
+            .project
+            .as_ref()
+            .is_some_and(|p| p.source != selection.source)
+        {
+            return Err(Failure::Invalid.into());
+        }
+        if selection.from == 0 && selection.through == 0 && selection.project.is_some() {
+            if selection.pin.is_some() {
+                return Err(Failure::Invalid.into());
+            }
+            return Ok((
+                selection.clone(),
+                analysis::Draft {
+                    recipe: selection.recipe,
+                    cites: Vec::new(),
+                    retry_of: None,
+                    trigger_annotation: None,
+                    decode: true,
+                    derived_from: selection.derived_from,
+                    finalized: selection.finalized,
+                    assessment: selection.assessment,
+                    project: selection.project,
+                },
+            ));
+        }
         if selection.through > 9_007_199_254_740_991
             || selection.from == 0
             || selection.through < selection.from
@@ -265,6 +297,8 @@ impl Readers {
                 decode: true,
                 derived_from: selection.derived_from,
                 finalized: selection.finalized,
+                assessment: selection.assessment,
+                project: selection.project,
             },
         ))
     }
@@ -368,7 +402,15 @@ impl Readers {
             if key == id {
                 root = Some(inputs);
             }
-            for parent in &draft.derived_from {
+            let mut parents = draft.derived_from.clone();
+            if draft.project.is_some() {
+                let saved = self
+                    .workspace()?
+                    .get("analysis-input", &key)?
+                    .ok_or(Failure::Corrupt)?;
+                parents.extend(self.check_project_manifest(&saved["project"]).await?);
+            }
+            for parent in &parents {
                 if parent.len() != 64 || crate::evidence_service::unhex(parent, 32).is_err() {
                     return Err(Failure::Corrupt.into());
                 }
@@ -391,7 +433,7 @@ impl Readers {
         }
         root.ok_or(Failure::Corrupt.into())
     }
-    async fn report_inputs(
+    pub(super) async fn report_inputs(
         &self,
         draft: &analysis::Draft,
         id: &str,
@@ -501,6 +543,10 @@ impl Readers {
                             .iter()
                             .find(|u| u["id"] == key)
                             .ok_or(Failure::Corrupt)?;
+                        if key.starts_with("claim:") {
+                            witnesses.push(json!({"unit":key,"recall_request":unit["recall_request"],"live_at_selection":unit["live_at_selection"],"claim_cid":key.strip_prefix("claim:").ok_or(Failure::Corrupt)?,"authorship":unit["author"]}));
+                            continue;
+                        }
                         let excerpt = Excerpt::from_unit(key).ok_or(Failure::Corrupt)?;
                         let input = unit["citations"][0]["input"]
                             .as_str()
@@ -537,6 +583,39 @@ impl Readers {
                     .get("analysis-input", &id)?
                     .ok_or(Failure::Corrupt)?;
                 blocks = decision_blocks(&saved["request"], &result["parsed"])?;
+                if result["statement_assessment"].is_object() {
+                    let mut assessment = result["statement_assessment"].clone();
+                    let units = saved["projection"][0]["units"]
+                        .as_array()
+                        .ok_or(Failure::Corrupt)?;
+                    for field in ["target", "reason"] {
+                        if assessment["witness"][field].is_null() {
+                            continue;
+                        }
+                        let key = assessment["witness"][field]["span"]["unit"]
+                            .as_str()
+                            .ok_or(Failure::Corrupt)?;
+                        let unit = units
+                            .iter()
+                            .find(|u| u["id"] == key)
+                            .ok_or(Failure::Corrupt)?;
+                        let excerpt = Excerpt::from_unit(key).ok_or(Failure::Corrupt)?;
+                        let input = unit["citations"][0]["input"]
+                            .as_str()
+                            .and_then(|s| s.parse::<usize>().ok())
+                            .ok_or(Failure::Corrupt)?;
+                        if input >= draft.cites.len() {
+                            return Err(Failure::Corrupt.into());
+                        }
+                        assessment["witness"][field]["reference_request"] =
+                            json!({"report":{"id":id,"input":input,"excerpt":excerpt}});
+                    }
+                    let text =
+                        serde_json::to_string_pretty(&assessment).map_err(|_| Failure::Corrupt)?;
+                    for (fragment, text) in fragments(&text).into_iter().enumerate() {
+                        blocks.push(json!({"kind":"statement-assessment","block":"statement-assessment","fragment":fragment,"text":text}));
+                    }
+                }
             } else if let Some(content) = result["parsed"]["content"].as_array() {
                 for (n, part) in content.iter().enumerate() {
                     if let Some(text) = part["text"].as_str() {
@@ -557,7 +636,7 @@ impl Readers {
             map.remove("instructions");
             map.remove("questions");
         }
-        let value = json!({"version":"kan-derived-report/1","id":id,"recipe":recipe,"worker":job["preview"]["worker"],"requested_model":job["preview"]["model"],"returned_model":output.as_ref().map(|o|o["parsed"]["model"].clone()),"state":output.as_ref().map_or(json!("pending-or-interrupted; inspect job status"),|o|o["state"].clone()),"blocks":blocks,"inputs":inputs,"usage":output.as_ref().map(|o|o["parsed"]["usage"].clone()),"usage_state":if output.as_ref().is_some_and(|o|!o["parsed"]["usage"].is_null()) {"provider-reported; not a billing receipt"} else {"unavailable"},"authority":"Unpromoted model interpretation. Confidence and probabilities are model outputs, not calibrated truth or authored acceptance.","coverage":"Only the exact selected input manifest. Model claims and citations need review; this is not complete capture or an accepted decision.","promotion":"not-performed; explicit authored operation required"});
+        let value = json!({"version":"kan-derived-report/1","id":id,"recipe":recipe,"worker":job["preview"]["worker"],"requested_model":job["preview"]["model"],"returned_model":output.as_ref().map(|o|o["parsed"]["model"].clone()),"state":output.as_ref().map_or(json!("pending-or-interrupted; inspect job status"),|o|o["state"].clone()),"project_evaluation":job["preview"]["project_evaluation"],"blocks":blocks,"inputs":inputs,"usage":output.as_ref().map(|o|o["parsed"]["usage"].clone()),"usage_state":if output.as_ref().is_some_and(|o|!o["parsed"]["usage"].is_null()) {"provider-reported; not a billing receipt"} else {"unavailable"},"authority":"Unpromoted model interpretation. Confidence and probabilities are model outputs, not calibrated truth or authored acceptance.","coverage":"Only the exact selected input manifest. Model claims and citations need review; this is not complete capture or an accepted decision.","promotion":"not-performed; explicit authored operation required"});
         report_page(value, cursor)
     }
 }

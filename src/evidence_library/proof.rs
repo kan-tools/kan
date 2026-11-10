@@ -14,6 +14,7 @@ mod discovery;
 pub(crate) mod imports;
 pub mod knowledge;
 pub mod outbox;
+mod projects;
 pub mod records;
 pub mod reports;
 pub mod search;
@@ -31,6 +32,21 @@ pub struct Readers {
     workers: std::sync::Arc<tokio::sync::Semaphore>,
 }
 impl Readers {
+    fn analysis_context(
+        proof: BTreeMap<String, std::sync::Arc<proof::Reader>>,
+        workspace: std::sync::Arc<crate::evidence_workspace::Workspace>,
+    ) -> Self {
+        Self {
+            owner: None,
+            analysis: None,
+            outbox: None,
+            operations: None,
+            workspace: Some(workspace),
+            legacy: None,
+            proof,
+            workers: std::sync::Arc::new(tokio::sync::Semaphore::new(2)),
+        }
+    }
     pub(super) fn has_analysis(&self) -> bool {
         self.analysis.is_some()
     }

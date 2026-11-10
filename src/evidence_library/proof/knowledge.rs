@@ -324,6 +324,7 @@ impl Readers {
             }
             let inputs: super::analysis::Draft =
                 serde_json::from_value(job["draft"].clone()).map_err(|_| Failure::Corrupt)?;
+            self.report_dependency_access(&inputs, id).await?;
             for cite in inputs.cites {
                 let encoded = serde_json::to_value(&cite).map_err(|_| Failure::Invalid)?;
                 if !draft

@@ -90,8 +90,26 @@ impl Workspace {
             }
             let draft = &record["draft"];
             let cites = draft["cites"].as_array().ok_or(Failure::Corrupt)?;
-            if (cites.is_empty() && draft["authored"].is_null()) || cites.len() > 8 {
+            if (cites.is_empty() && draft["authored"].is_null() && draft["project"].is_null())
+                || cites.len() > 8
+            {
                 return Err(Failure::Corrupt);
+            }
+            if !draft["project"].is_null() {
+                let project: crate::evidence_library::proof::analysis::ProjectSelection =
+                    serde_json::from_value(draft["project"].clone()).map_err(invalid)?;
+                if !self.erasure_histories.iter().any(|h| {
+                    crate::evidence_library::proof::source_id(&h.binding) == project.source
+                }) {
+                    return Err(Failure::AccessLimited);
+                }
+                let annotations = erasure::project_annotations(&record)?;
+                if annotations.is_empty() {
+                    return Err(Failure::Corrupt);
+                }
+                for id in annotations {
+                    pending.push_back(("annotation".into(), id));
+                }
             }
             if !draft["authored"].is_null() {
                 let batch: crate::evidence_library::RecordBatch =

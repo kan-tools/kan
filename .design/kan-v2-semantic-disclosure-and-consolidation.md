@@ -69,11 +69,11 @@ Implementation pass,2026-11-04, with scoped runtime inspection2026-11-05:
   source ranges survive exclusion of thinking/control wrappers. Shape and witness
   validation cannot certify truth or calibrate confidence.
 - Existing jobs carry explicit worker identity, optional private local token-file
-  references and bounded prior-derivation lineage. Prior originals must also be
-  explicitly selected in the current interval; this is bounded consolidation,
-  not an automatic unbounded project crawler. `project-consolidation` currently
-  consumes selected captured statements/prior outputs; automatic selection of
-  authored subject graphs remains a separate selector refinement.
+  references and bounded prior-derivation lineage. Capture-only mode requires
+  parent originals in the selected interval. The Nov9 implementation adds an
+  explicit bounded authored subject/prefix/relation selector with its own frozen
+  frontier and current dependency access. It is not an unbounded project crawler;
+  its new runtime qualification remains pending.
 - Reports lead with structured statements and exact decoded-item locators.
   Typed content-page version2 leads with useful text/tool data and uses a
   page-local citation dictionary. Original indices/ranges, loss states and the
@@ -271,6 +271,42 @@ Own-project task evaluation,2026-11-05:
   comparisons and grouped uncertainty; no broad calibration or production
   filtering claim follows from this enriched small corpus. (REQ-13, REQ-14)
 
+## Integrated worker and authored-selection implementation — 2026-11-09
+
+Owner approval extends the existing build with three connected paths, without a
+second scheduler, fold or authoritative store:
+
+- `statement-assessment/1` uses exact visible-unit UTF-8 occurrence spans and
+  categorical prescription/adoption/reason questions. It retains original full
+  visible units, verbatim context windows and source fallback. A missing reason
+  prevents reason-link inference structurally. Display mappings do not establish
+  truth, present effectiveness, authored acceptance or probability calibration.
+- A supported `claude-code` worker uses the installed CLI's normal sign-in,
+  tool-free safe mode, a fresh job-bound session, bounded pipes, time/budget
+  limits and owned process-group cleanup. Actual init, model, session, tools,
+  completion and usage are retained. One invocation is not a promise about the
+  CLI's internal provider requests. Read-only report paths instantiate no worker.
+- An explicit bounded project selector runs the canonical fold over authorized
+  authored records, selects whole subject classes and live relation neighbors,
+  and retains correction history, signed claims, identity witnesses, trust and
+  frontier. Explicit prior derivations keep their original dependency sources.
+  Claim witnesses route to typed CID recall; capture witnesses keep exact decoded
+  item routes. Appended claims invalidate an unsubmitted preview but do not rewrite
+  a completed report's frozen interpretation. Publication and erasure follow
+  typed frozen annotation dependencies, never model text or coincident labels.
+
+The existing encrypted analysis job/input/result wildcard surfaces retain these
+contracts; result classifications remain derived. Their surface declarations and
+conformance evidence are updated with the implementation. No storage format,
+claim codec, grant, canonical fold semantics or system installation changes.
+
+Verification status: implementation and meaningful pure/subprocess/actual HTTP
+regressions are being prepared for scoped remote Tier1. No local Rust execution
+or fresh paid inference has qualified these changes. Development Q4 ablations
+are motivation, not held-out product accuracy. Next come exact-head operator
+checks and a newly named fresh acceptance exercise, then one final Tier2 and
+scoped independent review. Historical failed trials remain historical evidence.
+
 ## Architecture
 
 ### First-pass local-worker task evaluation — owner request,2026-11-05
@@ -379,8 +415,9 @@ show candidates separately under an explicit derivation policy.
 Each recipe is a bundle of selector, instructions, output schema, renderer,
 validation and execution limits. The initial typed pack is now implemented
 beside `src/evidence_library/proof/analysis.rs`; full runtime and fresh-agent
-qualification remain pending. The explicit pinned interval selector is shared;
-flow-specific automatic subject-graph selection is not claimed implemented.
+qualification remain pending. Shared pinned capture intervals and the Nov9
+explicit bounded authored-graph selector supply the inputs. No autonomous graph
+crawler or implicit selection of recent model reports is claimed.
 
 | Flow | Required result and prompt stance |
 |---|---|
@@ -423,9 +460,10 @@ Schema compatibility does not establish Jev-equivalent accuracy or calibration.
 The isolated setup and its bounded checks are recorded below.
 
 Claude Code is the preferred local-controller path for the next Sonnet exercise,
-using its existing normal sign-in. The current Messages-to-Claude-Code bridge is
-test-only. A product worker needs explicit lifecycle, model, tool and cost/usage
-contracts, using the existing analysis-job engine rather than a new scheduler.
+using its existing normal sign-in. Historical Messages-to-Claude-Code bridge
+evidence remains test-only. The Nov9 supported worker implements explicit
+lifecycle, model, tool and cost/usage contracts in the existing analysis-job
+engine; runtime and fresh acceptance checks are still required.
 No login token is extracted and no direct-provider API qualification is inferred.
 
 ### Explicit and opt-in finalization execution

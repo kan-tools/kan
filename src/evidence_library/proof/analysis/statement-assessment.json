@@ -1,0 +1,78 @@
+{
+  "questions": {
+    "prescription": {
+      "type": "choice",
+      "instructions": "How is the exact marked target used in its governing source context? Select the most specific applicable use. A real attributed rule can prescribe; an actual report of a past selection is not a request. Fictional examples do not prescribe real actions.",
+      "criteria": {
+        "instruction_or_request": "The author or an actual speaker instructs, requests or recommends the target action/constraint in the real situation described.",
+        "proposal_or_draft": "The target action/constraint is suggested for consideration or stated as a draft requirement.",
+        "standing_requirement": "The target is expressed as a currently asserted governing requirement or standing rule.",
+        "selection_or_completion_report": "The target occurs in a bare report of a past selection or completed action, not a prescription.",
+        "description_or_evaluation": "The target is described or evaluated without prescribing an action or constraint.",
+        "fictional_example": "The target is used only in a fictional, hypothetical, illustrative or test example, not an actual prescription.",
+        "not_established": "No actual prescription of the target is established here.",
+        "unclear": "The governing use cannot be determined unambiguously from this record."
+      }
+    },
+    "adoption_assertion": {
+      "type": "choice",
+      "instructions": "What does this record explicitly report about the exact target action or constraint? Judge the textual report, not truth or current effectiveness. Historical selection still counts if later retracted. Prefer the specific deferral or established-rule category when applicable. A bare command or implementation is insufficient.",
+      "criteria": {
+        "selected_or_agreed": "The record explicitly reports this target was selected, agreed or adopted in the actual situation described, even if subsequently retracted.",
+        "established_rule": "The record explicitly presents the target as an established or binding governing rule, not merely someone requesting it.",
+        "deliberately_deferred": "The record explicitly reports a deliberate decision to defer this target.",
+        "rejected_only": "Only rejection of the target is reported; no historical adoption or deliberate deferral is asserted.",
+        "proposal_or_command_only": "Only a proposal, request, instruction or draft requirement is reported, without explicit adoption or establishment.",
+        "execution_or_status_only": "Only implementation, completion, behavior or status is reported, without an explicit selection/agreement/established rule/deferral.",
+        "fictional_example": "The apparent adoption exists only in a fictional, hypothetical, illustrative or test example.",
+        "not_established": "None of the required adoption assertions is explicitly established for this target.",
+        "unclear": "Whether this record explicitly reports adoption or establishment of this target remains ambiguous."
+      }
+    },
+    "reason_link": {
+      "type": "choice",
+      "instructions": "How does the record use the supplied REASON relative to the exact CANDIDATE choice, with its governing context and polarity? Identify the relationship actually presented, not a plausible unstated rationale. A rationale inside a fictional example is not an actual choice justification.",
+      "criteria": {
+        "justification_for_target": "The selected reason is explicitly presented as a motive or justification for this same actual target choice, including a choice to avoid/reject/defer when the governing context says so.",
+        "consequence": "It is presented as a consequence of the target, not its motive.",
+        "other_event_or_choice": "It explains a different action, choice, implementation detail or failure rather than this target choice.",
+        "fictional_example": "The apparent motive-to-choice relationship exists only in a fictional, hypothetical, illustrative or test example.",
+        "unlinked_context": "The text supplies context or a plausible consideration without explicitly presenting this reason as the justification for this target.",
+        "no_reason_supplied": "No reason occurrence was supplied.",
+        "unclear": "This exact reason-to-target relationship is ambiguous in the record."
+      }
+    }
+  },
+  "mappings": {
+    "prescription": {
+      "instruction_or_request": "yes",
+      "proposal_or_draft": "yes",
+      "standing_requirement": "yes",
+      "selection_or_completion_report": "no",
+      "description_or_evaluation": "no",
+      "fictional_example": "no",
+      "not_established": "no",
+      "unclear": "unresolved"
+    },
+    "adoption_assertion": {
+      "selected_or_agreed": "yes",
+      "established_rule": "yes",
+      "deliberately_deferred": "yes",
+      "rejected_only": "no",
+      "proposal_or_command_only": "no",
+      "execution_or_status_only": "no",
+      "fictional_example": "no",
+      "not_established": "no",
+      "unclear": "unresolved"
+    },
+    "reason_link": {
+      "justification_for_target": "yes",
+      "consequence": "no",
+      "other_event_or_choice": "no",
+      "fictional_example": "no",
+      "unlinked_context": "no",
+      "no_reason_supplied": "no",
+      "unclear": "unresolved"
+    }
+  }
+}

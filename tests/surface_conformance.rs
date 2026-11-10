@@ -48,6 +48,14 @@ const RULE_EVIDENCE: &[(&str, &str)] = &[
     // their integration witnesses cover exact retry, retained originals and proof pins.
     ("owner-maintenance", "tests/support/proof_library_tests.rs"),
     ("analysis-lineage", "tests/support/proof_library_tests.rs"),
+    // Same encrypted lineage owner; exact spans, signed project frontiers and
+    // CLI invocation observations add no new authoritative store. Actual HTTP
+    // regressions cover offline readback/revocation; cleanup follows typed
+    // annotation dependencies rather than arbitrary model response text.
+    (
+        "analysis-projection-lineage",
+        "tests/support/proof_library_tests.rs",
+    ),
     (
         "annotation-publication",
         "tests/support/proof_library_tests.rs",

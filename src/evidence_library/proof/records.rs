@@ -294,7 +294,7 @@ fn bodies(
     }
     Ok((subject, out))
 }
-fn record_trust(
+pub(super) fn record_trust(
     specs: &[String],
     me: &str,
     history: &[(Cid, StoredClaim)],
@@ -332,16 +332,16 @@ fn record_trust(
     }
     Ok(TrustBase::peer_contested(weights))
 }
-struct History {
-    claims: Vec<(Cid, StoredClaim)>,
-    origins: std::collections::BTreeMap<String, Value>,
+pub(super) struct History {
+    pub(super) claims: Vec<(Cid, StoredClaim)>,
+    pub(super) origins: std::collections::BTreeMap<String, Value>,
 }
 impl Readers {
     async fn record_scope(&self, source: &str) -> Result<(), ContentError> {
         self.selected(source)?.snapshot().await?;
         Ok(())
     }
-    async fn record_history(
+    pub(super) async fn record_history(
         &self,
         source: &str,
         include_origins: bool,
@@ -463,6 +463,7 @@ impl Readers {
             }
             let inputs: super::analysis::Draft =
                 serde_json::from_value(job["draft"].clone()).map_err(|_| Failure::Corrupt)?;
+            self.report_dependency_access(&inputs, id).await?;
             for cite in inputs.cites {
                 self.selected(&cite.source)?
                     .check_citation_access(&cite.pin, &cite.selection)
