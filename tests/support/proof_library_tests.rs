@@ -58,10 +58,11 @@ impl Ui {
         assert_eq!(
             response.status().as_u16(),
             status,
-            "Library action {}, URI {}, current page {}",
+            "Library action {}, URI {}, current page {}, extraction recipe {}, from {}, through {}, authored selector {}",
             value["action"],
             value["view"]["uri"],
-            value["view"]["current_after"]
+            value["view"]["current_after"],
+            value["selection"]["recipe"],value["selection"]["from"],value["selection"]["through"],value["selection"]["project"].is_object()
         );
         assert_eq!(response.headers()["cache-control"], "no-store");
         response.json().await.unwrap()
@@ -9381,6 +9382,16 @@ async fn structured_consolidation_preserves_visible_witnesses_finalization_idemp
     ] {
         let plan = ui.call(json!({"action":"extract-plan","selection":{"source":source,"from":1,"through":3,"recipe":flow}}),200).await;
         assert!(plan["projection"]["units"].as_u64().unwrap() >= 2);
+        if flow == "session-brief" {
+            let mut unpinned = plan["selection"].clone();
+            unpinned["pin"] = Value::Null;
+            ui.call(json!({"action":"extract-run","selection":unpinned,"preview":plan["digest"],"nonce":plan["nonce"],"wait":true}),400).await;
+            assert!(
+                requests.lock().unwrap().is_empty(),
+                "capture must still refuse a floating proof frontier"
+            );
+        }
+
         let result = ui.call(json!({"action":"extract-run","selection":plan["selection"],"preview":plan["digest"],"nonce":plan["nonce"],"wait":true}),200).await;
         assert_eq!(result["state"], "succeeded");
         ids.push(result["id"].clone());

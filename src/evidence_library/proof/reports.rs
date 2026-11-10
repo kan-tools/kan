@@ -357,7 +357,12 @@ impl Readers {
         nonce: String,
         wait: bool,
     ) -> Result<Value, ContentError> {
-        if selection.pin.is_none() {
+        // Capture intervals require an explicit proof pin. Authored-only
+        // selections instead bind their complete claim frontier in the checked
+        // preview digest; they deliberately have no capture pin to supply.
+        let authored_only =
+            selection.project.is_some() && selection.from == 0 && selection.through == 0;
+        if selection.pin.is_none() && !authored_only {
             return Err(Failure::Invalid.into());
         }
         let (_, draft) = tokio::time::timeout(
