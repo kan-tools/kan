@@ -335,6 +335,17 @@ pub(super) fn record_trust(
 pub(super) struct History {
     pub(super) claims: Vec<(Cid, StoredClaim)>,
     pub(super) origins: std::collections::BTreeMap<String, Value>,
+    pub(super) unavailable: usize,
+    pub(super) erased: usize,
+}
+impl History {
+    pub(super) fn require_complete(&self) -> Result<(), Failure> {
+        if self.unavailable != 0 || self.erased != 0 {
+            Err(Failure::Unavailable)
+        } else {
+            Ok(())
+        }
+    }
 }
 impl Readers {
     async fn record_scope(&self, source: &str) -> Result<(), ContentError> {
@@ -363,15 +374,26 @@ impl Readers {
         let mut history = Vec::new();
         let mut origins = std::collections::BTreeMap::new();
         let mut bytes = 0usize;
+        let (mut unavailable, mut erased) = (
+            0usize,
+            usize::from(self.workspace()?.annotation_history_erased()?),
+        );
         // A declared execution bound, not a lifetime record limit. Never fold a
         // silently incomplete prefix and describe it as the current subject.
         for _ in 0..100 {
             let page = self
-                .annotations_page(None, None, after.clone(), 100)
+                .authored_history_page(source, after.clone(), 100)
                 .await?;
-            if page["coverage"] != "complete" {
-                return Err(Failure::Unavailable.into());
-            }
+            // This private scoped traversal has exact omission metadata. The
+            // generic annotation catalog may be partial for an unrelated
+            // source; never replace known history omissions with an empty fold
+            // or a misleading generic "complete" result.
+            unavailable += page["authored_history_omissions"]["unavailable_dependencies"]
+                .as_u64()
+                .ok_or(Failure::Corrupt)? as usize;
+            erased += page["authored_history_omissions"]["erased_dependencies"]
+                .as_u64()
+                .ok_or(Failure::Corrupt)? as usize;
             for value in page["records"].as_array().ok_or(Failure::Corrupt)? {
                 let draft: knowledge::Draft =
                     serde_json::from_value(value["draft"].clone()).map_err(|_| Failure::Corrupt)?;
@@ -436,6 +458,8 @@ impl Readers {
                     return Ok(History {
                         claims: history,
                         origins,
+                        unavailable,
+                        erased,
                     });
                 }
             }
@@ -451,6 +475,8 @@ impl Readers {
         }
         draft.derived_from.sort();
         draft.derived_from.dedup();
+        let mut dependencies = Vec::new();
+        let mut dependency_ids = BTreeSet::new();
         for id in &draft.derived_from {
             let job = workspace
                 .get("analysis-job", id)?
@@ -463,10 +489,26 @@ impl Readers {
             }
             let inputs: super::analysis::Draft =
                 serde_json::from_value(job["draft"].clone()).map_err(|_| Failure::Corrupt)?;
-            self.report_dependency_access(&inputs, id).await?;
+            let (_, graph) = self.report_dependency_graph(&inputs, id).await?;
+            for (key, inputs) in graph {
+                if dependency_ids.insert(key.clone()) {
+                    if dependency_ids.len() > 64 {
+                        return Err(ContentError::Limited);
+                    }
+                    dependencies.push((key, inputs));
+                }
+            }
+        }
+        // Promotion preserves the complete bounded typed parent graph, not
+        // just the most recent window. Refuse the existing claim/evidence
+        // limits explicitly rather than dropping ancestor witnesses.
+        for (id, inputs) in dependencies {
+            let result = workspace
+                .get("analysis-result", &id)?
+                .ok_or(Failure::Missing)?;
             if inputs.project.is_some() {
                 let saved = workspace
-                    .get("analysis-input", id)?
+                    .get("analysis-input", &id)?
                     .ok_or(Failure::Corrupt)?;
                 for claim in saved["project"]["claims"]
                     .as_array()
@@ -502,7 +544,9 @@ impl Readers {
             }
         }
         let history = if matches!(draft.verb.as_str(), "retract" | "reject") {
-            self.record_history(&draft.source, false).await?.claims
+            let history = self.record_history(&draft.source, false).await?;
+            history.require_complete()?;
+            history.claims
         } else {
             Vec::new()
         };
@@ -652,6 +696,12 @@ impl Readers {
             derived_budget,
             cursor,
         } = options;
+        if !matches!(verb.as_str(), "show" | "status" | "issues" | "context") {
+            return Err(Failure::Invalid.into());
+        }
+        // Validate trust syntax even if dependency history later forces a
+        // partial result; an unavailable view is not permission to ignore input.
+        record_trust(&trusted, &self.workspace()?.author(), &[])?;
         if (verb == "context" && subject.is_some())
             || (verb != "context" && budget != 1024)
             || derived.len() > 8
@@ -665,13 +715,28 @@ impl Readers {
         let History {
             claims: history,
             origins,
+            unavailable,
+            erased,
         } = self.record_history(&source, true).await?;
+        if unavailable != 0 || erased != 0 {
+            return crate::evidence_library::mcp::pages::list(json!({
+                "version":"kan-recall-result/1","source":source,"view":null,"coverage":"partial",
+                "history_omissions":{"unavailable_dependencies":unavailable,"erased_dependencies":erased},
+                "entries":[{"type":"unavailable-history","normalizer":"not-run",
+                    "explanation":"Current authored state is unavailable because correction, status or identity history may be withheld. No complete fold or resurrection is asserted."}],
+                "day_json_compatibility":false}), "entries",
+                &json!({"source":source,"verb":verb,"subject":subject,"trust":trusted,"budget":budget,"derived":derived,"derived_budget":derived_budget}),cursor)
+                .map_err(|e| match e {
+                    crate::evidence_library::mcp::pages::Error::Limited => ContentError::Limited,
+                    _ => Failure::Invalid.into(),
+                });
+        }
         let trust = record_trust(&trusted, &self.workspace()?.author(), &history)?;
         let excluded = fold::excluded_by_trust(&history, &trust);
         let view = fold::fold(history.clone(), &trust);
         use sha2::{Digest, Sha256};
-        let evaluation = json!({"version":"kan-compat-evaluation/1","source":source,
-            "claims":history.iter().map(|(id,_)|id.to_string()).collect::<Vec<_>>(),"trust":crate::json::TrustJson::with_empty_reason(&trust,None),
+        let evaluation = json!({"version":"kan-compat-evaluation/2","source":source,
+            "claims":history.iter().map(|(id,stored)|json!({"cid":id.to_string(),"rev":stored.rev})).collect::<Vec<_>>(),"trust":crate::json::TrustJson::with_empty_reason(&trust,None),
             "normalizer":"canonical-v1-fold/1","relations":"explicit-v1-witnesses/1","derivations":derived,
             "query":{"verb":verb,"subject":subject},"unsupported":["weighted trust semantics","higher identity witnesses","computed Git ancestry"]});
         let view_id = evidence_service::hex(&Sha256::digest(
@@ -788,7 +853,13 @@ impl Readers {
             .derived_supplement(&source, subject.as_deref(), &derived, derived_budget)
             .await?;
         entries.extend(supplement);
-        value["evaluation"] = json!({"id":view_id,"version":"kan-compat-evaluation/1","normalizer":"canonical-v1-fold/1","relations":"explicit-v1-witnesses/1","derived_reports":derived,"derived_budget":derived_budget,"derived_omitted":omitted,"authority":"Derived supplements do not change this authored fold, trust or identity. Inspect authored witnesses and retained report lineage separately."});
+        value["evaluation"] = json!({"id":view_id,"version":"kan-compat-evaluation/2","normalizer":"canonical-v1-fold/1","relations":"explicit-v1-witnesses/1","unsupported":evaluation["unsupported"],"derived_reports":derived,"derived_budget":derived_budget,"derived_omitted":omitted,"authority":"Derived supplements do not change this authored fold, trust or identity. Inspect authored witnesses and retained report lineage separately."});
+        for entry in &mut entries {
+            if entry["type"] != "derived-supplement" && entry["type"] != "derived-state" {
+                entry["origin_evaluation"] =
+                    json!({"id":view_id,"version":"kan-compat-evaluation/2"});
+            }
+        }
         value["entries"] = json!(entries);
         crate::evidence_library::mcp::pages::list(
             value,

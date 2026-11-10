@@ -311,6 +311,10 @@ pub struct Extraction {
     /// Explicit paid submission. Without this flag only a plan is produced.
     #[arg(long)]
     pub run: bool,
+    /// Cooperative submission/wait deadline, including access checks. Runtime
+    /// shutdown cancels owned workers before an outer supervisor may terminate.
+    #[arg(long, requires = "run", value_parser = clap::value_parser!(u64).range(1..=120))]
+    pub deadline_seconds: Option<u64>,
 }
 #[derive(Subcommand)]
 pub enum Command {
@@ -408,6 +412,61 @@ fn write_draft(
 fn execute(profile: &Profile, mut query: Query) -> Result<Value> {
     let writing = matches!(&query, Query::Record { .. });
     if let Query::Record { draft } | Query::RecordPreview { draft } = &mut query {
+        let mut frozen_artifacts = None;
+        if writing {
+            if let Some(operation) = &draft.operation {
+                let signer = Identity::load_existing(&profile.signing_key)?;
+                let workspace = crate::evidence_workspace::Workspace::open(
+                    &profile.workspace,
+                    signer,
+                    key(&profile.workspace_key)?,
+                )?;
+                let id = library::RecordBatch::annotation_id(
+                    &draft.source,
+                    operation,
+                    &workspace.author(),
+                )?;
+                if let Some(prior) = workspace.get("annotation", &id)? {
+                    let batch: library::RecordBatch =
+                        serde_json::from_value(prior["draft"]["authored"].clone())?;
+                    let claims = batch.decoded(&workspace.author())?;
+                    let operation_artifact = crate::claim::v1::ArtifactRef::ToolOutput(
+                        crate::cid::content_cid(
+                            &json!({"type":"kan-record-operation/1","source":draft.source,"operation":operation}),
+                        )?,
+                    );
+                    let retained = claims
+                        .first()
+                        .ok_or("empty retained operation")?
+                        .1
+                        .claim
+                        .content
+                        .artifacts
+                        .iter()
+                        .filter(|a| **a != operation_artifact)
+                        .cloned()
+                        .collect::<Vec<_>>();
+                    let files = |artifacts: &[crate::claim::v1::ArtifactRef]| {
+                        artifacts
+                            .iter()
+                            .filter_map(|artifact| match artifact {
+                                crate::claim::v1::ArtifactRef::FileAt(path, _) => {
+                                    Some(json!({"file":path}))
+                                }
+                                crate::claim::v1::ArtifactRef::LineRangeAt(path, _, span) => {
+                                    Some(json!({"file":path,"range":[span.start,span.end]}))
+                                }
+                                _ => None,
+                            })
+                            .collect::<Vec<_>>()
+                    };
+                    if files(&draft.artifacts) != files(&retained) {
+                        return Err("Exact retry changed file/range intent; retain the original options or use a new operation".into());
+                    }
+                    frozen_artifacts = Some(retained);
+                }
+            }
+        }
         if writing && draft.operation.is_none() {
             draft.operation = Some(library::RecordOperation::fresh()?);
         }
@@ -417,9 +476,13 @@ fn execute(profile: &Profile, mut query: Query) -> Result<Value> {
                 serde_json::to_string(&draft.operation)?
             );
         }
-        for artifact in profile.artifacts(None)? {
-            if !draft.artifacts.contains(&artifact) {
-                draft.artifacts.push(artifact);
+        if let Some(artifacts) = frozen_artifacts {
+            draft.artifacts = artifacts;
+        } else {
+            for artifact in profile.artifacts(None)? {
+                if !draft.artifacts.contains(&artifact) {
+                    draft.artifacts.push(artifact);
+                }
             }
         }
     }
@@ -722,7 +785,11 @@ fn print_report(value: Value, json_output: bool) -> Result<()> {
                 }
                 if let Some(witnesses) = block["witnesses"].as_array() {
                     for witness in witnesses {
-                        println!("\nSource: {}", witness["reference_request"]);
+                        for field in ["reference_request", "report_request", "recall_request"] {
+                            if witness[field].is_object() {
+                                println!("\nSource ({field}): {}", witness[field]);
+                            }
+                        }
                     }
                 }
             }
@@ -809,13 +876,24 @@ fn extract(a: Extraction) -> Result<()> {
         return Ok(());
     }
     let selection = serde_json::from_value(plan["selection"].clone())?;
-    let result: Value =
-        serde_json::from_slice(&runtime.block_on(reader.execute(Query::ExtractRun {
-            selection,
-            preview: plan["digest"].as_str().ok_or("missing plan digest")?.into(),
-            nonce: plan["nonce"].as_str().ok_or("missing plan nonce")?.into(),
-            wait: true,
-        }))?)?;
+    let submission = Query::ExtractRun {
+        selection,
+        preview: plan["digest"].as_str().ok_or("missing plan digest")?.into(),
+        nonce: plan["nonce"].as_str().ok_or("missing plan nonce")?.into(),
+        wait: true,
+    };
+    let raw = runtime.block_on(async {
+        let operation = reader.execute(submission);
+        let outcome = match a.deadline_seconds {
+            Some(seconds) => match tokio::time::timeout(std::time::Duration::from_secs(seconds), operation).await {
+                Ok(outcome) => outcome,
+                Err(_) => return Err::<Vec<u8>,Box<dyn std::error::Error>>("Extraction deadline exceeded; owned worker cancelled, provider outcome may be unknown; do not automatically retry".into()),
+            },
+            None => operation.await,
+        };
+        outcome.map_err(|error| -> Box<dyn std::error::Error> { error.into() })
+    })?;
+    let result: Value = serde_json::from_slice(&raw)?;
     println!("{}", serde_json::to_string(&result)?);
     Ok(())
 }

@@ -30,7 +30,32 @@ claim CIDs, inferred telos witnesses or new bridge declarations are made here.
 
 ## Current implementation and findings
 
-At source revision `74922b7e6fea27f33c4c77da8f2e6277c3aef215`:
+Current Nov10 disposition: `32e2f6c` passed full candidate CI, then the actual
+cold integrated review returned **BLOCK**. The owner approved correcting all
+F1–F9 without reducing these requirements. The correction is in implementation;
+its new Rust/native regressions have not yet run. Preserve the qualified baseline,
+the blocked report and the fresh `7b79269` source/runtime trial independently.
+The observed harness-wrapper leakage invalidates the earlier input-exclusion
+acceptance, even though the observed retrieval results remain retained.
+
+The integrated correction uses visible projection revision2 to exclude whole
+recognized harness-control wrappers while preserving literal user mentions and
+original fallback. It refuses a complete authored fold when currently withheld
+or erased correction dependencies could change state. Finalization claims an
+event independently of the capture lock and admits worker deadlines only within
+the total drain/cleanup budget. Five revision2 recipe contracts retain distinct
+flow structure, including typed handoff pins and grounded relation alternatives
+or no-link outcomes. Multi-batch consolidation freezes one frontier, chains
+labelled parent interpretations and rechecks their complete bounded dependencies;
+promotion retains ancestor witnesses rather than silently reducing lineage.
+Origin report/project evaluations remain distinct from current authenticated read
+views. Real v1 actions/read results, actual populated MCP examples, operation
+retries after HEAD movement and conservative fixture/rename routing are new
+regression targets. These are pending qualification, not proof of calibration or
+automatic acceptance of model interpretations.
+
+Historical starting point at source revision
+`74922b7e6fea27f33c4c77da8f2e6277c3aef215`:
 
 - `src/evidence_library/proof/records.rs` supplies canonical v1-compatibility
   authored records and recalls through the original fold. It is not full native

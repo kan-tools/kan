@@ -169,8 +169,9 @@ class Project:
 
     def process_finalized(self):
         self.check()
-        with self.lock():
-            return self.consolidator().process(self)
+        # The drain claims each event using atomic create-new directories. It
+        # must never hold capture's operation.lock during discovery or inference.
+        return self.consolidator().process(self)
 
     def check(self, cwd=None):
         selected = Path(cwd or Path.cwd()).resolve(strict=True)

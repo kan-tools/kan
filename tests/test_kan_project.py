@@ -4,6 +4,8 @@ import os
 from pathlib import Path
 import subprocess
 import tempfile
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
@@ -75,6 +77,28 @@ class ProjectIntegration(unittest.TestCase):
             self.p.check(self.root)
         self.assertIn('Day/v1', self.p.check(self.work)['project_contract'])
         self.assertNotIn('synthetic-private-value', json.dumps(self.p.check(self.work)))
+
+    def test_finalization_wait_does_not_hold_capture_lock(self):
+        running, release = threading.Event(), threading.Event()
+        def drain(p):
+            running.set()
+            if not release.wait(4):
+                raise RuntimeError('test release missing')
+            return {'state': 'processed'}
+        with patch.object(self.p, 'consolidator', return_value=SimpleNamespace(process=drain)), \
+             patch.object(project.Path, 'cwd', return_value=self.work), \
+             patch.object(project.subprocess, 'run', side_effect=self.fake), \
+             ThreadPoolExecutor(max_workers=1) as pool:
+            future = pool.submit(self.p.process_finalized)
+            try:
+                self.assertTrue(running.wait(2))
+                # A real capture uses the same project runtime while the fake
+                # inference remains blocked. No model/service is started.
+                result = self.p.capture(self.event(cwd=str(self.other)))
+                self.assertEqual(result['status'], 'acknowledged')
+            finally:
+                release.set()
+            self.assertEqual(future.result(timeout=2)['state'], 'processed')
 
     def test_actual_transcript_path_and_final_snapshot_are_separate_captures(self):
         with patch.object(project.subprocess, 'run', side_effect=self.fake):

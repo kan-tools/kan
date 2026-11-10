@@ -116,6 +116,7 @@ impl Readers {
             return Err(Failure::Invalid.into());
         }
         let history = self.record_history(&query.source, true).await?;
+        history.require_complete()?;
         let trust =
             records::record_trust(&query.trust, &self.workspace()?.author(), &history.claims)?;
         let view = fold::fold(history.claims.clone(), &trust);
@@ -176,6 +177,7 @@ impl Readers {
         let evaluation = json!({"version":"kan-project-evaluation/2","source":query.source,"frontier":frontier,
             "trust":crate::json::TrustJson::with_empty_reason(&trust,None),"selection":query,
             "derivations":derivations,"fold":"canonical-v1-fold/1","relations":"explicit-live-v1-witnesses/1",
+            "unsupported":["weighted trust semantics","higher identity witnesses","computed Git ancestry"],
             "scope":"Frozen selected classes including trusted correction history; bounded relation neighborhood, not all project knowledge or complete capture."});
         use sha2::{Digest, Sha256};
         let id = evidence_service::hex(&Sha256::digest(
@@ -204,6 +206,7 @@ impl Readers {
             return Err(Failure::Corrupt.into());
         }
         let history = self.record_history(&selection.source, true).await?;
+        history.require_complete()?;
         let trust = records::record_trust(
             &selection.trust,
             &self.workspace()?.author(),
@@ -249,6 +252,7 @@ pub(super) fn summary(manifest: &Value) -> Value {
         return Value::Null;
     }
     json!({"id":manifest["evaluation"]["id"],"selection":manifest["selection"],
+        "unsupported":manifest["evaluation"]["definition"]["unsupported"],
         "frontier_claims":manifest["evaluation"]["definition"]["frontier"].as_array().map(Vec::len),
         "selected_claims":manifest["claims"].as_array().map(Vec::len),
         "coverage":manifest["evaluation"]["definition"]["scope"]})

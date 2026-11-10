@@ -7,6 +7,26 @@ impl Readers {
         after: Option<String>,
         limit: usize,
     ) -> Result<Value, ContentError> {
+        self.annotations_page_inner(subject, tag, after, limit, None)
+            .await
+    }
+    pub(in crate::evidence_library::proof) async fn authored_history_page(
+        &self,
+        source: &str,
+        after: Option<String>,
+        limit: usize,
+    ) -> Result<Value, ContentError> {
+        self.annotations_page_inner(None, None, after, limit, Some(source))
+            .await
+    }
+    async fn annotations_page_inner(
+        &self,
+        subject: Option<String>,
+        tag: Option<String>,
+        after: Option<String>,
+        limit: usize,
+        collection: Option<&str>,
+    ) -> Result<Value, ContentError> {
         if limit == 0
             || limit > 100
             || subject.as_ref().is_some_and(|s| s.len() > 256)
@@ -31,6 +51,16 @@ impl Readers {
             .iter()
             .map(|r| r["id"].as_str().map(str::to_owned).ok_or(Failure::Corrupt))
             .collect::<Result<_, _>>()?;
+        // Only the already-authorized requested collection gets omission
+        // metadata. Never expose identifiers or bodies from a revoked source.
+        let authored: std::collections::BTreeSet<_> = page
+            .records
+            .iter()
+            .filter(|r| {
+                collection.is_some_and(|s| r["draft"]["authored"]["source"].as_str() == Some(s))
+            })
+            .map(|r| r["id"].as_str().map(str::to_owned).ok_or(Failure::Corrupt))
+            .collect::<Result<_, _>>()?;
         let (mut records, mut erased, partial) = self
             .authorize_annotations(page.records.into_iter().chain(page.related).collect())
             .await?;
@@ -53,8 +83,18 @@ impl Readers {
         for links in [&mut withdrawals, &mut corrections] {
             links.retain(|id, _| records.iter().any(|r| r["id"].as_str() == Some(id)));
         }
+        let retained = records
+            .iter()
+            .filter(|r| r["id"].as_str().is_some_and(|id| authored.contains(id)))
+            .count();
+        let erased_count = erased
+            .iter()
+            .filter(|r| r["id"].as_str().is_some_and(|id| authored.contains(id)))
+            .count();
+        let hidden_count = authored.len().saturating_sub(retained + erased_count);
         Ok(
             json!({"records":records,"erased":erased,"withdrawals":withdrawals,"corrections":corrections,"next":page.next,
+            "authored_history_omissions":{"unavailable_dependencies":hidden_count,"erased_dependencies":erased_count},
             "coverage":if partial {"partial"}else{"complete"},
             "scope":"this page with currently authorized incoming correction/withdrawal links across the workspace",
             "authority":"Reader-authored annotations; captured speaker claims and imported v1 claims are separate."}),

@@ -163,7 +163,7 @@ impl Adapter {
                 let schema = if super::recipes::structured(recipe) {
                     format!(
                         "\nRequired JSON output schema: {}",
-                        super::recipes::schema()
+                        super::recipes::schema(recipe)
                     )
                 } else {
                     String::new()

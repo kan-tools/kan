@@ -484,7 +484,7 @@ impl Server {
                         value["source"].as_str(),
                         &query_identity(&args),
                         args.cursor.clone(),
-                        json!({"report_selection":value["report_selection"],"excerpt":report.excerpt}),
+                        json!({"origin_evaluation":value["report_selection"]["evaluation"],"report_selection":value["report_selection"],"excerpt":report.excerpt}),
                     );
                 }
                 let Some(uri) = result
@@ -526,7 +526,7 @@ impl Server {
             v["source"].as_str(),
             &query_identity(&args),
             args.cursor.clone(),
-            json!({"reference":v["reference"],"uri":v["uri"]}),
+            json!({"origin_evaluation":args.report.as_ref().map(|r|json!({"id":r.id,"version":"kan-report-evaluation/1"})),"reference":v["reference"],"uri":v["uri"]}),
         )
     }
     #[tool(

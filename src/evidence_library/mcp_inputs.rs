@@ -235,7 +235,7 @@ impl Tool {
             Self::Session => {
                 json!({"identity":{"writer":"copy verified writer","observer":"collector","scheme":"claude-code-header","session":"copy claimed session"},"attempts":[{"source":"copy scope.id","pin":{"request":"copy complete returned pin","reply":{}},"selections":[{"body":{},"signature":"copy complete record.selection"}]}]})
             }
-            Self::Reference => json!({"report":{"id":"copy report.id","input":0}}),
+            Self::Reference => json!({"uri":"copy occurrence.uri"}),
         }
     }
 }

@@ -4,6 +4,7 @@
 Run only with the newly built binary. Never uses user keys, agents, or fixtures.
 """
 import hashlib
+import http.server
 import importlib.util
 import json
 import os
@@ -13,6 +14,7 @@ import socket
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 
 from cryptography.hazmat.primitives import serialization
@@ -66,12 +68,14 @@ def run(*args, ok=True):
 class Mcp:
     response_seconds = 90
 
-    def __init__(self, config, signing, profile=None, writes=False):
+    def __init__(self, config, signing, profile=None, writes=False, analysis=False):
         # An undrained stderr pipe can block a child independently of stdout.
         self.diagnostics = tempfile.TemporaryFile()
         command = [str(binary), '--no-migration-notice', 'mcp', '--profile', str(profile)] if profile else [str(binary), '--no-migration-notice', 'library', '--config', str(config), '--signing-key', signing, '--mcp']
         if writes:
             command.append('--writes')
+        if analysis:
+            command.append('--analysis')
         self.proc = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=self.diagnostics)
         self.pending = bytearray()
         self.id = 0
@@ -231,6 +235,20 @@ def read_decision(client, marker):
     assert records[0]['uri'] == resolved['uri']
     portable, _, _ = collect_view(client, 'kan_v2_reference', {'uri': records[0]['uri']})
     assert portable['reference'] == reference and portable['uri'] == resolved['uri']
+    # Populate advertised templates with actual signed fixture outputs, then
+    # invoke the real MCP dispatcher. Merely checking is_object is insufficient.
+    example_inputs = {
+        'kan_v2_catalog': {},
+        'kan_v2_discover': {'source': source_id},
+        'kan_v2_content': args,
+        'kan_v2_session': session_args,
+        'kan_v2_reference': {'uri': records[0]['uri']},
+    }
+    for name, populated in example_inputs.items():
+        advertised = client.call('kan_v2_help', {'tool': name})['tools'][0]['example']
+        assert set(populated).issubset(advertised), name
+        advertised.update(populated)
+        client.call(name, advertised)
     return len(records), {**args, 'cursor': first['next']}
 
 
@@ -302,12 +320,33 @@ with tempfile.TemporaryDirectory(prefix='kan-project-qualification-') as temp:
         assert 'private-secret' not in json.dumps(bad)
         progress('typed-record-cli-and-mcp')
         record_source = client.call('kan_v2_catalog', {})['scopes'][0]['id']
+        work_git = root / 'work'
+        subprocess.run(['git', 'init', '-q', str(work_git)], check=True)
+        git_commit = ['git', '-c', 'user.name=fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '-q', '--allow-empty', '-m', 'fixture']
+        subprocess.run(git_commit, cwd=work_git, check=True)
         record_profile = root / 'record-profile.json'
         put(record_profile, {'version': 1, 'allowed_worktrees': [str(root / 'work'), str(root / 'second-worktree')],
             'source': record_source, 'reader_config': str(reader_config), 'signing_key': reader_key,
-            'workspace': str(root / 'records.sqlite'), 'workspace_key': recipient_private})
+            'workspace': str(root / 'records.sqlite'), 'workspace_key': recipient_private, 'git_root': str(work_git)})
         receipt = json.loads(run('decide', 'Keep v1 until migration is qualified. Source synthetic-rev, SHA synthetic-hash.', '--profile', record_profile, '--subject', 'project/demo', '--json').stdout)
         assert receipt['claims'] and receipt['durability'] == 'encrypted-workspace' and receipt['publication'] == 'not-configured'
+        subprocess.run(git_commit, cwd=work_git, check=True)
+        retry = json.loads(run('decide', 'Keep v1 until migration is qualified. Source synthetic-rev, SHA synthetic-hash.', '--profile', record_profile,
+                              '--subject', 'project/demo', '--operation', json.dumps(receipt['operation']), '--json').stdout)
+        assert retry['claims'] == receipt['claims'], 'HEAD movement must not rewrite an exact operation retry'
+        run('decide', 'Changed intent must still refuse.', '--profile', record_profile, '--subject', 'project/demo',
+            '--operation', json.dumps(receipt['operation']), '--json', ok=False)
+        file_receipt = json.loads(run('observe', 'An explicitly anchored file assertion.', '--profile', record_profile,
+                                     '--subject', 'project/file', '--file', 'README.md:1-2', '--json').stdout)
+        subprocess.run(git_commit, cwd=work_git, check=True)
+        file_retry = json.loads(run('observe', 'An explicitly anchored file assertion.', '--profile', record_profile,
+                                   '--subject', 'project/file', '--file', 'README.md:1-2',
+                                   '--operation', json.dumps(file_receipt['operation']), '--json').stdout)
+        assert file_retry['claims'] == file_receipt['claims']
+        run('observe', 'An explicitly anchored file assertion.', '--profile', record_profile, '--subject', 'project/file',
+            '--file', 'OTHER.md:1-2', '--operation', json.dumps(file_receipt['operation']), '--json', ok=False)
+        run('observe', 'An explicitly anchored file assertion.', '--profile', record_profile, '--subject', 'project/file',
+            '--operation', json.dumps(file_receipt['operation']), '--json', ok=False)
         for verb in ['observe', 'plan', 'decide', 'result', 'block', 'resolve', 'same', 'relate', 'mark', 'retract', 'reject', 'show', 'status', 'issues', 'context', 'summarize', 'extract', 'report', 'promote', 'mcp']:
             assert b'--profile' in run(verb, '--help').stdout
         run('block', 'project/demo', 'Migration remains unqualified.', '--profile', record_profile, '--json')
@@ -324,14 +363,77 @@ with tempfile.TemporaryDirectory(prefix='kan-project-qualification-') as temp:
             assert denied['error'] == 'capability-required'
             notes = readonly.call('kan_v2_recall', {'source': record_source, 'subject': 'project/demo'})
             assert any(r.get('claim', {}).get('cid') == receipt['claims'][0] for r in notes['entries'])
+            advertised = readonly.call('kan_v2_help', {'tool': 'kan_v2_recall'})['tools'][0]['example']
+            advertised['source'] = record_source
+            readonly.call('kan_v2_recall', advertised)
+            advertised = readonly.call('kan_v2_help', {'tool': 'kan_v2_report'})['tools'][0]['example']
+            advertised['id'] = '0' * 64  # no such job: check safe authority refusal, not fabricated success
+            assert readonly.call('kan_v2_report', advertised, False)['error'] == 'access-limited'
         finally:
             readonly.close()
         writable = Mcp(reader_config, reader_key, profile=record_profile, writes=True)
         try:
             wrote = writable.call('kan_v2_record', {'draft': {'source': record_source, 'verb': 'observe', 'subject': 'project/demo', 'text': 'MCP authoring is a separate explicit authority.'}})
             assert wrote['claims'] and 'record' not in wrote
+            advertised = writable.call('kan_v2_help', {'tool': 'kan_v2_record'})['tools'][0]['example']
+            advertised['draft']['source'] = record_source
+            assert writable.call('kan_v2_record', advertised)['claims']
         finally:
             writable.close()
+        # Exercise the advertised plan/run/report templates through the actual
+        # configured MCP dispatcher. The only provider is this owned synthetic
+        # HTTP fixture; no account, model or credential is used.
+        provider_requests = []
+        class Provider(http.server.BaseHTTPRequestHandler):
+            def do_POST(self):
+                provider_requests.append(json.loads(self.rfile.read(int(self.headers['Content-Length']))))
+                body = json.dumps({'type': 'message', 'model': 'fixture', 'content': [{'type': 'text', 'text': 'Synthetic dispatcher example report.'}]}).encode()
+                self.send_response(200)
+                self.send_header('Content-Type', 'application/json')
+                self.send_header('Content-Length', str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+            def log_message(self, *_):
+                pass
+        gateway = http.server.ThreadingHTTPServer(('127.0.0.1', 0), Provider)
+        thread = threading.Thread(target=gateway.serve_forever, daemon=True)
+        thread.start()
+        original_profile = record_profile.read_bytes()
+        configured = json.loads(original_profile)
+        analysis = root / 'example-analysis.json'
+        put(analysis, {'endpoint': f'http://127.0.0.1:{gateway.server_port}/v1/messages',
+            'token': 'synthetic-fixture-only-not-a-provider-key', 'model': 'fixture',
+            'sources': [record_source], 'max_input_bytes': 1048576, 'max_output_tokens': 128, 'max_jobs': 1})
+        configured['analysis_config'] = str(analysis)
+        record_profile.write_text(json.dumps(configured))
+        examples = None
+        try:
+            examples = Mcp(reader_config, reader_key, profile=record_profile, writes=True, analysis=True)
+            advertised = examples.call('kan_v2_help', {'tool': 'kan_v2_extract_plan'})['tools'][0]['example']
+            advertised['selection'].update({'source': record_source, 'from': 1, 'through': 1})
+            plan = examples.call('kan_v2_extract_plan', advertised)
+            advertised = examples.call('kan_v2_help', {'tool': 'kan_v2_extract'})['tools'][0]['example']
+            advertised.update({'selection': plan['selection'], 'preview': plan['digest'], 'nonce': plan['nonce']})
+            job = examples.call('kan_v2_extract', advertised)
+            job_id = job.get('id') or job['job']['id']
+            deadline = time.monotonic() + 15
+            while job['state'] in {'queued', 'running'} and time.monotonic() < deadline:
+                time.sleep(.05)
+                job = examples.call('kan_v2_read', {'query': {'action': 'analysis-job', 'id': job_id}})
+            assert job['state'] == 'succeeded', job
+            advertised = examples.call('kan_v2_help', {'tool': 'kan_v2_report'})['tools'][0]['example']
+            advertised['id'] = job_id
+            report = examples.call('kan_v2_report', advertised)
+            assert any(b.get('text') == 'Synthetic dispatcher example report.' for b in report['blocks'])
+            assert len(provider_requests) == 1
+        finally:
+            if examples is not None:
+                examples.close()
+            record_profile.write_bytes(original_profile)
+            gateway.shutdown()
+            gateway.server_close()
+            thread.join(timeout=5)
+            assert not thread.is_alive()
         os.chdir(root)
         refused = run('show', '--profile', record_profile, '--json', ok=False)
         assert b'outside this profile' in refused.stderr

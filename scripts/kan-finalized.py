@@ -53,7 +53,7 @@ def queue(project, record):
     if (record.get('status') != 'acknowledged' or health.get('recording_gap') is not False
             or not isinstance(attempt, str) or len(attempt) != 64
             or any(c not in '0123456789abcdef' for c in attempt)
-            or type(health.get('observed')) is not int or not 1 <= health['observed'] <= 8):
+            or type(health.get('observed')) is not int or not 1 <= health['observed'] <= 256):
         return {'state': 'not-scheduled', 'reason': 'Missing, unacknowledged, incomplete or oversized selected snapshot.'}
     session = record['session_sha256']
     key = hashlib.sha256(json.dumps([session, attempt, config], sort_keys=True).encode()).hexdigest()
@@ -65,8 +65,9 @@ def queue(project, record):
     path = directory / (key + '.json')
     if path.exists():
         return {'state': 'already-queued', 'id': key}
-    reserved = sum(len(project.private_json(p)['policy']['recipes']) for p in directory.glob('*.json'))
-    if reserved + len(config['recipes']) > config['max_jobs']:
+    reserved = sum(((project.private_json(p)['observed'] + 7) // 8) * len(project.private_json(p)['policy']['recipes']) for p in directory.glob('*.json'))
+    required = ((health['observed'] + 7) // 8) * len(config['recipes'])
+    if reserved + required > config['max_jobs']:
         return {'state': 'quota-exhausted'}
     create(path, {'version': 1, 'id': key, 'session': session, 'attempt': attempt,
                   'observed': health['observed'], 'policy': config})
@@ -104,6 +105,20 @@ def interval(records, attempt, observed):
     return sequences[0], sequences[-1]
 
 
+def submission_budget(project, profile, remaining, jobs):
+    # No credential values are used or returned here. Require the configured
+    # worker to finish with room for cancellation/retained terminal bookkeeping.
+    path = profile.get('analysis_config')
+    if not path:
+        raise ValueError('finalization needs an explicit analysis configuration')
+    config = project.private_json(Path(path))
+    worker = config.get('worker', {})
+    seconds = worker.get('timeout_seconds') if worker.get('kind') == 'claude-code' else 90
+    if type(seconds) is not int or not 1 <= seconds <= 600 or (seconds + 15) * jobs > remaining:
+        raise ValueError('remaining finalization budget cannot contain configured worker deadlines and cleanup')
+    return int(remaining) - 5
+
+
 def process(project):
     config = policy(project)
     if config is None:
@@ -124,7 +139,10 @@ def process(project):
         destination = directory / event.stem
         if destination.exists():
             continue  # includes failed/ambiguous outcomes; never resubmit
-        destination.mkdir(mode=0o700)
+        try:
+            destination.mkdir(mode=0o700)
+        except FileExistsError:
+            continue  # another drain claimed it; never execute twice
         try:
             receipt = project.private_json(event)
             if receipt['policy'] != config:
@@ -155,17 +173,31 @@ def process(project):
                     break
             start, end = interval(rows, receipt['attempt'], receipt['observed'])
             results = []
+            windows = [(first, min(first + 7, end)) for first in range(start, end + 1, 8)]
+            total_jobs = len(windows) * len(config['recipes'])
+            submission_budget(project, profile, deadline - time.monotonic(), total_jobs)
             for index, recipe in enumerate(config['recipes']):
-                plan = invoke(['extract', '--profile', profile_path, '--from', start, '--through', end,
-                               '--pin-file', pin_file, '--recipe', recipe, '--finalized-session', receipt['session'], '--finalized-attempt', receipt['attempt']],
-                               cwd, destination / ('plan-' + str(index) + '.json'))
-                # Freeze to the original discovery frontier, never a later note.
-                if plan['selection']['pin'] != pin:
-                    raise ValueError('finalization requires a plan at the frozen discovery pin')
-                frozen = destination / ('frozen-' + str(index) + '.json')
-                create(frozen, plan)
-                results.append(invoke(['extract', '--profile', profile_path, '--plan', frozen, '--run'],
-                                       cwd, destination / ('submit-' + str(index) + '.json')))
+                parent = None
+                for batch, (first, last) in enumerate(windows):
+                    suffix = str(index) + '-' + str(batch)
+                    args = ['extract', '--profile', profile_path, '--from', first, '--through', last,
+                            '--pin-file', pin_file, '--recipe', recipe, '--finalized-session', receipt['session'], '--finalized-attempt', receipt['attempt']]
+                    if parent:
+                        args.extend(['--derived-report', parent])
+                    plan = invoke(args, cwd, destination / ('plan-' + suffix + '.json'))
+                    # One original discovery frontier across every batch; no
+                    # live search or later notes enter a subsequent window.
+                    if plan['selection']['pin'] != pin:
+                        raise ValueError('finalization requires a plan at the frozen discovery pin')
+                    frozen = destination / ('frozen-' + suffix + '.json')
+                    create(frozen, plan)
+                    budget = submission_budget(project, profile, deadline - time.monotonic(), total_jobs - len(results))
+                    result = invoke(['extract', '--profile', profile_path, '--plan', frozen, '--run', '--deadline-seconds', str(budget)],
+                                    cwd, destination / ('submit-' + suffix + '.json'))
+                    results.append(result)
+                    parent = result.get('id') or result.get('job', {}).get('id')
+                    if result.get('state') != 'succeeded' or not isinstance(parent, str) or len(parent) != 64:
+                        raise ValueError('batch did not complete successfully; retained, no automatic retry')
             create(destination / 'result.json', {'state': 'submitted', 'jobs': results})
             return {'state': 'processed', 'id': event.stem, 'jobs': len(results)}
         except Exception:

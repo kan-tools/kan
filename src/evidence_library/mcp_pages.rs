@@ -484,7 +484,7 @@ pub(in crate::evidence_library) fn content(
     let binding = crate::evidence_service::hex(&hash.finalize());
     let (mut index, mut offset) = position(cursor, &binding, rows.len())?;
     let mut page = json!({"version":"kan-mcp-content-page/2","entries":[],"citation_dictionary":{},"next":null,
-        "coverage":value["coverage"],"identity":value.get("identity"),"reference":extra.get("reference"),"uri":extra.get("uri"),
+        "coverage":value["coverage"],"identity":value.get("identity"),"reference":extra.get("reference"),"uri":extra.get("uri"),"origin_evaluation":extra.get("origin_evaluation"),
         "presentation":"Text first. Each entry's citation_refs resolves in THIS page's citation_dictionary, retaining original URI, exact enclosing range and coarse flag. event_json, parsed_json and raw frame metadata remain in the advanced shared audit API. Attribution is enclosing, not exact JSON tokens.",
         "complete_selection_view":false,"view_id":binding,"disclosure":"excerpts-first; diagnostics follow; full original evidence remains available through the shared audit API"});
     if extra["report_selection"].is_object() {
@@ -616,7 +616,7 @@ mod tests {
         let raw = fixture(&text);
         let original = raw.clone();
         let query = json!({"report":{"id":"a".repeat(64),"input":0,"excerpt":{"group":0,"direction":"request","item":0,"part":"text"}}});
-        let extra = json!({"report_selection":{"id":"a".repeat(64),"input":0,"inputs_count":1},"excerpt":query["report"]["excerpt"]});
+        let extra = json!({"origin_evaluation":{"id":"a".repeat(64),"version":"kan-report-evaluation/1"},"report_selection":{"id":"a".repeat(64),"input":0,"inputs_count":1},"excerpt":query["report"]["excerpt"]});
         let mut cursor = None;
         let mut joined = String::new();
         let mut view = None;
@@ -631,6 +631,7 @@ mod tests {
                 |_, _| Ok(format!("kan+capture://{}", "u".repeat(1200))),
             )
             .unwrap();
+            assert_eq!(page["origin_evaluation"], extra["origin_evaluation"]);
             assert!(size(&page).unwrap() <= LIMIT);
             if pages == 0 {
                 assert_eq!(page["entries"][0]["type"], "item");

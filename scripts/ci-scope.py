@@ -13,7 +13,7 @@ def classify(paths, uncertain=False):
     if uncertain:
         result.update(scope='core', rust=True, core=True, library=True, capture=True, macos=True)
     for path in paths:
-        if path.startswith('.github/') or path in {'Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', 'build.rs', 'scripts/ci-scope.py', 'tests/test_ci_scope.py',
+        if path.startswith(('.github/', 'tests/fixtures/')) or path in {'Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', 'build.rs', 'scripts/ci-scope.py', 'tests/test_ci_scope.py',
                                                   'scripts/ci-component-result.py', 'tests/test_ci_component_result.py',
                                                   'tests/fixtures/read-write-surface.tsv', 'scripts/kan-finalized.py', 'tests/test_kan_finalized.py'}:
             result.update(rust=True, core=True, library=True)
@@ -28,6 +28,8 @@ def classify(paths, uncertain=False):
             result.update(rust=True, core=True, library=True)
         if any(part in path for part in ['keychain', 'keyring', 'identity', 'lease', 'at_rest', 'at-rest', 'scope_keys']):
             result.update(rust=True, core=True, macos=True)
+        if path in {'scripts/kan-finalized.py', 'tests/test_kan_finalized.py'}:
+            result.update(rust=True, library=True, capture=True)
     if result['core']:
         result['scope'] = 'core'
     elif result['capture']:
@@ -42,7 +44,9 @@ def changed_paths(event, head):
     base = event.get('pull_request', {}).get('base', {}).get('sha') or event.get('before')
     if not base or set(base) == {'0'}:
         return [], True
-    result = subprocess.run(['git', 'diff', '--name-only', '-z', base, head], capture_output=True)
+    # Treat a rename as delete+add so the old Rust/fixture path cannot vanish
+    # from scope when its destination looks like documentation.
+    result = subprocess.run(['git', 'diff', '--no-renames', '--name-only', '-z', base, head], capture_output=True)
     if result.returncode:
         return [], True
     return result.stdout.decode().rstrip('\0').split('\0') if result.stdout else [], False

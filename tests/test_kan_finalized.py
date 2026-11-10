@@ -26,8 +26,10 @@ class Finalization(unittest.TestCase):
         self.root = Path(self.temp.name).resolve()
         self.root.chmod(0o700)
         self.profile = self.root / 'profile.json'
+        self.analysis = self.root / 'analysis.json'
+        finalized.create(self.analysis, {'worker': {'kind': 'claude-code', 'timeout_seconds': 30}})
         finalized.create(self.profile, {'source': 'proof:synthetic', 'reader_config': '/private/reader.json',
-                                      'signing_key': '/private/key', 'allowed_worktrees': [str(self.root)]})
+                                      'signing_key': '/private/key', 'analysis_config': str(self.analysis), 'allowed_worktrees': [str(self.root)]})
         self.p = SimpleNamespace(runtime=self.root, binary=Path('/private/kan'),
                                  private_directory=project.Project.private_directory,
                                  private_json=project.Project.private_json,
@@ -64,7 +66,7 @@ class Finalization(unittest.TestCase):
         self.record['status'] = 'acknowledged'
         self.record['capture']['transcript']['health']['recording_gap'] = True
         self.assertEqual(finalized.queue(self.p, self.record)['state'], 'not-scheduled')
-        self.record['capture']['transcript']['health'].update(recording_gap=False, observed=9)
+        self.record['capture']['transcript']['health'].update(recording_gap=False, observed=257)
         self.assertEqual(finalized.queue(self.p, self.record)['state'], 'not-scheduled')
 
     def test_frozen_interval_refuses_missing_ordinals_and_interleaved_attempts(self):
@@ -84,6 +86,7 @@ class Finalization(unittest.TestCase):
                 request = json.loads(Path(args[args.index('--request') + 1]).read_bytes())
                 value = pin if request['action'] == 'proof-snapshot' else {'records': self.rows(), 'next': None}
             elif '--run' in args:
+                self.assertIn('--deadline-seconds', args)
                 frozen = json.loads(Path(args[args.index('--plan') + 1]).read_bytes())
                 self.assertEqual(frozen['selection']['pin'], pin)
                 value = {'id': 'e' * 64, 'state': 'succeeded'}
@@ -99,6 +102,42 @@ class Finalization(unittest.TestCase):
             self.assertEqual(result, {'state': 'processed', 'id': queued['id'], 'jobs': 1})
             self.assertEqual(finalized.process(self.p)['state'], 'no-unstarted-events')
         self.assertEqual(sum('--run' in args for args in calls), 1)
+
+    def test_submission_refuses_a_worker_that_can_outlive_outer_budget(self):
+        profile = {'analysis_config': str(self.analysis)}
+        self.assertEqual(finalized.submission_budget(self.p, profile, 110, 2), 105)
+        for remaining, jobs in [(40, 1), (80, 2), (120, 5)]:
+            with self.assertRaises(ValueError):
+                finalized.submission_budget(self.p, profile, remaining, jobs)
+        self.analysis.write_text(json.dumps({'worker': {'kind': 'claude-code', 'timeout_seconds': 120}}))
+        with self.assertRaises(ValueError):
+            finalized.submission_budget(self.p, profile, 120, 1)
+
+    def test_long_final_snapshot_uses_frozen_windows_and_explicit_parent_lineage(self):
+        self.record['capture']['transcript']['health']['observed'] = 10
+        queued = finalized.queue(self.p, self.record)
+        self.assertEqual(queued['state'], 'queued')
+        pin = {'request': 'synthetic frozen discovery', 'reply': {}}
+        calls = []
+        def fake(args, **kwargs):
+            calls.append(args)
+            if 'library' in args:
+                request = json.loads(Path(args[args.index('--request') + 1]).read_text())
+                value = pin if request['action']=='proof-snapshot' else {'records':self.rows(tuple(range(10,20))), 'next':None}
+            elif '--run' in args:
+                value = {'id': str(sum('--run' in a for a in calls)) * 64, 'state':'succeeded'}
+            else:
+                value = {'selection':{'pin':pin},'digest':'synthetic','nonce':'synthetic'}
+            kwargs['stdout'].write(json.dumps(value).encode())
+            return SimpleNamespace(returncode=0)
+        with patch.object(finalized.subprocess, 'run', side_effect=fake), patch.object(finalized.Path, 'cwd', return_value=self.root):
+            self.assertEqual(finalized.process(self.p)['jobs'], 2)
+            self.assertEqual(finalized.process(self.p)['state'], 'no-unstarted-events')
+        plans = [args for args in calls if 'extract' in args and '--run' not in args]
+        self.assertEqual([(a[a.index('--from')+1], a[a.index('--through')+1]) for a in plans], [('10','17'),('18','19')])
+        self.assertNotIn('--derived-report', plans[0])
+        self.assertEqual(plans[1][plans[1].index('--derived-report')+1], '1'*64)
+        self.assertEqual(sum('--run' in args for args in calls), 2)
 
     def test_ambiguous_submission_is_retained_and_never_retried(self):
         queued = finalized.queue(self.p, self.record)

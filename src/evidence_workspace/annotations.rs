@@ -8,6 +8,24 @@ pub(crate) struct Page {
     pub next: Option<String>,
 }
 impl Workspace {
+    /// Erasure markers deliberately retain no removed collection/body. Once an
+    /// annotation has been purged, conservatively refuse complete authored
+    /// history rather than guessing whether it corrected a surviving claim.
+    /// This returns no removed identifier or source and writes no new format.
+    pub(crate) fn annotation_history_erased(&self) -> Result<bool> {
+        let mut after = None;
+        for _ in 0..100 {
+            let (rows, next) = self.declarations_page("erasure", after.as_deref(), 100)?;
+            if rows.iter().any(|r| r["kind"] == "annotation") {
+                return Ok(true);
+            }
+            if next.is_none() {
+                return Ok(false);
+            }
+            after = next;
+        }
+        Err(Failure::Unavailable)
+    }
     pub(crate) fn annotations_page(&self, after: Option<&str>, limit: usize) -> Result<Page> {
         let (records, next) = self.declarations_page("annotation", after, limit)?;
         let selected: BTreeMap<_, _> = records

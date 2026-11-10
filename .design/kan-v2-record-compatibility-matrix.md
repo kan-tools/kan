@@ -1,7 +1,11 @@
 # V2 record/recall compatibility map
 
 Implementation contract for kan-v2-record-recall-and-extraction.md, approved
-2026-11-02. None of the rows below is a runtime pass yet.
+2026-11-02. The Nov10 baseline32e2f6c passed service/native CI and a fresh retrieval
+exercise, but independent review found missing v1-side parity fixtures and other
+gaps. The current correction adds real v1 action/read comparisons; their current
+remote outcome must be inspected before any new parity claim. No Day cutover is
+implied by this map or by the source-level implementation.
 
 ## Canonical representation
 

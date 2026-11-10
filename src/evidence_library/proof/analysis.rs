@@ -219,6 +219,52 @@ fn digest(value: &Value) -> Result<String, Failure> {
 fn event_key(id: &str, n: u8) -> String {
     format!("{id}/{n}")
 }
+// Reading a retained report and disclosing it to a configured worker are
+// different authorities. Follow only typed frozen dependency edges, never
+// candidate text, and enforce the worker's source allowlist at every level.
+fn worker_dependency_sources(
+    workspace: &Workspace,
+    root: &str,
+    allowed: &[String],
+) -> Result<(), Failure> {
+    let mut pending = vec![root.to_owned()];
+    let mut seen = std::collections::BTreeSet::new();
+    while let Some(id) = pending.pop() {
+        if !seen.insert(id.clone()) {
+            continue;
+        }
+        if seen.len() > 64 || id.len() != 64 || service::unhex(&id, 32).is_err() {
+            return Err(Failure::Invalid);
+        }
+        let job = workspace
+            .get("analysis-job", &id)?
+            .ok_or(Failure::AccessLimited)?;
+        let draft: Draft =
+            serde_json::from_value(job["draft"].clone()).map_err(|_| Failure::Corrupt)?;
+        if draft.cites.iter().any(|c| !allowed.contains(&c.source))
+            || draft
+                .project
+                .as_ref()
+                .is_some_and(|p| !allowed.contains(&p.source))
+        {
+            return Err(Failure::AccessLimited);
+        }
+        pending.extend(draft.derived_from);
+        let saved = workspace
+            .get("analysis-input", &id)?
+            .ok_or(Failure::Corrupt)?;
+        if let Some(claims) = saved["project"]["claims"].as_array() {
+            for claim in claims {
+                if let Some(parents) = claim["origin"]["derived_from"].as_array() {
+                    for parent in parents {
+                        pending.push(parent.as_str().ok_or(Failure::Corrupt)?.to_owned());
+                    }
+                }
+            }
+        }
+    }
+    Ok(())
+}
 impl Engine {
     pub(super) fn new(
         config: Config,
@@ -412,6 +458,7 @@ impl Engine {
         self.done.notify_waiters();
     }
     async fn recheck_inputs(&self, id: &str) -> Result<(), Failure> {
+        worker_dependency_sources(&self.workspace, id, &self.config.sources)?;
         let saved = self
             .workspace
             .get("analysis-input", id)?
@@ -765,42 +812,59 @@ impl Readers {
             return Err(Failure::Invalid.into());
         }
         let mut prior = Vec::new();
+        let mut prior_units = Vec::new();
         let mut seen = std::collections::BTreeSet::new();
+        let mut dependency_ids = std::collections::BTreeSet::new();
         for id in &draft.derived_from {
             if id.len() != 64 || service::unhex(id, 32).is_err() || !seen.insert(id) {
                 return Err(Failure::Invalid.into());
             }
+            worker_dependency_sources(&engine.workspace, id, &engine.config.sources)?;
             let parent = engine
                 .workspace
                 .get("analysis-job", id)?
                 .ok_or(Failure::AccessLimited)?;
             let parent_draft: Draft =
                 serde_json::from_value(parent["draft"].clone()).map_err(|_| Failure::Corrupt)?;
-            self.report_inputs(&parent_draft, id).await?;
+            let (_, graph) = self.report_dependency_graph(&parent_draft, id).await?;
+            dependency_ids.extend(graph.into_iter().map(|(key, _)| key));
+            // Include this new root in the same graph bound used for reading;
+            // do not accept a job whose own frozen report would be unreadable.
+            if dependency_ids.len() >= 64 {
+                return Err(ContentError::Limited);
+            }
             let saved = engine
                 .workspace
                 .get("analysis-input", id)?
                 .ok_or(Failure::Corrupt)?;
-            // Prior interpretations are context only. Every original source
-            // must also be explicitly selected in this bounded frozen manifest.
-            for old in saved["inputs"].as_array().ok_or(Failure::Corrupt)? {
-                if draft.project.is_none()
-                    && !inputs.iter().any(|new| {
-                        new["citation"]["source"] == old["citation"]["source"]
-                            && new["record"] == old["record"]
-                            && new["sha256"] == old["sha256"]
-                            && new["writer"] == old["writer"]
-                    })
-                {
-                    return Err(Failure::Invalid.into());
-                }
-            }
+            // Explicit parent reports are frozen dependency sources, not a
+            // demand to squeeze their original bytes into the next eight-row
+            // window. report_inputs rechecks the entire bounded parent graph.
             let result = engine
                 .workspace
                 .get("analysis-result", id)?
                 .ok_or(Failure::Missing)?;
             if result["state"] != "succeeded" || !result["consolidation"].is_object() {
                 return Err(Failure::Invalid.into());
+            }
+            for (n, candidate) in result["consolidation"]["candidates"]
+                .as_array()
+                .ok_or(Failure::Corrupt)?
+                .iter()
+                .enumerate()
+            {
+                if prior_units.len() >= 256 {
+                    return Err(ContentError::Limited);
+                }
+                let source = saved["projection"][0]["units"]
+                    .as_array()
+                    .and_then(|u| u.first())
+                    .and_then(|u| u["source"].as_str())
+                    .ok_or(Failure::Corrupt)?;
+                prior_units.push(json!({"id":format!("prior:{id}:{n}"),"source":source,
+                    "kind":"derived-candidate","role":"model-derived","text":serde_json::to_string(candidate).map_err(|_|Failure::Corrupt)?,
+                    "report_request":{"id":id},"candidate":n,"origin_units":candidate["evidence"],
+                    "authority":"Prior validated interpretation only. Follow the parent report to its original frozen source witnesses; this is not authored acceptance or a direct occurrence citation."}));
             }
             prior.push(json!({"job":id,"recipe":saved["recipe"],"model":result["parsed"]["model"],"candidates":result["consolidation"]["candidates"],"limitations":result["consolidation"]["limitations"],"authority":"Prior model interpretation, not authored acceptance. Ground new candidates in this run's supplied visible unit ids."}));
         }
@@ -870,7 +934,7 @@ impl Readers {
                 .ok_or(ContentError::Limited)?;
             if prompt.is_empty() {
                 prompt = vec![
-                    json!({"version":"kan-visible-evidence/1","units":[],"excluded":[],"exclusions":"No capture selected; authored project evidence only."}),
+                    json!({"version":"kan-visible-evidence/2","units":[],"excluded":[],"exclusions":"No capture selected; authored project evidence only."}),
                 ];
             }
             prompt[0]["units"]
@@ -888,6 +952,10 @@ impl Readers {
         }
         if !prior.is_empty() {
             prompt[0]["prior_derivations"] = json!(prior);
+            prompt[0]["units"]
+                .as_array_mut()
+                .ok_or(Failure::Corrupt)?
+                .extend(prior_units);
         }
         if serde_json::to_vec(&prompt)
             .map_err(|_| Failure::Corrupt)?
@@ -913,7 +981,7 @@ impl Readers {
         let contract = json!({"project_annotations":project_annotations,"project":project,"assessment":assessment,"adapter":engine.config.adapter,"worker":engine.config.worker,"recipe":recipe,"endpoint":engine.config.endpoint,"request":request,"draft":draft,"inputs":inputs,"projection":prompt});
         let preview = json!({"project_evaluation":super::projects::summary(&contract["project"]),"digest":digest(&contract)?,"adapter":engine.config.adapter,"worker":engine.config.worker,"recipe":recipe,"model":engine.config.model,"endpoint":engine.config.endpoint,
             "input_bytes":total,"input_bytes_basis":"Selected captured raw bytes plus serialized signed authored claims; prompt framing measured separately.","input_encoding":if project.is_some(){"frozen authored claims and optional coherent decoded capture"}else if draft.decode {"coherent decoded selected evidence"}else{"legacy per-occurrence raw display"},"decoded_prompt_bytes":serde_json::to_vec(&prompt).map_err(|_|Failure::Corrupt)?.len(),"max_input_bytes":engine.config.max_input_bytes,"max_jobs":engine.config.max_jobs,"provider_calls_per_new_job":if engine.config.adapter == Adapter::ClaudeCode {Value::Null}else{json!(1)},"worker_invocations_per_new_job":1,"inputs":draft.cites,"max_output_tokens":engine.config.adapter.output_tokens(&engine.config),"max_response_bytes":2*1024*1024,
-            "projection":if visible {json!({"version":"kan-visible-evidence/1","units":prompt[0]["units"].as_array().map(Vec::len),"excluded":prompt[0]["excluded"],"exclusions":prompt[0]["exclusions"]})}else{Value::Null},
+            "projection":if visible {json!({"version":"kan-visible-evidence/2","units":prompt[0]["units"].as_array().map(Vec::len),"excluded":prompt[0]["excluded"],"exclusions":prompt[0]["exclusions"]})}else{Value::Null},
             "effect":"Send these exact selected inputs to the explicitly configured worker; retain encrypted input, request and response lineage. Results do not publish claims."});
         // Revalidate current authority across all input sources.
         for cite in &draft.cites {
@@ -1144,6 +1212,37 @@ fn decoded_bundle(mut content: Value) -> Result<Value, Failure> {
 #[cfg(test)]
 mod bundled_tests {
     use super::*;
+    #[test]
+    fn worker_disclosure_allowlist_applies_to_retained_ancestor_sources() {
+        let directory = tempfile::tempdir().unwrap();
+        let workspace = Workspace::open(
+            &directory.path().join("dependencies.sqlite"),
+            crate::sign::Identity::generate(),
+            [83; 32],
+        )
+        .unwrap();
+        let parent = "a".repeat(64);
+        let child = "b".repeat(64);
+        for (id, source, parents) in [
+            (&parent, "proof:other", vec![]),
+            (&child, "proof:selected", vec![parent.clone()]),
+        ] {
+            workspace.put("analysis-job",id,json!({"draft":{"recipe":"session-brief","cites":[],"decode":true,"project":{"source":source,"subjects":["p"]},"derived_from":parents}})).unwrap();
+            workspace
+                .put("analysis-input", id, json!({"project":{"claims":[]}}))
+                .unwrap();
+        }
+        assert!(matches!(
+            worker_dependency_sources(&workspace, &child, &["proof:selected".into()]),
+            Err(Failure::AccessLimited)
+        ));
+        assert!(worker_dependency_sources(
+            &workspace,
+            &child,
+            &["proof:selected".into(), "proof:other".into()]
+        )
+        .is_ok());
+    }
     #[test]
     fn decoded_recipe_preserves_tool_arguments_and_partial_source_states_without_duplicate_events()
     {

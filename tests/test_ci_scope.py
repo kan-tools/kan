@@ -43,7 +43,20 @@ class ScopeTests(unittest.TestCase):
                      'tests/test_ci_component_result.py']:
             result = m.classify([path])
             self.assertTrue(result['rust'] and result['core'], path)
-            self.assertFalse(result['capture'] or result['macos'], path)
+            self.assertEqual(result['capture'], path in {'scripts/kan-finalized.py', 'tests/test_kan_finalized.py'}, path)
+            self.assertFalse(result['macos'], path)
+
+    def test_other_fixture_changes_select_real_component_checks(self):
+        for path in ['tests/fixtures/uri-v1.json', 'tests/fixtures/new-shape.tsv']:
+            self.assertTrue(m.classify([path])['core'], path)
+
+    def test_rename_keeps_both_source_and_destination_paths(self):
+        with patch.object(m.subprocess, 'run', return_value=subprocess.CompletedProcess([], 0, b'src/old.rs\0docs/new.md\0', b'')) as run:
+            paths, uncertain = m.changed_paths({'before': 'base'}, 'head')
+        self.assertIn('--no-renames', run.call_args.args[0])
+        self.assertFalse(uncertain)
+        self.assertEqual(paths, ['src/old.rs', 'docs/new.md'])
+        self.assertTrue(m.classify(paths)['core'])
 
     def test_docs_only_stays_static_and_deleted_source_keeps_coverage(self):
         self.assertFalse(m.classify(['docs/SPEC.md', '.design/plan.md'])['rust'])

@@ -4,7 +4,19 @@ Do not execute tools or request external input. Do not reconstruct private
 reasoning. A recorded reason is an explicit statement, not hidden thought.
 
 Return only a JSON object matching the supplied output schema. Set version to
-kan-consolidation/1 and flow to the named flow. Each candidate needs exact unit
+kan-consolidation/2 for recipe revision2 (kan-consolidation/1 for retained revision1)
+and flow to the named flow. Revision2 requires the matching typed contract:
+session-brief indexes observed_work/decisions/results/open_questions;
+decisions-and-questions indexes decisions/open_questions/conflicts;
+project-consolidation supplies scoped subjects, indexes statements/conflicts/
+corrections, and records missing_grounds; handoff-context supplies source_pins
+(source, exact unit, nullable literal revision/digest) and indexes orientation/active_decisions/
+unresolved/next_actions. relation-suggestions evaluates supplied grounded scoped
+endpoints with suggested/no-link/unknown outcome, nullable candidate index, exact
+grounds and alternatives. Each candidate index must occur exactly once in its
+contract. Never invent a pin or treat a derived parent as explicit acceptance.
+Parent-derived units retain prior report routes and uncertainty, not direct
+authored acceptance. Each candidate needs exact unit
 ids in evidence and an uncertainty statement. Use only supplied source scope ids;
 subject labels are proposed local names, not globally identified objects. Preserve
 original actor/role attribution without treating it as cryptographic identity.

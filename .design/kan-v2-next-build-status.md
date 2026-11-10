@@ -64,10 +64,23 @@ This policy does not silently change those settings: full current-candidate
 qualification and separate human merge approval remain explicit gates until the
 owner separately chooses enforcement settings.
 
-The74922b7 iteration checks, artifact build and provider-offline readback passed;
-its last resumed reader stopped with a provider safeguard refusal before usable
-source-check acceptance. That bounded continuation is consumed. The heartbeat
-remains paused; no final Tier2 qualification or integrated review has launched.
+Historical `74922b7` passed iteration/artifact/operator checks; its resumed reader
+stopped with a provider safeguard refusal. That consumed trial remains failed.
+The fresh `7b79269` trial later supplied usable retrieval evidence, with its
+original source/binary receipts retained. Final Tier1/Tier2 qualification at
+`32e2f6c` passed, but the actual cold Opus review returned **BLOCK** on Nov10.
+Passing CI does not override that substantive verdict.
+
+The owner authorized one integrated correction of F1–F9: harness-control input
+projection; incomplete corrective history; capture/finalization concurrency;
+evaluation identities; distinct recipe contracts; owned-worker deadlines;
+multi-batch lineage; real v1 parity; and dispatcher/routing/retry/documentation
+controls. These are implementation and regression work, not a scope waiver or a
+new acceptance claim. The original blocked review and all old failed trials stay
+intact. Correction runtime checks are pending; use affected Tier1 before one
+stable current-candidate Tier2 and focused independent re-review. A fresh paid
+trial requires its own concrete task/input/tools/model/budget plan. The heartbeat
+stays paused while implementing or waiting for approval.
 
 Owner refinement,2026-11-04: continue design toward
 [semantic progressive disclosure and consolidation](kan-v2-semantic-disclosure-and-consolidation.md).

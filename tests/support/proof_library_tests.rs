@@ -8861,6 +8861,438 @@ async fn typed_records_save_uncited_atomic_retry_recall_and_refuse_cross_scope()
 }
 
 #[tokio::test]
+async fn authored_recall_never_resurrects_a_claim_when_correction_evidence_is_revoked() {
+    let collection_dir = tempfile::tempdir().unwrap();
+    let evidence_dir = tempfile::tempdir().unwrap();
+    let local = private_workspace_directory();
+    let binding = attested::Binding {
+        archive: [4; 32],
+        scope: [1; 32],
+        issuer: identity(8).did(),
+    };
+    let root = collection_dir.path().join("archive");
+    attested::Archive::create(&root, binding.clone()).unwrap();
+    let collection = Fixture {
+        root,
+        binding,
+        requests: vec![],
+        profile: Profile::Admitted,
+    };
+    let evidence = fixture_requests(evidence_dir.path(), Profile::Admitted, captured_request);
+    let a = Server::start(&collection).await;
+    let b = Server::start(&evidence).await;
+    let a_scope = format!(
+        "proof:admitted:{}:{}:{}",
+        service::hex(&collection.binding.archive),
+        service::hex(&collection.binding.scope),
+        collection.binding.issuer
+    );
+    let b_scope = format!(
+        "proof:admitted:{}:{}:{}",
+        service::hex(&evidence.binding.archive),
+        service::hex(&evidence.binding.scope),
+        evidence.binding.issuer
+    );
+    let readers = || {
+        kan::evidence_library::Readers::new(None, vec![a.client(&collection), b.client(&evidence)])
+            .unwrap()
+            .with_workspace(
+                kan::evidence_workspace::Workspace::open(
+                    &local.path().join("history.sqlite"),
+                    identity(6),
+                    [97; 32],
+                )
+                .unwrap(),
+            )
+    };
+    let ui = Ui::start(readers()).await;
+    let catalog = ui.call(json!({"action":"catalog"}), 200).await;
+    let entry = catalog["scopes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|s| s["id"] == b_scope)
+        .unwrap();
+    let page = ui
+        .call(
+            json!({"action":"proof-discover","source":b_scope,"pin":entry["pin"],"limit":8}),
+            200,
+        )
+        .await;
+    let citation = json!({"source":b_scope,"pin":entry["pin"],"selection":page["records"][0]["record"]["selection"]});
+    let saved = ui.call(json!({"action":"record","draft":{"source":a_scope,"verb":"decide","subject":"project/revocation","text":"Original position."}}),200).await;
+    let retraction = ui.call(json!({"action":"record","draft":{"source":a_scope,"verb":"retract","target":saved["claims"][0],"evidence":[citation]}}),200).await;
+    let before = ui.call(json!({"action":"recall","source":a_scope,"verb":"show","subject":"project/revocation"}),200).await;
+    assert!(!before["entries"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|r| r["claim"]["cid"] == saved["claims"][0]));
+    b.service.lock().unwrap().replace_grants(vec![]).unwrap();
+    for verb in ["show", "status", "issues", "context"] {
+        let query = if verb == "context" {
+            json!({"action":"recall","source":a_scope,"verb":verb})
+        } else {
+            json!({"action":"recall","source":a_scope,"verb":verb,"subject":"project/revocation"})
+        };
+        let after = ui.call(query, 200).await;
+        assert_eq!(after["coverage"], "partial");
+        assert_eq!(after["view"], Value::Null);
+        assert_eq!(after["history_omissions"]["unavailable_dependencies"], 1);
+        assert_eq!(after["entries"][0]["normalizer"], "not-run");
+        assert!(!after.to_string().contains("Original position."));
+    }
+    ui.stop().await;
+    // Restart cannot erase knowledge that an authored batch was withheld.
+    let ui = Ui::start(readers()).await;
+    let restarted = ui.call(json!({"action":"recall","source":a_scope,"verb":"show","subject":"project/revocation"}),200).await;
+    assert_eq!(restarted["coverage"], "partial");
+    assert_eq!(
+        restarted["history_omissions"]["unavailable_dependencies"],
+        1
+    );
+    b.service
+        .lock()
+        .unwrap()
+        .replace_grants(vec![grant()])
+        .unwrap();
+    let mut archive = attested::Archive::open(&evidence.root, evidence.binding.clone()).unwrap();
+    let sequence = page["records"][0]["record"]["sequence"]
+        .as_str()
+        .unwrap()
+        .parse()
+        .unwrap();
+    let erase = archive
+        .preview_erasure(&[sequence], service::hex(&[23; 32]), 200)
+        .unwrap();
+    archive
+        .apply_erasure(store::erasure::Record::sign(erase, &identity(8)).unwrap())
+        .unwrap();
+    let erased = ui.call(json!({"action":"recall","source":a_scope,"verb":"show","subject":"project/revocation"}),200).await;
+    assert_eq!(erased["coverage"], "partial");
+    assert_eq!(erased["view"], Value::Null);
+    assert_eq!(erased["history_omissions"]["erased_dependencies"], 1);
+    assert!(!erased.to_string().contains("Original position."));
+    ui.stop().await;
+    // The owner's coordinated workspace purge removes the corrective body as
+    // well. Its existing non-content tombstone must still prevent resurrection.
+    let workspace = kan::evidence_workspace::Workspace::open_for_erasure(
+        &local.path().join("history.sqlite"),
+        identity(6),
+        [97; 32],
+    )
+    .unwrap();
+    let cleanup = workspace
+        .preview_erasure(
+            &[(
+                "annotation".into(),
+                retraction["record"]["id"].as_str().unwrap().into(),
+            )],
+            "d".repeat(64),
+        )
+        .unwrap();
+    workspace.apply_erasure(&cleanup).unwrap();
+    drop(workspace);
+    let ui = Ui::start(readers()).await;
+    let purged = ui.call(json!({"action":"recall","source":a_scope,"verb":"show","subject":"project/revocation"}),200).await;
+    assert_eq!(purged["coverage"], "partial");
+    assert!(purged["view"].is_null());
+    assert!(!purged.to_string().contains("Original position."));
+    ui.stop().await;
+    a.stop().await;
+    b.stop().await;
+}
+
+#[tokio::test]
+#[cfg(feature = "kan-v1")]
+async fn typed_compatibility_compares_real_v1_actions_and_read_results() {
+    let git = tempfile::tempdir().unwrap();
+    let home = private_workspace_directory();
+    let key = home.path().join("identity");
+    identity(6).save(&key).unwrap();
+    let v1 = |args: &[&str]| {
+        std::process::Command::new(env!("CARGO_BIN_EXE_kan-v1"))
+            .args(args)
+            .current_dir(git.path())
+            .env("HOME", home.path())
+            .env("XDG_CONFIG_HOME", home.path().join("config"))
+            .env("KAN_IDENTITY_FILE", &key)
+            .output()
+            .unwrap()
+    };
+    for args in [
+        vec!["init", "-q"],
+        vec![
+            "-c",
+            "user.name=fixture",
+            "-c",
+            "user.email=fixture@example.invalid",
+            "commit",
+            "-q",
+            "--allow-empty",
+            "-m",
+            "fixture",
+        ],
+    ] {
+        assert!(std::process::Command::new("git")
+            .args(args)
+            .current_dir(git.path())
+            .status()
+            .unwrap()
+            .success());
+    }
+    let archive = tempfile::tempdir().unwrap();
+    let local = private_workspace_directory();
+    let binding = attested::Binding {
+        archive: [4; 32],
+        scope: [1; 32],
+        issuer: identity(8).did(),
+    };
+    let root = archive.path().join("archive");
+    attested::Archive::create(&root, binding.clone()).unwrap();
+    let f = Fixture {
+        root,
+        binding,
+        requests: vec![],
+        profile: Profile::Admitted,
+    };
+    let server = Server::start(&f).await;
+    let ui = Ui::start(
+        kan::evidence_library::Readers::new(None, vec![server.client(&f)])
+            .unwrap()
+            .with_workspace(
+                kan::evidence_workspace::Workspace::open(
+                    &local.path().join("parity.sqlite"),
+                    identity(6),
+                    [97; 32],
+                )
+                .unwrap(),
+            ),
+    )
+    .await;
+    let source = ui.call(json!({"action":"catalog"}), 200).await["scopes"][0]["id"].clone();
+    fn meaning(claim: &Value) -> Value {
+        // Collection anchors, CIDs, wall-clock attestations and durability
+        // envelopes intentionally differ. Compare semantic body/render fields.
+        json!({"kind":claim["kind"],"subject":claim["subject"],"text":claim["text"],"status":claim["status"],
+            "relation":claim["relation"],"target":claim["target"],"title":claim["title"],"superseded":claim["superseded"]})
+    }
+    fn sorted(mut rows: Vec<Value>) -> Vec<Value> {
+        rows.sort_by_key(Value::to_string);
+        rows
+    }
+    let mut first_v1 = String::new();
+    let mut first_v2 = Value::Null;
+    for verb in ["observe", "plan", "decide", "result", "block", "resolve"] {
+        let text = format!("Actual {verb} fixture.");
+        let output = v1(&[verb, &text, "--subject", "project/parity"]);
+        assert!(
+            output.status.success(),
+            "v1 {verb}: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let saved=ui.call(json!({"action":"record","draft":{"source":source,"verb":verb,"subject":"project/parity","text":text}}),200).await;
+        if verb == "observe" {
+            first_v1 = String::from_utf8(output.stdout).unwrap().trim().into();
+            first_v2 = saved["claims"][0].clone();
+        }
+        let old = v1(&["show", "project/parity", "--json"]);
+        assert!(old.status.success());
+        let old: Value = serde_json::from_slice(&old.stdout).unwrap();
+        let new = ui
+            .call(
+                json!({"action":"recall","source":source,"verb":"show","subject":"project/parity"}),
+                200,
+            )
+            .await;
+        assert_eq!(
+            sorted(
+                old["claims"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(meaning)
+                    .collect()
+            ),
+            sorted(
+                new["entries"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .filter(|r| r["type"] == "claim")
+                    .map(|r| meaning(&r["claim"]))
+                    .collect()
+            ),
+            "{verb}"
+        );
+    }
+    for (args, draft) in [
+        (
+            vec!["mark", "project/parity", "open"],
+            json!({"verb":"mark","subject":"project/parity","status":"Open"}),
+        ),
+        (
+            vec!["same", "project/parity", "project/alias"],
+            json!({"verb":"same","subject":"project/parity","target":"project/alias"}),
+        ),
+        (
+            vec![
+                "relate",
+                "project/parity",
+                "depends-on",
+                "project/dependency",
+            ],
+            json!({"verb":"relate","subject":"project/parity","target":"project/dependency","relation":"DependsOn"}),
+        ),
+        (
+            vec!["retract", first_v1.as_str()],
+            json!({"verb":"retract","target":first_v2}),
+        ),
+    ] {
+        let old = v1(&args);
+        assert!(
+            old.status.success(),
+            "{:?}: {}",
+            args,
+            String::from_utf8_lossy(&old.stderr)
+        );
+        let mut draft = draft;
+        draft["source"] = source.clone();
+        ui.call(json!({"action":"record","draft":draft}), 200).await;
+    }
+    // Both surfaces refuse rejecting one's own claim.
+    assert!(!v1(&["reject", first_v1.as_str()]).status.success());
+    ui.call(
+        json!({"action":"record","draft":{"source":source,"verb":"reject","target":first_v2}}),
+        400,
+    )
+    .await;
+    let foreign_key = home.path().join("foreign-identity");
+    identity(7).save(&foreign_key).unwrap();
+    let foreign_old = std::process::Command::new(env!("CARGO_BIN_EXE_kan-v1"))
+        .args([
+            "observe",
+            "Foreign assertion for explicit rejection.",
+            "--subject",
+            "project/parity",
+        ])
+        .current_dir(git.path())
+        .env("HOME", home.path())
+        .env("XDG_CONFIG_HOME", home.path().join("config"))
+        .env("KAN_IDENTITY_FILE", &foreign_key)
+        .output()
+        .unwrap();
+    assert!(foreign_old.status.success());
+    let foreign_cid = String::from_utf8(foreign_old.stdout).unwrap();
+    assert!(v1(&["reject", foreign_cid.trim()]).status.success());
+    let foreign_ui = Ui::start(
+        kan::evidence_library::Readers::new(None, vec![server.client(&f)])
+            .unwrap()
+            .with_workspace(
+                kan::evidence_workspace::Workspace::open(
+                    &local.path().join("foreign.sqlite"),
+                    identity(7),
+                    [98; 32],
+                )
+                .unwrap(),
+            ),
+    )
+    .await;
+    let foreign_new = foreign_ui.call(json!({"action":"record","draft":{"source":source,"verb":"observe","subject":"project/parity","text":"Foreign assertion for explicit rejection."}}),200).await;
+    foreign_ui.stop().await;
+    let publication = encrypted_frame(
+        0,
+        8,
+        None,
+        &serde_json::to_vec(
+            &json!({"format":"kan-annotation/2","declaration":foreign_new["record"]}),
+        )
+        .unwrap(),
+    );
+    let mut original = attested::Archive::open(&f.root, f.binding.clone()).unwrap();
+    original
+        .admit(&publication, &identity(8), &grant(), 1000)
+        .unwrap();
+    drop(original);
+    let reader = server.client(&f);
+    let pin = reader.snapshot().await.unwrap();
+    let page = reader.page(&pin, None, 1).await.unwrap();
+    let reference = client::Reference::new(reader.binding(), &page.records[0]);
+    let preview = ui
+        .call(
+            json!({"action":"restore-annotation","reference":reference}),
+            200,
+        )
+        .await;
+    ui.call(
+        json!({"action":"restore-annotation","reference":reference,"preview":preview["digest"]}),
+        200,
+    )
+    .await;
+    ui.call(json!({"action":"record","draft":{"source":source,"verb":"reject","target":foreign_new["claims"][0]}}),200).await;
+    for verb in ["show", "status", "issues", "context"] {
+        let mut args = vec![verb];
+        if matches!(verb, "show" | "status") {
+            args.push("project/parity");
+        }
+        args.push("--json");
+        let old = v1(&args);
+        assert!(
+            old.status.success(),
+            "{verb}: {}",
+            String::from_utf8_lossy(&old.stderr)
+        );
+        let old: Value = serde_json::from_slice(&old.stdout).unwrap();
+        let query = if matches!(verb, "show" | "status") {
+            json!({"action":"recall","source":source,"verb":verb,"subject":"project/parity"})
+        } else {
+            json!({"action":"recall","source":source,"verb":verb})
+        };
+        let new = ui.call(query, 200).await;
+        if matches!(verb, "show" | "context") {
+            assert_eq!(
+                sorted(
+                    old["claims"]
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .map(meaning)
+                        .collect()
+                ),
+                sorted(
+                    new["entries"]
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .filter(|r| r["type"] == "claim")
+                        .map(|r| meaning(&r["claim"]))
+                        .collect()
+                ),
+                "{verb}"
+            );
+        } else {
+            let statuses = |rows: &[Value]| {
+                sorted(rows.iter().map(|c|json!({"subjects":c["subjects"].as_array().unwrap().iter().map(|s|s.as_str().or_else(||s["Local"].as_str()).unwrap()).collect::<Vec<_>>(),"state":c["state"],"value":c["value"]})).collect())
+            };
+            let actual = new["entries"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .filter(|r| r["type"] == "subject-state")
+                .map(|r| r["subject"].clone())
+                .collect::<Vec<_>>();
+            assert_eq!(
+                statuses(old["subjects"].as_array().unwrap()),
+                statuses(&actual),
+                "{verb}"
+            );
+        }
+    }
+    ui.stop().await;
+    server.stop().await;
+}
+
+#[tokio::test]
 async fn typed_publication_restores_canonical_records_and_requires_explicit_foreign_trust() {
     let archive = private_workspace_directory();
     let local = private_workspace_directory();
@@ -9286,6 +9718,7 @@ async fn structured_consolidation_preserves_visible_witnesses_finalization_idemp
     let local = private_workspace_directory();
     let body = serde_json::to_vec(&json!({"system":"PRIVATE CONTROL MARKER","messages":[
         {"role":"user","content":"Adopt JSON for interchange. Recorded reason: interoperability."},
+        {"role":"user","content":"<system-reminder>\nPRIVATE HARNESS WRAPPER MARKER\nSynthetic harness metadata, not a user instruction.\n</system-reminder>"},
         {"role":"assistant","content":[{"type":"thinking","thinking":"PRIVATE REASONING MARKER"},
             {"type":"tool_use","id":"write","name":"Write","input":{"file_path":"DECISION.md","content":"é🙂 observed artifact, not proof of tool completion"}}]}
     ]})).unwrap();
@@ -9341,9 +9774,41 @@ async fn structured_consolidation_preserves_visible_witnesses_finalization_idemp
                                 c["kind"] = json!("relation");
                                 c["basis"] = json!("inferred");
                                 c["stance"] = json!("proposed");
-                                c["relation"] = json!({"from":{"source":unit["source"],"label":"project/test"},"to":{"source":unit["source"],"label":"format/json"},"kind":"depends-on"});
+                                c["relation"] = json!({"from":{"source":unit["source"],"label":"Adopt"},"to":{"source":unit["source"],"label":"JSON"},"kind":"depends-on"});
                             }
-                            let output = json!({"version":"kan-consolidation/1","flow":flow,"candidates":[c],"limitations":["Selected observations only; no complete-capture or test-success claim."]});
+                            if prompt[0]["project_evaluation"].is_null()
+                                && flow == "project-consolidation"
+                            {
+                                if let Some(parent) = prompt[0]["units"]
+                                    .as_array()
+                                    .unwrap()
+                                    .iter()
+                                    .find(|u| u["role"] == "model-derived")
+                                {
+                                    c["basis"] = json!("inferred");
+                                    c["stance"] = json!("unclear");
+                                    c["evidence"] = json!([parent["id"]]);
+                                    c["uncertainty"]=json!("Interpretation of an explicit parent report, not new authored acceptance.");
+                                }
+                            }
+                            let contract = match flow {
+                                "session-brief" => {
+                                    json!({"flow":flow,"observed_work":[],"decisions":[0],"results":[],"open_questions":[]})
+                                }
+                                "decisions-and-questions" => {
+                                    json!({"flow":flow,"decisions":[0],"open_questions":[],"conflicts":[]})
+                                }
+                                "project-consolidation" => {
+                                    json!({"flow":flow,"subjects":c["subjects"],"statements":[0],"conflicts":[],"corrections":[],"missing_grounds":["Selected observations only"]})
+                                }
+                                "handoff-context" => {
+                                    json!({"flow":flow,"source_pins":[{"source":unit["source"],"unit":unit["id"],"revision":null,"digest":null}],"orientation":[],"active_decisions":[0],"unresolved":[],"next_actions":[]})
+                                }
+                                _ => {
+                                    json!({"flow":flow,"evaluations":[{"from":c["relation"]["from"],"to":c["relation"]["to"],"outcome":"suggested","candidate":0,"grounds":c["evidence"],"alternatives":["No link; local labels may not denote the same intended subjects."]}]})
+                                }
+                            };
+                            let output = json!({"version":"kan-consolidation/2","flow":flow,"contract":contract,"candidates":[c],"limitations":["Selected observations only; no complete-capture or test-success claim."]});
                             let text = if flow == "session-brief" {
                                 format!("```json\n{output}\n```")
                             } else {
@@ -9441,6 +9906,7 @@ async fn structured_consolidation_preserves_visible_witnesses_finalization_idemp
             for forbidden in [
                 "PRIVATE CONTROL MARKER",
                 "PRIVATE REASONING MARKER",
+                "PRIVATE HARNESS WRAPPER MARKER",
                 "bytes_hex",
                 "event_json",
                 "parsed_json",
@@ -9450,13 +9916,40 @@ async fn structured_consolidation_preserves_visible_witnesses_finalization_idemp
             assert!(prompt.contains("observed artifact"));
         }
     }
-    let parent_plan = ui.call(json!({"action":"extract-plan","selection":{"source":source,"from":1,"through":3,"recipe":"project-consolidation","derived_from":[ids[0]]}}),200).await;
+    let parent_plan = ui.call(json!({"action":"extract-plan","selection":{"source":source,"from":1,"through":2,"recipe":"project-consolidation","derived_from":[ids[0]]}}),200).await;
     let child = ui.call(json!({"action":"extract-run","selection":parent_plan["selection"],"preview":parent_plan["digest"],"nonce":parent_plan["nonce"],"wait":true}),200).await;
     assert_eq!(child["state"], "succeeded");
     let job = ui
         .call(json!({"action":"analysis-job","id":child["id"]}), 200)
         .await;
     assert_eq!(job["job"]["draft"]["derived_from"], json!([ids[0]]));
+    assert_eq!(
+        job["job"]["draft"]["cites"].as_array().unwrap().len(),
+        2,
+        "the new window must not silently expand to the parent's three inputs"
+    );
+    let child_page = ui
+        .call(json!({"action":"report","id":child["id"]}), 200)
+        .await;
+    let parent_witness = &child_page["blocks"][0]["witnesses"][0];
+    assert_eq!(parent_witness["report_request"]["id"], ids[0]);
+    assert!(
+        parent_witness.get("reference_request").is_none(),
+        "a parent interpretation must not masquerade as an occurrence witness"
+    );
+    let promoted_child = ui.call(json!({"action":"record","draft":{"source":source,"verb":"decide","subject":"project/reviewed-child","text":"Explicit review of the chained result.","derived_from":[child["id"]]}}),200).await;
+    let parent_job = ui
+        .call(json!({"action":"analysis-job","id":ids[0]}), 200)
+        .await;
+    for witness in parent_job["job"]["draft"]["cites"].as_array().unwrap() {
+        assert!(
+            promoted_child["record"]["draft"]["cites"]
+                .as_array()
+                .unwrap()
+                .contains(witness),
+            "promotion must preserve every ancestor witness outside the new window"
+        );
+    }
     assert!(
         requests.lock().unwrap().last().unwrap()["messages"][0]["content"]
             .as_str()
@@ -9478,6 +9971,18 @@ async fn structured_consolidation_preserves_visible_witnesses_finalization_idemp
     assert_eq!(requests.lock().unwrap().len(), 7);
     let recall = ui.call(json!({"action":"recall","source":source,"verb":"show","subject":"project/test","derived":[ids[0]],"derived_budget":1024}),200).await;
     let entries = recall["entries"].as_array().unwrap();
+    assert_eq!(recall["evaluation"]["version"], "kan-compat-evaluation/2");
+    assert!(
+        recall["evaluation"]["unsupported"]
+            .as_array()
+            .unwrap()
+            .len()
+            >= 3
+    );
+    assert!(entries
+        .iter()
+        .filter(|r| r["type"] != "derived-supplement")
+        .all(|r| r["origin_evaluation"]["id"] == recall["evaluation"]["id"]));
     let derived = entries
         .iter()
         .position(|e| e["type"] == "derived-supplement")

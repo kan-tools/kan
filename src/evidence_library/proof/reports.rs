@@ -102,6 +102,13 @@ fn decision_blocks(request: &Value, response: &Value) -> Result<Vec<Value>, Fail
 // JSON text fragments, rather than requiring advanced/raw job inspection.
 fn project_blocks(manifest: &Value) -> Result<Vec<Value>, Failure> {
     let mut blocks = Vec::new();
+    if manifest["evaluation"].is_object() {
+        let text =
+            serde_json::to_string_pretty(&manifest["evaluation"]).map_err(|_| Failure::Corrupt)?;
+        for (fragment, text) in fragments(&text).into_iter().enumerate() {
+            blocks.push(json!({"block":"project/evaluation","kind":"authored-evaluation","fragment":fragment,"text":text}));
+        }
+    }
     for (field, kind) in [
         ("classes", "authored-context"),
         ("claims", "authored-input"),
@@ -123,6 +130,8 @@ fn project_blocks(manifest: &Value) -> Result<Vec<Value>, Failure> {
 // Input references are bounded rows too, never an unbounded repeated header.
 fn report_page(mut value: Value, cursor: Option<Value>) -> Result<Value, ContentError> {
     let query = json!({"id": value["id"]});
+    value["evaluation"] = json!({"version":"kan-report-evaluation/1","id":value["id"],
+        "normalizer":"frozen-retained-report/1","authority":"This immutable report interpretation, not authored acceptance. References retain this origin; decoded pages also identify their current authenticated read view."});
     let mut rows = Vec::new();
     // Useful report text first. Full input manifests remain an explicit tail,
     // rather than making an agent read long URIs before the first statement.
@@ -207,7 +216,7 @@ impl Readers {
                 .as_array()
                 .filter(|_| result["state"] == "succeeded")
             else {
-                rows.push(json!({"type":"derived-state","report":id,"state":"No validated structured consolidation; inspect the retained report explicitly."}));
+                rows.push(json!({"type":"derived-state","report":id,"origin_evaluation":{"id":id,"version":"kan-report-evaluation/1"},"state":"No validated structured consolidation; inspect the retained report explicitly."}));
                 continue;
             };
             for (n, candidate) in candidates.iter().enumerate() {
@@ -220,6 +229,7 @@ impl Readers {
                     continue;
                 }
                 let row = json!({"type":"derived-supplement","report":id,"candidate":n,"statement":candidate,
+                    "origin_evaluation":{"id":id,"version":"kan-report-evaluation/1"},
                     "recipe":job["preview"]["recipe"]["id"],"revision":job["preview"]["recipe"]["revision"],"model":result["parsed"]["model"],
                     "authority":"Unpromoted model-derived suggestion; may disagree with authored claims. Recorded acceptance is not authored acceptance by this viewer.","report_request":{"id":id}});
                 let tokens =
@@ -418,9 +428,19 @@ impl Readers {
         draft: &analysis::Draft,
         id: &str,
     ) -> Result<Vec<Value>, ContentError> {
+        self.report_dependency_graph(draft, id)
+            .await
+            .map(|(inputs, _)| inputs)
+    }
+    pub(super) async fn report_dependency_graph(
+        &self,
+        draft: &analysis::Draft,
+        id: &str,
+    ) -> Result<(Vec<Value>, Vec<(String, analysis::Draft)>), ContentError> {
         let mut pending = vec![(id.to_owned(), draft.clone())];
         let mut seen = std::collections::BTreeSet::new();
         let mut root = None;
+        let mut graph = Vec::new();
         while let Some((key, draft)) = pending.pop() {
             if !seen.insert(key.clone()) {
                 continue;
@@ -432,6 +452,7 @@ impl Readers {
             if key == id {
                 root = Some(inputs);
             }
+            graph.push((key.clone(), draft.clone()));
             let mut parents = draft.derived_from.clone();
             if draft.project.is_some() {
                 let saved = self
@@ -461,7 +482,7 @@ impl Readers {
                 ));
             }
         }
-        root.ok_or(Failure::Corrupt.into())
+        Ok((root.ok_or(Failure::Corrupt)?, graph))
     }
     pub(super) async fn report_inputs(
         &self,
@@ -531,7 +552,7 @@ impl Readers {
                 })
                 .collect::<Vec<_>>();
             value["content_request"] = json!({"action":"proof-content","source":first.source,"pin":pin,"selections":selections,"format":"anthropic-messages-auto"});
-            value["report_selection"] = json!({"id":id,"input":input,"inputs_count":draft.cites.len(),"coverage":"Reconstruct only the frozen report manifest. Show enclosing items whose text or tool input intersects the focused input; their exact citations may cross input boundaries. States remain explicit. Not complete capture."});
+            value["report_selection"] = json!({"id":id,"evaluation":{"id":id,"version":"kan-report-evaluation/1"},"input":input,"inputs_count":draft.cites.len(),"coverage":"Reconstruct only the frozen report manifest. Show enclosing items whose text or tool input intersects the focused input; their exact citations may cross input boundaries. States remain explicit. Not complete capture."});
         }
         Ok(value)
     }
@@ -573,8 +594,13 @@ impl Readers {
                             .iter()
                             .find(|u| u["id"] == key)
                             .ok_or(Failure::Corrupt)?;
+                        if key.starts_with("prior:") {
+                            witnesses.push(json!({"unit":key,"report_request":unit["report_request"],"candidate":unit["candidate"],"origin_units":unit["origin_units"],
+                                "authority":"Prior model interpretation; follow parent report for original frozen source witnesses. No direct occurrence range is invented."}));
+                            continue;
+                        }
                         if key.starts_with("claim:") {
-                            witnesses.push(json!({"unit":key,"recall_request":unit["recall_request"],"live_at_selection":unit["live_at_selection"],"claim_cid":key.strip_prefix("claim:").ok_or(Failure::Corrupt)?,"authorship":unit["author"]}));
+                            witnesses.push(json!({"unit":key,"recall_request":unit["recall_request"],"origin_evaluation":{"id":saved["project"]["evaluation"]["id"],"version":saved["project"]["evaluation"]["definition"]["version"]},"live_at_selection":unit["live_at_selection"],"claim_cid":key.strip_prefix("claim:").ok_or(Failure::Corrupt)?,"authorship":unit["author"]}));
                             continue;
                         }
                         let excerpt = Excerpt::from_unit(key).ok_or(Failure::Corrupt)?;
@@ -606,6 +632,13 @@ impl Readers {
                         .enumerate()
                     {
                         blocks.push(json!({"block":format!("limitation/{n}"),"fragment":index,"kind":"limitation","text":text}));
+                    }
+                }
+                if result["consolidation"]["contract"].is_object() {
+                    let text = serde_json::to_string_pretty(&result["consolidation"]["contract"])
+                        .map_err(|_| Failure::Corrupt)?;
+                    for (fragment, text) in fragments(&text).into_iter().enumerate() {
+                        blocks.push(json!({"block":"flow-contract","fragment":fragment,"kind":"flow-contract","text":text}));
                     }
                 }
             } else if result["state"] == "succeeded" && result["adapter"] == "typesafe-system-one" {

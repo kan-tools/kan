@@ -271,6 +271,73 @@ pub(super) async fn run(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(unix)]
+    #[test]
+    fn runtime_shutdown_cancels_detached_worker_and_its_owned_descendant() {
+        use std::{os::unix::fs::PermissionsExt, time::Duration};
+        let dir = tempfile::tempdir().unwrap();
+        let directory = dir.path().canonicalize().unwrap();
+        let executable = directory.join("fake-worker");
+        let marker = directory.join("owned-pids");
+        // No model or account access: this fixture behaves like a CLI whose
+        // process and descendant outlive a dropped extraction waiter.
+        std::fs::write(
+            &executable,
+            "#!/bin/sh\n/bin/sleep 30 &\nprintf '%s %s\\n' \"$$\" \"$!\" > owned-pids\nwait\n",
+        )
+        .unwrap();
+        std::fs::set_permissions(&executable, std::fs::Permissions::from_mode(0o700)).unwrap();
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        let worker_directory = directory.clone();
+        let task = runtime.spawn(async move {
+            run(
+                &executable,
+                &worker_directory,
+                0.05,
+                60,
+                &"a".repeat(64),
+                &json!({"model":"fixture","system":"fixture","messages":[{"content":"synthetic"}]}),
+            )
+            .await
+        });
+        let observed = runtime.block_on(async {
+            tokio::time::timeout(Duration::from_secs(3), async {
+                loop {
+                    if let Ok(text) = std::fs::read_to_string(&marker) {
+                        if text.split_whitespace().count() == 2 {
+                            break text;
+                        }
+                    }
+                    tokio::time::sleep(Duration::from_millis(10)).await;
+                }
+            })
+            .await
+        });
+        assert!(!task.is_finished());
+        // This is the outer CLI deadline path: the separately spawned engine
+        // task is still live when the CLI's runtime is dropped.
+        drop(runtime);
+        let pids: Vec<i32> = observed
+            .expect("owned fake worker must start")
+            .split_whitespace()
+            .map(|s| s.parse().unwrap())
+            .collect();
+        let running = |pid: i32| {
+            let output = std::process::Command::new("ps")
+                .args(["-o", "stat=", "-p", &pid.to_string()])
+                .output()
+                .unwrap();
+            let state = String::from_utf8(output.stdout).unwrap();
+            // A killed orphan may briefly await the host's reaper. It must
+            // never remain executing after owned process-group cleanup.
+            !state.trim().is_empty() && !state.trim_start().starts_with('Z')
+        };
+        let deadline = std::time::Instant::now() + Duration::from_secs(3);
+        while pids.iter().any(|pid| running(*pid)) && std::time::Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        assert!(pids.iter().all(|pid| !running(*pid)));
+    }
     fn transcript() -> Vec<Value> {
         vec![
             json!({"type":"system","subtype":"init","session_id":"s","model":"claude-sonnet-5-5","apiKeySource":"none","permissionMode":"dontAsk","mcp_servers":[],"tools":[]}),

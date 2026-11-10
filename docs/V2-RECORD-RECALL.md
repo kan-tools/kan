@@ -1,8 +1,11 @@
 # Record, recall and derived reports
 
 Experimental implementation on the agent-usability branch. These additions are
-not in the published beta. Qualification and the comparative agent exercise are
-pending. Keep Day/v1 and Git as the working research record.
+not in the published beta. Candidate32e2f6c passed full CI and a fresh comparative
+exercise demonstrated retrieval, but independent review blocked acceptance on
+input exclusion, missing history and capture concurrency. The current integrated
+correction awaits remote verification and re-review. Keep Day/v1 and Git as the
+working research record; no migration or system installation is qualified here.
 
 V1 starts with deliberately authored claims in a repository. V2 also captures
 observed evidence and runs optional analysis. The common authored loop remains
@@ -90,6 +93,11 @@ object for an uncertain exact retry, using `--operation '{"nonce":"...",
 artifacts, evidence or derived lineage refuses. A new deliberate act uses a new
 operation, even when the text/time match. Retraction and rejection are additive;
 retracting a retraction restores the earlier claim under the existing fold.
+For a completed operation, the CLI retrieves original retained Git anchors when
+retrying, so moving HEAD does not create a different intent. Explicit file/range
+options must match the original paths and ranges; their original commit stays
+frozen. Changing or omitting those options refuses rather than silently rebinding
+or ignoring them. All other intent fields still pass the shared exact-intent check.
 
 Normal structured results are at most 12 KiB. `show/status/issues/context` expose
 `entries` and `next`; pass `next` as `--cursor` with unchanged arguments. Context

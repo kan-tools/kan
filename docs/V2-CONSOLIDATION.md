@@ -5,13 +5,19 @@ objects. The canonical v1 compatibility fold still supplies authored state and
 identity; model scores never become trust weights, grants or identity witnesses.
 Higher/weighted identity semantics and computed Git ancestry remain unsupported.
 
+Certification status (Nov10): candidate32e2f6c passed full CI and retained a
+fresh two-arm Sonnet exercise, but its independent review returned BLOCK for
+control-input projection, incomplete-history disclosure, capture locking and
+contract/coverage gaps. The current correction is undergoing scoped verification;
+the older trial and its failures are retained, not rerun or declared fully accepted.
+
 ## Built-in flows
 
 `kan recipes` lists the exact versioned generative contracts, without opening a
 workspace or worker. `kan recipes --decision` lists the separate bounded decision
 contract for an explicitly configured local worker.
 
-| Recipe, revision1 | Output stance |
+| Recipe, revision2 | Output stance |
 |---|---|
 | `session-brief` | Observed work, decisions, outcomes and open questions; denied/unrun differs from failed/passed. |
 | `decisions-and-questions` | Individually attributed decision/question candidates; proposed, accepted and unclear remain distinct. |
@@ -19,9 +25,19 @@ contract for an explicitly configured local worker.
 | `handoff-context` | Orientation and unresolved boundaries; suggested actions remain suggested/proposed. |
 | `relation-suggestions` | Directed, scoped candidate relations, including no-link/unknown; never a graph mutation. |
 
-These return `kan-consolidation/1`: candidates with kind, text, explicit/inferred/
+These return `kan-consolidation/2`: candidates with kind, text, explicit/inferred/
 suggested basis, stance, optional speaker, scoped subject suggestions, optional
 directed relation, supplied evidence-unit ids and uncertainty, plus limitations.
+The required tagged `contract` is specific to the flow. A session brief indexes
+observed work, decisions, results and open questions; decision extraction indexes
+decisions, questions and conflicts. Project consolidation names scoped subjects,
+statements, conflicts, corrections and missing grounds. Handoff supplies typed
+source/unit pins (literal revision/digest when present), orientation, active
+decisions, unresolved boundaries and suggested next actions. Relation evaluation
+requires scoped endpoints grounded in supplied units, alternatives, and a typed
+suggested/no-link/unknown outcome; only a suggestion carries a candidate index.
+Each candidate appears exactly once in its contract. Retained revision1 outputs
+remain readable under their original `kan-consolidation/1` contract.
 Schema/locator validation is mechanical; truth and calibration are not certified
 by a successful parse. Invalid/missing evidence ids fail the job while retaining
 the exact provider response. No recipe automatically authors or promotes a claim.
@@ -43,18 +59,25 @@ kan extract --profile /private/project.json --plan /private/frozen.json --run
 kan report REPORT_ID --profile /private/project.json
 ```
 
-All five flows require coherent decoding. Their `kan-visible-evidence/1` input
+All five flows require coherent decoding. Their `kan-visible-evidence/2` input
 contains user/assistant text, observed tool names/inputs/results and original
 item/range attribution. Thinking, system/control/context wrappers, duplicate raw
-events and whole parsed documents are excluded and counted. Unattributed response
+events and whole parsed documents are excluded and counted. Whole harness
+`system-reminder`/local-command wrapper-shaped user blocks are excluded too;
+an inline literal user quotation is not silently removed. Unattributed response
 channel text remains explicitly unattributed; it is not speaker authentication.
 Loss/availability states remain visible. Original encrypted inputs are retained;
 the projection is neither deletion nor complete-capture certification.
 
 `--derived-report PARENT` explicitly includes a prior validated consolidation as
-context. In capture-only mode every original parent input must also occur in the selected interval;
-the eight-input bound never silently widens. The new result retains parent-job
-lineage and must ground its new candidates in its own supplied visible units.
+context. A new capture batch has at most eight direct inputs; parent originals
+remain in their own frozen manifests rather than being squeezed into that window.
+Explicit parents supply labelled model-derived candidate units with exact parent
+report routes. A candidate citing those units cannot claim explicit authored
+acceptance; its source fallback traverses the retained parent report and original
+witnesses. Every dependency must remain readable and allowed for disclosure to
+the configured worker. The new result retains parent-job lineage and must ground
+its new candidates in supplied direct or explicitly labelled parent-derived units.
 Read-time checks cover all dependency sources and retained ancestors; provider
 configuration is unnecessary for reading. Long ranges/large ancestry refuse
 explicitly. This initial bounded hierarchy is not an unbounded project crawler
@@ -146,7 +169,7 @@ provider API key or localhost bridge. Example analysis configuration:
     "executable":"/absolute/path/to/claude",
     "working_directory":"/private/empty-worker-directory",
     "max_budget_usd":0.50,
-    "timeout_seconds":120
+    "timeout_seconds":90
   },
   "model":"claude-sonnet-5-5",
   "sources":["proof:explicit-source-id"],
@@ -338,7 +361,9 @@ Project capture accepts an optional `consolidation` policy:
 Absence disables queueing. The analysis configuration must separately opt in
 using `finalization_recipes:["session-brief"]` and bound input/output/lifetime jobs.
 Only acknowledged, gap-free SessionEnd or explicit KanFinalSnapshot captures of
-at most eight records enqueue metadata. This does not certify complete capture or
+at most256 records enqueue metadata. These reserve one job per eight-record
+window per configured flow before queueing; quota exhaustion is explicit.
+This does not certify complete capture or
 task success. Stop/compaction snapshots, notes and derivations do not trigger it.
 
 Hooks only queue; they never launch a model or background process. An explicit
@@ -347,10 +372,21 @@ drains at most one queued event under a 120-second total processing deadline,
 shared across discovery, preview and submission commands. This is also a bounded
 entry point for an
 operator-managed after-session runner; no scheduler or login service is installed.
+Draining uses an atomic per-event directory claim, not capture's operation lock;
+another worktree's capture can proceed during inference. Before submission the
+configured worker timeouts plus15seconds cleanup per remaining job must fit the
+remaining total budget. Otherwise no model is submitted. A cooperative
+`--deadline-seconds` inside Kan expires before the outer supervisor's timeout,
+so runtime cancellation stops owned CLI worker groups. A failed/ambiguous event
+is retained and is never automatically resumed or resubmitted.
 Signed discovery must find the exact attempt's complete ordinal set within the
 scan budget and one contiguous inventory interval. Interleaved/missing/oversized
 attempts refuse rather than including unrelated evidence. A private `--pin-file`
 freezes the discovery frontier before any model submission.
+Each flow traverses consecutive windows at that same pin, explicitly chaining
+the prior successful report. Failure stops subsequent windows without retry;
+partial work remains in retained receipts. The lifetime engine quota and64-job
+dependency-graph bound remain additional independent limits.
 
 The engine derives finalization job identity from session/attempt, exact source
 metadata/bytes, recipe/worker/model/request. Duplicate delivery with a fresh pin
@@ -369,6 +405,34 @@ They are catalogued in `tests/fixtures/read-write-surface.tsv` and covered by
 `tests/test_kan_finalized.py`. Actual analysis inputs/results stay in the existing
 encrypted workspace and its original custody/erasure mechanisms.
 
-Fresh Sonnet acceptance still requires a new concrete task/tool/input/budget
-plan and clean sessions/stores. Old resumed trials remain historical failures;
-no local setup check or successful job exit substitutes for agent acceptance.
+A new Sonnet exercise, when needed for changed behavior, requires a new concrete
+task/tool/input/budget plan and fresh sessions/stores. The Nov10 fresh exercise
+demonstrated source retrieval, but the independent audit found control wrappers
+in its retained worker input. It is not full semantic input-exclusion acceptance.
+Old resumed trials remain historical failures; no local setup check or successful
+job exit substitutes for agent acceptance.
+
+## View identity, missing history and execution bounds
+
+Recall exposes `kan-compat-evaluation/2`, binding canonical claim CIDs and append
+revisions, selected trust, query and retained derivations. Unsupported enrichment
+is returned explicitly. Missing/erased correction, status or identity history
+produces a partial view with safe omission counts and no current-state fold;
+project selection refuses that incomplete history. Revocation never grants access
+to omitted bodies and never silently resurrects an older decision.
+
+A report's immutable `kan-report-evaluation/1` id is its saved job id. Report
+pages and expansions retain that originating evaluation. Decoded expansions also
+have their own authenticated `view_id`, binding current content/availability and
+query; it is not claimed to be the same view when those change. Current access is
+rechecked on every page. This separates origin context from current read context.
+
+Authored recall traverses at most100 pages of100 batches and8MiB of serialized
+batches, refusing larger collections instead of folding a prefix. Project selection
+defaults to16subjects/128claims, permits at most32subjects/256claims and depth2,
+and refuses a manifest above256KiB (including its complete claim frontier).
+These are execution bounds before Day scale, not lifetime storage quotas.
+Direct capture windows are at most8 inputs; a dependency graph is at most64 jobs.
+Normal tool payloads remain12KiB, including all new contract/identity metadata.
+
+After coordinated workspace annotation erasure, existing non-content tombstones cannot identify the removed collection. Authored recall therefore conservatively reports incomplete history for that workspace instead of reconstructing a possibly resurrected state. No erased body or source identifier is restored or exposed.
