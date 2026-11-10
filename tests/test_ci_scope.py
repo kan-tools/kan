@@ -37,6 +37,14 @@ class ScopeTests(unittest.TestCase):
             self.assertEqual(m.changed_paths({'before': 'missing'}, 'head'), ([], True))
         self.assertEqual(m.changed_paths({'before': '0' * 40}, 'head'), ([], True))
 
+    def test_catalog_and_finalization_owner_cannot_skip_surface_checks(self):
+        for path in ['tests/fixtures/read-write-surface.tsv', 'scripts/kan-finalized.py',
+                     'tests/test_kan_finalized.py', 'scripts/ci-component-result.py',
+                     'tests/test_ci_component_result.py']:
+            result = m.classify([path])
+            self.assertTrue(result['rust'] and result['core'], path)
+            self.assertFalse(result['capture'] or result['macos'], path)
+
     def test_docs_only_stays_static_and_deleted_source_keeps_coverage(self):
         self.assertFalse(m.classify(['docs/SPEC.md', '.design/plan.md'])['rust'])
         self.assertTrue(m.classify(['src/deleted_module.rs'])['core'])

@@ -13,7 +13,9 @@ def classify(paths, uncertain=False):
     if uncertain:
         result.update(scope='core', rust=True, core=True, library=True, capture=True, macos=True)
     for path in paths:
-        if path.startswith('.github/') or path in {'Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', 'build.rs', 'scripts/ci-scope.py', 'tests/test_ci_scope.py'}:
+        if path.startswith('.github/') or path in {'Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', 'build.rs', 'scripts/ci-scope.py', 'tests/test_ci_scope.py',
+                                                  'scripts/ci-component-result.py', 'tests/test_ci_component_result.py',
+                                                  'tests/fixtures/read-write-surface.tsv', 'scripts/kan-finalized.py', 'tests/test_kan_finalized.py'}:
             result.update(rust=True, core=True, library=True)
         elif path.startswith(('src/evidence_library', 'src/evidence_content', 'src/evidence_interpretation', 'src/evidence_record_cli')) or path == 'tests/support/proof_library_tests.rs':
             result.update(rust=True, library=True)

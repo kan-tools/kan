@@ -10,7 +10,7 @@ spec.loader.exec_module(m)
 class ComponentResult(unittest.TestCase):
     def test_unit_failure_cannot_be_masked_by_http_or_lint_success(self):
         scope = dict(core=False, library=True, capture=False)
-        steps = {name: {'outcome': 'success'} for name in ['library_units', 'library_http', 'lint']}
+        steps = {name: {'outcome': 'success'} for name in ['library_units', 'library_http', 'lint', 'surface_legacy', 'surface_v2']}
         steps['library_units'] = {'outcome': 'failure', 'conclusion': 'success'}
         self.assertEqual(m.evaluate(scope, steps)['failures'], {'library_units': 'failure'})
 
@@ -18,7 +18,8 @@ class ComponentResult(unittest.TestCase):
         report = m.evaluate(dict(core=True, library=True, capture=True), {
             'compile': {'outcome': 'success'}, 'core_units': {'outcome': 'failure'},
             'library_http': {'outcome': 'failure'}, 'lint': {'outcome': 'failure'},
-            'capture': {'outcome': 'success'}})
+            'capture': {'outcome': 'success'}, 'surface_legacy': {'outcome': 'success'},
+            'surface_v2': {'outcome': 'success'}})
         self.assertEqual(set(report['failures']), {'core_units', 'library_http', 'lint'})
         self.assertNotIn('library_units', report['required'])  # already in core units
 
@@ -27,7 +28,7 @@ class ComponentResult(unittest.TestCase):
             'core_units': {'outcome': 'skipped'}, 'library_http': {'outcome': 'skipped'}, 'lint': {'outcome': 'skipped'}})
         self.assertEqual(report['failures']['core_units'], 'skipped')
         self.assertEqual(report['failures']['capture'], 'missing')
-        self.assertEqual(len(report['failures']), 5)
+        self.assertEqual(len(report['failures']), 7)
 
     def test_scope_omissions_and_empty_selection_refuse(self):
         for scope in [{}, dict(core=False, library=False, capture=False), dict(core='true', library=False, capture=False)]:
@@ -35,11 +36,25 @@ class ComponentResult(unittest.TestCase):
                 m.evaluate(scope, {})
 
     def test_unselected_platform_and_capture_are_not_added_to_passes(self):
-        steps = {name: {'outcome': 'success'} for name in ['library_units', 'library_http', 'lint']}
+        steps = {name: {'outcome': 'success'} for name in ['library_units', 'library_http', 'lint', 'surface_legacy', 'surface_v2']}
         report = m.evaluate(dict(core=False, library=True, capture=False), steps)
         self.assertFalse(report['failures'])
         self.assertNotIn('capture', report['outcomes'])
         self.assertNotIn('compile', report['outcomes'])
+
+    def test_surface_failure_is_not_masked_by_the_other_feature_configuration(self):
+        steps = {name: {'outcome': 'success'} for name in
+                 ['library_units', 'library_http', 'lint', 'surface_legacy', 'surface_v2']}
+        for name in ['surface_legacy', 'surface_v2']:
+            with self.subTest(name=name):
+                failed = {**steps, name: {'outcome': 'failure', 'conclusion': 'success'}}
+                report = m.evaluate(dict(core=False, library=True, capture=False), failed)
+                self.assertEqual(report['failures'], {name: 'failure'})
+
+    def test_missing_surface_checks_fail_even_when_components_pass(self):
+        steps = {name: {'outcome': 'success'} for name in ['library_units', 'library_http', 'lint']}
+        report = m.evaluate(dict(core=False, library=True, capture=False), steps)
+        self.assertEqual(report['failures'], {'surface_legacy': 'missing', 'surface_v2': 'missing'})
 
 
 if __name__ == '__main__':

@@ -32,6 +32,12 @@ pub const EVIDENCE_VALUES: &[SurfaceValue] = &[
     SurfaceValue::new("project-capture:operation.lock", "*"),
     SurfaceValue::new("project-capture:readiness-request.json", "*"),
     SurfaceValue::new("project-capture:service-logs", "*"),
+    // scripts/kan-finalized.py owns runtime/consolidation/<event>.json
+    // intents and create-new per-event receipt/diagnostic directories.
+    // These operational artifacts add no analysis or capture authority.
+    SurfaceValue::new("project-consolidation:consolidation/*.json", "*"),
+    SurfaceValue::new("project-consolidation:run-receipts", "*"),
+    SurfaceValue::new("project-consolidation:stdout-stderr", "*"),
     SurfaceValue::new("evidence-control-index:serving.sqlite", "*"),
     SurfaceValue::new("evidence-control-index:serving.sqlite-journal", "*"),
     SurfaceValue::new("evidence-control-index:CURRENT", "*"),

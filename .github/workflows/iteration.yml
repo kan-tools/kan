@@ -106,6 +106,16 @@ jobs:
         if: always() && (needs.quick.outputs.core != 'true' || steps.compile.outcome == 'success')
         continue-on-error: true
         run: cargo clippy --locked --features v2-crypto --lib -- -D warnings
+      - name: Surface contract (legacy-only)
+        id: surface_legacy
+        if: always() && (needs.quick.outputs.core != 'true' || steps.compile.outcome == 'success')
+        continue-on-error: true
+        run: cargo test --locked --no-default-features --features kan-v1 --test surface_conformance
+      - name: Surface contract (v2 and legacy)
+        id: surface_v2
+        if: always() && (needs.quick.outputs.core != 'true' || steps.compile.outcome == 'success')
+        continue-on-error: true
+        run: cargo test --locked --features v2-crypto,kan-v1 --test surface_conformance
       - name: Capture lifecycle integration
         id: capture
         if: always() && needs.quick.outputs.capture == 'true' && (needs.quick.outputs.core != 'true' || steps.compile.outcome == 'success')

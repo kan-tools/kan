@@ -361,8 +361,9 @@ Capture queue failure does not rewrite capture health or block its fail-open
 contract. Explicit retry/replanning remains a separate operator decision.
 
 Private operational artifacts under capture runtime `consolidation/` are:
-queue `*.json` intents; create-new per-event run receipts/frozen plans; command
-stdout/stderr diagnostics. They contain metadata/retained model readbacks, not a
+`<event-hash>.json` queue intents; create-new `<event-hash>/` run
+receipts/frozen plans (`*.json`); command `*.stdout`/`*.stderr` diagnostics in
+that same per-event directory. They contain metadata/retained model readbacks, not a
 new source-plaintext cache or grant store. Preserve failed/ambiguous receipts.
 They are catalogued in `tests/fixtures/read-write-surface.tsv` and covered by
 `tests/test_kan_finalized.py`. Actual analysis inputs/results stay in the existing

@@ -19,6 +19,7 @@ def evaluate(scope, steps):
         required += ['capture']
     if len(required) == 1:
         raise ValueError('component scope selected no tests')
+    required += ['surface_legacy', 'surface_v2']
     outcomes = {name: steps.get(name, {}).get('outcome', 'missing') for name in required}
     return {'required': required, 'outcomes': outcomes,
             'failures': {name: value for name, value in outcomes.items() if value != 'success'},

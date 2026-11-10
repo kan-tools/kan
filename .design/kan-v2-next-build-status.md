@@ -49,6 +49,16 @@ conclusions, and fails if any selected check failed, skipped or was missing.
 The small component-results artifact records the required scope and all actual
 outcomes; this is diagnostic scheduling, never a waiver or a larger test matrix.
 
+Tier1 also runs the existing surface-contract suite in legacy-only and combined
+v2/legacy configurations for every selected Rust component. Both original
+outcomes are required by the component gate. Catalog-only and finalization-writer
+changes select Rust checks too; they must not wait until final qualification to
+reconcile operational writes with their independent catalog. The Nov10 final
+qualification at `7b79269` exposed three omitted consolidation ownership facts
+in both configurations; its original failed run and usable fresh trial are
+retained separately. Correcting those declarations does not weaken the equality
+assertion or change persisted artifacts.
+
 Repository settings inspection on Nov3 found main unprotected and no rulesets.
 This policy does not silently change those settings: full current-candidate
 qualification and separate human merge approval remain explicit gates until the
