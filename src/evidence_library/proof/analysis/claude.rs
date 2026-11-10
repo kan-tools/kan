@@ -90,10 +90,14 @@ fn normalize(
     }) {
         return None;
     }
-    let text = result["result"].as_str()?;
+    let text = result["result"].as_str().filter(|s| !s.trim().is_empty())?;
+    // The exact terminal text is already retained in the raw JSONL stream and
+    // normalized content. Keep terminal metadata without another output copy.
+    let mut terminal = result.clone();
+    terminal.as_object_mut()?.remove("result");
     Some(
         json!({"type":"message","model":expected_model,"content":[{"type":"text","text":text}],
-        "usage":result["usage"],"claude_code":{"init":init,"result":result,
+        "usage":result["usage"],"claude_code":{"init":init,"result_metadata":terminal,
         "cost_basis":"CLI-reported list-cost usage, not subscription billing; missing usage remains unavailable."}}),
     )
 }
@@ -210,9 +214,13 @@ pub(super) async fn run(
     let mut raw_limited = false;
     let mut stderr_limited = false;
     let operation = async {
-        let send = async {
+        let send = async move {
             stdin.write_all(input.as_bytes()).await?;
-            stdin.shutdown().await
+            stdin.shutdown().await?;
+            // Unix pipe shutdown is a no-op. Explicitly close the handle so a
+            // CLI reading its prompt to EOF can finish before we await it.
+            drop(stdin);
+            Ok::<(), std::io::Error>(())
         };
         let wait = async {
             let result = child.wait().await;
@@ -288,6 +296,15 @@ mod tests {
         }
         let mut bad = e.clone();
         bad[0]["tools"] = json!(["Read"]);
+        assert!(normalize(&bytes(&bad), "claude-sonnet-5-5", "s", 0.05).is_none());
+        let mut bad = e.clone();
+        bad[1]["result"] = json!("  ");
+        assert!(normalize(&bytes(&bad), "claude-sonnet-5-5", "s", 0.05).is_none());
+        let mut bad = e.clone();
+        bad.insert(
+            1,
+            json!({"type":"assistant","message":{"model":"substituted-model","content":[]}}),
+        );
         assert!(normalize(&bytes(&bad), "claude-sonnet-5-5", "s", 0.05).is_none());
         let mut bad = e.clone();
         bad[0]["mcp_servers"] = json!([{"name":"unexpected","status":"connected"}]);

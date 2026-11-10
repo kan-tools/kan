@@ -300,9 +300,20 @@ contracts; result classifications remain derived. Their surface declarations and
 conformance evidence are updated with the implementation. No storage format,
 claim codec, grant, canonical fold semantics or system installation changes.
 
-Verification status: implementation and meaningful pure/subprocess/actual HTTP
-regressions are being prepared for scoped remote Tier1. No local Rust execution
-or fresh paid inference has qualified these changes. Development Q4 ablations
+Initial scoped Tier1 at `156c301` compiled all targets/features and passed176
+unit tests. Actual HTTP integration passed55 tests with two failures: the worker
+kept stdin open while waiting for an EOF-reading child, and a new project test
+used a model relation spelling instead of the established typed enum. Lint also
+rejected an unused public re-export. The original outcomes and complete logs are
+retained; the final gate correctly failed despite masked action conclusions.
+
+The integrated follow-up explicitly closes stdin, exposes the public span type,
+uses the canonical relation enum, avoids duplicating bounded CLI output beyond
+workspace framing, and completes authored-only supplement/promotion/full-source
+report paths. Frozen frontier identity includes canonical record order. New
+regressions preserve exact large outputs, signed inputs, identity context and
+promotion citations. Changed-head runtime confirmation is pending. No local Rust
+execution or fresh paid inference has qualified these changes. Development Q4 ablations
 are motivation, not held-out product accuracy. Next come exact-head operator
 checks and a newly named fresh acceptance exercise, then one final Tier2 and
 scoped independent review. Historical failed trials remain historical evidence.

@@ -17,6 +17,7 @@ use hyper_util::rt::TokioIo;
 pub use owner::{Config as OwnerConfig, Owner, Request as OwnerRequest};
 pub use proof::analysis::{
     bundled_decision_recipes, bundled_recipes, Config as AnalysisConfig, Draft as AnalysisDraft,
+    EvidenceSpan, ProjectSelection, StatementTarget,
 };
 pub use proof::attachments::Direction as AttachmentDirection;
 pub use proof::imports::{ControlEvidence as ImportControlEvidence, View as ImportView};

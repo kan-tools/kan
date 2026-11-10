@@ -9460,7 +9460,7 @@ async fn structured_consolidation_preserves_visible_witnesses_finalization_idemp
     // Project-only inputs come from the same canonical fold, not a capture
     // interval or a second model-built graph. Explicit relations expand one hop.
     let neighbor=ui.call(json!({"action":"record","draft":{"source":source,"verb":"decide","subject":"format/json","text":"Neighbor has its own competing authored assertion."}}),200).await;
-    ui.call(json!({"action":"record","draft":{"source":source,"verb":"relate","subject":"project/test","target":"format/json","relation":"depends-on"}}),200).await;
+    ui.call(json!({"action":"record","draft":{"source":source,"verb":"relate","subject":"project/test","target":"format/json","relation":kan::claim::v1::RelationKind::DependsOn}}),200).await;
     ui.call(json!({"action":"record","draft":{"source":source,"verb":"same","subject":"project/alias","target":"project/test"}}),200).await;
     let selection = json!({"source":source,"recipe":"project-consolidation","project":{"source":source,"prefix":"project/test","relation_depth":1},"derived_from":[ids[0]]});
     let stale = ui
@@ -9506,6 +9506,37 @@ async fn structured_consolidation_preserves_visible_witnesses_finalization_idemp
     ui.call(json!({"action":"extract-plan","selection":limited}), 422)
         .await;
     assert_eq!(requests.lock().unwrap().len(), 8);
+    let supplemented=ui.call(json!({"action":"recall","source":source,"verb":"show","subject":"project/test","derived":[project["id"]],"derived_budget":1024}),200).await;
+    assert!(supplemented["entries"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|r| r["type"] == "derived-supplement" && r["report"] == project["id"]));
+    let promoted=ui.call(json!({"action":"record","draft":{"source":source,"verb":"decide","subject":"project/reviewed","text":"Deliberately reviewed project result, not automatic acceptance.","derived_from":[project["id"]]}}),200).await;
+    let promotion=ui.call(json!({"action":"recall","source":source,"verb":"show","subject":promoted["claims"][0]}),200).await;
+    let promotion_cites = promotion["entries"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|e| e["type"] == "claim")
+        .unwrap()["claim"]["cites"]
+        .as_array()
+        .unwrap();
+    for original in project_job["input"]["project"]["claims"]
+        .as_array()
+        .unwrap()
+    {
+        assert!(
+            promotion_cites.contains(&original["cid"]),
+            "explicit promotion must preserve every selected authored CID witness"
+        );
+    }
+    assert_eq!(
+        requests.lock().unwrap().len(),
+        8,
+        "recall/promotion cannot invoke a worker"
+    );
+
     ui.stop().await;
     provider.abort();
     // Provider and Engine absent: retained results and exact source routes live.
@@ -9532,7 +9563,19 @@ async fn structured_consolidation_preserves_visible_witnesses_finalization_idemp
     assert!(project_witness["recall_request"].is_object());
     let exact=ui.call(json!({"action":"recall","source":source,"verb":"show","subject":project_witness["claim_cid"]}),200).await;
     assert!(exact.to_string().contains("Authored position disagrees"));
-    while !project_page["next"].is_null() {
+    let mut source_rows = std::collections::BTreeMap::<String, String>::new();
+    loop {
+        for row in project_page["blocks"].as_array().unwrap() {
+            if row["kind"] == "authored-input" || row["kind"] == "authored-context" {
+                source_rows
+                    .entry(row["block"].as_str().unwrap().into())
+                    .or_default()
+                    .push_str(row["text"].as_str().unwrap());
+            }
+        }
+        if project_page["next"].is_null() {
+            break;
+        }
         project_page = ui
             .call(
                 json!({"action":"report","id":project["id"],"cursor":project_page["next"]}),
@@ -9541,6 +9584,20 @@ async fn structured_consolidation_preserves_visible_witnesses_finalization_idemp
             .await;
         assert!(serde_json::to_vec(&project_page).unwrap().len() <= 12 * 1024);
     }
+    for (n, claim) in project_job["input"]["project"]["claims"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .enumerate()
+    {
+        assert_eq!(
+            serde_json::from_str::<Value>(&source_rows[&format!("project/claims/{n}")]).unwrap(),
+            *claim
+        );
+    }
+    assert!(source_rows
+        .keys()
+        .any(|k| k.starts_with("project/classes/")));
     server
         .service
         .lock()
@@ -9969,7 +10026,7 @@ printf '{"type":"result","subtype":"success","session_id":"%s","is_error":false,
         .is_err());
     let ui = Ui::start(
         base()
-            .with_analysis(serde_json::from_value(config).unwrap())
+            .with_analysis(serde_json::from_value(config.clone()).unwrap())
             .unwrap(),
     )
     .await;
@@ -9982,7 +10039,14 @@ printf '{"type":"result","subtype":"success","session_id":"%s","is_error":false,
     assert_eq!(plan["worker_invocations_per_new_job"], 1);
     let submit = json!({"action":"analysis-submit","draft":draft,"preview":plan["digest"],"nonce":plan["nonce"],"wait":true});
     let done = ui.call(submit.clone(), 200).await;
-    assert_eq!(done["state"], "succeeded");
+    let first_detail = ui
+        .call(json!({"action":"analysis-job","id":done["job"]["id"]}), 200)
+        .await;
+    assert_eq!(
+        done["state"], "succeeded",
+        "worker observation: {}",
+        first_detail["result"]["worker_execution"]
+    );
     assert_eq!(ui.call(submit, 200).await, done);
     assert_eq!(
         std::fs::read_to_string(cwd.join("invocations")).unwrap(),
@@ -9998,6 +10062,49 @@ printf '{"type":"result","subtype":"success","session_id":"%s","is_error":false,
     );
     assert!(detail["input"]["request"].get("max_tokens").is_none());
     ui.stop().await;
+    // A valid near-limit completion must persist, not become interrupted
+    // because raw/normalized output was copied again into worker metadata.
+    let script = std::fs::read_to_string(&executable).unwrap();
+    std::fs::write(
+        &executable,
+        script.replace("Retained tool-free worker result.", &"x".repeat(1_800_000)),
+    )
+    .unwrap();
+    let ui = Ui::start(
+        base()
+            .with_analysis(serde_json::from_value(config).unwrap())
+            .unwrap(),
+    )
+    .await;
+    let large_draft = json!({"recipe":"documentation-summary","cites":[{"source":source,"pin":pin,"selection":page["records"][0]["selection"]}]});
+    let p = ui
+        .call(
+            json!({"action":"analysis-preview","draft":large_draft}),
+            200,
+        )
+        .await;
+    let large=ui.call(json!({"action":"analysis-submit","draft":large_draft,"preview":p["digest"],"nonce":p["nonce"],"wait":true}),200).await;
+    assert_eq!(large["state"], "succeeded");
+    assert_eq!(
+        std::fs::read_to_string(cwd.join("invocations")).unwrap(),
+        "invokedinvoked"
+    );
+    let detail = ui
+        .call(
+            json!({"action":"analysis-job","id":large["job"]["id"]}),
+            200,
+        )
+        .await;
+    assert_eq!(
+        detail["result"]["parsed"]["content"][0]["text"]
+            .as_str()
+            .unwrap()
+            .len(),
+        1_800_000
+    );
+    assert!(detail["result"]["worker_execution"].get("raw").is_none());
+    assert!(serde_json::to_vec(&detail["result"]).unwrap().len() < 12 * 1024 * 1024);
+    ui.stop().await;
     std::fs::rename(&executable, cwd.join("retired-fake-claude")).unwrap();
     let ui = Ui::start(base()).await;
     let report = ui
@@ -10012,6 +10119,12 @@ printf '{"type":"result","subtype":"success","session_id":"%s","is_error":false,
         report["promotion"],
         "not-performed; explicit authored operation required"
     );
+    let large_report = ui
+        .call(json!({"action":"report","id":large["job"]["id"]}), 200)
+        .await;
+    assert_eq!(large_report["blocks_count"], 1_800_000usize.div_ceil(2048));
+    assert!(serde_json::to_vec(&large_report).unwrap().len() <= 12 * 1024);
+    assert!(!large_report["next"].is_null());
     server
         .service
         .lock()
@@ -10181,10 +10294,13 @@ async fn cli_worker_deadlines_output_limits_and_cancellation_stop_owned_descenda
             assert!(detail["result"]["parsed"].is_null());
             if mode == "overflow" {
                 assert_eq!(detail["result"]["truncated"], true);
-                assert_eq!(execution["raw"].as_str().unwrap().len(), 4 * 1024 * 1024);
+                assert_eq!(
+                    detail["result"]["response_hex"].as_str().unwrap().len(),
+                    4 * 1024 * 1024
+                );
             } else {
                 assert_eq!(execution["timed_out"], true);
-                assert_eq!(execution["raw"], service::hex(b"partial"));
+                assert_eq!(detail["result"]["response_hex"], service::hex(b"partial"));
             }
         }
         ui.stop().await;

@@ -150,7 +150,7 @@ impl Readers {
             let origin = history.origins.get(&id).ok_or(Failure::Corrupt)?;
             let active = live.contains(&id);
             claims.push(
-                json!({"cid":id,"claim":stored.claim,"origin":origin,"live_at_selection":active}),
+                json!({"cid":id,"rev":stored.rev,"claim":stored.claim,"origin":origin,"live_at_selection":active}),
             );
             let text = stored
                 .claim
@@ -163,17 +163,17 @@ impl Readers {
                         .map_err(|_| Failure::Corrupt)?,
                 );
             units.push(json!({"id":format!("claim:{id}"),"source":query.source,"text":text,"kind":"authored-claim",
-                "role":"authored","author":stored.claim.content.author,"claim":stored.claim,"origin":origin,
+                "role":"authored","rev":stored.rev,"author":stored.claim.content.author,"claim":stored.claim,"origin":origin,
                 "live_at_selection":active,"recall_request":{"source":query.source,"verb":"show","subject":id,"trust":query.trust},
                 "authority":"Signed authored assertion; fold participation and historical correction state are explicit. It is not independently verified truth."}));
         }
         let mut frontier = history
             .claims
             .iter()
-            .map(|(c, _)| c.to_string())
+            .map(|(c, stored)| json!({"cid":c.to_string(),"rev":stored.rev}))
             .collect::<Vec<_>>();
-        frontier.sort();
-        let evaluation = json!({"version":"kan-project-evaluation/1","source":query.source,"frontier":frontier,
+        frontier.sort_by_key(|v| v["cid"].as_str().unwrap_or_default().to_owned());
+        let evaluation = json!({"version":"kan-project-evaluation/2","source":query.source,"frontier":frontier,
             "trust":crate::json::TrustJson::with_empty_reason(&trust,None),"selection":query,
             "derivations":derivations,"fold":"canonical-v1-fold/1","relations":"explicit-live-v1-witnesses/1",
             "scope":"Frozen selected classes including trusted correction history; bounded relation neighborhood, not all project knowledge or complete capture."});
@@ -220,7 +220,10 @@ impl Readers {
                 .iter()
                 .find(|(cid, _)| claim["cid"] == cid.to_string())
                 .ok_or(Failure::AccessLimited)?;
-            if !trust.trusts(&found.claim.content.author)
+            if claim
+                .get("rev")
+                .is_some_and(|r| r.as_str() != Some(found.rev.as_str()))
+                || !trust.trusts(&found.claim.content.author)
                 || claim["claim"]
                     != serde_json::to_value(&found.claim).map_err(|_| Failure::Corrupt)?
             {

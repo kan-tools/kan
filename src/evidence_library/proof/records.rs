@@ -464,6 +464,23 @@ impl Readers {
             let inputs: super::analysis::Draft =
                 serde_json::from_value(job["draft"].clone()).map_err(|_| Failure::Corrupt)?;
             self.report_dependency_access(&inputs, id).await?;
+            if inputs.project.is_some() {
+                let saved = workspace
+                    .get("analysis-input", id)?
+                    .ok_or(Failure::Corrupt)?;
+                for claim in saved["project"]["claims"]
+                    .as_array()
+                    .ok_or(Failure::Corrupt)?
+                {
+                    let cid = claim["cid"].as_str().ok_or(Failure::Corrupt)?.to_owned();
+                    if !draft.cites.contains(&cid) {
+                        draft.cites.push(cid);
+                    }
+                }
+                // Preserve the existing v1 citation bound; refuse an oversized
+                // promotion instead of silently discarding input witnesses.
+                parse_cids(&draft.cites)?;
+            }
             for cite in inputs.cites {
                 self.selected(&cite.source)?
                     .check_citation_access(&cite.pin, &cite.selection)

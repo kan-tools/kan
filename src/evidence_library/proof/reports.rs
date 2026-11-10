@@ -97,6 +97,29 @@ fn decision_blocks(request: &Value, response: &Value) -> Result<Vec<Value>, Fail
     }
     Ok(blocks)
 }
+// Frozen authored input/context is ordinary report evidence too. Model text
+// stays first; large signed records and identity witnesses paginate as bounded
+// JSON text fragments, rather than requiring advanced/raw job inspection.
+fn project_blocks(manifest: &Value) -> Result<Vec<Value>, Failure> {
+    let mut blocks = Vec::new();
+    for (field, kind) in [
+        ("classes", "authored-context"),
+        ("claims", "authored-input"),
+    ] {
+        for (n, value) in manifest[field]
+            .as_array()
+            .ok_or(Failure::Corrupt)?
+            .iter()
+            .enumerate()
+        {
+            let text = serde_json::to_string_pretty(value).map_err(|_| Failure::Corrupt)?;
+            for (fragment, text) in fragments(&text).into_iter().enumerate() {
+                blocks.push(json!({"block":format!("project/{field}/{n}"),"kind":kind,"fragment":fragment,"text":text}));
+            }
+        }
+    }
+    Ok(blocks)
+}
 // Input references are bounded rows too, never an unbounded repeated header.
 fn report_page(mut value: Value, cursor: Option<Value>) -> Result<Value, ContentError> {
     let query = json!({"id": value["id"]});
@@ -171,7 +194,9 @@ impl Readers {
             // Recheck ALL dependency sources, not just the collection being
             // recalled; a cached result is never a cached grant.
             self.report_inputs(&draft, id).await?;
-            if !draft.cites.iter().any(|c| c.source == source) {
+            if !draft.cites.iter().any(|c| c.source == source)
+                && draft.project.as_ref().is_none_or(|p| p.source != source)
+            {
                 return Err(Failure::Invalid.into());
             }
             let result = self
@@ -628,6 +653,12 @@ impl Readers {
                 }
             }
         }
+        if draft.project.is_some() {
+            let saved = workspace
+                .get("analysis-input", &id)?
+                .ok_or(Failure::Corrupt)?;
+            blocks.extend(project_blocks(&saved["project"])?);
+        }
         if blocks.is_empty() {
             blocks.push(json!({"state":if output.is_some() {"No readable model text; inspect retained job result and failure state."} else {"No result yet; pending or interrupted. Report reading never retries a provider call."}}));
         }
@@ -644,6 +675,41 @@ impl Readers {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn frozen_authored_context_and_full_signed_claims_are_normal_bounded_report_fallback() {
+        let manifest = json!({"classes":[{"subjects":["p"],"witnesses":[{"claim":"identity-witness"}],"state":"Conflicted"}],
+            "claims":[{"cid":"original-claim","rev":"original-order","claim":{"text":"é🙂 original signed assertion ".repeat(1000)},"live_at_selection":false}]});
+        let full =
+            json!({"id":"d".repeat(64),"inputs":[],"blocks":project_blocks(&manifest).unwrap()});
+        let mut cursor = None;
+        let mut joined = std::collections::BTreeMap::<String, String>::new();
+        let mut pages = 0;
+        loop {
+            let page = report_page(full.clone(), cursor).unwrap();
+            assert!(serde_json::to_vec(&page).unwrap().len() <= 12 * 1024);
+            for row in page["blocks"].as_array().unwrap() {
+                joined
+                    .entry(row["block"].as_str().unwrap().to_owned())
+                    .or_default()
+                    .push_str(row["text"].as_str().unwrap());
+            }
+            pages += 1;
+            assert!(pages < 30);
+            if page["next"].is_null() {
+                break;
+            }
+            cursor = Some(page["next"].clone());
+        }
+        assert!(pages > 1);
+        assert_eq!(
+            serde_json::from_str::<Value>(&joined["project/classes/0"]).unwrap(),
+            manifest["classes"][0]
+        );
+        assert_eq!(
+            serde_json::from_str::<Value>(&joined["project/claims/0"]).unwrap(),
+            manifest["claims"][0]
+        );
+    }
     #[test]
     fn decision_reports_preserve_exact_rubrics_and_distributions_in_bounded_pages() {
         let request = json!({"questions":{

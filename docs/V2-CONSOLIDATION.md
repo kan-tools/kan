@@ -76,12 +76,20 @@ correction history, state and identity witnesses. Prefixes match path segments;
 `project/a` does not select `project/ab`. Exceeding a bound refuses the selection,
 rather than silently presenting a partial class as complete.
 
-The evaluation id binds the claim frontier, trust, selector, fold/relation versions
+The evaluation id binds the claim frontier and canonical record order, trust, selector, fold/relation versions
 and explicitly selected prior derivations. Submission recomputes the preview;
 an intervening append requires a new plan. Completed reports retain their original
 frontier, including disagreements and historical corrections. New appends do not
 rewrite them. An authored witness returns a typed `recall_request` with its exact
 claim CID and trust policy; captured witnesses keep their decoded-item routes.
+Normal report pages also retain the full frozen signed authored inputs and
+class/identity context after model statements, in `authored-input` and
+`authored-context` blocks. Following pages preserves the complete selected
+manifest without an advanced/raw job read. Authored-only reports can be selected
+as the same separately budgeted derived supplement. Explicit typed record
+promotion carries the selected authored CIDs into its ordinary `cites`; exceeding
+the existing64-CID bound refuses rather than dropping witnesses. Reading a
+report or supplement never performs that promotion.
 Selected prior derivations can have different captured intervals in project mode;
 their original sources remain explicit dependencies with current access checks.
 No automatic search for prior reports, model-created identity or graph mutation

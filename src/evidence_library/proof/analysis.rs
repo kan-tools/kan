@@ -453,7 +453,7 @@ impl Engine {
             timeout_seconds,
         } = &self.config.worker
         {
-            let observed = claude::run(
+            let mut observed = claude::run(
                 executable,
                 working_directory,
                 *max_budget_usd,
@@ -466,9 +466,21 @@ impl Engine {
                 observed["raw"].as_str().ok_or(Failure::Corrupt)?,
                 2 * 1024 * 1024,
             )?;
+            // Retain the exact stream and normalized output once each. A full
+            // duplicate inside worker metadata could exceed workspace framing
+            // even when the bounded CLI response itself was valid.
+            let parsed = observed
+                .as_object_mut()
+                .ok_or(Failure::Corrupt)?
+                .remove("parsed")
+                .filter(Value::is_object);
+            observed
+                .as_object_mut()
+                .ok_or(Failure::Corrupt)?
+                .remove("raw");
             let response = Response {
                 raw,
-                parsed: observed.get("parsed").filter(|v| v.is_object()).cloned(),
+                parsed,
                 status: if observed["exit_code"] == 0 { 200 } else { 0 },
                 headers: Vec::new(),
                 truncated: observed["truncated"] == true,
