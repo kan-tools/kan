@@ -9162,11 +9162,13 @@ async fn typed_compatibility_compares_real_v1_actions_and_read_results() {
     }
     // Both surfaces refuse rejecting one's own claim.
     assert!(!v1(&["reject", first_v1.as_str()]).status.success());
-    ui.call(
-        json!({"action":"record","draft":{"source":source,"verb":"reject","target":first_v2}}),
-        400,
-    )
-    .await;
+    let refused = ui
+        .call(
+            json!({"action":"record","draft":{"source":source,"verb":"reject","target":first_v2}}),
+            403,
+        )
+        .await;
+    assert_eq!(refused["error"], "access-limited");
     let foreign_key = home.path().join("foreign-identity");
     identity(7).save(&foreign_key).unwrap();
     let foreign_old = std::process::Command::new(env!("CARGO_BIN_EXE_kan-v1"))
@@ -9235,6 +9237,11 @@ async fn typed_compatibility_compares_real_v1_actions_and_read_results() {
         if matches!(verb, "show" | "status") {
             args.push("project/parity");
         }
+        if verb == "context" {
+            // The two CLIs deliberately have different defaults. Compare the
+            // same explicit bounded query, not two different selections.
+            args.extend(["--budget", "1024"]);
+        }
         args.push("--json");
         let old = v1(&args);
         assert!(
@@ -9245,10 +9252,15 @@ async fn typed_compatibility_compares_real_v1_actions_and_read_results() {
         let old: Value = serde_json::from_slice(&old.stdout).unwrap();
         let query = if matches!(verb, "show" | "status") {
             json!({"action":"recall","source":source,"verb":verb,"subject":"project/parity"})
+        } else if verb == "context" {
+            json!({"action":"recall","source":source,"verb":verb,"budget":1024})
         } else {
             json!({"action":"recall","source":source,"verb":verb})
         };
         let new = ui.call(query, 200).await;
+        if verb == "context" {
+            assert_eq!(old["budget"], new["view"]["budget"]);
+        }
         if matches!(verb, "show" | "context") {
             assert_eq!(
                 sorted(
@@ -10090,7 +10102,27 @@ async fn structured_consolidation_preserves_visible_witnesses_finalization_idemp
         .call(json!({"action":"report","id":child["id"]}), 200)
         .await;
     assert_eq!(page["blocks"][0]["text"], "Adopt JSON for interchange.");
-    let locator = &page["blocks"][0]["witnesses"][0]["reference_request"]["report"];
+    // The child interprets a retained parent candidate. Follow its actual
+    // report route before asking for that parent's original capture witness;
+    // the child must not invent a direct occurrence citation for model prose.
+    let parent = page["blocks"][0]["witnesses"][0]["report_request"]
+        .as_object()
+        .expect("parent-only witness must supply a typed report request");
+    let parent_page = ui
+        .call(json!({"action":"report","id":parent["id"]}), 200)
+        .await;
+    assert_eq!(parent_page["evaluation"]["id"], parent["id"]);
+    let locator = parent_page["blocks"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .flat_map(|b| b["witnesses"].as_array().into_iter().flatten())
+        .find_map(|w| {
+            w.get("reference_request")
+                .and_then(|r| r.get("report"))
+                .filter(|r| r.is_object())
+        })
+        .expect("parent report must retain its actual capture witness route");
     let resolved = ui
         .call(
             json!({"action":"report-input","id":locator["id"],"input":locator["input"]}),
@@ -10143,6 +10175,11 @@ async fn structured_consolidation_preserves_visible_witnesses_finalization_idemp
     assert!(source_rows
         .keys()
         .any(|k| k.starts_with("project/classes/")));
+    assert_eq!(
+        requests.lock().unwrap().len(),
+        8,
+        "provider-offline parent/source navigation must not invoke a worker"
+    );
     server
         .service
         .lock()

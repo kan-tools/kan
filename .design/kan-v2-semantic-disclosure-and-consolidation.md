@@ -32,9 +32,14 @@ claim CIDs, inferred telos witnesses or new bridge declarations are made here.
 
 Current Nov10 disposition: `32e2f6c` passed full candidate CI, then the actual
 cold integrated review returned **BLOCK**. The owner approved correcting all
-F1–F9 without reducing these requirements. The correction is in implementation;
-its new Rust/native regressions have not yet run. Preserve the qualified baseline,
-the blocked report and the fresh `7b79269` source/runtime trial independently.
+F1–F9 without reducing these requirements. Correction `7c9a11e` compiled and
+passed lint, 182 units, 57 HTTP tests and the native capture fixture, but Tier1
+failed on workspace fixture setup, an incorrect rejection-status expectation,
+obsolete child-source navigation and test-only writer placement in both surface
+configurations. The focused test-support/navigation correction remains pending
+remote verification; assertions and product behavior are unchanged. Preserve the
+failed run, qualified baseline, blocked report and fresh `7b79269` source/runtime
+trial independently. A partial test pass is not candidate qualification.
 The observed harness-wrapper leakage invalidates the earlier input-exclusion
 acceptance, even though the observed retrieval results remain retained.
 
