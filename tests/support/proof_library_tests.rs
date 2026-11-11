@@ -9168,7 +9168,12 @@ async fn typed_compatibility_compares_real_v1_actions_and_read_results() {
             403,
         )
         .await;
-    assert_eq!(refused["error"], "access-limited");
+    // HTTP deliberately uses a generic refusal envelope; typed MCP labels
+    // are a different presentation contract. Preserve the403 authority check.
+    assert_eq!(
+        refused,
+        json!({"error":"reader request unavailable or refused"})
+    );
     let foreign_key = home.path().join("foreign-identity");
     identity(7).save(&foreign_key).unwrap();
     let foreign_old = std::process::Command::new(env!("CARGO_BIN_EXE_kan-v1"))
