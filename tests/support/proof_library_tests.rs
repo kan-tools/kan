@@ -9081,6 +9081,31 @@ async fn typed_compatibility_compares_real_v1_actions_and_read_results() {
         rows.sort_by_key(Value::to_string);
         rows
     }
+    // Compare the complete bounded view, not just its first presentation page.
+    async fn recall_all(ui: &Ui, mut query: Value) -> Value {
+        let mut result = Value::Null;
+        let mut entries = Vec::new();
+        let mut cursors = Vec::new();
+        for _ in 0..32 {
+            let page = ui.call(query.clone(), 200).await;
+            assert!(serde_json::to_vec(&page).unwrap().len() <= 12 * 1024);
+            if result.is_null() {
+                result = page.clone();
+            } else {
+                assert_eq!(page["evaluation"], result["evaluation"]);
+            }
+            entries.extend(page["entries"].as_array().unwrap().iter().cloned());
+            if page["next"].is_null() {
+                result["entries"] = json!(entries);
+                result["next"] = Value::Null;
+                return result;
+            }
+            assert!(!cursors.contains(&page["next"]), "repeated recall cursor");
+            cursors.push(page["next"].clone());
+            query["cursor"] = page["next"].clone();
+        }
+        panic!("recall did not finish within the fixture page bound");
+    }
     let mut first_v1 = String::new();
     let mut first_v2 = Value::Null;
     for verb in ["observe", "plan", "decide", "result", "block", "resolve"] {
@@ -9099,12 +9124,11 @@ async fn typed_compatibility_compares_real_v1_actions_and_read_results() {
         let old = v1(&["show", "project/parity", "--json"]);
         assert!(old.status.success());
         let old: Value = serde_json::from_slice(&old.stdout).unwrap();
-        let new = ui
-            .call(
-                json!({"action":"recall","source":source,"verb":"show","subject":"project/parity"}),
-                200,
-            )
-            .await;
+        let new = recall_all(
+            &ui,
+            json!({"action":"recall","source":source,"verb":"show","subject":"project/parity"}),
+        )
+        .await;
         assert_eq!(
             sorted(
                 old["claims"]
@@ -9216,9 +9240,24 @@ async fn typed_compatibility_compares_real_v1_actions_and_read_results() {
         )
         .unwrap(),
     );
+    // encrypted_frame defaults to author6. This declaration was authored by7,
+    // so its outer authenticated writer and admission grant must also be7.
+    let mut publication_request = service::SignedRequest::decode(&publication)
+        .unwrap()
+        .request;
+    publication_request.principal = identity(7).did();
+    let publication = service::SignedRequest::sign(publication_request, &identity(7))
+        .unwrap()
+        .bytes()
+        .unwrap();
+    let publication_grant = Grant {
+        principal: identity(7).did(),
+        append: true,
+        inventory: false,
+    };
     let mut original = attested::Archive::open(&f.root, f.binding.clone()).unwrap();
     original
-        .admit(&publication, &identity(8), &grant(), 1000)
+        .admit(&publication, &identity(8), &publication_grant, 1000)
         .unwrap();
     drop(original);
     let reader = server.client(&f);
@@ -9231,11 +9270,20 @@ async fn typed_compatibility_compares_real_v1_actions_and_read_results() {
             200,
         )
         .await;
-    ui.call(
+    let restored = ui.call(
         json!({"action":"restore-annotation","reference":reference,"preview":preview["digest"]}),
         200,
     )
     .await;
+    assert_eq!(restored["annotation"]["author"], identity(7).did());
+    assert_eq!(
+        restored["annotation"]["recovered_from"]["writer"],
+        identity(7).did()
+    );
+    assert_eq!(
+        restored["annotation"]["draft"],
+        foreign_new["record"]["draft"]
+    );
     ui.call(json!({"action":"record","draft":{"source":source,"verb":"reject","target":foreign_new["claims"][0]}}),200).await;
     for verb in ["show", "status", "issues", "context"] {
         let mut args = vec![verb];
@@ -9262,7 +9310,7 @@ async fn typed_compatibility_compares_real_v1_actions_and_read_results() {
         } else {
             json!({"action":"recall","source":source,"verb":verb})
         };
-        let new = ui.call(query, 200).await;
+        let new = recall_all(&ui, query).await;
         if verb == "context" {
             assert_eq!(old["budget"], new["view"]["budget"]);
         }
