@@ -30,6 +30,20 @@ claim CIDs, inferred telos witnesses or new bridge declarations are made here.
 
 ## Current implementation and findings
 
+Nov16 fresh exercise at `5d622c8`: authored retrieval and a native session brief
+were usable, but project consolidation failed strict provenance validation.
+Candidates0–5 cited parent units with explicit basis, including mixed direct and
+derived citations. Calibrated prose did not make those labels valid. Correction
+aligns prompt and emitted schema with the existing validator: any `prior:` witness
+requires inferred/suggested basis and non-accepted stance. Parent-original labels
+and evidence are explicitly named as historical metadata; compact parent entries
+avoid duplicating full candidate objects and old recipe instructions. Exact saved
+parent reports and source fallback remain unchanged. A direct-only explicit
+statement may be separate from a parent-dependent inference. No postprocessing
+promotes invalid output. Retained-failure-shaped pure controls and HTTP prompt/
+parent-route checks await remote runtime verification; fresh acceptance, final
+candidate CI and independent re-review remain pending. The failed trial is intact.
+
 Current Nov10 disposition: `32e2f6c` passed full candidate CI, then the actual
 cold integrated review returned **BLOCK**. The owner approved correcting all
 F1–F9 without reducing these requirements. Correction `7c9a11e` compiled and

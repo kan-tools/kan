@@ -861,12 +861,14 @@ impl Readers {
                     .and_then(|u| u.first())
                     .and_then(|u| u["source"].as_str())
                     .ok_or(Failure::Corrupt)?;
-                prior_units.push(json!({"id":format!("prior:{id}:{n}"),"source":source,
-                    "kind":"derived-candidate","role":"model-derived","text":serde_json::to_string(candidate).map_err(|_|Failure::Corrupt)?,
-                    "report_request":{"id":id},"candidate":n,"origin_units":candidate["evidence"],
-                    "authority":"Prior validated interpretation only. Follow the parent report to its original frozen source witnesses; this is not authored acceptance or a direct occurrence citation."}));
+                prior_units.push(recipes::prior_candidate(id, n, source, candidate)?);
             }
-            prior.push(json!({"job":id,"recipe":saved["recipe"],"model":result["parsed"]["model"],"candidates":result["consolidation"]["candidates"],"limitations":result["consolidation"]["limitations"],"authority":"Prior model interpretation, not authored acceptance. Ground new candidates in this run's supplied visible unit ids."}));
+            prior.push(json!({"job":id,"report_request":{"id":id},
+                "recipe":{"id":saved["recipe"]["id"],"revision":saved["recipe"]["revision"]},
+                "model":result["parsed"]["model"],
+                "candidate_count":result["consolidation"]["candidates"].as_array().ok_or(Failure::Corrupt)?.len(),
+                "limitations":result["consolidation"]["limitations"],
+                "authority":"Prior model interpretation. Candidates are supplied once as prior: units. Any use, including mixed direct evidence, requires inferred or suggested basis and non-accepted stance. Exact parent output and original witnesses remain at report_request."}));
         }
         let mut assessment = Value::Null;
         if draft.decode && !draft.cites.is_empty() {

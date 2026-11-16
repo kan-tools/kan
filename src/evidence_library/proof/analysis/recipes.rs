@@ -126,6 +126,23 @@ pub(super) fn schema(recipe: &Recipe) -> Value {
     let mut value =
         serde_json::to_value(schemars::schema_for!(Consolidation)).expect("static schema");
     if recipe.revision == "2" {
+        let candidate = value["$defs"]["Candidate"]
+            .as_object_mut()
+            .expect("static candidate schema");
+        candidate.insert("allOf".into(), json!([
+            {"if":{"properties":{"evidence":{"contains":{"type":"string","pattern":"^prior:"}}},"required":["evidence"]},
+             "then":{"properties":{"basis":{"enum":["inferred","suggested"]},"stance":{"not":{"const":"accepted"}}}}},
+            {"if":{"properties":{"stance":{"const":"accepted"}},"required":["stance"]},
+             "then":{"properties":{"basis":{"const":"explicit"}}}},
+            {"if":{"properties":{"kind":{"const":"next-action"}},"required":["kind"]},
+             "then":{"properties":{"basis":{"const":"suggested"},"stance":{"const":"proposed"}}}}
+        ]));
+        let properties = candidate
+            .get_mut("properties")
+            .and_then(Value::as_object_mut)
+            .expect("static candidate properties");
+        properties.insert("basis".into(), json!({"type":"string","enum":["explicit","inferred","suggested"],"description":"Current evidence basis. ANY prior: evidence id, even mixed with direct evidence, forbids explicit. Parent-original labels do not transfer."}));
+        properties.insert("stance".into(), json!({"type":"string","enum":["observed","proposed","accepted","unclear","not-run","denied","failed","passed"],"description":"Accepted requires direct-only explicit evidence of recorded acceptance; never use accepted for a prior:-dependent candidate."}));
         value["properties"]["version"] = json!({"const":"kan-consolidation/2"});
         value["properties"]["flow"] = json!({"const":recipe.id});
         value["required"]
@@ -138,6 +155,29 @@ pub(super) fn schema(recipe: &Recipe) -> Value {
         }
     }
     value
+}
+// Project the parent's labels as historical metadata, not a template for the
+// child's basis/stance. The exact original remains in the saved parent report.
+pub(super) fn prior_candidate(
+    id: &str,
+    n: usize,
+    source: &str,
+    candidate: &Value,
+) -> Result<Value, Failure> {
+    let mut historical = candidate.as_object().ok_or(Failure::Corrupt)?.clone();
+    for (old, new) in [
+        ("basis", "basis_in_parent"),
+        ("stance", "stance_in_parent"),
+        ("evidence", "evidence_in_parent"),
+    ] {
+        let value = historical.remove(old).ok_or(Failure::Corrupt)?;
+        historical.insert(new.into(), value);
+    }
+    Ok(json!({"id":format!("prior:{id}:{n}"),"source":source,
+        "kind":"derived-candidate","role":"model-derived",
+        "text":serde_json::to_string(&historical).map_err(|_|Failure::Corrupt)?,
+        "report_request":{"id":id},"candidate":n,"origin_units":candidate["evidence"],
+        "authority":"Prior validated interpretation only. ANY candidate citing this unit must use inferred or suggested basis, never accepted stance, even with direct evidence. Parent-original labels and origin units apply only inside the retained parent report; follow it to original source witnesses."}))
 }
 fn bounded(text: &str, max: usize) -> bool {
     !text.trim().is_empty() && text.len() <= max
@@ -498,6 +538,80 @@ pub(super) fn response_object(text: &str) -> Option<Value> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn mixed_and_parent_only_project_evidence_cannot_inherit_explicit_basis() {
+        let recipe = bundled()
+            .into_iter()
+            .find(|r| r.id == "project-consolidation")
+            .unwrap();
+        let parent = "a".repeat(64);
+        let direct = "claim:provided-authored-statement";
+        let original = json!({"kind":"decision","text":"Adopt JSON.","basis":"explicit","stance":"accepted","speaker":"user","subjects":[],"relation":null,"evidence":["g0/request/i3/text"],"uncertainty":"Recorded source statement only."});
+        let retained = original.clone();
+        let parent_unit = prior_candidate(&parent, 0, "proof:scope", &original).unwrap();
+        let historical: Value =
+            serde_json::from_str(parent_unit["text"].as_str().unwrap()).unwrap();
+        assert_eq!(historical["basis_in_parent"], "explicit");
+        assert_eq!(historical["stance_in_parent"], "accepted");
+        assert_eq!(historical["evidence_in_parent"], original["evidence"]);
+        for key in ["basis", "stance", "evidence"] {
+            assert!(historical.get(key).is_none());
+        }
+        assert_eq!(parent_unit["report_request"], json!({"id":parent}));
+        assert_eq!(parent_unit["candidate"], 0);
+        assert_eq!(parent_unit["origin_units"], original["evidence"]);
+        assert_eq!(
+            original, retained,
+            "the parent report must not be relabelled"
+        );
+        let prompt = vec![
+            json!({"units":[{"id":direct,"source":"proof:scope","text":"Adopt JSON."},parent_unit]}),
+        ];
+        // Shape of the retained real failure: five mixed candidates and one
+        // parent-only candidate were explicit despite calibrated prose. This
+        // sanitized fixture is not a rewrite or acceptance of that saved run.
+        let mut candidates = Vec::new();
+        for i in 0..7 {
+            let mut c = original.clone();
+            c["basis"] = json!("inferred");
+            c["stance"] = json!("proposed");
+            c["evidence"] = if i < 5 {
+                json!([direct, format!("prior:{parent}:0")])
+            } else {
+                json!([format!("prior:{parent}:0")])
+            };
+            c["uncertainty"] = json!("Prior model interpretation, not authored acceptance.");
+            candidates.push(c);
+        }
+        let output = json!({"version":"kan-consolidation/2","flow":recipe.id,"candidates":candidates,
+            "contract":{"flow":recipe.id,"subjects":[],"statements":[0,1,2,3,4,5,6],"conflicts":[],"corrections":[],"missing_grounds":["Selected evidence only."]},
+            "limitations":["Parent interpretations remain derived."]});
+        assert!(validate(output.clone(), &recipe, &prompt).is_ok());
+        let mut suggested_parent = output.clone();
+        suggested_parent["candidates"][5]["basis"] = json!("suggested");
+        assert!(validate(suggested_parent, &recipe, &prompt).is_ok());
+        let mut retained_failure_shape = output.clone();
+        for i in 0..6 {
+            retained_failure_shape["candidates"][i]["basis"] = json!("explicit");
+            let mut bad = output.clone();
+            bad["candidates"][i]["basis"] = json!("explicit");
+            assert!(validate(bad, &recipe, &prompt).is_err(), "candidate {i}");
+        }
+        assert!(validate(retained_failure_shape, &recipe, &prompt).is_err());
+        let mut accepted_parent = output.clone();
+        accepted_parent["candidates"][5]["stance"] = json!("accepted");
+        assert!(validate(accepted_parent, &recipe, &prompt).is_err());
+        let mut split = output.clone();
+        split["candidates"][0]["evidence"] = json!([direct]);
+        split["candidates"][0]["basis"] = json!("explicit");
+        split["candidates"][0]["stance"] = json!("accepted");
+        assert!(
+            validate(split.clone(), &recipe, &prompt).is_ok(),
+            "direct explicit and separate derived candidates are allowed"
+        );
+        split["candidates"][0]["evidence"] = json!(["claim:invented"]);
+        assert!(validate(split, &recipe, &prompt).is_err());
+    }
     #[test]
     fn response_envelope_requires_one_entire_json_object_and_keeps_witness_validation() {
         let prompt = vec![visible(&content(), "proof:scope").unwrap()];

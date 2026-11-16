@@ -10006,6 +10006,61 @@ async fn structured_consolidation_preserves_visible_witnesses_finalization_idemp
     let parent_job = ui
         .call(json!({"action":"analysis-job","id":ids[0]}), 200)
         .await;
+    let projection = &job["input"]["projection"][0];
+    let parent_metadata = &projection["prior_derivations"][0];
+    assert_eq!(parent_metadata["report_request"]["id"], ids[0]);
+    assert_eq!(parent_metadata["candidate_count"], 1);
+    assert!(parent_metadata.get("candidates").is_none());
+    assert!(parent_metadata["recipe"].get("instructions").is_none());
+    let parent_unit = projection["units"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|u| u["role"] == "model-derived")
+        .unwrap();
+    let historical: Value = serde_json::from_str(parent_unit["text"].as_str().unwrap()).unwrap();
+    let original_candidate = &parent_job["result"]["consolidation"]["candidates"][0];
+    assert_eq!(original_candidate["basis"], "explicit");
+    assert_eq!(original_candidate["stance"], "accepted");
+    assert_eq!(historical["basis_in_parent"], original_candidate["basis"]);
+    assert_eq!(historical["stance_in_parent"], original_candidate["stance"]);
+    assert_eq!(
+        historical["evidence_in_parent"],
+        original_candidate["evidence"]
+    );
+    for key in ["basis", "stance", "evidence"] {
+        assert!(historical.get(key).is_none());
+    }
+    assert_eq!(parent_unit["report_request"]["id"], ids[0]);
+    assert_eq!(parent_unit["origin_units"], original_candidate["evidence"]);
+    assert_eq!(
+        job["result"]["consolidation"]["candidates"][0]["basis"],
+        "inferred"
+    );
+    {
+        let all = requests.lock().unwrap();
+        let system = all.last().unwrap()["system"].as_str().unwrap();
+        assert!(system.contains("including a mixture of direct and prior: ids"));
+        let (_, emitted) = system.split_once("Required JSON output schema: ").unwrap();
+        let schema: Value = serde_json::from_str(emitted).unwrap();
+        let candidate = &schema["$defs"]["Candidate"];
+        assert_eq!(
+            candidate["properties"]["basis"]["enum"],
+            json!(["explicit", "inferred", "suggested"])
+        );
+        assert_eq!(
+            candidate["allOf"][0]["if"]["properties"]["evidence"]["contains"]["pattern"],
+            "^prior:"
+        );
+        assert_eq!(
+            candidate["allOf"][0]["then"]["properties"]["basis"]["enum"],
+            json!(["inferred", "suggested"])
+        );
+        assert_eq!(
+            candidate["allOf"][0]["then"]["properties"]["stance"]["not"]["const"],
+            "accepted"
+        );
+    }
     for witness in parent_job["job"]["draft"]["cites"].as_array().unwrap() {
         assert!(
             promoted_child["record"]["draft"]["cites"]

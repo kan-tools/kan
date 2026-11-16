@@ -5,11 +5,13 @@ objects. The canonical v1 compatibility fold still supplies authored state and
 identity; model scores never become trust weights, grants or identity witnesses.
 Higher/weighted identity semantics and computed Git ancestry remain unsupported.
 
-Certification status (Nov10): candidate32e2f6c passed full CI and retained a
-fresh two-arm Sonnet exercise, but its independent review returned BLOCK for
-control-input projection, incomplete-history disclosure, capture locking and
-contract/coverage gaps. The current correction is undergoing scoped verification;
-the older trial and its failures are retained, not rerun or declared fully accepted.
+Certification status (Nov16): the integrated review corrections passed affected
+CI at5d622c8. Its fresh exercise recovered authored information and produced a
+session brief, but project consolidation failed strict validation: six candidates
+cited derived parents while claiming explicit basis. This is an output-contract
+failure, not successful acceptance. Prompt/schema guidance and parent presentation
+are being corrected; remote runtime verification and fresh acceptance remain
+pending. The earlier blocked review and all failed runs remain retained.
 
 ## Built-in flows
 
@@ -73,9 +75,18 @@ the projection is neither deletion nor complete-capture certification.
 context. A new capture batch has at most eight direct inputs; parent originals
 remain in their own frozen manifests rather than being squeezed into that window.
 Explicit parents supply labelled model-derived candidate units with exact parent
-report routes. A candidate citing those units cannot claim explicit authored
-acceptance; its source fallback traverses the retained parent report and original
-witnesses. Every dependency must remain readable and allowed for disclosure to
+report routes. **Any** candidate citing a `prior:` unit, even together with direct
+authored evidence, must use `inferred` or `suggested` basis and cannot use `accepted`
+stance. Direct-only evidence may support `explicit` basis; that label alone does
+not certify truth or acceptance. Keep a directly grounded explicit statement
+separate from additional parent-dependent conclusions when necessary. Parent
+labels are shown as `basis_in_parent`/`stance_in_parent`, and their evidence as
+`evidence_in_parent`; they describe the original report, not the new candidate.
+The parent directory supplies compact identity/route/model/limitations metadata,
+without duplicating its candidate objects or old instructions. Its source fallback
+traverses the exact retained parent report and original witnesses. Original saved
+reports are not relabelled, and invalid output is not silently repaired.
+Every dependency must remain readable and allowed for disclosure to
 the configured worker. The new result retains parent-job lineage and must ground
 its new candidates in supplied direct or explicitly labelled parent-derived units.
 Read-time checks cover all dependency sources and retained ancestors; provider

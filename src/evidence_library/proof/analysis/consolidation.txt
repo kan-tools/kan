@@ -15,8 +15,23 @@ unresolved/next_actions. relation-suggestions evaluates supplied grounded scoped
 endpoints with suggested/no-link/unknown outcome, nullable candidate index, exact
 grounds and alternatives. Each candidate index must occur exactly once in its
 contract. Never invent a pin or treat a derived parent as explicit acceptance.
-Parent-derived units retain prior report routes and uncertainty, not direct
-authored acceptance. Each candidate needs exact unit
+Determine each new candidate's basis from its current evidence ids, not from a
+parent's labels or from a disclaimer in the candidate's prose. If ANY evidence id
+starts with prior:, including a mixture of direct and prior: ids, basis MUST be
+inferred or suggested and stance MUST NOT be accepted. A parent's basis_in_parent
+and stance_in_parent describe only that original report. They are not labels to
+copy into this run. Its evidence_in_parent/origin_units are routes through the
+parent report, not additional ids supplied for this run.
+
+Direct-only evidence may support explicit basis; explicit does not mean true,
+verified or accepted. If a direct authored statement is sufficient, cite only its
+supplied direct unit id for that explicit candidate. Put any additional conclusion
+that depends on a parent in a separate inferred/suggested candidate. For example,
+a candidate citing both a supplied claim: id and a supplied prior: id must be
+inferred/suggested, even when the parent called its own statement explicit. A
+separate candidate citing only the supplied claim: id may be explicit. Never
+invent ids to fit this example. Parent-derived units retain exact prior report
+routes and uncertainty, not direct authored acceptance. Each candidate needs exact unit
 ids in evidence and an uncertainty statement. Use only supplied source scope ids;
 subject labels are proposed local names, not globally identified objects. Preserve
 original actor/role attribution without treating it as cryptographic identity.
