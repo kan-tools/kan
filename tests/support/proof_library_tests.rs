@@ -9015,7 +9015,17 @@ async fn authored_recall_never_resurrects_a_claim_when_correction_evidence_is_re
             200,
         )
         .await;
-    assert_eq!(other["coverage"], "complete");
+    assert_eq!(
+        other["coverage"],
+        "Complete within the bounded authorized authored-record traversal, not complete capture. Git-derived ancestry is not configured."
+    );
+    assert!(other.get("history_omissions").is_none());
+    assert!(!other["view"].is_null());
+    assert!(other["entries"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|entry| entry["claim"]["cid"] == unrelated["claims"][0]));
     assert!(other
         .to_string()
         .contains("Unrelated collection stays usable."));
