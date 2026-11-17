@@ -61,7 +61,7 @@ kan extract --profile /private/project.json --plan /private/frozen.json --run
 kan report REPORT_ID --profile /private/project.json
 ```
 
-All five flows require coherent decoding. Their `kan-visible-evidence/2` input
+All five flows require coherent decoding. Their `kan-visible-evidence/3` input
 contains user/assistant text, observed tool names/inputs/results and original
 item/range attribution. Thinking, system/control/context wrappers, duplicate raw
 events and whole parsed documents are excluded and counted. Whole harness
@@ -446,4 +446,26 @@ These are execution bounds before Day scale, not lifetime storage quotas.
 Direct capture windows are at most8 inputs; a dependency graph is at most64 jobs.
 Normal tool payloads remain12KiB, including all new contract/identity metadata.
 
-After coordinated workspace annotation erasure, existing non-content tombstones cannot identify the removed collection. Authored recall therefore conservatively reports incomplete history for that workspace instead of reconstructing a possibly resurrected state. No erased body or source identifier is restored or exposed.
+After coordinated workspace annotation erasure, new tombstones retain only opaque keyed collection commitments. Authored recall reports incomplete history for affected collections; retract/reject and project selection refuse when that missing history could change their result. Unrelated collections remain usable. Legacy, absent-body or otherwise unknown tombstones cannot identify their affected collection and keep the older conservative workspace-wide refusal, including correction and project operations. There is no automatic repair of lost historical scope. No erased body or source identifier is retained or exposed; exact retries and recovery preserve the authenticated commitment metadata.
+
+
+Visible projection3 filters recognized standalone harness-control segments from
+mixed user/tool-result text and counts exclusions. `text_segments` records the
+retained original item-relative UTF-8 ranges; original item indices, enclosing
+coarse citations and complete authorized fallback remain unchanged. Inline
+quotations, Markdown fences and indented code remain evidence. A returned model
+interpretation is not evidence that all untrusted instructions were recognized.
+
+Relation endpoint labels must occur as complete scoped tokens in their selected
+grounds, not as substrings of unrelated names. This establishes only literal
+witness presence, never relation truth or accepted identity.
+
+The scoped tombstone field is an additive extension of the existing signed,
+encrypted workspace erasure value, not an archive-record or erasure-plan change.
+Its collection commitment uses domain-separated HKDF with the workspace private
+key and scope. Scope discovery follows correction/withdrawal ancestors, including
+already-scoped tombstones, within256nodes/4MiB and a shared5-second admission
+budget. Unknown or bounded-out ancestry keeps the conservative legacy behavior.
+Older readers remain conservative workspace-wide; older cleanup binaries may
+refuse exact replay of extended markers instead of replacing their metadata.
+Use the current binary for those retries. No existing tombstones are rewritten.

@@ -936,7 +936,7 @@ impl Readers {
                 .ok_or(ContentError::Limited)?;
             if prompt.is_empty() {
                 prompt = vec![
-                    json!({"version":"kan-visible-evidence/2","units":[],"excluded":[],"exclusions":"No capture selected; authored project evidence only."}),
+                    json!({"version":"kan-visible-evidence/3","units":[],"excluded":[],"exclusions":"No capture selected; authored project evidence only."}),
                 ];
             }
             prompt[0]["units"]
@@ -983,7 +983,7 @@ impl Readers {
         let contract = json!({"project_annotations":project_annotations,"project":project,"assessment":assessment,"adapter":engine.config.adapter,"worker":engine.config.worker,"recipe":recipe,"endpoint":engine.config.endpoint,"request":request,"draft":draft,"inputs":inputs,"projection":prompt});
         let preview = json!({"project_evaluation":super::projects::summary(&contract["project"]),"digest":digest(&contract)?,"adapter":engine.config.adapter,"worker":engine.config.worker,"recipe":recipe,"model":engine.config.model,"endpoint":engine.config.endpoint,
             "input_bytes":total,"input_bytes_basis":"Selected captured raw bytes plus serialized signed authored claims; prompt framing measured separately.","input_encoding":if project.is_some(){"frozen authored claims and optional coherent decoded capture"}else if draft.decode {"coherent decoded selected evidence"}else{"legacy per-occurrence raw display"},"decoded_prompt_bytes":serde_json::to_vec(&prompt).map_err(|_|Failure::Corrupt)?.len(),"max_input_bytes":engine.config.max_input_bytes,"max_jobs":engine.config.max_jobs,"provider_calls_per_new_job":if engine.config.adapter == Adapter::ClaudeCode {Value::Null}else{json!(1)},"worker_invocations_per_new_job":1,"inputs":draft.cites,"max_output_tokens":engine.config.adapter.output_tokens(&engine.config),"max_response_bytes":2*1024*1024,
-            "projection":if visible {json!({"version":"kan-visible-evidence/2","units":prompt[0]["units"].as_array().map(Vec::len),"excluded":prompt[0]["excluded"],"exclusions":prompt[0]["exclusions"]})}else{Value::Null},
+            "projection":if visible {json!({"version":"kan-visible-evidence/3","units":prompt[0]["units"].as_array().map(Vec::len),"excluded":prompt[0]["excluded"],"exclusions":prompt[0]["exclusions"]})}else{Value::Null},
             "effect":"Send these exact selected inputs to the explicitly configured worker; retain encrypted input, request and response lineage. Results do not publish claims."});
         // Revalidate current authority across all input sources.
         for cite in &draft.cites {

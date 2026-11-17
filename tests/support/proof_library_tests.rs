@@ -8920,6 +8920,7 @@ async fn authored_recall_never_resurrects_a_claim_when_correction_evidence_is_re
         )
         .await;
     let citation = json!({"source":b_scope,"pin":entry["pin"],"selection":page["records"][0]["record"]["selection"]});
+    let unrelated = ui.call(json!({"action":"record","draft":{"source":b_scope,"verb":"decide","subject":"project/unrelated","text":"Unrelated collection stays usable."}}),200).await;
     let saved = ui.call(json!({"action":"record","draft":{"source":a_scope,"verb":"decide","subject":"project/revocation","text":"Original position."}}),200).await;
     let retraction = ui.call(json!({"action":"record","draft":{"source":a_scope,"verb":"retract","target":saved["claims"][0],"evidence":[citation]}}),200).await;
     let before = ui.call(json!({"action":"recall","source":a_scope,"verb":"show","subject":"project/revocation"}),200).await;
@@ -8992,12 +8993,34 @@ async fn authored_recall_never_resurrects_a_claim_when_correction_evidence_is_re
         )
         .unwrap();
     workspace.apply_erasure(&cleanup).unwrap();
+    let marker_key = format!("annotation:{}", cleanup.targets[0].id);
+    let marker = workspace.get("erasure", &marker_key).unwrap().unwrap();
+    assert_eq!(marker["authored_collections"].as_array().unwrap().len(), 1);
+    assert!(!marker.to_string().contains(&a_scope));
+    assert!(!marker.to_string().contains("Original position."));
+    workspace.apply_erasure(&cleanup).unwrap(); // exact replay retains scoped marker
+    assert_eq!(
+        workspace.get("erasure", &marker_key).unwrap().unwrap(),
+        marker
+    );
     drop(workspace);
     let ui = Ui::start(readers()).await;
     let purged = ui.call(json!({"action":"recall","source":a_scope,"verb":"show","subject":"project/revocation"}),200).await;
     assert_eq!(purged["coverage"], "partial");
     assert!(purged["view"].is_null());
     assert!(!purged.to_string().contains("Original position."));
+    let other = ui
+        .call(
+            json!({"action":"recall","source":b_scope,"verb":"show","subject":"project/unrelated"}),
+            200,
+        )
+        .await;
+    assert_eq!(other["coverage"], "complete");
+    assert!(other
+        .to_string()
+        .contains("Unrelated collection stays usable."));
+    ui.call(json!({"action":"record","draft":{"source":b_scope,"verb":"retract","target":unrelated["claims"][0]}}),200).await;
+    ui.call(json!({"action":"record","draft":{"source":a_scope,"verb":"retract","target":saved["claims"][0]}}),503).await;
     ui.stop().await;
     a.stop().await;
     b.stop().await;
@@ -9784,6 +9807,8 @@ async fn structured_consolidation_preserves_visible_witnesses_finalization_idemp
     let body = serde_json::to_vec(&json!({"system":"PRIVATE CONTROL MARKER","messages":[
         {"role":"user","content":"Adopt JSON for interchange. Recorded reason: interoperability."},
         {"role":"user","content":"<system-reminder>\nPRIVATE HARNESS WRAPPER MARKER\nSynthetic harness metadata, not a user instruction.\n</system-reminder>"},
+        {"role":"user","content":"Keep visible prose.\n<system-reminder>\nPRIVATE MIXED CONTROL\n</system-reminder>\nKeep visible ending."},
+        {"role":"user","content":[{"type":"tool_result","tool_use_id":"synthetic","content":"Observed tool bytes.\n<system-reminder>\nPRIVATE TOOL CONTROL\n</system-reminder>\nObserved ending."}]},
         {"role":"assistant","content":[{"type":"thinking","thinking":"PRIVATE REASONING MARKER"},
             {"type":"tool_use","id":"write","name":"Write","input":{"file_path":"DECISION.md","content":"é🙂 observed artifact, not proof of tool completion"}}]}
     ]})).unwrap();
@@ -9972,6 +9997,8 @@ async fn structured_consolidation_preserves_visible_witnesses_finalization_idemp
                 "PRIVATE CONTROL MARKER",
                 "PRIVATE REASONING MARKER",
                 "PRIVATE HARNESS WRAPPER MARKER",
+                "PRIVATE MIXED CONTROL",
+                "PRIVATE TOOL CONTROL",
                 "bytes_hex",
                 "event_json",
                 "parsed_json",

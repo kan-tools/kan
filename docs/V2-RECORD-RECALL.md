@@ -256,3 +256,18 @@ requires inspection and an explicit changed plan; never erase its evidence to
 make an unchanged retry look new. Native source/workspace backup and restoration
 remain their existing independent interfaces; this runner does not claim a new
 backup-recovery qualification.
+
+
+Common MCP help exposes `example_format: kan-field-copy-template/1`,
+`example_executable_without_binding` and `example_bindings`. Except for the empty
+catalog request, examples are templates: bind their named paths from actual
+returned fields before dispatch. Copy signed pins, selections and complete plan
+selections as whole JSON values; illustrative nested signatures/request fragments
+are never executable replacements. These bindings provide no new read/write
+authority. For sources in a report, prefer its returned compact item request.
+
+After annotation erasure, affected authored history is incomplete: correction
+and project operations refuse rather than revive an earlier state. New keyed
+collection commitments isolate unrelated collections. Older or unknown erasure
+markers remain workspace-wide conservative; see V2-CONSOLIDATION.md. This does
+not reconstruct removed identifiers or bodies.

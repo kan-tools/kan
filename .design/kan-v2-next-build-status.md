@@ -77,10 +77,19 @@ evaluation identities; distinct recipe contracts; owned-worker deadlines;
 multi-batch lineage; real v1 parity; and dispatcher/routing/retry/documentation
 controls. These are implementation and regression work, not a scope waiver or a
 new acceptance claim. The original blocked review and all old failed trials stay
-intact. Correction runtime checks are pending; use affected Tier1 before one
+intact. Historical Nov10 correction runtime checks were pending; use affected Tier1 before one
 stable current-candidate Tier2 and focused independent re-review. A fresh paid
 trial requires its own concrete task/input/tools/model/budget plan. The heartbeat
 stays paused while implementing or waiting for approval.
+
+Current qualification, 2026-11-17: exact652c21c passed finalTier2run43961283098
+and fresh six-call acceptance, followed by a cold **APPROVE WITH FOLLOW-UPS**.
+Its report explicitly retains partial/unverifiable criteria. The owner authorized
+N1–N7 repair; that changed source now requires affected remote checks and final
+current-candidate qualification before merge. The completed652c evidence and all
+old failures stay immutable. No new paid inference or automatic merge is granted
+by this repair. While implementing or awaiting owner direction, the monitor stays
+paused; it runs only for actual CI/review work.
 
 Owner refinement,2026-11-04: continue design toward
 [semantic progressive disclosure and consolidation](kan-v2-semantic-disclosure-and-consolidation.md).

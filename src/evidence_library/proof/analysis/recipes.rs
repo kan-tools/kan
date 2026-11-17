@@ -185,22 +185,77 @@ fn bounded(text: &str, max: usize) -> bool {
 fn subject_valid(s: &ScopedSubject, sources: &BTreeSet<String>) -> bool {
     sources.contains(&s.source) && crate::actions::validate_subject_name(&s.label).is_ok()
 }
-// Claude's exported Messages input represents injected reminders as user text,
-// not as role=system. Exclude a whole wrapper-shaped block from inference, not
-// arbitrary inline/quoted user mentions. Originals and their citations remain
-// available through exact evidence fallback; this is not source rewriting.
-fn harness_control(text: &str) -> bool {
-    let text = text.trim();
-    [
-        "system-reminder",
-        "local-command-caveat",
-        "command-name",
-        "command-message",
-        "command-args",
-        "local-command-stdout",
-    ]
-    .iter()
-    .any(|tag| text.starts_with(&format!("<{tag}>")) && text.ends_with(&format!("</{tag}>")))
+// Recognize standalone harness envelopes, not inline quotations or Markdown code.
+// Offsets describe retained UTF-8 bytes within the ORIGINAL item. The enclosing
+// item/citations remain unchanged and full evidence fallback stays available.
+const CONTROL_TAGS: [&str; 6] = [
+    "system-reminder",
+    "local-command-caveat",
+    "command-name",
+    "command-message",
+    "command-args",
+    "local-command-stdout",
+];
+fn visible_segments(text: &str) -> (Vec<[usize; 2]>, usize) {
+    let lines: Vec<_> = text.split_inclusive('\n').collect();
+    let mut offsets = Vec::with_capacity(lines.len() + 1);
+    offsets.push(0);
+    for line in &lines {
+        offsets.push(offsets.last().unwrap() + line.len());
+    }
+    let (mut i, mut kept, mut excluded) = (0, Vec::<[usize; 2]>::new(), 0usize);
+    let mut fence: Option<(char, usize)> = None;
+    while i < lines.len() {
+        let line = lines[i].trim();
+        let indented = lines[i].starts_with("    ") || lines[i].starts_with('\t');
+        let delimiter = line.chars().next().filter(|c| matches!(c, '`' | '~'));
+        let width = delimiter.map_or(0, |ch| line.chars().take_while(|c| *c == ch).count());
+        if !indented && width >= 3 {
+            let ch = delimiter.unwrap();
+            if fence.is_some_and(|(old, n)| ch == old && width >= n)
+                && line[width..].trim().is_empty()
+            {
+                fence = None;
+            } else if fence.is_none() {
+                fence = Some((ch, width));
+            }
+        } else if let Some(tag) = CONTROL_TAGS
+            .iter()
+            .find(|tag| line.starts_with(&format!("<{tag}>")))
+            .filter(|_| !indented && fence.is_none())
+        {
+            let close = format!("</{tag}>");
+            if let Some((last, end)) =
+                (i..lines.len()).find_map(|j| lines[j].find(&close).map(|at| (j, at + close.len())))
+            {
+                excluded += 1;
+                // Closing the envelope does not erase prose that follows it.
+                if !lines[last][end..].trim().is_empty() {
+                    kept.push([offsets[last] + end, offsets[last + 1]]);
+                }
+                i = last + 1;
+                continue;
+            }
+            // An unterminated standalone envelope remains control data;
+            // disclose this exclusion instead of admitting its tail.
+            excluded += 1;
+            break;
+        }
+        if let Some(last) = kept.last_mut().filter(|last| last[1] == offsets[i]) {
+            last[1] = offsets[i + 1];
+        } else {
+            kept.push([offsets[i], offsets[i + 1]]);
+        }
+        i += 1;
+    }
+    (kept, excluded)
+}
+fn label_occurs(text: &str, label: &str) -> bool {
+    let word = |c: char| c.is_alphanumeric() || matches!(c, '_' | '/' | '-' | '.');
+    text.match_indices(label).any(|(at, matched)| {
+        !text[..at].chars().next_back().is_some_and(word)
+            && !text[at + matched.len()..].chars().next().is_some_and(word)
+    })
 }
 pub(super) fn validate(
     output: Value,
@@ -398,7 +453,7 @@ fn contract_valid(output: &Consolidation, units: &[Value], sources: &BTreeSet<St
                                     && e.grounds.iter().any(|id| u["id"] == *id)
                                     && u["text"]
                                         .as_str()
-                                        .is_some_and(|t| t.contains(&subject.label))
+                                        .is_some_and(|t| label_occurs(t, &subject.label))
                             })
                     };
                     endpoint_grounded(&e.from)
@@ -461,16 +516,6 @@ pub(super) fn visible(content: &Value, source: &str) -> Result<Value, Failure> {
                         .or_default() += 1;
                     continue;
                 }
-                if direction == "request"
-                    && role == Some("user")
-                    && kind == "text"
-                    && item["text"].as_str().is_some_and(harness_control)
-                {
-                    *excluded
-                        .entry("harness-control-wrapper/user".into())
-                        .or_default() += 1;
-                    continue;
-                }
                 for part in ["text", "tool"] {
                     let (text, set) = if part == "text" {
                         (&item["text"], &item["citation_set"])
@@ -480,6 +525,34 @@ pub(super) fn visible(content: &Value, source: &str) -> Result<Value, Failure> {
                     let Some(text) = text.as_str().filter(|s| !s.trim().is_empty()) else {
                         continue;
                     };
+                    let (segments, removed) =
+                        if direction == "request" && role == Some("user") && part == "text" {
+                            visible_segments(text)
+                        } else {
+                            (vec![[0, text.len()]], 0)
+                        };
+                    if removed != 0 {
+                        *excluded
+                            .entry(format!("harness-control-segments/{kind}"))
+                            .or_default() += removed;
+                        if segments.iter().all(|r| text[r[0]..r[1]].trim().is_empty()) {
+                            *excluded
+                                .entry("harness-control-wrapper/user".into())
+                                .or_default() += 1;
+                        }
+                    }
+                    let projected = if removed == 0 {
+                        text.to_owned()
+                    } else {
+                        segments
+                            .iter()
+                            .map(|r| &text[r[0]..r[1]])
+                            .collect::<Vec<_>>()
+                            .join("\n")
+                    };
+                    if projected.trim().is_empty() {
+                        continue;
+                    }
                     let set = set
                         .as_str()
                         .and_then(|s| s.parse::<usize>().ok())
@@ -493,15 +566,15 @@ pub(super) fn visible(content: &Value, source: &str) -> Result<Value, Failure> {
                         return Err(Failure::Corrupt);
                     }
                     units.push(json!({"id":format!("g{g}/{direction}/i{n}/{part}"),"source":source,"group":g,"direction":direction,"item":n,"part":part,
-                        "kind":kind,"role":role,"text":text,"citations":cites,"region":if part=="tool" {&item["tool"]["region"]} else {&item["region"]},"coarse":item["coarse"],
+                        "kind":kind,"role":role,"text":projected,"text_segments":segments,"excluded_control_segments":removed,"citations":cites,"region":if part=="tool" {&item["tool"]["region"]} else {&item["region"]},"coarse":removed != 0 || item["coarse"].as_bool().unwrap_or(true),"original_coarse":item["coarse"],
                         "writer":group["writer"],"speaker_note":"Captured role is not cryptographic speaker identity; a missing role on a response-channel item remains unattributed."}));
                 }
             }
         }
     }
     Ok(
-        json!({"version":"kan-visible-evidence/2","source":source,"coverage":content["coverage"],"units":units,"states":states,"excluded":excluded,
-        "exclusions":"Only visible user/assistant text and observed tool data. Thinking, system/control/context wrappers, raw events and whole parsed documents are excluded; originals remain retained."}),
+        json!({"version":"kan-visible-evidence/3","source":source,"coverage":content["coverage"],"units":units,"states":states,"excluded":excluded,
+        "exclusions":"Only visible user/assistant text and observed tool data. Thinking, system/control/context wrappers and recognized standalone control segments are excluded and counted. Inline quotations and fenced code are retained. text_segments are original item-relative UTF-8 ranges; disjoint spans are separated by a newline. Full originals and enclosing citations remain retained."}),
     )
 }
 
@@ -683,6 +756,72 @@ mod tests {
         assert_eq!(input, original);
     }
     #[test]
+    fn embedded_control_segments_keep_unicode_prose_quotes_and_original_routes() {
+        let mut input = content();
+        let text = "café🙂 before\n<system-reminder>\nPRIVATE SEGMENT\n</system-reminder>\nafter\n```xml\n<system-reminder>literal fenced example</system-reminder>\n```\nInline <system-reminder>literal</system-reminder> remains.";
+        input["groups"][0]["request"]["items"][3]["text"] = json!(text);
+        input["groups"][0]["request"]["items"][3]["kind"] = json!("tool-result");
+        let original = input.clone();
+        let v = visible(&input, "proof:scope").unwrap();
+        let unit = &v["units"][0];
+        assert!(!unit["text"].as_str().unwrap().contains("PRIVATE SEGMENT"));
+        for kept in [
+            "café🙂 before",
+            "after",
+            "literal fenced example",
+            "Inline <system-reminder>literal</system-reminder>",
+        ] {
+            assert!(unit["text"].as_str().unwrap().contains(kept));
+        }
+        assert_eq!(unit["id"], "g0/request/i3/text");
+        assert_eq!(
+            unit["citations"],
+            original["groups"][0]["request"]["citation_sets"][0]
+        );
+        assert_eq!(
+            unit["region"],
+            original["groups"][0]["request"]["items"][3]["region"]
+        );
+        let spans = unit["text_segments"].as_array().unwrap();
+        let kept = spans
+            .iter()
+            .map(|r| &text[r[0].as_u64().unwrap() as usize..r[1].as_u64().unwrap() as usize])
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert_eq!(kept, unit["text"].as_str().unwrap());
+        assert_eq!(v["excluded"]["harness-control-segments/tool-result"], 1);
+        assert_eq!(input, original);
+        let (tail, count) =
+            visible_segments("<system-reminder>private</system-reminder> trailing café🙂");
+        assert_eq!(count, 1);
+        assert_eq!(
+            &"<system-reminder>private</system-reminder> trailing café🙂"[tail[0][0]..tail[0][1]],
+            " trailing café🙂"
+        );
+        let (quoted, count) =
+            visible_segments("    <system-reminder>indented example</system-reminder>\n");
+        assert_eq!(count, 0);
+        assert_eq!(quoted.len(), 1);
+        let (spans, n) = visible_segments("before\n<system-reminder>unterminated private tail");
+        assert_eq!(n, 1);
+        assert_eq!(spans, vec![[0, 7]]);
+    }
+    #[test]
+    fn relation_endpoint_grounding_requires_complete_scoped_tokens() {
+        assert!(label_occurs("Use project/a, then project/b.", "project/a"));
+        assert!(label_occurs("(café) is a label", "café"));
+        for text in [
+            "project/ab",
+            "xproject/a",
+            "project/a-child",
+            "project/a.more",
+            "project/a/child",
+        ] {
+            assert!(!label_occurs(text, "project/a"), "{text}");
+        }
+        assert!(!label_occurs("JSON", "SON"));
+    }
+    #[test]
     fn visible_projection_excludes_reasoning_and_control_but_keeps_original_item_routes() {
         let input = content();
         let original = input.clone();
@@ -761,6 +900,11 @@ mod tests {
             "contract":{"flow":recipe.id,"evaluations":[{"from":{"source":"proof:scope","label":"Adopt"},"to":{"source":"proof:scope","label":"JSON"},"outcome":"no-link","candidate":null,"grounds":["g0/request/i3/text"],"alternatives":["The selected words do not establish a domain relation."]}]},
             "limitations":["No relation asserted."]});
         assert!(validate(output.clone(), &recipe, &prompt).is_ok());
+        for label in ["SON", "JS", "unmentioned-subject"] {
+            let mut wrong = output.clone();
+            wrong["contract"]["evaluations"][0]["to"]["label"] = json!(label);
+            assert!(validate(wrong, &recipe, &prompt).is_err(), "{label}");
+        }
         output["contract"]["evaluations"][0]["to"]["label"] = json!("unmentioned-subject");
         assert!(validate(output, &recipe, &prompt).is_err());
     }

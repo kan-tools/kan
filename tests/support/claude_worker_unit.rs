@@ -132,3 +132,26 @@ fn session_is_a_fresh_job_bound_uuid_and_not_a_resume() {
     assert_eq!(&a[14..15], "4");
     assert_ne!(a, session(&"b".repeat(64)).unwrap());
 }
+
+#[cfg(unix)]
+#[test]
+fn process_group_is_disarmed_before_the_leader_can_be_reaped() {
+    use std::os::unix::process::CommandExt;
+    let mut command = std::process::Command::new("/bin/sh");
+    command.args(["-c", "exit 0"]).process_group(0);
+    let mut child = command.spawn().unwrap();
+    let pid = child.id() as i32;
+    let group = Group(std::sync::atomic::AtomicI32::new(pid));
+    let until = std::time::Instant::now() + std::time::Duration::from_secs(3);
+    while !exited_unreaped(pid).unwrap() {
+        assert!(std::time::Instant::now() < until);
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    group.kill();
+    assert_eq!(group.0.load(std::sync::atomic::Ordering::SeqCst), 0);
+    // WNOWAIT did not consume the leader. Only after disarming the signalling
+    // guard do we reap it; later Drop cannot signal a reused process-group ID.
+    assert!(exited_unreaped(pid).unwrap());
+    assert!(child.wait().unwrap().success());
+    group.kill();
+}

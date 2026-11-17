@@ -30,7 +30,33 @@ claim CIDs, inferred telos witnesses or new bridge declarations are made here.
 
 ## Current implementation and findings
 
-Nov16 fresh exercise at `5d622c8`: authored retrieval and a native session brief
+Current disposition, 2026-11-17: candidate `652c21c` passed final Tier2
+run43961283098 and a new six-call fresh trial at that exact runtime. The cold
+Opus5.5 re-review returned **APPROVE WITH FOLLOW-UPS**, with26partial and6
+unverifiable coverage rows retained; it is not an assertion that every AC is met.
+The owner authorized N1–N7 repair. New code below awaits affected remote checks;
+no merge, installation, new paid trial or further review is implied. Historical
+checklists/status passages below remain dated evidence, not current check results.
+
+This repair introduces visible projection revision3: recognized standalone
+harness envelopes are removed from user-text and tool-result blocks, including
+mixed blocks, with counted exclusions and original item-relative UTF-8 segments.
+Inline quotations and fenced/indented code examples stay visible. Unit IDs,
+enclosing citations and full authorized fallback stay unchanged. The format is
+structural filtering, not a claim that arbitrary untrusted text is trustworthy.
+
+New annotation-erasure tombstones retain only keyed, workspace-specific
+collection commitments, never removed bodies or collection identifiers. This
+additive encrypted/signed metadata scopes incomplete-history refusal to affected
+collections. Old/unknown tombstones cannot be retrospectively scoped and remain
+workspace-wide incomplete. Exact retry preserves their existing witnesses.
+Relation endpoints require full scoped tokens; MCP examples declare their
+unbound fields and whole-object copy sources; runtime helper changes select
+component checks. Owned worker termination is observed without reaping, then the
+owned group is disarmed before the leader PID becomes reusable. These are new
+regression targets, not new runtime acceptance claims.
+
+Historical Nov16 fresh exercise at `5d622c8`: authored retrieval and a native session brief
 were usable, but project consolidation failed strict provenance validation.
 Candidates0–5 cited parent units with explicit basis, including mixed direct and
 derived citations. Calibrated prose did not make those labels valid. Correction

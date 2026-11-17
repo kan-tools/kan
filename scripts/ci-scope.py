@@ -14,18 +14,22 @@ def classify(paths, uncertain=False):
         result.update(scope='core', rust=True, core=True, library=True, capture=True, macos=True)
     for path in paths:
         if path.startswith(('.github/', 'tests/fixtures/')) or path in {'Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', 'build.rs', 'scripts/ci-scope.py', 'tests/test_ci_scope.py',
-                                                  'scripts/ci-component-result.py', 'tests/test_ci_component_result.py',
+                                                  'scripts/ci-component-result.py', 'tests/test_ci_component_result.py', 'scripts/check_cli_install.py', 'tests/test_migration_writer.py', 'scripts/migration_writer.py',
                                                   'tests/fixtures/read-write-surface.tsv', 'scripts/kan-finalized.py', 'tests/test_kan_finalized.py'}:
             result.update(rust=True, core=True, library=True)
         elif path.startswith(('src/evidence_library', 'src/evidence_content', 'src/evidence_interpretation', 'src/evidence_record_cli')) or path == 'tests/support/proof_library_tests.rs':
             result.update(rust=True, library=True)
-        elif path in {'scripts/kan-project.py', 'scripts/capture-claude-hook.py', 'scripts/check_project_capture.py'} or path.startswith(('src/evidence_capture', 'src/evidence_harness', 'src/evidence_spool')):
+        elif path in {'scripts/kan-project.py', 'scripts/capture-claude-hook.py', 'scripts/check_project_capture.py', 'scripts/kan-record-demo.py', 'tests/test_kan_record_demo.py'} or path.startswith(('src/evidence_capture', 'src/evidence_harness', 'src/evidence_spool')):
             result.update(rust=True, capture=True, library=True)
+        elif path in {'scripts/tev-evaluate.py', 'tests/test_tev_evaluate.py'}:
+            result.update(rust=True, library=True)
         elif path.endswith('.rs') or path.startswith('src/'):
             result.update(rust=True, core=True, library=True)
         elif not (path.startswith(('docs/', 'adrs/', 'rfcs/', '.design/', 'scripts/', 'tests/')) or path.endswith(('.md', '.txt', '.svg', '.png'))):
             # Unknown build inputs cannot quietly turn into documentation-only checks.
             result.update(rust=True, core=True, library=True)
+        if path in {'src/evidence_library/proof/analysis/claude.rs', 'tests/support/claude_worker_unit.rs'}:
+            result.update(rust=True, library=True, macos=True)
         if any(part in path for part in ['keychain', 'keyring', 'identity', 'lease', 'at_rest', 'at-rest', 'scope_keys']):
             result.update(rust=True, core=True, macos=True)
         if path in {'scripts/kan-finalized.py', 'tests/test_kan_finalized.py'}:

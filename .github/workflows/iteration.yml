@@ -40,6 +40,7 @@ jobs:
           python3 tests/test_ci_diagnostic_report.py
           python3 tests/test_ci_component_result.py
           python3 tests/test_tev_evaluate.py
+          python3 tests/test_migration_writer.py
           node --test tests/library_ui.test.cjs tests/operations_ui.test.cjs tests/operations_review_ui.test.cjs tests/operations_restart_review.test.cjs tests/theme_ui.test.cjs
       - uses: dtolnay/rust-toolchain@stable
         if: steps.scope.outputs.rust == 'true'
@@ -156,3 +157,4 @@ jobs:
         run: |
           cargo test --locked --no-default-features --features kan-v1 --test keychain_identity --test at_rest_guards --test keychain_one_door
           cargo test --locked --features v2-crypto --lib lease_tests
+          cargo test --locked --features v2-crypto --lib evidence_library::proof::analysis::claude::tests

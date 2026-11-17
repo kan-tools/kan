@@ -245,7 +245,11 @@ def read_decision(client, marker):
         'kan_v2_reference': {'uri': records[0]['uri']},
     }
     for name, populated in example_inputs.items():
-        advertised = client.call('kan_v2_help', {'tool': name})['tools'][0]['example']
+        help_row = client.call('kan_v2_help', {'tool': name})['tools'][0]
+        assert help_row['example_format'] == 'kan-field-copy-template/1'
+        assert help_row['example_executable_without_binding'] == (name == 'kan_v2_catalog')
+        assert bool(help_row['example_bindings']) == (name != 'kan_v2_catalog')
+        advertised = help_row['example']
         assert set(populated).issubset(advertised), name
         advertised.update(populated)
         client.call(name, advertised)

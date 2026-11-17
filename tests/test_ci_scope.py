@@ -58,6 +58,15 @@ class ScopeTests(unittest.TestCase):
         self.assertEqual(paths, ['src/old.rs', 'docs/new.md'])
         self.assertTrue(m.classify(paths)['core'])
 
+    def test_runtime_helpers_and_owned_worker_select_actual_checks(self):
+        for path in ['scripts/check_cli_install.py', 'tests/test_migration_writer.py', 'scripts/migration_writer.py',
+                     'scripts/kan-record-demo.py', 'tests/test_kan_record_demo.py',
+                     'scripts/tev-evaluate.py', 'tests/test_tev_evaluate.py']:
+            self.assertTrue(m.classify([path])['rust'], path)
+        self.assertTrue(m.classify(['scripts/kan-record-demo.py'])['capture'])
+        for path in ['src/evidence_library/proof/analysis/claude.rs', 'tests/support/claude_worker_unit.rs']:
+            self.assertTrue(m.classify([path])['macos'], path)
+
     def test_docs_only_stays_static_and_deleted_source_keeps_coverage(self):
         self.assertFalse(m.classify(['docs/SPEC.md', '.design/plan.md'])['rust'])
         self.assertTrue(m.classify(['src/deleted_module.rs'])['core'])

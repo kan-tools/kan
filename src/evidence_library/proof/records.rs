@@ -376,7 +376,7 @@ impl Readers {
         let mut bytes = 0usize;
         let (mut unavailable, mut erased) = (
             0usize,
-            usize::from(self.workspace()?.annotation_history_erased()?),
+            usize::from(self.workspace()?.annotation_history_erased(source)?),
         );
         // A declared execution bound, not a lifetime record limit. Never fold a
         // silently incomplete prefix and describe it as the current subject.

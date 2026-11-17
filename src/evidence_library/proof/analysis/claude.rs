@@ -124,6 +124,33 @@ impl Drop for Group {
     }
 }
 
+// Observe termination without reaping: the zombie leader reserves its PID/PGID
+// until owned descendants have been signalled. Never signal a saved group ID
+// after child.wait() has made that number reusable by an unrelated process.
+#[cfg(unix)]
+fn exited_unreaped(pid: i32) -> std::io::Result<bool> {
+    if pid <= 0 {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "owned positive child PID required",
+        ));
+    }
+    // SAFETY: initialized output and a positive PID belonging to our child;
+    // WNOWAIT expressly leaves its exit status/PID reserved for child.wait().
+    let mut info: libc::siginfo_t = unsafe { std::mem::zeroed() };
+    let result = unsafe {
+        libc::waitid(
+            libc::P_PID,
+            pid as libc::id_t,
+            &mut info,
+            libc::WEXITED | libc::WNOHANG | libc::WNOWAIT,
+        )
+    };
+    if result != 0 {
+        return Err(std::io::Error::last_os_error());
+    }
+    Ok(info.si_signo != 0)
+}
 #[cfg(unix)]
 pub(super) async fn run(
     executable: &Path,
@@ -223,9 +250,16 @@ pub(super) async fn run(
             Ok::<(), std::io::Error>(())
         };
         let wait = async {
-            let result = child.wait().await;
-            group.kill();
-            result
+            loop {
+                match exited_unreaped(group.0.load(std::sync::atomic::Ordering::SeqCst)) {
+                    Ok(true) => break,
+                    Ok(false) => tokio::time::sleep(std::time::Duration::from_millis(10)).await,
+                    Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
+                    Err(e) => return Err(e),
+                }
+            }
+            group.kill(); // leader is still unreaped, so the group ID is owned
+            child.wait().await
         };
         tokio::try_join!(
             send,

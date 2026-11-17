@@ -212,6 +212,32 @@ impl Tool {
             Self::Reference => schema::<Reference>(),
         }
     }
+    /// Explicit holes distinguish a field-copy template from an executable
+    /// request. Authenticated objects must be copied whole, never rebuilt from
+    /// illustrative request/signature fragments.
+    pub fn example_bindings(self) -> Value {
+        match self {
+            Self::Catalog => json!({}),
+            Self::Record => json!({"/draft/source":"catalog.scopes[].id"}),
+            Self::Recall | Self::Discover => json!({"/source":"catalog.scopes[].id"}),
+            Self::ExtractPlan => {
+                json!({"/selection/source":"catalog.scopes[].id","/selection/from":"selected first record sequence","/selection/through":"selected last record sequence"})
+            }
+            Self::Extract => {
+                json!({"/selection":"plan.selection (whole JSON object)","/preview":"plan.digest","/nonce":"plan.nonce"})
+            }
+            Self::Report => json!({"/id":"job.id"}),
+            Self::Content => {
+                json!({"/source":"catalog.scopes[].id","/pin":"discovery.pin (whole JSON object)","/selections":"discovery.records[].record.selection (whole JSON objects)"})
+            }
+            Self::Session => {
+                json!({"/identity":"discovery session identity (whole JSON object)","/attempts":"selected attempts with whole returned pin and selection objects"})
+            }
+            Self::Reference => {
+                json!({"/uri":"occurrence.uri (unchanged); prefer a returned report/item reference_request when available"})
+            }
+        }
+    }
     pub fn example(self) -> Value {
         match self {
             Self::Record => {

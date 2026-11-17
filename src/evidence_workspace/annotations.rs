@@ -8,16 +8,49 @@ pub(crate) struct Page {
     pub next: Option<String>,
 }
 impl Workspace {
-    /// Erasure markers deliberately retain no removed collection/body. Once an
-    /// annotation has been purged, conservatively refuse complete authored
-    /// history rather than guessing whether it corrected a surviving claim.
-    /// This returns no removed identifier or source and writes no new format.
-    pub(crate) fn annotation_history_erased(&self) -> Result<bool> {
+    /// An opaque keyed collection commitment, never an erased identifier/body.
+    /// Same private workspace recovery reproduces it; other workspaces cannot
+    /// correlate commitments or dictionary-test public collection identifiers.
+    pub(super) fn authored_collection_commitment(&self, source: &str) -> Result<String> {
+        let key = hkdf::Hkdf::<Sha256>::new(Some(&self.scope), &self.private);
+        let mut out = [0u8; 32];
+        key.expand(
+            &[
+                b"kan-authored-erasure-collection/1\0".as_slice(),
+                source.as_bytes(),
+            ]
+            .concat(),
+            &mut out,
+        )
+        .map_err(invalid)?;
+        Ok(evidence_service::hex(&out))
+    }
+    /// New tombstones scope their effect to affected collections. Legacy or
+    /// unknown tombstones lack this witness and remain conservatively global.
+    pub(crate) fn annotation_history_erased(&self, source: &str) -> Result<bool> {
+        let wanted = self.authored_collection_commitment(source)?;
         let mut after = None;
         for _ in 0..100 {
             let (rows, next) = self.declarations_page("erasure", after.as_deref(), 100)?;
-            if rows.iter().any(|r| r["kind"] == "annotation") {
-                return Ok(true);
+            for row in rows.iter().filter(|r| r["kind"] == "annotation") {
+                match row.get("authored_collections") {
+                    None => return Ok(true),
+                    Some(value) => {
+                        let scopes = value.as_array().ok_or(Failure::Corrupt)?;
+                        if scopes.len() > 256
+                            || scopes.iter().any(|v| {
+                                v.as_str().is_none_or(|s| {
+                                    s.len() != 64 || evidence_service::unhex(s, 32).is_err()
+                                })
+                            })
+                        {
+                            return Err(Failure::Corrupt);
+                        }
+                        if scopes.iter().any(|v| v.as_str() == Some(wanted.as_str())) {
+                            return Ok(true);
+                        }
+                    }
+                }
             }
             if next.is_none() {
                 return Ok(false);

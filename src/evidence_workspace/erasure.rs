@@ -66,6 +66,75 @@ fn body(conn: &Connection, kind: &str, id: &str) -> Result<Option<Vec<u8>>> {
 fn marker(plan: &Plan, target: &Target, digest: &str) -> Value {
     serde_json::json!({"version":1,"plan":digest,"authorization":plan.authorization,"kind":target.kind,"id":target.id})
 }
+// Derive scope while authenticated rows still exist, including ordinary
+// correction/withdrawal ancestors. Unknown or bounded-out history must retain
+// the legacy conservative behavior, never manufacture a complete collection.
+fn authored_collections(
+    workspace: &Workspace,
+    conn: &Connection,
+    value: Value,
+    deadline: std::time::Instant,
+) -> Result<Option<Vec<String>>> {
+    let mut pending = vec![value];
+    let mut seen = BTreeSet::new();
+    let mut scopes = BTreeSet::new();
+    let mut ancestry_bytes = 0usize;
+    for _ in 0..256 {
+        if std::time::Instant::now() >= deadline {
+            return Ok(None);
+        }
+        let Some(value) = pending.pop() else {
+            return Ok((scopes.len() <= 256).then(|| scopes.into_iter().collect()));
+        };
+        let Ok(draft) = serde_json::from_value::<crate::evidence_library::AnnotationDraft>(
+            value["draft"].clone(),
+        ) else {
+            return Ok(None);
+        };
+        if let Some(batch) = draft.authored {
+            let Some(author) = value["author"].as_str() else {
+                return Ok(None);
+            };
+            if batch.decoded(author).is_err() {
+                return Ok(None);
+            }
+            scopes.insert(workspace.authored_collection_commitment(&batch.source)?);
+        }
+        for parent in [draft.supersedes, draft.withdraws].into_iter().flatten() {
+            if !seen.insert(parent.clone()) {
+                continue;
+            }
+            let id = Workspace::id("annotation", &parent);
+            if erased(workspace, conn, "annotation", &id)? {
+                let marker_key = marker_id("annotation", &id);
+                let bytes = body(conn, "erasure", &marker_key)?.ok_or(Failure::Corrupt)?;
+                let marker = workspace.unseal("erasure", &marker_key, &bytes)?;
+                let Some(known) = marker.get("authored_collections") else {
+                    return Ok(None);
+                };
+                let known = known.as_array().ok_or(Failure::Corrupt)?;
+                if known.len() > 256 {
+                    return Err(Failure::Corrupt);
+                }
+                for scope in known {
+                    let scope = scope.as_str().ok_or(Failure::Corrupt)?;
+                    fixed(scope)?;
+                    scopes.insert(scope.to_owned());
+                }
+            } else {
+                let Some(bytes) = body(conn, "annotation", &id)? else {
+                    return Ok(None);
+                };
+                ancestry_bytes = ancestry_bytes.saturating_add(bytes.len());
+                if ancestry_bytes > 4 * 1024 * 1024 {
+                    return Ok(None);
+                }
+                pending.push(workspace.unseal("annotation", &id, &bytes)?);
+            }
+        }
+    }
+    Ok(None)
+}
 /// A valid tombstone hides even a reintroduced payload; damaged authority fails
 /// closed rather than exposing the row. Ordinary workspace writes cannot create it.
 pub(super) fn erased(
@@ -203,6 +272,7 @@ impl Workspace {
         let mut prior = None;
         let mut writes = Vec::new();
         let mut total = 0usize;
+        let scope_deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
         for target in &plan.targets {
             if !allowed(&target.kind) {
                 return Err(Failure::Invalid);
@@ -217,9 +287,27 @@ impl Workspace {
             }
             prior = Some(coordinate);
             let id = marker_id(&target.kind, &target.id);
-            let value = marker(plan, target, &digest);
+            let mut value = marker(plan, target, &digest);
             if let Some(existing) = body(&tx, "erasure", &id)? {
-                if self.unseal("erasure", &id, &existing)? != value {
+                let mut existing = self.unseal("erasure", &id, &existing)?;
+                // Exact retry preserves its already authenticated scope witness;
+                // the erased payload is no longer available for recomputation.
+                if let Some(scopes) = existing
+                    .as_object_mut()
+                    .ok_or(Failure::Corrupt)?
+                    .remove("authored_collections")
+                {
+                    let scopes = scopes.as_array().ok_or(Failure::Corrupt)?;
+                    if target.kind != "annotation"
+                        || scopes.len() > 256
+                        || scopes
+                            .iter()
+                            .any(|v| v.as_str().is_none_or(|s| fixed(s).is_err()))
+                    {
+                        return Err(Failure::Corrupt);
+                    }
+                }
+                if existing != value {
                     return Err(Failure::Conflict);
                 }
             } else {
@@ -229,7 +317,15 @@ impl Workspace {
                     if total > 64 * 1024 * 1024 {
                         return Err(Failure::Unavailable);
                     }
-                    self.unseal(&target.kind, &target.id, bytes)?;
+                    let original = self.unseal(&target.kind, &target.id, bytes)?;
+                    let scopes = if target.kind == "annotation" {
+                        authored_collections(self, &tx, original, scope_deadline)?
+                    } else {
+                        None
+                    };
+                    if let Some(scopes) = scopes {
+                        value["authored_collections"] = serde_json::json!(scopes);
+                    }
                 }
                 if current.map(|b| evidence_service::hex(&Sha256::digest(b)))
                     != target.ciphertext_digest
@@ -275,3 +371,7 @@ impl Workspace {
         )
     }
 }
+
+#[cfg(all(test, unix))]
+#[path = "../../tests/support/workspace_erasure_unit.rs"]
+mod tests;
